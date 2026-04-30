@@ -43,13 +43,13 @@ runs:
         kubectl logs -n testkube -l app.kubernetes.io/name=api-server
 
     - name: Upload test results as artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: test-results
         path: ${{ github.workspace }}/test-results
 
     - name: Upload test artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: test-artifacts
         path: ${{ github.workspace }}/artifacts
