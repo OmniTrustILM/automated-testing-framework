@@ -118,7 +118,10 @@ export class DiscoveryPage {
             await this.page.reload();
             await expect(this.main).toBeVisible();
 
-            if (await this.providerStatusRow.isVisible() && await this.statusRow.isVisible()) {
+            try {
+                await expect(this.providerStatusRow).toBeVisible({ timeout: 5000 });
+                await expect(this.statusRow).toBeVisible({ timeout: 5000 });
+
                 const providerStatusBadge = this.providerStatusRow.locator('[data-testid="badge"]');
                 const statusBadge = this.statusRow.locator('[data-testid="badge"]');
 
@@ -126,8 +129,9 @@ export class DiscoveryPage {
                 const statusText = (await statusBadge.textContent())?.trim();
 
                 return providerText === 'Completed' && statusText === 'Completed';
+            } catch {
+                return false;
             }
-            return false;
         }, {
             message: 'Discovery did not reach Completed status',
             timeout: timeout,
