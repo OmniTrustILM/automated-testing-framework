@@ -38,8 +38,8 @@ export function loadEnv(): TestEnv {
     username: required('SMOKE_USERNAME'),
     password: required('SMOKE_PASSWORD'),
     clientSecret: process.env.SMOKE_CLIENT_SECRET,
-    authClientId: process.env.AUTH_CLIENT_ID || 'czertainly',
-    authRealm: process.env.AUTH_REALM || 'CZERTAINLY',
+    authClientId: process.env.AUTH_CLIENT_ID || 'ilm',
+    authRealm: process.env.AUTH_REALM || 'ILM',
     authBaseUrl: process.env.AUTH_BASE_URL, // Defaults to baseUrl/kc if not set
     localAuthProviderName: required('LOCAL_AUTH_PROVIDER_NAME'),
     discoveryProviderUrl: process.env.DISCOVERY_PROVIDER_URL,
