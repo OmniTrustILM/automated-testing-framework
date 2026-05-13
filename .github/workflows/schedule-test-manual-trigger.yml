@@ -16,7 +16,7 @@ jobs:
 
     steps:
       # Checks-out only the content of the test folder
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           sparse-checkout: ${{ inputs.test-folder }}
           sparse-checkout-cone-mode: false
