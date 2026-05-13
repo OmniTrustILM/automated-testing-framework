@@ -101,7 +101,7 @@ jobs:
           echo '${{ inputs.configuration }}' | jq .
 
       # Check out the repository
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # Get additional variables and IDs required
       - name: Get additional variables
