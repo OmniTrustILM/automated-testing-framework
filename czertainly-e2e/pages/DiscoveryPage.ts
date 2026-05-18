@@ -10,14 +10,14 @@ export class DiscoveryPage {
     private readonly navigation: Navigation;
 
     readonly main: Locator;
-    readonly addDiscoveryButtonStrategies: Locator[];
+    readonly addDiscoveryButton: Locator;
     readonly modal: Locator;
     readonly nameInput: Locator;
     readonly providerTrigger: Locator;
     readonly kindTrigger: Locator;
     readonly targetInput: Locator;
     readonly parallelInput: Locator;
-    readonly createButtonStrategies: Locator[];
+    readonly createButton: Locator;
     readonly providerStatusRow: Locator;
     readonly statusRow: Locator;
     readonly certificateTable: Locator;
@@ -26,76 +26,52 @@ export class DiscoveryPage {
         this.page = page;
         this.navigation = new Navigation(page);
         this.main = page.locator('main');
-        this.addDiscoveryButtonStrategies = [
-            this.main.locator('[data-testid$="-button"]:has(svg.lucide-plus)'),
-            this.main.locator('button:has(svg.lucide-plus)'),
-            this.main.getByRole('button', { name: /add/i }) // Text fallback
-        ];
-        this.modal = page.locator('div[role="dialog"]').filter({ hasText: /create discovery/i }).first();
-        this.nameInput = this.modal.locator('input#name, input[data-testid="text-input-name"]').first();
+        this.addDiscoveryButton = this.main.getByTestId('plus-button');
 
-        const providerContainer = this.modal.locator('[data-testid="select-discoveryProviderSelect"]');
+        this.modal = page.locator('div[role="dialog"]').filter({ hasText: /create discovery/i }).first();
+        this.nameInput = this.modal.getByTestId('text-input-name');
+
+        const providerContainer = this.modal.getByTestId('select-discoveryProviderSelect');
         this.providerTrigger = providerContainer.locator('button').first();
 
-        this.kindTrigger = this.modal.locator('button').filter({ has: page.locator('span', { hasText: /select kind|choose/i }) }).last();
+        this.kindTrigger = this.modal.getByTestId('select-storeKindSelect-trigger');
 
         this.targetInput = this.modal.getByTestId('text-input-__attributes__discovery__.ip').first();
         this.parallelInput = this.modal.getByLabel(/parallel executions/i).first();
 
-        this.createButtonStrategies = [
-            this.modal.getByRole('button', { name: /create/i }),
-            this.modal.locator('button[type="submit"]'),
-            this.modal.getByRole('button', { name: /save/i })
-        ];
-
+        this.createButton = this.modal.getByTestId('progress-button');
         this.providerStatusRow = this.main.locator('tr[data-id="providerStatus"]');
         this.statusRow = this.main.locator('tr[data-id="status"]');
 
         this.certificateTable = this.main.getByTestId('paged-custom-table').locator('table');
     }
 
-    private async clickFirstVisible(candidates: Locator[], description: string): Promise<void> {
-        for (const candidate of candidates) {
-            if (await candidate.first().isVisible()) {
-                logger.info(`Clicking ${description}`);
-                await candidate.first().click();
-                return;
-            }
-        }
-        logger.error(`Unable to find clickable element for: ${description}`);
-        throw new Error(`Unable to find clickable element for: ${description}`);
-    }
-
     async goToPage() {
         await this.navigation.openViaSidebar('Discoveries', /discoveries/i);
         await expect(this.main).toBeVisible();
+        await expect(this.main.getByRole('heading', { name: /discovery store/i })).toBeVisible();
     }
 
     async createDiscovery(name: string, provider: string, kind: string, target: string, parallel: string = '10') {
         logger.info(`Creating discovery: ${name}`);
-        await this.clickFirstVisible(this.addDiscoveryButtonStrategies, 'Add Discovery Button');
+        await this.addDiscoveryButton.click();
         await expect(this.modal).toBeVisible();
 
         await this.nameInput.waitFor({ state: 'visible' });
+        await this.nameInput.scrollIntoViewIfNeeded();
         await this.nameInput.click({ force: true });
         await this.nameInput.fill(name);
 
         await this.providerTrigger.click();
-        const providerOption = this.page.locator(`[data-hs-select-dropdown] [data-title-value="${provider}"]`).first();
+        const providerOption = this.page
+            .locator('#discoveryProviderSelect-listbox')
+            .getByRole('option', { name: provider });
         await providerOption.waitFor({ state: 'visible' });
         await providerOption.click();
 
-        await expect(this.modal.locator('label').filter({ hasText: /^kind$/i }).first()).toBeVisible();
-        if (await this.kindTrigger.isVisible()) {
-            await this.kindTrigger.click();
-        } else {
-            const genericTrigger = this.modal.locator('button').filter({ hasText: /select kind|choose/i }).last();
-            await genericTrigger.click();
-        }
-
-        const kindOption = this.page.locator(`[data-hs-select-dropdown] [data-title-value="${kind}"]`).first();
-        await kindOption.waitFor({ state: 'visible' });
-        await kindOption.click();
+        await expect(this.modal.getByTestId('label-storeKindSelect')).toBeVisible();
+        await this.kindTrigger.click();
+        await this.page.getByRole('option', { name: kind }).click();
 
         await this.targetInput.scrollIntoViewIfNeeded();
         await expect(this.targetInput).toBeVisible();
@@ -108,7 +84,7 @@ export class DiscoveryPage {
             await this.parallelInput.fill(parallel);
         }
 
-        await this.clickFirstVisible(this.createButtonStrategies, 'Submit Discovery');
+        await this.createButton.click();
         await expect(this.page).toHaveURL(/\/discoveries\/detail\/[a-f0-9-]+/);
     }
 
