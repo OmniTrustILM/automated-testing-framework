@@ -14,6 +14,7 @@ export const CERTIFICATE_DETAILS_TABS = [
     'Approvals',
     'Locations',
     'History',
+    'Event History',
     'Flow',
     'Related Certificates',
 ];

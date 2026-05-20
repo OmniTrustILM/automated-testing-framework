@@ -151,7 +151,7 @@ export class DiscoveryPage {
         const tablist = this.page.getByRole('tablist');
         if (await tablist.isVisible()) {
             for (const tabName of CERTIFICATE_DETAILS_TABS) {
-                const tab = tablist.getByRole('tab', { name: tabName });
+                const tab = tablist.getByRole('tab', { name: tabName, exact: true });
                 if (await tab.isVisible()) {
                     await tab.click();
                     await expect(this.page.locator('main')).not.toContainText(/internal server error/i);
