@@ -65,7 +65,7 @@ test.describe('@smoke certificate', () => {
         });
 
         await test.step('Issue certificate via UI', async () => {
-            await certPage.openIssueModal();
+            await certPage.openIssuePage();
             await certPage.selectRaProfile(state!.raProfileName);
             await certPage.selectKeySourceExternal();
             await certPage.pasteCsr(csr);
@@ -80,6 +80,7 @@ test.describe('@smoke certificate', () => {
             } finally {
                 await api.dispose();
             }
+            await page.reload(); // UI was rendered when state was "requested" — refresh to pick up Issued data
         });
 
         await test.step('Verify Details tab', async () => {

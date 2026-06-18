@@ -57,7 +57,7 @@ export async function createCredential(
 
     // Step 2: build payload using attribute helpers
     const attributes: AttributeRequest[] = [
-        stringAttr('keyStoreType', uuidOf('keyStoreType'), 'PKCS12'),
+        stringAttr('keyStoreType', uuidOf('keyStoreType'), 'PKCS12', true),
         secretAttr('keyStorePassword', uuidOf('keyStorePassword'), options.password),
         fileAttr('keyStore', uuidOf('keyStore'), options.p12Base64, 'keystore.p12', 'application/x-pkcs12'),
     ];

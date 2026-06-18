@@ -34,10 +34,18 @@ export interface AttributeRequest {
   content: AttributeContent[];
 }
 
-export function stringAttr(name: string, uuid: string, value: string): AttributeRequest {
+export function stringAttr(
+  name: string,
+  uuid: string,
+  value: string,
+  withReference: boolean = false,
+): AttributeRequest {
+  const item: AttributeContent = withReference
+    ? { data: value, reference: value }
+    : { data: value };
   return {
     name, uuid, version: 'v2', contentType: 'string',
-    content: [{ data: value, reference: value }],
+    content: [item],
   };
 }
 
