@@ -3,12 +3,12 @@ import { Navigation } from '../../pages/Navigation';
 import { TablePage } from '../../pages/TablePage';
 import { DiscoveryPage } from '../../pages/DiscoveryPage';
 import * as connectorUtils from '../../utils/connectorUtils';
+import { waitForDiscoveryCompletion } from '../../utils/discoveryUtils';
 import { Logger } from '../../utils/Logger';
 
 const logger = new Logger('DiscoverySmokeTest');
 
-const POLL_INTERVAL = 5000;
-const DISCOVERY_TIMEOUT_MS = 300000;
+const DISCOVERY_TIMEOUT_MS = 60_000; // Was 300_000 (5min); discoveries actually take ~10s
 
 test.describe('@smoke discovery', () => {
   test.afterEach(async ({ page }) => {
@@ -100,9 +100,10 @@ test.describe('@smoke discovery', () => {
     await discoveryPage.goToPage();
 
     // --- Step 2: Create Discovery ---
+    let discoveryUuid: string;
     await test.step('Create Network Discovery', async () => {
       const discoveryName = `smoke-discovery-${Date.now()}`;
-      await discoveryPage.createDiscovery(
+      discoveryUuid = await discoveryPage.createDiscovery(
         discoveryName,
         env.discoveryProviderName!,
         'IP-Hostname',
@@ -110,9 +111,20 @@ test.describe('@smoke discovery', () => {
       );
     });
 
-    // --- Step 3: Poll for Completion ---
+    // --- Step 3: Poll for Completion via API, then reload UI ---
     await test.step('Wait for Discovery Completion', async () => {
-      await discoveryPage.waitForCompletion(DISCOVERY_TIMEOUT_MS, POLL_INTERVAL);
+      const api = await getAuthenticatedApiContext(request, env);
+      try {
+        await waitForDiscoveryCompletion(api, discoveryUuid!, DISCOVERY_TIMEOUT_MS);
+      } finally {
+        await api.dispose();
+      }
+      await page.reload(); // UI was rendered when status was in-progress — refresh
+    });
+
+    // --- Step 3b: Verify UI reflects completed status (catches FE rendering regressions) ---
+    await test.step('Verify Completed Status badges in UI', async () => {
+      await discoveryPage.assertCompletedStatusBadges();
     });
 
     // --- Step 4: valid Discovered Certificates ---
