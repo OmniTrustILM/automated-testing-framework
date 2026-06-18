@@ -31,3 +31,6 @@ target/
 *.iml
 
 .DS_Store
+
+# Playwright smoke state passed between globalSetup and globalTeardown
+czertainly-e2e/.smoke-state.json

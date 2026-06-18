@@ -27,6 +27,20 @@ export async function getAllConnectors(
     return json as ConnectorDto[];
 }
 
+export async function findConnectorByName(
+    request: APIRequestContext,
+    name: string
+): Promise<ConnectorDto> {
+    const connectors = await getAllConnectors(request);
+    const found = connectors.find(c => c.name === name);
+    if (!found) {
+        const available = connectors.map(c => c.name).join(', ');
+        logger.error(`Connector "${name}" not found. Available: ${available}`);
+        throw new Error(`Connector "${name}" not found. Available: ${available}`);
+    }
+    return found;
+}
+
 export async function approveConnector(
     request: APIRequestContext,
     uuid: string
@@ -60,3 +74,4 @@ export async function checkConnectorHealth(
         throw new Error(`Connector is not healthy: ${JSON.stringify(body)}`);
     }
 }
+

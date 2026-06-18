@@ -16,6 +16,16 @@ export type TestEnv = {
   discoveryProviderName?: string;
   discoveryProviderUrl?: string;
   discoveryTarget?: string;
+
+  // SMK-004 — Issue Certificate (per-run creation via API in globalSetup)
+  ejbcaConnectorName: string;
+  credentialConnectorName: string;
+  ejbcaWsUrl?: string;
+  ejbcaP12Base64?: string;
+  ejbcaP12Password?: string;
+  ejbcaCaName?: string;
+  ejbcaEndEntityProfile?: string;
+  ejbcaCertificateProfile?: string;
 };
 
 function required(name: string): string {
@@ -45,5 +55,15 @@ export function loadEnv(): TestEnv {
     discoveryProviderUrl: process.env.DISCOVERY_PROVIDER_URL,
     discoveryProviderName: process.env.DISCOVERY_PROVIDER_NAME,
     discoveryTarget: process.env.DISCOVERY_TARGET,
+
+    // SMK-004 — Issue Certificate (per-run creation via API in globalSetup)
+    ejbcaConnectorName: process.env.EJBCA_CONNECTOR_NAME || 'EJBCA-NG-Connector',
+    credentialConnectorName: process.env.CREDENTIAL_CONNECTOR_NAME || 'Common-Credential-Connector',
+    ejbcaWsUrl: process.env.EJBCA_WS_URL,
+    ejbcaP12Base64: process.env.EJBCA_P12_BASE64,
+    ejbcaP12Password: process.env.EJBCA_P12_PASSWORD,
+    ejbcaCaName: process.env.EJBCA_CA_NAME,
+    ejbcaEndEntityProfile: process.env.EJBCA_END_ENTITY_PROFILE,
+    ejbcaCertificateProfile: process.env.EJBCA_CERTIFICATE_PROFILE,
   };
 }

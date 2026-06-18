@@ -18,8 +18,6 @@ export class DiscoveryPage {
     readonly targetInput: Locator;
     readonly parallelInput: Locator;
     readonly createButton: Locator;
-    readonly providerStatusRow: Locator;
-    readonly statusRow: Locator;
     readonly certificateTable: Locator;
 
     constructor(page: Page) {
@@ -40,9 +38,6 @@ export class DiscoveryPage {
         this.parallelInput = this.modal.getByLabel(/parallel executions/i).first();
 
         this.createButton = this.modal.getByTestId('progress-button');
-        this.providerStatusRow = this.main.locator('tr[data-id="providerStatus"]');
-        this.statusRow = this.main.locator('tr[data-id="status"]');
-
         this.certificateTable = this.main.getByTestId('paged-custom-table').locator('table');
     }
 
@@ -52,7 +47,7 @@ export class DiscoveryPage {
         await expect(this.main.getByRole('heading', { name: /discovery store/i })).toBeVisible();
     }
 
-    async createDiscovery(name: string, provider: string, kind: string, target: string, parallel: string = '10') {
+    async createDiscovery(name: string, provider: string, kind: string, target: string, parallel: string = '10'): Promise<string> {
         logger.info(`Creating discovery: ${name}`);
         await this.addDiscoveryButton.click();
         await expect(this.modal).toBeVisible();
@@ -86,34 +81,20 @@ export class DiscoveryPage {
 
         await this.createButton.click();
         await expect(this.page).toHaveURL(/\/discoveries\/detail\/[a-f0-9-]+/);
+        const url = this.page.url();
+        const match = url.match(/\/discoveries\/detail\/([a-f0-9-]+)/);
+        if (!match) {
+            throw new Error(`Could not extract discovery UUID from URL: ${url}`);
+        }
+        return match[1];
     }
 
-    async waitForCompletion(timeout: number = 300000, pollInterval: number = 5000) {
-        logger.info('Waiting for discovery completion...');
-        await expect.poll(async () => {
-            await this.page.reload();
-            await expect(this.main).toBeVisible();
-
-            try {
-                await expect(this.providerStatusRow).toBeVisible({ timeout: 5000 });
-                await expect(this.statusRow).toBeVisible({ timeout: 5000 });
-
-                const providerStatusBadge = this.providerStatusRow.locator('[data-testid="badge"]');
-                const statusBadge = this.statusRow.locator('[data-testid="badge"]');
-
-                const providerText = (await providerStatusBadge.textContent())?.trim();
-                const statusText = (await statusBadge.textContent())?.trim();
-
-                return providerText === 'Completed' && statusText === 'Completed';
-            } catch {
-                return false;
-            }
-        }, {
-            message: 'Discovery did not reach Completed status',
-            timeout: timeout,
-            intervals: [pollInterval],
-        }).toBeTruthy();
-        logger.info('Discovery completed successfully.');
+    async assertCompletedStatusBadges(): Promise<void> {
+        logger.info('Asserting UI shows Completed status badges (provider + overall)');
+        const providerBadge = this.main.locator('tr[data-id="providerStatus"] [data-testid="badge"]');
+        const statusBadge = this.main.locator('tr[data-id="status"] [data-testid="badge"]');
+        await expect(providerBadge).toHaveText('Completed');
+        await expect(statusBadge).toHaveText('Completed');
     }
 
     async verifyDiscoveredCertificates() {
