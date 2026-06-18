@@ -10,6 +10,8 @@ dotenv.config({ path: path.resolve(__dirname, '.env') });
 export default defineConfig({
   testDir: './tests',
 
+  globalSetup: require.resolve('./global-setup'),
+
   timeout: 30_000,
 
   expect: {
