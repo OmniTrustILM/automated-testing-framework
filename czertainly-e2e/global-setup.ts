@@ -30,12 +30,17 @@ export default async function globalSetup(_config: FullConfig): Promise<void> {
 
     // SMK-004 needs ALL these vars. If any missing → skip provisioning.
     // SMK-004 test will then skip itself (state file doesn't exist).
-    const required = [
-        env.ejbcaWsUrl, env.ejbcaP12Base64, env.ejbcaP12Password,
-        env.ejbcaCaName, env.ejbcaEndEntityProfile, env.ejbcaCertificateProfile,
-    ];
-    if (required.some(v => !v)) {
-        logger.info('SMK-004 env vars incomplete — skipping per-run provisioning');
+    const required: Record<string, string | undefined> = {
+        EJBCA_WS_URL: env.ejbcaWsUrl,
+        EJBCA_P12_BASE64: env.ejbcaP12Base64,
+        EJBCA_P12_PASSWORD: env.ejbcaP12Password,
+        EJBCA_CA_NAME: env.ejbcaCaName,
+        EJBCA_END_ENTITY_PROFILE: env.ejbcaEndEntityProfile,
+        EJBCA_CERTIFICATE_PROFILE: env.ejbcaCertificateProfile,
+    };
+    const missing = Object.entries(required).filter(([, v]) => !v).map(([k]) => k);
+    if (missing.length > 0) {
+        logger.info(`SMK-004 env vars missing: ${missing.join(', ')} — skipping per-run provisioning`);
         return;
     }
 
