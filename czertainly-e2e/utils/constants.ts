@@ -9,6 +9,7 @@ export const DEF_CERTIFICATE_TABLE_HEADERS = [
 
 export const CERTIFICATE_DETAILS_TABS = [
     'Details',
+    'Request',
     'Attributes',
     'Validation',
     'Approvals',
