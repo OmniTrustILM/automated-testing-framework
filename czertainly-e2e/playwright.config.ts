@@ -11,6 +11,7 @@ export default defineConfig({
   testDir: './tests',
 
   globalSetup: require.resolve('./global-setup'),
+  globalTeardown: require.resolve('./global-teardown'),
 
   timeout: 30_000,
 
