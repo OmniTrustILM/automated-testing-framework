@@ -1,0 +1,51 @@
+apiVersion: testworkflows.testkube.io/v1 # Note: apiVersion is different here
+kind: TestWorkflow # TestWorkflow should be used instead of Test
+metadata:
+  name: frontend-login-workflow
+  namespace: testkube
+  labels:
+    executor: cypress-executor
+    test-type: cypress-project
+spec:
+  content:
+    git:
+      uri: https://github.com/CZERTAINLY/CZERTAINLY-FE-Administrator
+      revision: main # Switched to main here since develop branch is no longer existing
+
+  container:
+    workingDir: /data/repo
+
+  steps:
+    - name: Install dependencies # Added a necessary step to install project dependencies in the container
+      run:
+        image: node:20
+        workingDir: /data/repo
+        command: ["sh","-lc"]
+        args:
+          - |
+            npm ci
+
+    - name: Run Cypress tests (Chrome)
+      run:
+        image: cypress/included:14.5.4
+
+        # Environment variables available in the container
+        # CYPRESS_* variables are automatically mapped to Cypress.env()
+        env:
+          - name: CYPRESS_ADMIN_URL
+            value: "http://fe-administrator-service.czertainly.svc.cluster.local:8080/" # Adjust the URL as needed for your test environment
+          - name: CYPRESS_ADMIN_USERNAME
+            value: "czertainly-admin"
+          - name: CYPRESS_ADMIN_PASSWORD # Kubernetes secret should be created beforehand
+          # Run this once beforehand: kubectl -n testkube create secret generic frontend-login-test-secrets --from-literal=ADMIN_PASSWORD='your-strong-password'
+            valueFrom:
+              secretKeyRef:
+                name: frontend-login-test-secrets
+                key: ADMIN_PASSWORD
+        args:
+          - "--browser"
+          - "chrome"
+      artifacts:
+        paths:
+          - cypress/videos/**/*
+          - cypress/screenshots/**/*
