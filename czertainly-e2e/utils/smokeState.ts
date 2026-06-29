@@ -1,9 +1,12 @@
 /**
  * smokeState — file-based state sharing between Playwright globalSetup and globalTeardown.
  *
- * globalSetup writes the SmokeState (UUIDs of created Credential / Authority / RA Profile)
- * to .smoke-state.json. globalTeardown reads it to know what to delete in reverse order.
- * The file is gitignored.
+ * globalSetup writes the SmokeState to .smoke-state.json (gitignored). globalTeardown
+ * reads it to know what to delete in reverse dependency order.
+ *
+ * State is all-or-nothing: globalSetup either writes the full SmokeState (all PKI
+ * fields + connector UUIDs together) or doesn't write anything. Tests can rely on
+ * any field being present when `readSmokeState()` returns non-null.
  *
  * Why a file: globalSetup and globalTeardown are separate function invocations in
  * Playwright's lifecycle — in-memory state between them is not reliable.
@@ -19,6 +22,10 @@ const logger = new Logger('SmokeState');
 const STATE_FILE = path.resolve(__dirname, '..', '.smoke-state.json');
 
 export interface SmokeState {
+  /** UUIDs of connectors registered by THIS run — globalTeardown deletes them. */
+  registeredConnectorUuids: string[];
+
+  // SMK-004 PKI chain — always written together with the rest of the state.
   credentialUuid: string;
   credentialName: string;
   authorityUuid: string;

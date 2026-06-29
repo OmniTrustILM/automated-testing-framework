@@ -54,19 +54,33 @@ export class Navigation {
   ): Promise<void> {
     await this.ensureSidebarExpanded();
 
+    let targetLink: Locator;
+
     if (parentButtonName) {
       const parentButton = this.sidebarNav.getByRole('button', {
         name: parentButtonName,
         exact: true,
       });
-
       await this.ensureParentExpanded(parentButton);
-    }
 
-    const targetLink = this.sidebarNav.getByRole('link', {
-      name: menuText,
-      exact: true,
-    });
+      // Scope link search to the parent's children <ul>. This avoids matching
+      // duplicate names that live elsewhere in the sidebar (e.g. Dashboard >
+      // Certificates vs top-level Certificates after the 2026-06 FE rename).
+      const parentContainer = parentButton.locator('..');
+      const childrenList = parentContainer.locator('ul').first();
+      targetLink = childrenList.getByRole('link', {
+        name: menuText,
+        exact: true,
+      });
+    } else {
+      // Top-level link: scope to direct-child <li> of the sidebar's main <ul>,
+      // which excludes nested submenu links with the same name. Structural
+      // (CSS direct-child `>`), not DOM-order dependent — safer than .last().
+      const topLevelUl = this.sidebarNav.locator('ul').first();
+      targetLink = topLevelUl.locator(':scope > li').locator('> a, > div > a').filter({
+        hasText: menuText,
+      });
+    }
 
     await Promise.all([
       this.page.waitForURL(urlHint, { waitUntil: 'domcontentloaded' }),

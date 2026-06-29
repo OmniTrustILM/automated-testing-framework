@@ -29,7 +29,9 @@ export class LoginPage {
       logger.info('Login form visible immediately. Skipping provider selection.');
     } catch {
       const providerName = this.env.localAuthProviderName ?? 'Internal';
-      const providerBtn = this.page.getByText(providerName);
+      // Scope by role + exact name — partial text match collides on envs with
+      // multiple "Internal*" identity providers (e.g. Internal, Internal2, Internal-userinfo).
+      const providerBtn = this.page.getByRole('button', { name: providerName, exact: true });
 
       logger.info(`Login form not visible. Expecting provider selection: "${providerName}"`);
       await expect(providerBtn, `Provider "${providerName}" button should be visible`).toBeVisible();
