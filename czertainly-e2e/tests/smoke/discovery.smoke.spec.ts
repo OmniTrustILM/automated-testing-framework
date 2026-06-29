@@ -4,6 +4,7 @@ import { TablePage } from '../../pages/TablePage';
 import { DiscoveryPage } from '../../pages/DiscoveryPage';
 import * as connectorUtils from '../../utils/connectorUtils';
 import { waitForDiscoveryCompletion } from '../../utils/discoveryUtils';
+import { readSmokeState } from '../../utils/smokeState';
 import { Logger } from '../../utils/Logger';
 
 const logger = new Logger('DiscoverySmokeTest');
@@ -12,6 +13,10 @@ const DISCOVERY_TIMEOUT_MS = 60_000; // Was 300_000 (5min); discoveries actually
 
 test.describe('@smoke discovery', () => {
   test.afterEach(async ({ page }) => {
+    // Test self-skips when smoke state file is missing — nothing was created, nothing to clean.
+    // Guard prevents afterEach from hitting the platform unauthenticated and timing out on a login redirect.
+    if (!readSmokeState()) return;
+
     const tablePage = new TablePage(page);
 
     const cleanupEntity = async (url: string, name: string) => {
@@ -30,25 +35,22 @@ test.describe('@smoke discovery', () => {
 
   test('SMK-003: network discovery and certificate details', async ({ page, request, env }) => {
     test.setTimeout(360000);
-    test.skip(
-      !env.discoveryProviderName || !env.discoveryTarget,
-      'DISCOVERY_PROVIDER_NAME and DISCOVERY_TARGET are required.'
-    );
+    test.skip(!readSmokeState(), 'Smoke fixtures not provisioned (env vars missing) — globalSetup skipped');
 
     // --- Step 0: Find existing Connector (Pre-condition) ---
-    if (env.discoveryProviderUrl) {
+    if (env.smoke.discoveryProviderUrl) {
       await test.step('Find & Approve existing connector', async () => {
-        logger.info(`Looking for connector with URL: ${env.discoveryProviderUrl}`);
+        logger.info(`Looking for connector with URL: ${env.smoke.discoveryProviderUrl}`);
 
         const apiRequest = await getAuthenticatedApiContext(request, env);
 
         try {
           const connectors = await connectorUtils.getAllConnectors(apiRequest);
-          const foundConnector = connectors.find(c => c.url === env.discoveryProviderUrl);
+          const foundConnector = connectors.find(c => c.url === env.smoke.discoveryProviderUrl);
 
           if (!foundConnector) {
             logger.debug(`Available connectors: ${connectors.map(c => `${c.name} (${c.url})`).join(', ')}`);
-            throw new Error(`Connector with URL ${env.discoveryProviderUrl} not found in the system.`);
+            throw new Error(`Connector with URL ${env.smoke.discoveryProviderUrl} not found in the system.`);
           }
 
           logger.info(`Found connector: ${foundConnector.name} (UUID: ${foundConnector.uuid}, Status: ${foundConnector.status})`);
@@ -60,7 +62,7 @@ test.describe('@smoke discovery', () => {
             await connectorUtils.checkConnectorHealth(apiRequest, foundConnector.uuid);
           }
 
-          env.discoveryProviderName = foundConnector.name;
+          env.smoke.discoveryProviderName = foundConnector.name;
           logger.info(`Using connector: ${foundConnector.name}`);
 
         } catch (error) {
@@ -82,18 +84,18 @@ test.describe('@smoke discovery', () => {
       const main = page.locator('main');
       await expect(main).toBeVisible();
 
-      const providerRow = main.getByRole('row', { name: env.discoveryProviderName! }).first();
+      // Surface the discovery connector via the page's filter — the table may
+      // hold many connectors and paginate.
+      const tablePage = new TablePage(page);
+      await tablePage.applyFilter({
+        group: 'Property',
+        field: 'Name',
+        condition: 'contains',
+        value: env.smoke.discoveryProviderName!,
+      });
 
-      const searchInput = main.locator('input[placeholder="Search"], input#search').first();
-      if (await searchInput.isVisible()) {
-        await searchInput.fill(env.discoveryProviderName!);
-        await searchInput.press('Enter');
-        await expect(async () => {
-          await expect(providerRow).toBeVisible();
-        }).toPass();
-      }
-      await expect(providerRow, `Provider "${env.discoveryProviderName}" should be visible in Connectors list`).toBeVisible();
-
+      const providerRow = main.getByRole('row', { name: env.smoke.discoveryProviderName! }).first();
+      await expect(providerRow, `Provider "${env.smoke.discoveryProviderName}" should be visible in Connectors list`).toBeVisible();
       await expect(providerRow).toContainText(/connected/i);
     });
 
@@ -105,9 +107,9 @@ test.describe('@smoke discovery', () => {
       const discoveryName = `smoke-discovery-${Date.now()}`;
       discoveryUuid = await discoveryPage.createDiscovery(
         discoveryName,
-        env.discoveryProviderName!,
+        env.smoke.discoveryProviderName!,
         'IP-Hostname',
-        env.discoveryTarget!
+        env.smoke.discoveryTarget!
       );
     });
 

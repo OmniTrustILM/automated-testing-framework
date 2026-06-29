@@ -1,5 +1,5 @@
 import {
-    test, expect,
+    test,
     loginAsSmokeUser, getAuthenticatedApiContext,
 } from '../../fixtures/testFixtures';
 import { CertificatePage } from '../../pages/CertificatePage';
@@ -52,7 +52,10 @@ test.describe('@smoke certificate', () => {
         test.setTimeout(60_000); // 1 minute — realistic path is ~40s; tighter than this risks flakes
 
         const state = readSmokeState();
-        test.skip(!state, 'SMK-004 fixtures not provisioned (env vars missing) — globalSetup skipped');
+        if (!state) {
+            test.skip(true, 'SMK-004 fixtures not provisioned (env vars missing) — globalSetup skipped');
+            return;  // narrows `state` to SmokeState below
+        }
 
         const certPage = new CertificatePage(page);
         const cn = `qa-smoke-test-${Date.now()}.example.com`;
@@ -66,7 +69,7 @@ test.describe('@smoke certificate', () => {
 
         await test.step('Issue certificate via UI', async () => {
             await certPage.openIssuePage();
-            await certPage.selectRaProfile(state!.raProfileName);
+            await certPage.selectRaProfile(state.raProfileName);
             await certPage.selectKeySourceExternal();
             await certPage.pasteCsr(csr);
             issuedCertUuid = await certPage.submitIssue();
@@ -86,7 +89,7 @@ test.describe('@smoke certificate', () => {
         await test.step('Verify Details tab', async () => {
             await certPage.assertDetailsTab({
                 commonName: cn,
-                raProfileName: state!.raProfileName,
+                raProfileName: state.raProfileName,
                 ownerName: env.username,
             });
         });

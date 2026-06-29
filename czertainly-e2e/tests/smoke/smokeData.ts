@@ -16,8 +16,9 @@ export const sidebarItems: readonly SidebarItem[] = [
         role: 'button',
         name: 'Dashboard',
         children: [
-            { role: 'link', name: 'Certificates Dashboard', urlHint: /\/dashboard\/certificates/i },
-            { role: 'link', name: 'Secrets Dashboard', urlHint: /\/dashboard\/secrets/i },
+            { role: 'link', name: 'Certificates', urlHint: /\/dashboard\/certificates/i },
+            { role: 'link', name: 'Secrets', urlHint: /\/dashboard\/secrets/i },
+            { role: 'link', name: 'Signing Records', urlHint: /\/dashboard\/signing-records/i },
         ],
     },
     { role: 'link', name: 'Certificates', urlHint: /\/certificates/i },
@@ -26,6 +27,7 @@ export const sidebarItems: readonly SidebarItem[] = [
     { role: 'link', name: 'Connectors', urlHint: /connectors/i },
     { role: 'link', name: 'Secrets', urlHint: /\/secrets/i },
     { role: 'link', name: 'CBOMs', urlHint: /\/cboms/i },
+    { role: 'link', name: 'Signing Records', urlHint: /\/signingrecords/i },
     {
         role: 'button',
         name: 'Access Control',
@@ -43,6 +45,7 @@ export const sidebarItems: readonly SidebarItem[] = [
             { role: 'link', name: 'Compliance Profiles', urlHint: /complianceprofiles/i },
             { role: 'link', name: 'Notification Profiles', urlHint: /notificationprofiles/i },
             { role: 'link', name: 'Vault Profiles', urlHint: /vaultprofiles/i },
+            { role: 'link', name: 'Signing Profiles', urlHint: /signingprofiles/i },
         ],
     },
     {
@@ -66,6 +69,7 @@ export const sidebarItems: readonly SidebarItem[] = [
             { role: 'link', name: 'ACME Profiles', urlHint: /acmeprofiles/i },
             { role: 'link', name: 'CMP Profiles', urlHint: /cmpprofiles/i },
             { role: 'link', name: 'SCEP Profiles', urlHint: /scepprofiles/i },
+            { role: 'link', name: 'TSP Profiles', urlHint: /tspprofiles/i },
         ],
     },
     {
@@ -88,6 +92,7 @@ export const sidebarItems: readonly SidebarItem[] = [
             { role: 'link', name: 'Logging', urlHint: /loggingsettings/i },
             { role: 'link', name: 'Authentication', urlHint: /authenticationsettings/i },
             { role: 'link', name: 'Custom OIDs', urlHint: /custom-oids/i },
+            { role: 'link', name: 'Time Quality', urlHint: /timequalityconfigurations/i },
         ],
     },
     { role: 'link', name: 'Audit Logs', urlHint: /auditlogs/i },
