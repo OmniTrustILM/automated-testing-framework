@@ -1,0 +1,16 @@
+{
+  "name": "ilm-timestamping-regression",
+  "version": "1.0.0",
+  "private": true,
+  "description": "API-level regression suite for ILM timestamping, run against a locally built Core",
+  "scripts": {
+    "test": "playwright test",
+    "test:fast": "playwright test --grep-invert @slow",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.0",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}

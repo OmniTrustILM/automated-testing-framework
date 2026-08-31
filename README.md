@@ -6,6 +6,14 @@ CZERTAINLY platform is a microservice based application running in a Kubernetes 
 
 For testing the [Testkube](https://testkube.io/) is utilized and used.
 
+## Regression suites
+
+Alongside the Testkube tests, `regression/` holds suites that drive a locally built platform
+rather than a deployed cluster. [regression/timestamping/](regression/timestamping/README.md)
+exercises RFC 3161 timestamping end to end: it checks out every dependent repository,
+including `development-environment`, rebuilds Core and the connector images, provisions the
+environment and runs the API suite against it.
+
 ## How to run the tests
 
 Each test is defined in a separate folder and identified by a unique name. The structure of the test folder is as follows:
