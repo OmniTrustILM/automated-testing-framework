@@ -90,17 +90,29 @@ asserts the current outcome exactly, so a test fails the moment any of it change
 | Test | Deviation | Issue |
 |---|---|---|
 | `a JSON content type is currently answered with HTTP 500` | `HttpMediaTypeNotSupportedException` reaches the generic handler in Core's `ExceptionHandlingAdvice` and is rendered as HTTP 500 instead of 415 | [core#2140](https://github.com/OmniTrustILM/core/issues/2140) |
-| `the policy allow-list is enforced exactly as the profile declares it` | With an empty `allowedPolicyIds`, Core accepts any policy OID and copies it into the token, so the TSA asserts a policy it never defined. RFC 3161 section 2.4.2 calls for `unacceptedPolicy` | [core#2141](https://github.com/OmniTrustILM/core/issues/2141) |
-
-The two allow-list tests read the profile's own `allowedPolicyIds` / `allowedDigestAlgorithms`
-and assert against what it declares: enforcement when a list is populated, the documented
-accept-anything behaviour when it is empty. They are therefore correct both before and after
-[development-environment#40](https://github.com/OmniTrustILM/development-environment/issues/40)
-populates those lists — and either way they fail if the validator stops honouring the profile.
 
 Playwright's `test.fail()` was deliberately not used for any of this: it marks the whole test
 as expected-to-fail, so an unrelated breakage on the same request — a 401, a malformed
 response — would also count as the expected failure and hide a real regression.
+
+## Allow-list handling
+
+An empty `allowedPolicyIds` or `allowedDigestAlgorithms` means "accept anything" — a
+deliberate, documented default, confirmed when
+[core#2141](https://github.com/OmniTrustILM/core/issues/2141) was closed as works-as-designed.
+It is not a deviation. Two consequences of it are still undocumented and tracked in
+[documentation#397](https://github.com/OmniTrustILM/documentation/issues/397): the accepted OID
+is copied verbatim into `TSTInfo.policy`, and a non-empty allow-list does not implicitly
+contain `defaultPolicyId`.
+
+The two allow-list tests read the profile's own `allowedPolicyIds` / `allowedDigestAlgorithms`
+and assert against what it declares: enforcement when a list is populated, accept-anything when
+it is empty. Since
+[development-environment#40](https://github.com/OmniTrustILM/development-environment/issues/40),
+provisioning populates both lists, so runs against this environment exercise the enforcing
+branch and an unknown policy OID is rejected with `unacceptedPolicy`. The empty-list branch is
+kept for environments provisioned by other means — either way the tests fail if the validator
+stops honouring the profile.
 
 ## Artifacts
 
