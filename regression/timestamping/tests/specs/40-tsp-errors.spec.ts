@@ -216,9 +216,11 @@ test.describe('TSP error paths', () => {
     });
 
     if (allowed.length === 0) {
-      // Deviation, tracked as OmniTrustILM/core#2141: with an empty list Core accepts any
-      // policy OID and copies it into the token, so the TSA asserts a policy it never
-      // defined. RFC 3161 section 2.4.2 calls for a rejection with unacceptedPolicy.
+      // Documented default, not a defect: an empty list means "accept any policy OID", which
+      // Core then copies verbatim into TSTInfo.policy. Confirmed as works-as-designed in
+      // OmniTrustILM/core#2141; the undocumented consequences are OmniTrustILM/documentation#397.
+      // Provisioning populates the list, so this branch only runs against an environment
+      // provisioned by other means.
       expect(outcome.reply?.granted, describeOutcome(outcome)).toBe(true);
       expect(outcome.reply?.policyOid, 'the unknown policy OID ends up in the token').toBe(unknownPolicy);
     } else {
