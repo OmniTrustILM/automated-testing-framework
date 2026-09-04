@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-# Phase: run Core on the host from the freshly built jar.
-# Core is deliberately not containerised: the published image trails the database schema a
-# locally built Core leaves behind, and Flyway then aborts with
+# Phase: run a locally built Core on the host from its freshly built jar.
+#
+# Only reached when core is a local component. A published Core runs as the Compose `core`
+# service instead, brought up with the rest of the stack.
+#
+# A locally built Core is deliberately not containerised: the published image trails the
+# database schema a locally built Core leaves behind, and Flyway then aborts with
 # "Detected applied migration not resolved locally". Host mode also matches the connector
 # host defaults used by the provisioning script.
 
@@ -99,6 +103,7 @@ start_core() {
 }
 
 phase_core() {
+  component_is_local core || return 0
   section "Core (local, java -jar)"
   mkdir -p "${SUITE_DIR}/.state"
   manifest_set '.core.jar' "$CORE_JAR"
