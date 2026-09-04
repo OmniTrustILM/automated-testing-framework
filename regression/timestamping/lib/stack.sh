@@ -27,6 +27,36 @@ container_state() {
   if [[ -n "$state" ]]; then echo "$state"; else echo "missing"; fi
 }
 
+# A published Core and a locally built one leave different Flyway state behind, and the
+# mismatch surfaces much later as "Detected applied migration not resolved locally". The
+# database outlives a run, so refuse the switch instead of letting Flyway discover it.
+core_source_state_file() { echo "${SUITE_DIR}/.state/core-source"; }
+
+# Runs predating the published/local split always built Core locally, so an existing database
+# with no recorded source came from a local one.
+recorded_core_source() {
+  local file
+  file=$(core_source_state_file)
+  if [[ -f "$file" ]]; then
+    tr -d '\r\n' < "$file"
+  elif [[ -d "${DEV_DIR}/data/postgres/pgsqldata" ]]; then
+    echo "local"
+  fi
+}
+
+verify_core_source_matches_database() {
+  local previous current
+  current=$(component_source core)
+  mkdir -p "${SUITE_DIR}/.state"
+
+  if [[ "$CLEAN" != "true" ]]; then
+    previous=$(recorded_core_source)
+    [[ -n "$previous" && "$previous" != "$current" ]] && die \
+      "The database was migrated by a ${previous} Core and this run uses a ${current} one; their schemas differ. Re-run with --clean to wipe it, or stay on the previous source with --$([[ "$previous" == local ]] && echo "local core" || echo "published core")."
+  fi
+  echo "$current" > "$(core_source_state_file)"
+}
+
 # chronyd leaves a pidfile behind in the container filesystem; a plain restart re-reads it
 # and the container ends up in a restart loop. Only a recreate clears it.
 recreate_ntp_if_stuck() {
@@ -59,6 +89,7 @@ wait_for_containers() {
 
 phase_stack() {
   section "Container stack"
+  verify_core_source_matches_database
   log "stopping the existing containers"
   compose down --remove-orphans > "${RUN_DIR}/compose-down.log" 2>&1 \
     || die "compose down failed — see ${RUN_DIR}/compose-down.log"
@@ -68,7 +99,9 @@ phase_stack() {
   log "starting: ${COMPOSE_PROFILES[*]}"
   compose up -d --force-recreate > "${RUN_DIR}/compose-up.log" 2>&1 \
     || die "compose up failed — see ${RUN_DIR}/compose-up.log"
-  wait_for_containers 300
+  # A containerised Core has to run its migrations and reach readiness before provisioning,
+  # and on a wiped database that takes considerably longer than a connector coming up.
+  wait_for_containers "$(core_in_container && echo 600 || echo 300)"
 }
 
 # Stops Core and the containers; the database bind mount is left in place.
