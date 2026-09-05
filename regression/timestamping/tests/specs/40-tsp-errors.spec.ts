@@ -146,6 +146,92 @@ test.describe('TSP error paths', () => {
     );
   });
 
+  test('a Basic credential whose mapped user is disabled stops issuing and recovers when re-enabled', async ({
+    admin,
+    tsp,
+    env,
+  }) => {
+    // Deprovisioning a mapped user must revoke its credential. The credential itself stays
+    // valid — only the account behind it changes — and Core's positive verification cache
+    // documents that it does not re-check the mapped user's liveness, so this is the one path
+    // where a stale credential could keep issuing. It must not.
+    const username = 'regression-deprovisioned';
+    const password = 'deprovisioned-changeme';
+
+    const users = await admin.get<Array<{ uuid: string; username: string }>>('/v1/users');
+    let user = users.find((candidate) => candidate.username === username);
+    if (!user) {
+      user = await admin.post<{ uuid: string; username: string }>('/v1/users', {
+        username,
+        firstName: 'Regression',
+        lastName: 'Deprovisioned',
+        email: 'regression-deprovisioned@example.com',
+        enabled: true,
+      });
+    }
+    // The user carries the same timestamping role as the provisioned caller, so the baseline
+    // below issues and the later refusal can only be about the account being disabled. Setting
+    // the whole role list is deliberate: PUT /v1/users/{uuid}/roles/{roleUuid} declares
+    // consumes=application/json but takes no request body, so a body-less call carries no
+    // Content-Type and Core answers 500. This endpoint also evicts the authentication cache,
+    // so the grant is live on the very next request.
+    await admin.patch(`/v1/users/${user.uuid}/roles`, [env.role.uuid]);
+    // A previous run may have left the account disabled; enable is idempotent.
+    await admin.raw('PATCH', `/v1/users/${user.uuid}/enable`);
+
+    const tspProfileUuid = env.sets.nonQualified.tspProfile.uuid;
+    const credentials = await admin.get<Array<{ username: string }>>(`/v1/tspProfiles/${tspProfileUuid}/basicCredentials`);
+    if (!credentials.some((credential) => credential.username === username)) {
+      await admin.post(`/v1/tspProfiles/${tspProfileUuid}/basicCredentials`, {
+        username,
+        password,
+        mappedUserUuid: user.uuid,
+      });
+    }
+
+    const profileName = env.sets.nonQualified.signingProfile.name;
+    const baseline = await requestTimestamp(tsp, {
+      label: 'error-deprovisioned-user-baseline',
+      profileName,
+      username,
+      password,
+    });
+    expect(baseline.reply?.granted, `the credential issues before the user is disabled: ${describeOutcome(baseline)}`).toBe(
+      true,
+    );
+
+    let refused: TimestampOutcome;
+    await admin.raw('PATCH', `/v1/users/${user.uuid}/disable`);
+    try {
+      refused = await requestTimestamp(tsp, {
+        label: 'error-deprovisioned-user',
+        profileName,
+        username,
+        password,
+      });
+    } finally {
+      await admin.raw('PATCH', `/v1/users/${user.uuid}/enable`);
+    }
+
+    // The refusal is an authentication failure, not an authorization one, and it happens before
+    // the signing engine is reached. The auth service throws UnauthorizedException for a
+    // disabled user (and for an unknown UUID), so the user-proxy call fails rather than
+    // resolving to an anonymous principal; TspSecurityContextWriter.authenticateAsUser catches
+    // that, clears the context and returns false, and TspAuthenticationFilter writes the
+    // challenge. That is why this is a clean 401 and not the generic not-found rejection an
+    // authorization denial produces.
+    expect(refused.httpStatus, describeOutcome(refused)).toBe(401);
+    expect(refused.responseLength, 'no token is returned').toBe(0);
+
+    const recovered = await requestTimestamp(tsp, {
+      label: 'error-deprovisioned-user-recovered',
+      profileName,
+      username,
+      password,
+    });
+    expect(recovered.reply?.granted, `re-enabling the user restores issuance: ${describeOutcome(recovered)}`).toBe(true);
+  });
+
   test('a JSON content type is refused without issuing a token', async ({ tsp, env }) => {
     const outcome = await requestTimestamp(tsp, {
       label: 'error-wrong-content-type',
