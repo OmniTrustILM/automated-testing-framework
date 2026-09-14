@@ -107,9 +107,13 @@ export async function ensureConnectorRegistered(
     options: { name: string; url: string },
 ): Promise<EnsureConnectorResult> {
     const connectors = await getAllConnectors(request);
-    const existing = connectors.find(c => c.name === options.name);
+    // Match by name first, then fall back to URL: Core enforces uniqueness on URL + version,
+    // not on name, so a connector registered under a different name at the same URL still
+    // makes a register call fail with 409. Matching by name alone breaks idempotency.
+    const existing = connectors.find(c => c.name === options.name)
+        ?? connectors.find(c => c.url === options.url);
     if (existing) {
-        logger.info(`Connector "${options.name}" already registered (uuid: ${existing.uuid})`);
+        logger.info(`Connector "${existing.name}" already registered at ${existing.url} (uuid: ${existing.uuid})`);
         return { connector: existing, registered: false };
     }
     logger.info(`Connector "${options.name}" not registered — registering`);
