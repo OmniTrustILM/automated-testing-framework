@@ -18,4 +18,5 @@ export const CERTIFICATE_DETAILS_TABS = [
     'Event History',
     'Flow',
     'Related Certificates',
+    'Comments',
 ];
