@@ -114,6 +114,13 @@ export async function ensureConnectorRegistered(
         ?? connectors.find(c => c.url === options.url);
     if (existing) {
         logger.info(`Connector "${existing.name}" already registered at ${existing.url} (uuid: ${existing.uuid})`);
+        // Found is not the same as usable: a freshly rebuilt environment can carry connectors
+        // registered by bootstrap but left in WAITING_FOR_APPROVAL, and Core refuses to use them
+        // ("Connector has invalid status"). Approve here too, not only on the register path.
+        if (existing.status === 'waitingForApproval' || existing.status === 'WAITING_FOR_APPROVAL') {
+            logger.info(`Connector "${existing.name}" is awaiting approval — approving`);
+            await approveConnector(request, existing.uuid);
+        }
         return { connector: existing, registered: false };
     }
     logger.info(`Connector "${options.name}" not registered — registering`);
