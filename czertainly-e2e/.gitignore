@@ -2,3 +2,7 @@ node_modules
 playwright-report
 test-results
 .env
+
+# Visual baseline screenshots are captured per environment and may show real instance data.
+# Regenerate with `npm run visual:baseline`; never commit them to this public repository.
+tests/visual/__baseline__/
