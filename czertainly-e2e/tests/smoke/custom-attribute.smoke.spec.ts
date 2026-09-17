@@ -118,6 +118,8 @@ test.describe('@smoke custom-attribute', () => {
             logger.info(`Created custom attribute: ${attrName}`);
         });
 
+        let certDetailUuid = '';
+
         await test.step('Navigate to cert detail and open Attributes tab', async () => {
             await certPage.goToList();
             await tablePage.applyFilter({
@@ -129,6 +131,8 @@ test.describe('@smoke custom-attribute', () => {
             const firstRowLink = tablePage.rows.first().getByRole('link').first();
             await firstRowLink.click();
             await expect(page).toHaveURL(/\/certificates\/detail\//);
+            certDetailUuid = new URL(page.url()).hash.split('/').pop() ?? '';
+            expect(certDetailUuid, 'the detail URL carries the certificate uuid').not.toBe('');
             await certPage.openTab('Attributes');
         });
 
@@ -158,15 +162,12 @@ test.describe('@smoke custom-attribute', () => {
         });
 
         await test.step('Verify cascade: value gone from cert Attributes tab', async () => {
-            await certPage.goToList();
-            await tablePage.applyFilter({
-                group: 'Property',
-                field: 'Common Name',
-                condition: 'contains',
-                value: cn,
-            });
-            const firstRowLink = tablePage.rows.first().getByRole('link').first();
-            await firstRowLink.click();
+            // Straight to the certificate whose detail page this test already opened. Going back
+            // through the list would re-apply a filter that is still there from the first visit,
+            // which the platform rejects with "a filter with the same name and condition already
+            // exists" - an error the test used to provoke on every run and never look at. The
+            // filter itself is exercised above; getting here a second time is only transport.
+            await certPage.goToDetail(certDetailUuid);
             await certPage.openTab('Attributes');
             const row = certPage.main.locator('tr').filter({ hasText: attrName });
             await expect(row).not.toBeVisible();
