@@ -13,7 +13,9 @@
  *      7. afterEach — API cleanup if test fails ahead of batch delete
  */
 
-import { test, expect, loginAsSmokeUser, getAuthenticatedApiContext } from '../../fixtures/testFixtures';
+import { recordCleanupFailure, statusOf } from '../../utils/cleanupLedger';
+import {
+test, expect, loginAsSmokeUser, getAuthenticatedApiContext } from '../../fixtures/testFixtures';
 import { CertificatePage } from '../../pages/CertificatePage';
 import { TablePage } from '../../pages/TablePage';
 import { Logger } from '../../utils/Logger';
@@ -44,6 +46,7 @@ test.describe('@smoke upload-cert', () => {
                         logger.info(`Cleaned up leftover cert: ${fingerprint} → ${found.uuid}`);
                     }
                 } catch (e) {
+                    recordCleanupFailure({ resource: 'certificate', name: fingerprint, status: statusOf(e), message: String(e) });
                     logger.warn(`Cleanup failed for fingerprint ${fingerprint}: ${e}`);
                 }
             }

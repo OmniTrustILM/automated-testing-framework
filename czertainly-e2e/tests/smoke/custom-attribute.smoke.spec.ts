@@ -19,6 +19,7 @@
  *  12. afterEach: best-effort API cleanup — delete cert + delete definition if it still exists
 */
 
+import { recordCleanupFailure, statusOf } from '../../utils/cleanupLedger';
 import { test, expect, loginAsSmokeUser, getAuthenticatedApiContext } from '../../fixtures/testFixtures';
 import { CertificatePage } from '../../pages/CertificatePage';
 import { TablePage } from '../../pages/TablePage';
@@ -54,6 +55,7 @@ test.describe('@smoke custom-attribute', () => {
                         logger.info(`Cleaned up leftover cert: ${uploadedFingerprint}`);
                     }
                 } catch (e) {
+                    recordCleanupFailure({ resource: 'certificate', name: uploadedFingerprint, status: statusOf(e), message: String(e) });
                     logger.warn(`Cert cleanup failed for ${uploadedFingerprint}: ${e}`);
                 }
             }
@@ -67,6 +69,7 @@ test.describe('@smoke custom-attribute', () => {
                         logger.info(`Cleaned up leftover custom attribute: ${createdAttributeName}`);
                     }
                 } catch (e) {
+                    recordCleanupFailure({ resource: 'customAttribute', name: createdAttributeName, status: statusOf(e), message: String(e) });
                     logger.warn(`Custom attribute cleanup failed for ${createdAttributeName}: ${e}`);
                 }
             }

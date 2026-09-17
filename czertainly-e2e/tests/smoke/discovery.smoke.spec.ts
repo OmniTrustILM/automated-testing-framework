@@ -1,3 +1,4 @@
+import { recordCleanupFailure } from '../../utils/cleanupLedger';
 import { test, expect, loginAsSmokeUser, getAuthenticatedApiContext } from '../../fixtures/testFixtures';
 import { Navigation } from '../../pages/Navigation';
 import { TablePage } from '../../pages/TablePage';
@@ -24,6 +25,7 @@ test.describe('@smoke discovery', () => {
         await tablePage.visit(url);
         await tablePage.bulkDelete(name);
       } catch (e) {
+        recordCleanupFailure({ resource: name.toLowerCase(), message: String(e) });
         logger.warn(`Failed to cleanup ${name}:`, e);
       }
     }

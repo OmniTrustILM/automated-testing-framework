@@ -48,3 +48,35 @@ CRDs should be prepared using Testkube tools and documentation and then added to
 Tests are organized as follows:
 - `test` folder - contains test CRDs
 - `test-suite` folder - contains the test-suite CRDs
+
+## Cleanup is part of the test result
+
+Anything a spec or `globalSetup` creates must be removed again, and a run that fails to remove it
+does not pass. Cleanup failures are not warnings to be skimmed past: an object left in a shared
+environment gets in the way of everyone using it, and a 500 answered by the platform during a
+delete is a defect that would otherwise never reach anyone, because the run was green.
+
+Failures are collected in `.smoke-cleanup.jsonl` — a file rather than memory, because specs run in
+worker processes and `globalTeardown` runs in the main one. At the end of the run `globalTeardown`
+prints one summary naming every object left behind, with its resource type, uuid, name and the
+status the platform returned, and then fails the run.
+
+When writing a new spec, record cleanup failures instead of only logging them:
+
+```ts
+import { recordCleanupFailure, statusOf } from '../../utils/cleanupLedger';
+
+try {
+    await deleteThing(api, uuid);
+} catch (e) {
+    recordCleanupFailure({ resource: 'thing', uuid, status: statusOf(e), message: String(e) });
+}
+```
+
+For a chain of objects, use `attemptCleanup`, which retries once — deleting something immediately
+after the operation that changed it can lose a race the platform wins a moment later — and accepts
+`blockedBy`, so that an object still held by one further down the chain is reported as a
+consequence rather than as a second cause.
+
+Iterative local runs started with `SMOKE_PERSIST=true` skip teardown entirely and are expected to
+leave their fixtures in place; nothing here applies to them.
