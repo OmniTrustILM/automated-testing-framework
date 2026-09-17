@@ -1,0 +1,46 @@
+# Fast checks on the framework's own code. No environment, no secrets, no browser: these must stay
+# quick and green so that a red run means something, which is why the smoke suite - which needs a
+# live platform and credentials - is not run from here.
+name: Framework checks
+
+on:
+  pull_request:
+    paths:
+      - 'czertainly-e2e/**'
+      - '.github/workflows/framework-checks.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'czertainly-e2e/**'
+      - '.github/workflows/framework-checks.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Unit tests and spec parsing
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: czertainly-e2e
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: czertainly-e2e/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      # Every spec is imported and listed. This is what catches a broken import or a syntax error
+      # in a suite that cannot otherwise be exercised here, because running it needs a platform.
+      - name: All specs parse
+        run: npx playwright test --list
