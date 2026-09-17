@@ -40,7 +40,7 @@ jobs:
           # echo "EOF" >> $GITHUB_ENV
 
       - name: Trigger test workflow for ${{ inputs.test-folder }}
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           configuration: ${{ env.configuration }}
         with:
