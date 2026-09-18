@@ -115,9 +115,16 @@ test.describe('@smoke upload-cert', () => {
 
         await test.step('Batch delete remaining 2 certs → verify all gone', async () => {
             await tablePage.bulkDelete('Certificates');
-            // After delete, no rows should contain our CN prefix
-            const ourRows = tablePage.rows.filter({ hasText: cnPrefix });
-            await expect(ourRows).toHaveCount(0, { timeout: 10000 });
+
+            // The deletion is asynchronous - the toast says the operation was *initiated* - and the
+            // list does not always pick the result up on its own, the same way it does not pick up a
+            // newly uploaded certificate. Reloading between attempts is what makes this wait for the
+            // platform rather than for the page to refresh itself; a delete that genuinely failed
+            // still fails here, because the rows never go away however often the list is re-read.
+            await expect(async () => {
+                await page.reload();
+                await expect(tablePage.rows.filter({ hasText: cnPrefix })).toHaveCount(0, { timeout: 3000 });
+            }).toPass({ timeout: 30000 });
         });
     });
 });
