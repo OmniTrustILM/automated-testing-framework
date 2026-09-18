@@ -1,0 +1,82 @@
+# Brings the QA preview environment up to the current frontend main, early enough that the
+# scheduled Testkube smoke run at 07:00 exercises today's build rather than yesterday's.
+#
+# The preview environment is built from the branch behind the long-lived "do not merge" pull
+# request that carries the `preview` label: pushing to that branch is what triggers a redeploy.
+# The branch holds no work of its own - only an empty commit, so that the pull request is not
+# empty - which is why it is reset to main rather than rebased. A rebase would drop the empty
+# commit and leave the pull request with nothing in it.
+name: Refresh preview environment
+
+on:
+  schedule:
+    # 03:00 UTC on weekdays - 05:00 in Prague through the summer, 04:00 through the winter.
+    # Either way it leaves the rollout, which takes roughly half an hour, a wide margin before
+    # the smoke run.
+    - cron: '0 3 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: refresh-preview
+  cancel-in-progress: false
+
+env:
+  FE_REPO: OmniTrustILM/fe-administrator
+  PREVIEW_BRANCH: qa/automation-env
+
+jobs:
+  refresh:
+    name: Sync the preview branch and wait for the image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the frontend repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.FE_REPO }}
+          ref: ${{ env.PREVIEW_BRANCH }}
+          token: ${{ secrets.FE_REPO_PAT }}
+          fetch-depth: 0
+
+      - name: Skip when the branch already carries today's main
+        id: compare
+        run: |
+          git fetch origin main
+          behind=$(git rev-list --count HEAD..origin/main)
+          echo "behind=$behind" >> "$GITHUB_OUTPUT"
+          echo "The preview branch is $behind commit(s) behind main."
+
+      - name: Reset the branch onto main and trigger a redeploy
+        if: steps.compare.outputs.behind != '0'
+        id: push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git reset --hard origin/main
+          git commit --allow-empty -m "chore: refresh preview environment for the scheduled smoke run"
+          git push --force-with-lease origin HEAD:${{ env.PREVIEW_BRANCH }}
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # "Prepare preview" reports success while the image build runs elsewhere and can still fail,
+      # which leaves the environment serving the previous bundle with nothing red to show for it.
+      # The image build reports through a check on the head commit, so that is what decides here.
+      - name: Wait for the preview image to be built
+        if: steps.compare.outputs.behind != '0'
+        env:
+          GH_TOKEN: ${{ secrets.FE_REPO_PAT }}
+          SHA: ${{ steps.push.outputs.sha }}
+        run: |
+          for attempt in $(seq 1 60); do
+            conclusion=$(gh api "repos/$FE_REPO/commits/$SHA/check-runs" \
+              --jq '.check_runs[] | select(.name == "Docker preview build") | .conclusion // "pending"' | head -1)
+            case "$conclusion" in
+              success)  echo "Preview image built."; exit 0 ;;
+              ""|pending|null) echo "attempt $attempt: still building"; sleep 30 ;;
+              *) echo "::error::Preview image build finished as '$conclusion'. The environment is still serving the previous build."; exit 1 ;;
+            esac
+          done
+          echo "::error::The preview image build did not finish within 30 minutes."
+          exit 1
