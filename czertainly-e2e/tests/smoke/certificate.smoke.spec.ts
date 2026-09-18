@@ -1,3 +1,4 @@
+import { recordCleanupFailure, statusOf } from '../../utils/cleanupLedger';
 import {
     test,
     loginAsSmokeUser, getAuthenticatedApiContext,
@@ -44,6 +45,9 @@ test.describe('@smoke certificate', () => {
                 await api.dispose();
             }
         } catch (e) {
+            // Recorded rather than only logged: globalTeardown reports every object left behind
+            // and fails the run, so a leak cannot hide behind a green result.
+            recordCleanupFailure({ resource: 'certificate', uuid: certUuid, status: statusOf(e), message: String(e) });
             logger.warn(`Cleanup failed for cert ${certUuid}: ${e}`);
         }
     });

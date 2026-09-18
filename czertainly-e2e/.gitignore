@@ -6,3 +6,7 @@ test-results
 # Visual baseline screenshots are captured per environment and may show real instance data.
 # Regenerate with `npm run visual:baseline`; never commit them to this public repository.
 tests/visual/__baseline__/
+
+# Cleanup ledger and provisioning state, written per run.
+.smoke-cleanup.jsonl
+.smoke-state.json

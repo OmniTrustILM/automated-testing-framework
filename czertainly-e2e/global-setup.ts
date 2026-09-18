@@ -26,12 +26,16 @@ import * as credentialUtils from './utils/credentialUtils';
 import * as authorityUtils from './utils/authorityUtils';
 import * as raProfileUtils from './utils/raProfileUtils';
 import { readSmokeState, writeSmokeState } from './utils/smokeState';
+import { clearCleanupFailures } from './utils/cleanupLedger';
 import { Logger } from './utils/Logger';
 
 const logger = new Logger('GlobalSetup');
 
 export default async function globalSetup(_config: FullConfig): Promise<void> {
     const env = loadEnv();
+
+    // Start from an empty ledger: a leftover from a previous run would otherwise fail this one.
+    clearCleanupFailures();
 
     // Persistent mode: if state already exists, reuse it and skip provisioning.
     if (env.smokePersist && readSmokeState()) {
