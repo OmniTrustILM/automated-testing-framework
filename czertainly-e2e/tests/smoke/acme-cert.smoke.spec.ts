@@ -24,10 +24,23 @@ import { Logger } from '../../utils/Logger';
 
 const logger = new Logger('AcmeSmokeTest');
 
-// TODO: enable when Testkube ServiceAccount has RBAC to create Issuer/Certificate 
-// in `testkube-runner` namespace.
+/**
+ * The reconnaissance is a diagnostic, not part of the daily smoke run: it answers "what may this
+ * service account do" rather than "does the platform work", and its output is a wall of verdicts
+ * nobody needs every morning. Set SMOKE_RECON=true to run it once and read the answer.
+ *
+ * It only means anything inside the cluster. `loadFromCluster()` does not throw when there is no
+ * service account to load - it returns a client that quietly fails later - so running it from a
+ * laptop would produce confident nonsense rather than an error. The guard below refuses that.
+ *
+ * Every service account may ask what it is allowed to do, so this needs no permission of its own:
+ * the answer it gives is exactly the answer SMK-005 is waiting for.
+ */
 test.describe('@smoke acme', () => {
-    test.skip('SMK-005: reconnaissance — what is available in the cluster', async ({ env }) => {
+    test('SMK-005: reconnaissance — what is available in the cluster', async ({ env }) => {
+        test.skip(process.env.SMOKE_RECON !== 'true', 'Diagnostic — set SMOKE_RECON=true to run it.');
+        test.skip(!process.env.KUBERNETES_SERVICE_HOST, 'Only meaningful inside the cluster, where a service account exists.');
+
         await test.step('Check permissions via SelfSubjectAccessReview', async () => {
             const authApi = getAuthorizationApi();
 
