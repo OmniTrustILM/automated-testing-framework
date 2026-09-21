@@ -8,12 +8,20 @@ export interface NamedUuid {
 
 export interface TsaSet {
   qualified: boolean;
+  /** KeyAlgorithm code of the signing key: `RSA` or `ML-DSA`. */
+  keyAlgorithm?: string;
   policyOid: string;
   key: NamedUuid;
   raProfile: NamedUuid;
   certificate: { commonName: string; uuid: string };
   tspProfile: NamedUuid;
   signingProfile: NamedUuid;
+}
+
+export const MLDSA = 'ML-DSA';
+
+export function isMldsa(set: TsaSet): boolean {
+  return set.keyAlgorithm === MLDSA;
 }
 
 export interface Provisioning {
@@ -43,7 +51,13 @@ export interface Provisioning {
     ntpServers: string[];
     maxClockDrift: string;
   };
-  sets: { nonQualified: TsaSet; qualified: TsaSet };
+  sets: {
+    nonQualified: TsaSet;
+    qualified: TsaSet;
+    /** Present only when the environment was provisioned with ML-DSA coverage. */
+    mldsaNonQualified?: TsaSet;
+    mldsaQualified?: TsaSet;
+  };
 }
 
 function required(name: string): string {
@@ -68,6 +82,53 @@ export function provisioning(): Provisioning {
     cachedProvisioning = JSON.parse(fs.readFileSync(file, 'utf8')) as Provisioning;
   }
   return cachedProvisioning;
+}
+
+/**
+ * The provisioned TSA sets, labelled for test titles. The ML-DSA entries are absent on an
+ * environment provisioned without them, so specs iterate over what exists rather than
+ * failing on a shape they cannot influence.
+ */
+export function provisionedSets(): Array<{ label: string; set: TsaSet }> {
+  const sets = provisioning().sets;
+  const candidates: Array<[string, TsaSet | undefined]> = [
+    ['non-qualified', sets.nonQualified],
+    ['qualified', sets.qualified],
+    ['ML-DSA non-qualified', sets.mldsaNonQualified],
+    ['ML-DSA qualified', sets.mldsaQualified],
+  ];
+  return candidates
+    .filter((entry): entry is [string, TsaSet] => entry[1] !== undefined)
+    .map(([label, set]) => ({ label, set }));
+}
+
+export interface TsaFamily {
+  /** Signing key algorithm the pair shares, used in test titles. */
+  label: string;
+  nonQualified: TsaSet;
+  qualified: TsaSet;
+}
+
+/**
+ * The provisioned sets grouped into qualified/non-qualified pairs of one key algorithm.
+ *
+ * The qualified/non-qualified distinction is a property of a pair: the assertions about it
+ * compare two profiles that differ in nothing else, so they have to compare within a family.
+ * Comparing an RSA token against an ML-DSA one would conflate the two axes.
+ */
+export function provisionedFamilies(): TsaFamily[] {
+  const sets = provisioning().sets;
+  const families: TsaFamily[] = [
+    { label: 'RSA', nonQualified: sets.nonQualified, qualified: sets.qualified },
+  ];
+  if (sets.mldsaNonQualified && sets.mldsaQualified) {
+    families.push({
+      label: MLDSA,
+      nonQualified: sets.mldsaNonQualified,
+      qualified: sets.mldsaQualified,
+    });
+  }
+  return families;
 }
 
 export function adminCertificateHeader(): string {

@@ -1,5 +1,5 @@
 import { CertificateDetail, SigningProfileDetail } from '../utils/adminApi';
-import { TsaSet } from '../utils/env';
+import { provisionedFamilies, provisionedSets } from '../utils/env';
 import { expect, test } from '../utils/fixtures';
 
 /**
@@ -8,14 +8,8 @@ import { expect, test } from '../utils/fixtures';
  * much later as an opaque in-band rejection.
  */
 test.describe('provisioning', () => {
-  const sets: Array<[string, (set: { nonQualified: TsaSet; qualified: TsaSet }) => TsaSet]> = [
-    ['non-qualified', (all) => all.nonQualified],
-    ['qualified', (all) => all.qualified],
-  ];
-
-  for (const [label, pick] of sets) {
-    test(`the ${label} signing profile is enabled, timestamping, and bound to its certificate`, async ({ admin, env }) => {
-      const set = pick(env.sets);
+  for (const { label, set } of provisionedSets()) {
+    test(`the ${label} signing profile is enabled, timestamping, and bound to its certificate`, async ({ admin }) => {
       const profile = await admin.getSigningProfile(set.signingProfile.uuid);
 
       expect(profile.name, 'signing profile name').toBe(set.signingProfile.name);
@@ -36,8 +30,7 @@ test.describe('provisioning', () => {
       expect(protocols, `TSP is enabled on '${set.signingProfile.name}'`).toContain('tsp');
     });
 
-    test(`the ${label} TSP profile is enabled and linked back to its signing profile`, async ({ admin, env }) => {
-      const set = pick(env.sets);
+    test(`the ${label} TSP profile is enabled and linked back to its signing profile`, async ({ admin }) => {
       const tspProfile = await admin.getTspProfile(set.tspProfile.uuid);
 
       expect(tspProfile.name, 'TSP profile name').toBe(set.tspProfile.name);
@@ -49,8 +42,7 @@ test.describe('provisioning', () => {
       expect(linked?.uuid, 'TSP profile points at the signing profile').toBe(set.signingProfile.uuid);
     });
 
-    test(`the ${label} TSA certificate validates against a trusted chain`, async ({ admin, env }) => {
-      const set = pick(env.sets);
+    test(`the ${label} TSA certificate validates against a trusted chain`, async ({ admin }) => {
       const certificate: CertificateDetail = await admin.getCertificate(set.certificate.uuid);
 
       expect(certificate.commonName, 'certificate common name').toBe(set.certificate.commonName);
@@ -70,18 +62,20 @@ test.describe('provisioning', () => {
     });
   }
 
-  test('the qualified profile is the only one wired to a time-quality configuration', async ({ admin, env }) => {
-    const qualified = await admin.getSigningProfile(env.sets.qualified.signingProfile.uuid);
-    const nonQualified = await admin.getSigningProfile(env.sets.nonQualified.signingProfile.uuid);
+  for (const family of provisionedFamilies()) {
+    test(`the ${family.label} qualified profile is the one wired to a time-quality configuration`, async ({ admin, env }) => {
+      const qualified = await admin.getSigningProfile(family.qualified.signingProfile.uuid);
+      const nonQualified = await admin.getSigningProfile(family.nonQualified.signingProfile.uuid);
 
-    const qualifiedWorkflow = qualified.workflow as Record<string, { uuid?: string; name?: string } | undefined>;
-    const nonQualifiedWorkflow = nonQualified.workflow as Record<string, unknown>;
+      const qualifiedWorkflow = qualified.workflow as Record<string, { uuid?: string; name?: string } | undefined>;
+      const nonQualifiedWorkflow = nonQualified.workflow as Record<string, unknown>;
 
-    expect(qualifiedWorkflow.timeQualityConfiguration?.uuid, 'qualified profile time-quality configuration').toBe(
-      env.timeQuality.uuid,
-    );
-    expect(nonQualifiedWorkflow.timeQualityConfiguration ?? null, 'non-qualified profile has none').toBeNull();
-  });
+      expect(qualifiedWorkflow.timeQualityConfiguration?.uuid, 'qualified profile time-quality configuration').toBe(
+        env.timeQuality.uuid,
+      );
+      expect(nonQualifiedWorkflow.timeQualityConfiguration ?? null, 'non-qualified profile has none').toBeNull();
+    });
+  }
 
   test('the time-quality configuration matches what was provisioned', async ({ admin, env }) => {
     const configuration = await admin.get<{ uuid: string; name: string; accuracy: string }>(
@@ -100,7 +94,7 @@ test.describe('provisioning', () => {
     expect(roleUuids, `user '${env.mappedUser.username}' has role '${env.role.name}'`).toContain(env.role.uuid);
   });
 
-  test('the timestamping role grants the timestamp action on both TSP profiles', async ({ admin, env }) => {
+  test('the timestamping role grants the timestamp action on every TSP profile', async ({ admin, env }) => {
     const permissions = await admin.get<{
       resources?: Array<{
         name: string;
@@ -118,10 +112,10 @@ test.describe('provisioning', () => {
       .map((object) => object.uuid);
     const allowsEverything = tspResource!.allowAllActions === true || (tspResource!.actions ?? []).includes('timestamp');
 
-    for (const set of [env.sets.nonQualified, env.sets.qualified]) {
+    for (const { label, set } of provisionedSets()) {
       expect(
         allowsEverything || grantedUuids.includes(set.tspProfile.uuid),
-        `role grants 'timestamp' on TSP profile '${set.tspProfile.name}'`,
+        `role grants 'timestamp' on the ${label} TSP profile '${set.tspProfile.name}'`,
       ).toBe(true);
     }
   });

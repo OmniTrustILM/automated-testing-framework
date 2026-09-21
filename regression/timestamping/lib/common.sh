@@ -276,6 +276,17 @@ load_config() {
   DB_HOST_PORT="${DB_HOST_PORT:-5432}"
   DB_NAME="${DB_NAME:-ilm}"
 
+  # ML-DSA coverage. The post-quantum CA is a separate EJBCA CA, so it needs its own name;
+  # the TSA end-entity and certificate profiles are shared with the RSA sets, which is what
+  # keeps the signing key algorithm the only difference between the two families.
+  MLDSA_ENABLED="${MLDSA_ENABLED:-true}"
+  MLDSA_EJBCA_CA="${MLDSA_EJBCA_CA:-MLDSA}"
+  MLDSA_NAME_BASE="${MLDSA_NAME_BASE:-tsa-mldsa}"
+  # Certificates issued by the post-quantum CA carry no CA Issuers URI in their AIA, so the
+  # issuer cannot be discovered from the leaf. EJBCA's certificate distribution servlet is
+  # the fallback the repair uses instead.
+  EJBCA_PUBLIC_WEB_BASE="${EJBCA_PUBLIC_WEB_BASE:-https://ejbca.3key.company/ejbca}"
+
   apply_component_sources
   resolve_core_endpoints
 

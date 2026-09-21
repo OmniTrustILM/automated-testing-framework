@@ -1,11 +1,13 @@
-import { TsaSet } from '../utils/env';
+import { isMldsa, provisionedSets, TsaSet } from '../utils/env';
 import { expect, test } from '../utils/fixtures';
 import {
   certificateSerial,
   Digest,
   parseTimestampQuery,
   tokenSignerCertificate,
+  verifyMldsaTimestamp,
   verifyTimestamp,
+  VerificationResult,
 } from '../utils/openssl';
 import { describeOutcome, requestTimestamp, TimestampOutcome, TspRoute } from '../utils/tsp';
 
@@ -23,12 +25,33 @@ test.describe('TSP happy path', () => {
     expect(outcome.reply?.nonceHex, 'response echoes the request nonce exactly').toBe(query.nonceHex);
   }
 
-  for (const qualified of [false, true]) {
-    const label = qualified ? 'qualified' : 'non-qualified';
+  /**
+   * `openssl ts -verify` cannot check an ML-DSA token — OpenSSL refuses ML-DSA through the
+   * digest-then-sign interface PKCS#7 uses — so those tokens are verified step by step
+   * instead. Both paths assert the same thing: trusted chain, valid signature, and a
+   * signature that actually covers the TSTInfo returned.
+   */
+  function verify(
+    set: TsaSet,
+    outcome: TimestampOutcome,
+    trust: { caFile: string; untrustedFile?: string },
+    options: { dataPath?: string; queryPath?: string } = {},
+  ): VerificationResult {
+    if (isMldsa(set)) {
+      return verifyMldsaTimestamp(outcome.responsePath!, trust.caFile, outcome.dir, {
+        untrustedFile: trust.untrustedFile,
+      });
+    }
+    return verifyTimestamp(outcome.responsePath!, trust.caFile, {
+      ...options,
+      untrustedFile: trust.untrustedFile,
+    });
+  }
 
+  for (const { label, set: provisioned } of provisionedSets()) {
     for (const route of routes) {
       test(`${label} profile issues a verifiable token over the ${route}-profile route`, async ({ admin, tsp, env }) => {
-        const set: TsaSet = qualified ? env.sets.qualified : env.sets.nonQualified;
+        const set = provisioned;
         const profileName = route === 'tsp' ? set.tspProfile.name : set.signingProfile.name;
 
         const outcome = await requestTimestamp(tsp, {
@@ -45,16 +68,13 @@ test.describe('TSP happy path', () => {
         expect(outcome.reply?.serialNumberHex, 'token serial number').toBeTruthy();
 
         const trust = await admin.certificateTrustFiles(set.certificate.uuid, `chain-${label}`);
-        const verification = verifyTimestamp(outcome.responsePath!, trust.caFile, {
-          queryPath: outcome.queryPath,
-          untrustedFile: trust.untrustedFile,
-        });
-        expect(verification.ok, `openssl ts -verify said: ${verification.output}`).toBe(true);
+        const verification = verify(set, outcome, trust, { queryPath: outcome.queryPath });
+        expect(verification.ok, `token verification said: ${verification.output}`).toBe(true);
       });
     }
 
     test(`${label} token is signed by the provisioned TSA certificate`, async ({ admin, tsp, env }) => {
-      const set: TsaSet = qualified ? env.sets.qualified : env.sets.nonQualified;
+      const set = provisioned;
       const outcome = await requestTimestamp(tsp, {
         label: `signer-${label}`,
         profileName: set.signingProfile.name,
