@@ -138,11 +138,51 @@ and the run manifest records `dirty: true` next to the commit that was actually 
 |---|---|
 | `00-environment` | Core health, container health, connector status and health, Core's subscription to the time-quality exchange |
 | `10-provisioning` | signing and TSP profiles enabled and mutually linked, certificates validating against a complete trusted chain, time-quality wiring, mapped user, object-scoped `timestamp` grants |
-| `20-tsp-happy-path` | both profiles over both routes, SHA-256/384/512, exact nonce echo and certReq variants, signature verification with separated trust anchors and intermediates, signer identity, genTime, concurrent issuance with unique serials |
-| `30-token-structure` | qualified vs non-qualified differences — `qcStatements`, accuracy equal to the time-quality configuration, policy OID — including a guard that the two profiles must not produce identical tokens |
+| `20-tsp-happy-path` | every provisioned set over both routes, SHA-256/384/512, exact nonce echo and certReq variants, signature verification with separated trust anchors and intermediates, signer identity, genTime, concurrent issuance with unique serials |
+| `30-token-structure` | qualified vs non-qualified differences within each key algorithm — `qcStatements`, accuracy equal to the time-quality configuration, policy OID — including a guard that the two profiles must not produce identical tokens |
 | `40-tsp-errors` | authentication failures, unknown and disabled profiles, malformed requests, an unprivileged user, digest and policy handling, and the invariants that errors never become 5xx and never leak internals |
-| `50-time-quality` | `@slow`: losing NTP must stop qualified timestamps while plain ones keep working, and both must recover |
+| `50-time-quality` | `@slow`: losing NTP must stop every qualified profile while plain ones keep working, and all must recover |
 | `60-content-signing-canary` | timestamps land in the signing-record subsystem with the token serial number, record policy stays coherent, the timestamping, content-signing and raw-signing workflow types stay published, and the capability gate still refuses a content-signing profile built on the timestamping connector without disturbing timestamping |
+
+## ML-DSA
+
+Provisioning runs twice: once for the RSA sets, once for an ML-DSA pair issued under EJBCA's
+post-quantum `MLDSA` CA. The two families share the `DemoTSAEndEntityProfile` and the two TSA
+certificate profiles, so the signing key algorithm is the only deliberate difference between
+them — anything else that diverges is a finding.
+
+`10-provisioning` and `20-tsp-happy-path` iterate over every set the summary reports, so a run
+against an environment without ML-DSA simply has fewer tests rather than failures. Turn the
+family off with `MLDSA_ENABLED=false`. The parameter set is fixed at pure ML-DSA-65, which is
+what the cryptography provider and the CA support.
+
+Qualified timestamps work the same on both families. The qualified set is issued under
+`DemoTSAQCEECertificateProfile`, so its ML-DSA certificate carries `id-etsi-qcs-QcCompliance`
+and the `qtst` statement, which is what Core requires before it accepts a profile with
+`qualifiedTimestamp`. `30-token-structure` therefore runs per family rather than once: a
+qualified ML-DSA token has to carry the same `qcStatements`, the same accuracy from the
+time-quality configuration and its own policy OID, because the signing key algorithm must not
+reach the structure of what is signed. `50-time-quality` checks every qualified profile inside
+the one NTP outage it causes — the gate belongs to the shared time-quality configuration, so a
+second outage would prove nothing and cost another few minutes.
+
+ML-DSA provisioning is additional coverage, not the subject of the suite: when it fails the run
+says so and continues with the RSA sets alone.
+
+Two things differ from the RSA path and are handled by the runner:
+
+- **The post-quantum CA is not discoverable from the leaf.** Certificates issued by the `MLDSA`
+  CA carry only an OCSP URI in their AIA, no CA Issuers URI, so the existing repair has nothing
+  to follow. It now falls back to EJBCA's certificate distribution servlet, looking the CA up by
+  the issuer DN the leaf reports (`EJBCA_PUBLIC_WEB_BASE`).
+- **`openssl ts -verify` cannot check an ML-DSA token.** `PKCS7_signatureVerify` drives the
+  signature through `EVP_DigestVerify`, and OpenSSL's ML-DSA implementation refuses that
+  interface — `provider signature not supported: ML-DSA-65 verify_init`. The token is sound;
+  openssl verifies the very same signature through `pkeyutl -rawin`. `verifyMldsaTimestamp`
+  therefore performs the checks `ts -verify` would perform, one at a time: the signer's chain is
+  trusted for `timestampsign`, the ML-DSA signature over the re-tagged `SET OF` signedAttrs is
+  valid, and the signed `messageDigest` is the digest of the TSTInfo actually returned. That last
+  step is what stops the signature proving only that *some* TSTInfo was signed.
 
 ## Known deviations
 
@@ -196,7 +236,8 @@ commit of a specific repository, with the exact request and response bytes on di
 Provisioning is delegated to `scripts/timestamping-setup.sh` in the development-environment
 checkout, the maintained source of truth, invoked with `--json-summary` so the suite reads
 what exists instead of guessing. Objects the script does not create — the unprivileged user
-used by the authorization test — are provisioned by the suite itself.
+used by the authorization test — are provisioned by the suite itself. It is invoked once per
+key algorithm, and the two summaries are merged into the one the specs read.
 
 The certificate DN and key name are pinned in `.state/provisioning.env` while the database
 lives: the script reuses named objects but always issues a fresh certificate for a set it has
