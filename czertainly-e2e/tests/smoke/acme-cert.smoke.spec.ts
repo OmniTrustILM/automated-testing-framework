@@ -62,22 +62,35 @@ test.describe('@smoke acme', () => {
 
             const smokeNs = env.smoke.namespace!;  // guaranteed present by strict env validation
 
+            // Every verb the test will actually use, not only the ones that start the work. Creating an
+            // Issuer without being able to read it back means the run cannot tell whether the handshake
+            // with the ACME endpoint succeeded, and without delete a run leaves objects behind, which
+            // the suite now reports as a failure rather than tidying away quietly.
             const checks: Array<{ verb: string; resource: string; group: string; namespace?: string }> = [
-                // Cluster-scope — what we can do at the cluster level
+                // Cluster-scope — expected to be denied, and nothing here is needed.
                 { verb: 'list', resource: 'namespaces', group: '' },
                 { verb: 'create', resource: 'clusterissuers', group: 'cert-manager.io' },
                 { verb: 'list', resource: 'clusterissuers', group: 'cert-manager.io' },
                 { verb: 'list', resource: 'ingressclasses', group: 'networking.k8s.io' },
                 { verb: 'list', resource: 'customresourcedefinitions', group: 'apiextensions.k8s.io' },
 
-                // Namespaced in our smoke namespace — what we can read/write at our place
-                { verb: 'create', resource: 'issuers', group: 'cert-manager.io', namespace: smokeNs },
-                { verb: 'create', resource: 'certificates', group: 'cert-manager.io', namespace: smokeNs },
-                { verb: 'create', resource: 'secrets', group: '', namespace: smokeNs },
-                { verb: 'get', resource: 'secrets', group: '', namespace: smokeNs },
-                { verb: 'create', resource: 'ingresses', group: 'networking.k8s.io', namespace: smokeNs },
+                // The two objects the test writes itself: create them, watch them reach Ready, remove them.
+                ...['create', 'get', 'list', 'watch', 'delete'].flatMap((verb) => [
+                    { verb, resource: 'issuers', group: 'cert-manager.io', namespace: smokeNs },
+                    { verb, resource: 'certificates', group: 'cert-manager.io', namespace: smokeNs },
+                ]),
 
-                // Namespaced в cert-manager — can we read at least what's installed there
+                // cert-manager's own objects, read only: where the reason lives when a challenge fails.
+                ...['get', 'list', 'watch'].flatMap((verb) => [
+                    { verb, resource: 'orders', group: 'acme.cert-manager.io', namespace: smokeNs },
+                    { verb, resource: 'challenges', group: 'acme.cert-manager.io', namespace: smokeNs },
+                ]),
+
+                // The account key and the issued certificate both land in Secrets.
+                ...['create', 'get', 'list', 'delete'].map((verb) => ({ verb, resource: 'secrets', group: '', namespace: smokeNs })),
+
+                // Solver resources are cert-manager's to create, so these are expected to be denied.
+                { verb: 'create', resource: 'ingresses', group: 'networking.k8s.io', namespace: smokeNs },
                 { verb: 'list', resource: 'pods', group: '', namespace: 'cert-manager' },
             ];
 
