@@ -1,4 +1,5 @@
 import { execFileSync } from 'child_process';
+import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -248,6 +249,215 @@ export function verifyTimestamp(
   const result = openssl(args);
   const output = result.stdout + result.stderr;
   return { ok: result.exitCode === 0 && /Verification: OK/.test(output), output };
+}
+
+// --- ML-DSA token verification ------------------------------------------------
+// `openssl ts -verify` cannot check a post-quantum token: PKCS7_signatureVerify drives the
+// signature through EVP_DigestVerify, and OpenSSL's ML-DSA implementation refuses that
+// interface ("provider signature not supported: ML-DSA-65 verify_init"). The token itself is
+// well formed — openssl verifies the very same signature through `pkeyutl -rawin`.
+//
+// So the equivalent checks are performed one by one, which is what `ts -verify` does
+// internally anyway: the signer's chain is trusted, the signature over signedAttrs is valid,
+// and the signed messageDigest is the digest of the TSTInfo actually returned.
+
+interface DerNode {
+  tag: number;
+  headerLength: number;
+  length: number;
+  start: number;
+  contentStart: number;
+  end: number;
+}
+
+function readDerNode(buffer: Buffer, offset: number): DerNode {
+  const tag = buffer[offset];
+  const first = buffer[offset + 1];
+  let length: number;
+  let headerLength: number;
+
+  if ((first & 0x80) === 0) {
+    length = first;
+    headerLength = 2;
+  } else {
+    const lengthBytes = first & 0x7f;
+    if (lengthBytes === 0 || lengthBytes > 4) {
+      throw new Error(`Unsupported DER length encoding at offset ${offset}`);
+    }
+    length = 0;
+    for (let index = 0; index < lengthBytes; index += 1) {
+      length = length * 256 + buffer[offset + 2 + index];
+    }
+    headerLength = 2 + lengthBytes;
+  }
+
+  const contentStart = offset + headerLength;
+  return { tag, headerLength, length, start: offset, contentStart, end: contentStart + length };
+}
+
+function derChildren(buffer: Buffer, node: DerNode): DerNode[] {
+  const children: DerNode[] = [];
+  let offset = node.contentStart;
+  while (offset < node.end) {
+    const child = readDerNode(buffer, offset);
+    children.push(child);
+    offset = child.end;
+  }
+  return children;
+}
+
+function requireChild(children: DerNode[], predicate: (node: DerNode) => boolean, what: string): DerNode {
+  const found = children.find(predicate);
+  if (!found) throw new Error(`Malformed CMS token: ${what} not found`);
+  return found;
+}
+
+const DER_SEQUENCE = 0x30;
+const DER_SET = 0x31;
+const DER_OCTET_STRING = 0x04;
+const DER_CONTEXT_0 = 0xa0;
+
+interface CmsSignerParts {
+  /** signedAttrs re-tagged from [0] IMPLICIT to SET OF, which is what the signature covers. */
+  signedAttributes: Buffer;
+  signature: Buffer;
+  encapsulatedContent: Buffer;
+}
+
+/** Pulls out the pieces of a single-signer CMS SignedData that a signature check needs. */
+function parseCmsToken(tokenPath: string): CmsSignerParts {
+  const buffer = fs.readFileSync(tokenPath);
+
+  const contentInfo = readDerNode(buffer, 0);
+  const contentInfoChildren = derChildren(buffer, contentInfo);
+  const wrapper = requireChild(contentInfoChildren, (node) => node.tag === DER_CONTEXT_0, 'SignedData wrapper');
+  const signedData = readDerNode(buffer, wrapper.contentStart);
+  const signedDataChildren = derChildren(buffer, signedData);
+
+  // encapContentInfo: SEQUENCE { eContentType OID, [0] { OCTET STRING eContent } }
+  const encapContentInfo = requireChild(
+    signedDataChildren,
+    (node) => node.tag === DER_SEQUENCE,
+    'encapContentInfo',
+  );
+  const eContentWrapper = requireChild(
+    derChildren(buffer, encapContentInfo),
+    (node) => node.tag === DER_CONTEXT_0,
+    'eContent',
+  );
+  const eContent = readDerNode(buffer, eContentWrapper.contentStart);
+
+  // signerInfos is the last SET, after the optional [0] certificates and [1] crls.
+  const signerInfos = [...signedDataChildren].reverse().find((node) => node.tag === DER_SET);
+  if (!signerInfos) throw new Error('Malformed CMS token: signerInfos not found');
+  const signerInfo = readDerNode(buffer, signerInfos.contentStart);
+  const signerInfoChildren = derChildren(buffer, signerInfo);
+
+  const signedAttrsNode = requireChild(signerInfoChildren, (node) => node.tag === DER_CONTEXT_0, 'signedAttrs');
+  // The signature is computed over the DER SET OF encoding, not over the [0] IMPLICIT tag
+  // the token carries (RFC 5652 §5.4).
+  const signedAttributes = Buffer.from(buffer.subarray(signedAttrsNode.start, signedAttrsNode.end));
+  signedAttributes[0] = DER_SET;
+
+  const signatureNode = [...signerInfoChildren]
+    .reverse()
+    .find((node) => node.tag === DER_OCTET_STRING && node.start > signedAttrsNode.end);
+  if (!signatureNode) throw new Error('Malformed CMS token: signature not found');
+
+  return {
+    signedAttributes,
+    signature: buffer.subarray(signatureNode.contentStart, signatureNode.end),
+    encapsulatedContent: buffer.subarray(eContent.contentStart, eContent.end),
+  };
+}
+
+/** The messageDigest attribute value, and the digest algorithm it was produced with. */
+function signedMessageDigest(signedAttributes: Buffer, dir: string): { digest: string; algorithm: string } {
+  const attributesPath = path.join(dir, 'signedattrs.der');
+  fs.writeFileSync(attributesPath, signedAttributes);
+  const printed = openssl(['asn1parse', '-inform', 'DER', '-in', attributesPath]);
+  const lines = (printed.stdout + printed.stderr).split('\n');
+
+  const index = lines.findIndex((line) => /:messageDigest$/.test(line.trim()));
+  if (index < 0) throw new Error('Malformed CMS token: no messageDigest attribute');
+  const value = lines
+    .slice(index + 1)
+    .map((line) => line.match(/OCTET STRING\s+\[HEX DUMP\]:([0-9A-F]+)/i)?.[1])
+    .find((hex) => hex !== undefined);
+  if (!value) throw new Error('Malformed CMS token: messageDigest carries no value');
+
+  // The digest algorithm follows from the length: the platform signs ML-DSA with SHA-512.
+  const algorithm = { 32: 'sha256', 48: 'sha384', 64: 'sha512' }[value.length / 2];
+  if (!algorithm) throw new Error(`Unexpected messageDigest length ${value.length / 2}`);
+  return { digest: value.toLowerCase(), algorithm };
+}
+
+/**
+ * Verifies an ML-DSA timestamp token the way `ts -verify` would, minus the OpenSSL
+ * limitation: chain, signature over signedAttrs, and the binding to the returned TSTInfo.
+ */
+export function verifyMldsaTimestamp(
+  responsePath: string,
+  caFile: string,
+  dir: string,
+  options: { untrustedFile?: string } = {},
+): VerificationResult {
+  const steps: string[] = [];
+
+  const tokenPath = path.join(dir, 'verify-token.der');
+  const extract = openssl(['ts', '-reply', '-in', responsePath, '-token_out', '-out', tokenPath]);
+  if (extract.exitCode !== 0) {
+    return { ok: false, output: `could not extract the token: ${extract.stderr}` };
+  }
+
+  const signerPath = tokenSignerCertificate(responsePath, dir);
+  if (!signerPath) {
+    return { ok: false, output: 'the token embeds no signer certificate' };
+  }
+
+  const chainArgs = ['verify', '-CAfile', caFile];
+  if (options.untrustedFile) chainArgs.push('-untrusted', options.untrustedFile);
+  // -purpose timestampsign is what `ts -verify` requires of the signer.
+  chainArgs.push('-purpose', 'timestampsign', signerPath);
+  const chain = openssl(chainArgs);
+  steps.push(`chain: ${(chain.stdout + chain.stderr).trim()}`);
+  if (chain.exitCode !== 0) return { ok: false, output: steps.join('; ') };
+
+  let parts: CmsSignerParts;
+  let messageDigest: { digest: string; algorithm: string };
+  try {
+    parts = parseCmsToken(tokenPath);
+    messageDigest = signedMessageDigest(parts.signedAttributes, dir);
+  } catch (error) {
+    return { ok: false, output: `${steps.join('; ')}; parse: ${String(error)}` };
+  }
+
+  const attributesPath = path.join(dir, 'signedattrs.der');
+  const signaturePath = path.join(dir, 'signature.bin');
+  const publicKeyPath = path.join(dir, 'signer-public.pem');
+  fs.writeFileSync(signaturePath, parts.signature);
+  const publicKey = openssl(['x509', '-in', signerPath, '-pubkey', '-noout']);
+  fs.writeFileSync(publicKeyPath, publicKey.stdout);
+
+  // -rawin is the message-signature interface ML-DSA requires; the digest-then-sign
+  // interface PKCS#7 uses is exactly what OpenSSL refuses for ML-DSA.
+  const signature = openssl([
+    'pkeyutl', '-verify', '-pubin', '-inkey', publicKeyPath,
+    '-rawin', '-in', attributesPath, '-sigfile', signaturePath,
+  ]);
+  const signatureOutput = (signature.stdout + signature.stderr).trim();
+  steps.push(`signature: ${signatureOutput}`);
+  if (signature.exitCode !== 0 || !/Signature Verified Successfully/i.test(signatureOutput)) {
+    return { ok: false, output: steps.join('; ') };
+  }
+
+  // Without this the signature would only prove that *some* TSTInfo was signed, not the one
+  // in the response being asserted on.
+  const actualDigest = createHash(messageDigest.algorithm).update(parts.encapsulatedContent).digest('hex');
+  const bound = actualDigest === messageDigest.digest;
+  steps.push(`messageDigest(${messageDigest.algorithm}): ${bound ? 'binds the returned TSTInfo' : 'MISMATCH'}`);
+
+  return { ok: bound, output: steps.join('; ') };
 }
 
 /** Certificate embedded in the timestamp token (present when the request set certReq). */
