@@ -18,6 +18,7 @@ export class DiscoveryPage {
     readonly targetInput: Locator;
     readonly parallelInput: Locator;
     readonly createButton: Locator;
+    readonly resultsTab: Locator;
     readonly certificateTable: Locator;
 
     constructor(page: Page) {
@@ -38,6 +39,8 @@ export class DiscoveryPage {
         this.parallelInput = this.modal.getByLabel(/parallel executions/i).first();
 
         this.createButton = this.modal.getByTestId('progress-button');
+        // `exact` keeps this off the "Results" widget title on the Details tab.
+        this.resultsTab = this.main.getByRole('tab', { name: 'Results', exact: true });
         this.certificateTable = this.main.getByTestId('paged-custom-table').locator('table');
     }
 
@@ -95,6 +98,13 @@ export class DiscoveryPage {
         const statusBadge = this.main.locator('tr[data-id="status"] [data-testid="badge"]');
         await expect(providerBadge).toHaveText('Completed');
         await expect(statusBadge).toHaveText('Completed');
+    }
+
+    // Discovered certificates live on the Results tab, not on Details.
+    async openResultsTab(): Promise<void> {
+        logger.info('Opening Results tab');
+        await this.resultsTab.click();
+        await expect(this.resultsTab).toHaveAttribute('aria-selected', 'true');
     }
 
     async verifyDiscoveredCertificates() {
