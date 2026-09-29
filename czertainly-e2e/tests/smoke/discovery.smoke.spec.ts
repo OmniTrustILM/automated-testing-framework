@@ -133,6 +133,7 @@ test.describe('@smoke discovery', () => {
 
     // --- Step 4: valid Discovered Certificates ---
     await test.step('Verify Discovered Certificate Table', async () => {
+      await discoveryPage.openResultsTab();
       await discoveryPage.verifyDiscoveredCertificates();
     });
 
