@@ -157,7 +157,8 @@ test.describe('TSP happy path', () => {
   test('parallel requests produce unique, verifiable tokens', async ({ admin, tsp, env }) => {
     const set = env.sets.nonQualified;
     const trust = await admin.certificateTrustFiles(set.certificate.uuid, 'chain-parallel');
-    const requestCount = 24;
+    // Core shares 20 connections per connector with all its traffic and drops a request that waits 10 s for one.
+    const requestCount = 10;
 
     const outcomes = await Promise.all(
       Array.from({ length: requestCount }, (_, index) => {
