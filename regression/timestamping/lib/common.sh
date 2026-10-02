@@ -265,6 +265,7 @@ load_config() {
   bootstrap_dev_env_file
   source_env_file "${DEV_DIR}/.env"
   resolve_sources_base_dir
+  TIMESTAMPING_SETUP_SCRIPT="${TIMESTAMPING_SETUP_SCRIPT:-${DEV_DIR}/scripts/timestamping-setup.sh}"
 
   : "${ADMIN_CERT_PEM:?ADMIN_CERT_PEM must be set in config.env}"
   : "${EJBCA_PKCS12_BUNDLE:?EJBCA_PKCS12_BUNDLE must be set in config.env}"
@@ -288,7 +289,8 @@ load_config() {
   EJBCA_PUBLIC_WEB_BASE="${EJBCA_PUBLIC_WEB_BASE:-https://ejbca.3key.company/ejbca}"
 
   apply_component_sources
-  resolve_core_endpoints
+  # matrix.sh reaches a Core it does not manage, at the address its descriptor names.
+  if [[ "${CORE_MANAGED:-true}" == "true" ]]; then resolve_core_endpoints; fi
 
   [[ -f "$ADMIN_CERT_PEM" ]] || die "Admin certificate not found: $ADMIN_CERT_PEM"
   [[ -f "$EJBCA_PKCS12_BUNDLE" ]] || die "EJBCA PKCS12 bundle not found: $EJBCA_PKCS12_BUNDLE"
@@ -496,13 +498,20 @@ admin_cert_header() {
   echo "$ADMIN_CERT_HEADER_VALUE"
 }
 
-# ilm_api METHOD PATH [curl args...] -> response body on stdout, non-zero exit on HTTP error
+# ilm_api METHOD PATH [curl args...] -> response body on stdout, non-zero exit on HTTP error.
+# An ingress that terminates TLS sets the ssl-client-cert header itself, so against one the
+# administrator presents ADMIN_CLIENT_P12 over mTLS instead, as the suite does.
 ilm_api() {
   local method="$1" path="$2"; shift 2
-  local body http_code tmp
+  local body http_code tmp auth
+  if [[ -n "${ADMIN_CLIENT_P12:-}" ]]; then
+    auth=(--cert-type P12 --cert "$ADMIN_CLIENT_P12" --pass "${ADMIN_CLIENT_P12_PASSWORD:-}")
+  else
+    auth=(-H "ssl-client-cert: $(admin_cert_header)")
+  fi
   tmp=$(mktemp)
   http_code=$(curl -s -o "$tmp" -w "%{http_code}" -X "$method" \
-    -H "ssl-client-cert: $(admin_cert_header)" \
+    "${auth[@]}" \
     -H "content-type: application/json" \
     "${ILM_HOST}/api${path}" "$@" 2>/dev/null || echo "000")
   body=$(<"$tmp"); rm -f "$tmp"

@@ -132,6 +132,32 @@ environment that is already up) and `--skip-slow` (drop the `@slow` time-quality
 A dirty checkout is never touched: the run continues against the working tree and says so,
 and the run manifest records `dirty: true` next to the commit that was actually built.
 
+## Matrix runs
+
+`matrix.sh` runs the suite once per target against a Core that is already up, such as a lab
+instance behind an ingress. A target is one cryptography provider and, for pkcs11, one HSM
+token. Core and the backends must already be running.
+
+A descriptor names Core, how the administrator authenticates, and each target with the
+setup-script arguments it needs. `matrix.json.example` shows the shape. Descriptors are named
+`<name>.matrix.json` and are gitignored, because they carry lab addresses and credentials. A
+target's token PIN comes from the environment variable its `pinEnv` names, as exported in the
+shell that starts the runner.
+
+```bash
+read -rs SECUROSYS_USER_PIN && export SECUROSYS_USER_PIN
+./matrix.sh --matrix lab.matrix.json             # every target
+./matrix.sh --matrix lab.matrix.json securosys   # one target
+```
+
+Each target gets TSA sets of its own, pinned in `.state/matrix/<name>/` and reused by later
+runs, so a re-run issues no certificate. `--fresh` provisions new ones. Tests tagged `@docker`
+drive the local Docker stack and run only when the descriptor sets `localStack`. A missing
+issuing CA stops provisioning, because trusting a CA on a shared Core is its operator's call.
+
+Results go to `runs/matrix-<timestamp>/`: one directory per target with the usual artifacts,
+and `matrix.json` with every target's outcome.
+
 ## What is asserted
 
 | Spec | Scope |

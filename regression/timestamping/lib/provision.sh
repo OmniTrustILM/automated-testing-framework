@@ -81,7 +81,7 @@ run_setup_script() {
   local log_file="$1"
   # The connectors are registered by their host-published ports in both modes; only the host
   # differs, because a containerised Core reaches those ports through the host gateway.
-  "${DEV_DIR}/scripts/timestamping-setup.sh" \
+  "${TIMESTAMPING_SETUP_SCRIPT}" \
     --ilm-host "$ILM_HOST" \
     --connector-host "$CONNECTOR_HOST" \
     --client-cert-pem "$ADMIN_CERT_PEM" \
@@ -101,7 +101,7 @@ run_setup_script() {
 # between the two families is a finding, which is the point of provisioning them side by side.
 run_mldsa_setup_script() {
   local log_file="$1"
-  "${DEV_DIR}/scripts/timestamping-setup.sh" \
+  "${TIMESTAMPING_SETUP_SCRIPT}" \
     --ilm-host "$ILM_HOST" \
     --connector-host "$CONNECTOR_HOST" \
     --client-cert-pem "$ADMIN_CERT_PEM" \
