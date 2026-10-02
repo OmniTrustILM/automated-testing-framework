@@ -38,24 +38,31 @@ test.describe('environment', () => {
   test('the connectors backing timestamping are connected and healthy', async ({ admin, env }) => {
     // v1 and v2 connectors expose different health routes: /v1/connectors/{uuid}/health
     // proxies the connector's /v1/health, which a v2 connector does not serve.
-    const v1Connectors = [env.connectors.credentialProvider, env.connectors.ejbca, env.connectors.cryptographyProvider];
-    const v2Connectors = [env.connectors.timestampFormatting, env.connectors.vault];
+    const expected = [
+      env.connectors.credentialProvider,
+      env.connectors.ejbca,
+      env.connectors.cryptographyProvider,
+      env.connectors.timestampFormatting,
+      env.connectors.vault,
+    ];
+    const alwaysV2 = [env.connectors.timestampFormatting.uuid, env.connectors.vault.uuid];
 
-    const connectors = await admin.get<Array<{ uuid: string; name: string; status: string }>>('/v1/connectors');
-    for (const connector of [...v1Connectors, ...v2Connectors]) {
+    const connectors = await admin.get<
+      Array<{ uuid: string; name: string; status: string; functionGroups?: unknown[] }>
+    >('/v1/connectors');
+    for (const connector of expected) {
       const registered = connectors.find((candidate) => candidate.uuid === connector.uuid);
       expect(registered, `connector '${connector.name}' (${connector.uuid}) is registered`).toBeDefined();
       expect(registered!.status, `connector '${connector.name}' status`).toBe('connected');
-    }
 
-    for (const connector of v1Connectors) {
-      const health = await admin.get<{ status: string }>(`/v1/connectors/${connector.uuid}/health`);
-      expect(health.status, `connector '${connector.name}' health`).toBe('ok');
-    }
-
-    for (const connector of v2Connectors) {
-      const health = await admin.get<{ status: string }>(`/v2/connectors/${connector.uuid}/health`);
-      expect(health.status, `connector '${connector.name}' health`).toBe('UP');
+      const servesV1 = (registered!.functionGroups ?? []).length > 0 && !alwaysV2.includes(connector.uuid);
+      if (servesV1) {
+        const health = await admin.get<{ status: string }>(`/v1/connectors/${connector.uuid}/health`);
+        expect(health.status, `connector '${connector.name}' health`).toBe('ok');
+      } else {
+        const health = await admin.get<{ status: string }>(`/v2/connectors/${connector.uuid}/health`);
+        expect(health.status, `connector '${connector.name}' health`).toBe('UP');
+      }
     }
   });
 
