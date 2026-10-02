@@ -37,6 +37,7 @@ czertainly-e2e/.smoke-state.json
 
 # Timestamping regression suite: local configuration, run artifacts and runner state
 /regression/timestamping/config.env
+/regression/timestamping/*.matrix.json
 /regression/timestamping/runs/
 /regression/timestamping/.state/
 /regression/timestamping/tests/node_modules/

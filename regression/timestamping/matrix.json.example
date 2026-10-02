@@ -1,0 +1,38 @@
+{
+  "name": "lab",
+  "ilmHost": "https://ilm.example.org",
+  "adminClientP12": "/path/to/admin-client.p12",
+  "adminClientP12Password": "changeme",
+  "localStack": false,
+  "setupArgs": [
+    "--time-quality-ntp-servers", "ntp.example.org",
+    "--tsp-credential-username", "tsp-user",
+    "--tsp-credential-password", "changeme"
+  ],
+  "targets": [
+    {
+      "name": "software-v1",
+      "setupArgs": ["--crypto-provider", "software-v1"]
+    },
+    {
+      "name": "software-v2",
+      "setupArgs": [
+        "--crypto-provider", "software-v2",
+        "--connector-host", "software-cryptography-provider.ilm.svc.cluster.local",
+        "--port-crypto-provider", "8080"
+      ]
+    },
+    {
+      "name": "softhsm",
+      "pinEnv": "SOFTHSM_USER_PIN",
+      "mldsa": false,
+      "setupArgs": [
+        "--crypto-provider", "pkcs11",
+        "--pkcs11-profile", "softhsm",
+        "--pkcs11-token", "softhsm",
+        "--connector-host", "pkcs11-cryptography-provider.ilm.svc.cluster.local",
+        "--port-pkcs11-provider", "8080"
+      ]
+    }
+  ]
+}
