@@ -1,4 +1,4 @@
-import { containerState, listQueues } from '../utils/docker';
+import { containerState, DOCKER, listQueues } from '../utils/docker';
 import { expect, test } from '../utils/fixtures';
 
 /**
@@ -28,7 +28,7 @@ test.describe('environment', () => {
     expect(readiness.status(), 'Core readiness').toBe(200);
   });
 
-  test('every dependency container is up', () => {
+  test('every dependency container is up', { tag: DOCKER }, () => {
     const unhealthy = containers
       .map((name) => ({ name, state: containerState(name) }))
       .filter(({ state }) => state !== 'healthy' && state !== 'running');
@@ -66,7 +66,7 @@ test.describe('environment', () => {
     }
   });
 
-  test('Core is subscribed to the time-quality exchange', () => {
+  test('Core is subscribed to the time-quality exchange', { tag: DOCKER }, () => {
     // 0 consumers on the config-request queue is the signature of a Core started without
     // MESSAGING_TIME_QUALITY_ENABLED — every qualified timestamp would fail later with
     // "time quality is not sufficient" and no other clue.

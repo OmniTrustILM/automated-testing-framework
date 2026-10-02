@@ -1,5 +1,8 @@
 import { execFileSync } from 'child_process';
 
+/** Tags a test that drives the local Docker stack, which a Core reached remotely runs without. */
+export const DOCKER = '@docker';
+
 export interface CommandResult {
   stdout: string;
   stderr: string;

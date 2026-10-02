@@ -1,4 +1,4 @@
-import { containerState, startContainer, stopContainer, waitFor, waitForContainerState } from '../utils/docker';
+import { containerState, DOCKER, startContainer, stopContainer, waitFor, waitForContainerState } from '../utils/docker';
 import { provisionedFamilies } from '../utils/env';
 import { expect, test } from '../utils/fixtures';
 import { isoDurationToMicroseconds } from '../utils/openssl';
@@ -19,7 +19,7 @@ import { describeOutcome, requestTimestamp, TimestampOutcome } from '../utils/ts
  *
  * Tagged @slow: it takes the NTP source away and waits for the platform to notice.
  */
-test.describe('time quality @slow', () => {
+test.describe('time quality @slow', { tag: DOCKER }, () => {
   test.describe.configure({ timeout: 480_000 });
 
   const families = provisionedFamilies();
