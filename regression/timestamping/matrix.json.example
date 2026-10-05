@@ -20,12 +20,24 @@
         "--crypto-provider", "software-v2",
         "--connector-host", "software-cryptography-provider.ilm.svc.cluster.local",
         "--port-crypto-provider", "8080"
+      ],
+      "families": [
+        "rsa",
+        {
+          "name": "ecdsa384",
+          "label": "ECDSA P-384",
+          "setupArgs": [
+            "--key-algorithm", "ECDSA", "--key-spec", "data_ecdsaCurve=secp384r1",
+            "--signature-digest", "SHA-384"
+          ]
+        },
+        "mldsa65"
       ]
     },
     {
       "name": "softhsm",
       "pinEnv": "SOFTHSM_USER_PIN",
-      "mldsa": false,
+      "families": ["rsa"],
       "setupArgs": [
         "--crypto-provider", "pkcs11",
         "--pkcs11-profile", "softhsm",

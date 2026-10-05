@@ -32,6 +32,8 @@ interface SummarySet {
   token: NamedUuid;
   tokenProfile: NamedUuid;
   keyAlgorithm: string;
+  /** The family's name in test titles, added by the matrix runner. */
+  label?: string;
   nonQualified: Omit<TsaSet, 'keyAlgorithm'>;
   qualified: Omit<TsaSet, 'keyAlgorithm'>;
 }
@@ -108,7 +110,7 @@ function requireNamedSets(summary: Provisioning, file: string): void {
 export interface TsaFamily {
   /** The set's name in the provisioning summary. */
   name: string;
-  /** Signing key algorithm the pair shares, used in test titles. */
+  /** The family's name in test titles: the runner's label, or else the key algorithm. */
   label: string;
   connector: NamedUuid;
   nonQualified: TsaSet;
@@ -125,7 +127,7 @@ export interface TsaFamily {
 export function provisionedFamilies(): TsaFamily[] {
   return Object.entries(provisioning().sets).map(([name, set]) => ({
     name,
-    label: set.keyAlgorithm,
+    label: set.label ?? set.keyAlgorithm,
     connector: set.connector,
     nonQualified: { ...set.nonQualified, keyAlgorithm: set.keyAlgorithm },
     qualified: { ...set.qualified, keyAlgorithm: set.keyAlgorithm },
@@ -137,9 +139,11 @@ export function provisionedFamilies(): TsaFamily[] {
  * environment provisioned without a family has fewer tests rather than failures.
  */
 export function provisionedSets(): Array<{ label: string; set: TsaSet }> {
-  return provisionedFamilies().flatMap((family) => {
-    // RSA titles stay unprefixed so each test keeps its title, and its history, across runs.
-    const prefix = family.label === RSA ? '' : `${family.label} `;
+  const families = provisionedFamilies();
+  const primary = firstRsaFamily(families);
+  return families.flatMap((family) => {
+    // The primary family's titles stay unprefixed so each test keeps its title, and its history.
+    const prefix = family === primary ? '' : `${family.label} `;
     return [
       { label: `${prefix}non-qualified`, set: family.nonQualified },
       { label: `${prefix}qualified`, set: family.qualified },
@@ -147,12 +151,16 @@ export function provisionedSets(): Array<{ label: string; set: TsaSet }> {
   });
 }
 
+function firstRsaFamily(families: TsaFamily[]): TsaFamily | undefined {
+  return families.find((candidate) => candidate.nonQualified.keyAlgorithm === RSA);
+}
+
 /**
- * The RSA family. The protocol and canary specs exercise the TSP endpoints rather than the
- * signing key, so they run once, on the plainest signer.
+ * The first RSA family. The protocol and canary specs exercise the TSP endpoints rather than
+ * the signing key, so they run once, on the plainest signer.
  */
 export function primaryFamily(): TsaFamily {
-  const family = provisionedFamilies().find((candidate) => candidate.label === RSA);
+  const family = firstRsaFamily(provisionedFamilies());
   if (!family) {
     throw new Error(`${process.env.PROVISIONING_JSON} has no RSA set, which the protocol specs run on`);
   }
