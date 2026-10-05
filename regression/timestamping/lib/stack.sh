@@ -14,7 +14,7 @@ wipe_database_volume() {
   warn "--clean: deleting the PostgreSQL data directory, all provisioning will be re-created"
   docker run --rm -v "${DEV_DIR}/data/postgres:/data" alpine:3 sh -c 'rm -rf /data/pgsqldata' \
     || die "Could not delete the PostgreSQL data directory"
-  rm -f "${SUITE_DIR}/.state/provisioning.env"
+  rm -f "${SUITE_DIR}/.state/provisioning.env" "${SUITE_DIR}/.state/provisioning.json"
   ok "database wiped"
 }
 

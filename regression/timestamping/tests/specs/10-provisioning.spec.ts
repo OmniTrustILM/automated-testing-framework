@@ -1,6 +1,17 @@
 import { CertificateDetail, SigningProfileDetail } from '../utils/adminApi';
-import { provisionedFamilies, provisionedSets } from '../utils/env';
+import { previousProvisioning, provisionedFamilies, provisionedSets } from '../utils/env';
 import { expect, test } from '../utils/fixtures';
+
+/** Every object UUID in a summary fragment, by its path. */
+function objectUuids(value: unknown, at = ''): Record<string, string> {
+  if (value === null || typeof value !== 'object') return {};
+  return Object.entries(value).reduce<Record<string, string>>((found, [key, child]) => {
+    const where = at ? `${at}.${key}` : key;
+    return key === 'uuid' && typeof child === 'string'
+      ? { ...found, [where]: child }
+      : { ...found, ...objectUuids(child, where) };
+  }, {});
+}
 
 /**
  * Everything the TSP request path depends on, verified through the API rather than trusted
@@ -74,6 +85,25 @@ test.describe('provisioning', () => {
         env.timeQuality.uuid,
       );
       expect(nonQualifiedWorkflow.timeQualityConfiguration ?? null, 'non-qualified profile has none').toBeNull();
+    });
+  }
+
+  // A re-run under pinned names must find every object again, so a changed UUID is one it created anew.
+  const previous = previousProvisioning();
+
+  test('re-provisioning reused every shared object', async ({ env }) => {
+    test.skip(!previous, 'this run provisioned under fresh names');
+    expect(objectUuids({ ...env, sets: {} })).toEqual(objectUuids({ ...previous!, sets: {} }));
+  });
+
+  for (const family of provisionedFamilies()) {
+    test(`re-provisioning reused every object of the ${family.label} family`, async ({ env }) => {
+      const before = previous?.sets[family.name];
+      test.skip(!before, `this run provisioned the ${family.label} family under fresh names`);
+      expect(
+        objectUuids(env.sets[family.name]),
+        'a changed certificate UUID is a certificate the re-run issued',
+      ).toEqual(objectUuids(before));
     });
   }
 

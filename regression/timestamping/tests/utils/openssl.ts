@@ -254,7 +254,12 @@ export function verifyTimestamp(
 ): VerificationResult {
   const tokenPath = extractToken(responsePath, path.dirname(responsePath));
   if (!tokenPath) return { ok: false, output: 'the response carries no token' };
-  const algorithm = signatureAlgorithm(tokenPath);
+  let algorithm: string | undefined;
+  try {
+    algorithm = signerSignature(tokenPath).algorithm;
+  } catch {
+    // `cms -verify` reports what is wrong with the token.
+  }
   return algorithm !== undefined && PKCS7_SIGNATURE_ALGORITHMS.test(algorithm)
     ? verifyWithTs(responsePath, caFile, options)
     : verifyWithCms(responsePath, tokenPath, caFile, options);
@@ -342,10 +347,67 @@ function compared(what: string, source: string, actual: Buffer, expected: Buffer
     : { ok: false, output: `${what}: MISMATCH (${actual.toString('hex')} != ${expected.toString('hex')})` };
 }
 
-/** The signer's signature algorithm OID. Certificates print theirs as `sig_alg`, so the match is the SignerInfo's. */
-function signatureAlgorithm(tokenPath: string): string | undefined {
-  const printed = openssl(['cms', '-cmsout', '-print', '-inform', 'DER', '-in', tokenPath]).stdout;
-  return printed.match(/signatureAlgorithm:\s*algorithm: [^\n]*?(\d+(?:\.\d+)+)\)?\s*$/m)?.[1];
+export interface TokenSignature {
+  /** The SignerInfo's signatureAlgorithm OID. */
+  algorithm: string;
+  /** The hash OID of an RSASSA-PSS signature. */
+  pssHash?: string;
+}
+
+export const RSASSA_PSS = '1.2.840.113549.1.1.10';
+const SHA1 = '1.3.14.3.2.26';
+
+/** How the token's signer says it signed, or null for a response without a token. */
+export function tokenSignature(responsePath: string): TokenSignature | null {
+  const tokenPath = extractToken(responsePath, path.dirname(responsePath));
+  return tokenPath ? signerSignature(tokenPath) : null;
+}
+
+function signerSignature(tokenPath: string): TokenSignature {
+  const der = fs.readFileSync(tokenPath);
+  const [, explicitContent] = derChildren(der, readDerNode(der, 0));
+  const signedData = readDerNode(der, explicitContent.contentStart);
+  // digestAlgorithms is SignedData's first SET and signerInfos its last.
+  const signerInfos = derChildren(der, signedData).filter((node) => node.tag === DER_SET).pop();
+  if (!signerInfos) throw new Error('the token holds no signerInfos');
+  const fields = derChildren(der, derChildren(der, signerInfos)[0]);
+  // The signature is SignerInfo's only OCTET STRING, right after its signatureAlgorithm.
+  const algorithmIdentifier = fields[fields.findIndex((node) => node.tag === DER_OCTET_STRING) - 1];
+  if (algorithmIdentifier?.tag !== DER_SEQUENCE) throw new Error('the SignerInfo holds no signatureAlgorithm');
+
+  const [oid, parameters] = derChildren(der, algorithmIdentifier);
+  const algorithm = decodeOid(der, oid);
+  if (algorithm !== RSASSA_PSS) return { algorithm };
+  const hashAlgorithm = parameters && derChildren(der, parameters).find((node) => node.tag === DER_CONTEXT_0);
+  // RFC 4055 makes SHA-1 the hash of PSS parameters that name none.
+  if (!hashAlgorithm) return { algorithm, pssHash: SHA1 };
+  return { algorithm, pssHash: decodeOid(der, derChildren(der, readDerNode(der, hashAlgorithm.contentStart))[0]) };
+}
+
+/** The OID of the key algorithm in a certificate's subjectPublicKeyInfo. */
+export function certificateKeyAlgorithm(certificateContent: string): string {
+  const der = Buffer.from(certificateContent, 'base64');
+  const [tbsCertificate] = derChildren(der, readDerNode(der, 0));
+  const fields = derChildren(der, tbsCertificate);
+  // The [0] version is optional, so subjectPublicKeyInfo is counted from serialNumber.
+  const subjectPublicKeyInfo = fields[fields.findIndex((node) => node.tag === DER_INTEGER) + 5];
+  const [algorithmIdentifier] = derChildren(der, subjectPublicKeyInfo);
+  return decodeOid(der, derChildren(der, algorithmIdentifier)[0]);
+}
+
+function decodeOid(der: Buffer, node: DerNode): string {
+  if (node?.tag !== DER_OID) throw new Error('expected an OBJECT IDENTIFIER');
+  const arcs: number[] = [];
+  let value = 0;
+  for (const byte of der.subarray(node.contentStart, node.end)) {
+    value = value * 128 + (byte & 0x7f);
+    if ((byte & 0x80) === 0) {
+      arcs.push(value);
+      value = 0;
+    }
+  }
+  const first = Math.min(Math.floor(arcs[0] / 40), 2);
+  return [first, arcs[0] - first * 40, ...arcs.slice(1)].join('.');
 }
 
 interface DerNode {
@@ -391,9 +453,12 @@ function derChildren(buffer: Buffer, node: DerNode): DerNode[] {
   return children;
 }
 
-const DER_SEQUENCE = 0x30;
+const DER_INTEGER = 0x02;
 const DER_OCTET_STRING = 0x04;
 const DER_OID = 0x06;
+const DER_SEQUENCE = 0x30;
+const DER_SET = 0x31;
+const DER_CONTEXT_0 = 0xa0;
 
 /**
  * The messageImprint of a TimeStampReq or a TSTInfo, the first SEQUENCE in either. The
