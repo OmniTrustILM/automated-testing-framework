@@ -1,13 +1,11 @@
-import { isMldsa, primaryFamily, provisionedSets, TsaSet } from '../utils/env';
+import { primaryFamily, provisionedSets } from '../utils/env';
 import { expect, test } from '../utils/fixtures';
 import {
   certificateSerial,
   Digest,
   parseTimestampQuery,
   tokenSignerCertificate,
-  verifyMldsaTimestamp,
   verifyTimestamp,
-  VerificationResult,
 } from '../utils/openssl';
 import { describeOutcome, requestTimestamp, TimestampOutcome, TspRoute } from '../utils/tsp';
 
@@ -25,29 +23,6 @@ test.describe('TSP happy path', () => {
     const query = parseTimestampQuery(outcome.queryPath!);
     expect(query.nonceHex, 'request carries a nonce').toBeTruthy();
     expect(outcome.reply?.nonceHex, 'response echoes the request nonce exactly').toBe(query.nonceHex);
-  }
-
-  /**
-   * `openssl ts -verify` cannot check an ML-DSA token — OpenSSL refuses ML-DSA through the
-   * digest-then-sign interface PKCS#7 uses — so those tokens are verified step by step
-   * instead. Both paths assert the same thing: trusted chain, valid signature, and a
-   * signature that actually covers the TSTInfo returned.
-   */
-  function verify(
-    set: TsaSet,
-    outcome: TimestampOutcome,
-    trust: { caFile: string; untrustedFile?: string },
-    options: { dataPath?: string; queryPath?: string } = {},
-  ): VerificationResult {
-    if (isMldsa(set)) {
-      return verifyMldsaTimestamp(outcome.responsePath!, trust.caFile, outcome.dir, {
-        untrustedFile: trust.untrustedFile,
-      });
-    }
-    return verifyTimestamp(outcome.responsePath!, trust.caFile, {
-      ...options,
-      untrustedFile: trust.untrustedFile,
-    });
   }
 
   for (const { label, set: provisioned } of provisionedSets()) {
@@ -70,7 +45,10 @@ test.describe('TSP happy path', () => {
         expect(outcome.reply?.serialNumberHex, 'token serial number').toBeTruthy();
 
         const trust = await admin.certificateTrustFiles(set.certificate.uuid, `chain-${label}`);
-        const verification = verify(set, outcome, trust, { queryPath: outcome.queryPath });
+        const verification = verifyTimestamp(outcome.responsePath!, trust.caFile, {
+          queryPath: outcome.queryPath,
+          untrustedFile: trust.untrustedFile,
+        });
         expect(verification.ok, `token verification said: ${verification.output}`).toBe(true);
       });
     }
@@ -112,7 +90,7 @@ test.describe('TSP happy path', () => {
         dataPath: outcome.dataPath,
         untrustedFile: trust.untrustedFile,
       });
-      expect(verification.ok, `openssl ts -verify -data said: ${verification.output}`).toBe(true);
+      expect(verification.ok, `token verification said: ${verification.output}`).toBe(true);
     });
   }
 

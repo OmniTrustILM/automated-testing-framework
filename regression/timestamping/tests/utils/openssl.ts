@@ -231,12 +231,36 @@ export interface VerificationResult {
   output: string;
 }
 
-/** Verifies a token against a trusted chain; optionally re-checks the message imprint. */
+export interface VerificationOptions {
+  /** The request the token answers. */
+  queryPath?: string;
+  /** The timestamped data, hashed afresh in place of the request's imprint. */
+  dataPath?: string;
+  untrustedFile?: string;
+}
+
+/** RSA PKCS#1 v1.5 and ECDSA: the signatures PKCS#7, and so `openssl ts -verify`, can check. */
+const PKCS7_SIGNATURE_ALGORITHMS = /^1\.2\.840\.(?:113549\.1\.1\.(?:5|11|12|13|14)|10045\.4\.(?:1|3\.[1-4]))$/;
+
+/**
+ * Verifies a token against a trusted chain and binds it to the request or the data. A
+ * signature `ts -verify` cannot check, such as RSA-PSS, ML-DSA or SLH-DSA, goes through
+ * `cms -verify` instead.
+ */
 export function verifyTimestamp(
   responsePath: string,
   caFile: string,
-  options: { queryPath?: string; dataPath?: string; untrustedFile?: string } = {},
+  options: VerificationOptions = {},
 ): VerificationResult {
+  const tokenPath = extractToken(responsePath, path.dirname(responsePath));
+  if (!tokenPath) return { ok: false, output: 'the response carries no token' };
+  const algorithm = signatureAlgorithm(tokenPath);
+  return algorithm !== undefined && PKCS7_SIGNATURE_ALGORITHMS.test(algorithm)
+    ? verifyWithTs(responsePath, caFile, options)
+    : verifyWithCms(responsePath, tokenPath, caFile, options);
+}
+
+function verifyWithTs(responsePath: string, caFile: string, options: VerificationOptions): VerificationResult {
   const args = ['ts', '-verify', '-in', responsePath, '-CAfile', caFile];
   if (options.untrustedFile) {
     args.push('-untrusted', options.untrustedFile);
@@ -251,20 +275,81 @@ export function verifyTimestamp(
   return { ok: result.exitCode === 0 && /Verification: OK/.test(output), output };
 }
 
-// --- ML-DSA token verification ------------------------------------------------
-// `openssl ts -verify` cannot check a post-quantum token: PKCS7_signatureVerify drives the
-// signature through EVP_DigestVerify, and OpenSSL's ML-DSA implementation refuses that
-// interface ("provider signature not supported: ML-DSA-65 verify_init"). The token itself is
-// well formed — openssl verifies the very same signature through `pkeyutl -rawin`.
-//
-// So the equivalent checks are performed one by one, which is what `ts -verify` does
-// internally anyway: the signer's chain is trusted, the signature over signedAttrs is valid,
-// and the signed messageDigest is the digest of the TSTInfo actually returned.
+/**
+ * `cms -verify` checks the chain, the signature and that the signed messageDigest covers the
+ * returned TSTInfo. The TSTInfo's binding to the request, which `ts -verify` adds, is checked here.
+ */
+function verifyWithCms(
+  responsePath: string,
+  tokenPath: string,
+  caFile: string,
+  options: VerificationOptions,
+): VerificationResult {
+  const tstInfoPath = path.join(path.dirname(tokenPath), 'tstinfo.der');
+  // -purpose timestampsign is what `ts -verify` requires of the signer.
+  const args = [
+    'cms', '-verify', '-inform', 'DER', '-in', tokenPath, '-CAfile', caFile,
+    '-purpose', 'timestampsign', '-binary', '-out', tstInfoPath,
+  ];
+  if (options.untrustedFile) args.push('-certfile', options.untrustedFile);
+  const cms = openssl(args);
+  const steps = [`cms -verify: ${cms.exitCode === 0 ? 'OK' : (cms.stdout + cms.stderr).trim()}`];
+  if (cms.exitCode !== 0) return { ok: false, output: steps.join('; ') };
+
+  let bindings: Array<{ ok: boolean; output: string }>;
+  try {
+    bindings = requestBindings(fs.readFileSync(tstInfoPath), responsePath, options);
+  } catch (error) {
+    return { ok: false, output: `${steps.join('; ')}; parse: ${String(error)}` };
+  }
+  steps.push(...bindings.map((binding) => binding.output));
+  return { ok: bindings.every((binding) => binding.ok), output: steps.join('; ') };
+}
+
+/** The checks `ts -verify` makes of the TSTInfo against `-data` or `-queryfile`. */
+function requestBindings(
+  tstInfo: Buffer,
+  responsePath: string,
+  options: VerificationOptions,
+): Array<{ ok: boolean; output: string }> {
+  const token = messageImprint(tstInfo);
+  if (options.dataPath) {
+    const hashAlgorithm = parseTimestampReply(responsePath).hashAlgorithm ?? '';
+    const digest = createHash(hashAlgorithm.toLowerCase()).update(fs.readFileSync(options.dataPath)).digest();
+    return [compared(`imprint(${hashAlgorithm})`, 'the data', token.hashedMessage, digest)];
+  }
+  if (!options.queryPath) return [];
+
+  const request = messageImprint(fs.readFileSync(options.queryPath));
+  const bindings = [
+    compared('imprint algorithm', 'the request', token.algorithm, request.algorithm),
+    compared('imprint', 'the request', token.hashedMessage, request.hashedMessage),
+  ];
+  const requestNonce = parseTimestampQuery(options.queryPath).nonceHex;
+  if (requestNonce) {
+    const tokenNonce = parseTimestampReply(responsePath).nonceHex ?? 'none';
+    bindings.push({
+      ok: tokenNonce === requestNonce,
+      output: tokenNonce === requestNonce ? 'nonce: matches the request' : `nonce: MISMATCH (${tokenNonce} != ${requestNonce})`,
+    });
+  }
+  return bindings;
+}
+
+function compared(what: string, source: string, actual: Buffer, expected: Buffer): { ok: boolean; output: string } {
+  return actual.equals(expected)
+    ? { ok: true, output: `${what}: matches ${source}` }
+    : { ok: false, output: `${what}: MISMATCH (${actual.toString('hex')} != ${expected.toString('hex')})` };
+}
+
+/** The signer's signature algorithm OID. Certificates print theirs as `sig_alg`, so the match is the SignerInfo's. */
+function signatureAlgorithm(tokenPath: string): string | undefined {
+  const printed = openssl(['cms', '-cmsout', '-print', '-inform', 'DER', '-in', tokenPath]).stdout;
+  return printed.match(/signatureAlgorithm:\s*algorithm: [^\n]*?(\d+(?:\.\d+)+)\)?\s*$/m)?.[1];
+}
 
 interface DerNode {
   tag: number;
-  headerLength: number;
-  length: number;
   start: number;
   contentStart: number;
   end: number;
@@ -292,7 +377,7 @@ function readDerNode(buffer: Buffer, offset: number): DerNode {
   }
 
   const contentStart = offset + headerLength;
-  return { tag, headerLength, length, start: offset, contentStart, end: contentStart + length };
+  return { tag, start: offset, contentStart, end: contentStart + length };
 }
 
 function derChildren(buffer: Buffer, node: DerNode): DerNode[] {
@@ -306,165 +391,37 @@ function derChildren(buffer: Buffer, node: DerNode): DerNode[] {
   return children;
 }
 
-function requireChild(children: DerNode[], predicate: (node: DerNode) => boolean, what: string): DerNode {
-  const found = children.find(predicate);
-  if (!found) throw new Error(`Malformed CMS token: ${what} not found`);
-  return found;
-}
-
 const DER_SEQUENCE = 0x30;
-const DER_SET = 0x31;
 const DER_OCTET_STRING = 0x04;
-const DER_CONTEXT_0 = 0xa0;
+const DER_OID = 0x06;
 
-interface CmsSignerParts {
-  /** signedAttrs re-tagged from [0] IMPLICIT to SET OF, which is what the signature covers. */
-  signedAttributes: Buffer;
-  signature: Buffer;
-  encapsulatedContent: Buffer;
-}
-
-/** Pulls out the pieces of a single-signer CMS SignedData that a signature check needs. */
-function parseCmsToken(tokenPath: string): CmsSignerParts {
-  const buffer = fs.readFileSync(tokenPath);
-
-  const contentInfo = readDerNode(buffer, 0);
-  const contentInfoChildren = derChildren(buffer, contentInfo);
-  const wrapper = requireChild(contentInfoChildren, (node) => node.tag === DER_CONTEXT_0, 'SignedData wrapper');
-  const signedData = readDerNode(buffer, wrapper.contentStart);
-  const signedDataChildren = derChildren(buffer, signedData);
-
-  // encapContentInfo: SEQUENCE { eContentType OID, [0] { OCTET STRING eContent } }
-  const encapContentInfo = requireChild(
-    signedDataChildren,
-    (node) => node.tag === DER_SEQUENCE,
-    'encapContentInfo',
-  );
-  const eContentWrapper = requireChild(
-    derChildren(buffer, encapContentInfo),
-    (node) => node.tag === DER_CONTEXT_0,
-    'eContent',
-  );
-  const eContent = readDerNode(buffer, eContentWrapper.contentStart);
-
-  // signerInfos is the last SET, after the optional [0] certificates and [1] crls.
-  const signerInfos = [...signedDataChildren].reverse().find((node) => node.tag === DER_SET);
-  if (!signerInfos) throw new Error('Malformed CMS token: signerInfos not found');
-  const signerInfo = readDerNode(buffer, signerInfos.contentStart);
-  const signerInfoChildren = derChildren(buffer, signerInfo);
-
-  const signedAttrsNode = requireChild(signerInfoChildren, (node) => node.tag === DER_CONTEXT_0, 'signedAttrs');
-  // The signature is computed over the DER SET OF encoding, not over the [0] IMPLICIT tag
-  // the token carries (RFC 5652 §5.4).
-  const signedAttributes = Buffer.from(buffer.subarray(signedAttrsNode.start, signedAttrsNode.end));
-  signedAttributes[0] = DER_SET;
-
-  const signatureNode = [...signerInfoChildren]
-    .reverse()
-    .find((node) => node.tag === DER_OCTET_STRING && node.start > signedAttrsNode.end);
-  if (!signatureNode) throw new Error('Malformed CMS token: signature not found');
-
+/**
+ * The messageImprint of a TimeStampReq or a TSTInfo, the first SEQUENCE in either. The
+ * algorithm is its OID alone, because one side may encode absent parameters as NULL.
+ */
+function messageImprint(der: Buffer): { algorithm: Buffer; hashedMessage: Buffer } {
+  const imprint = derChildren(der, readDerNode(der, 0)).find((node) => node.tag === DER_SEQUENCE);
+  const [algorithmIdentifier, hashedMessage] = imprint ? derChildren(der, imprint) : [];
+  const oid = algorithmIdentifier?.tag === DER_SEQUENCE ? derChildren(der, algorithmIdentifier)[0] : undefined;
+  if (oid?.tag !== DER_OID || hashedMessage?.tag !== DER_OCTET_STRING) {
+    throw new Error('malformed messageImprint');
+  }
   return {
-    signedAttributes,
-    signature: buffer.subarray(signatureNode.contentStart, signatureNode.end),
-    encapsulatedContent: buffer.subarray(eContent.contentStart, eContent.end),
+    algorithm: der.subarray(oid.start, oid.end),
+    hashedMessage: der.subarray(hashedMessage.contentStart, hashedMessage.end),
   };
 }
 
-/** The messageDigest attribute value, and the digest algorithm it was produced with. */
-function signedMessageDigest(signedAttributes: Buffer, dir: string): { digest: string; algorithm: string } {
-  const attributesPath = path.join(dir, 'signedattrs.der');
-  fs.writeFileSync(attributesPath, signedAttributes);
-  const printed = openssl(['asn1parse', '-inform', 'DER', '-in', attributesPath]);
-  const lines = (printed.stdout + printed.stderr).split('\n');
-
-  const index = lines.findIndex((line) => /:messageDigest$/.test(line.trim()));
-  if (index < 0) throw new Error('Malformed CMS token: no messageDigest attribute');
-  const value = lines
-    .slice(index + 1)
-    .map((line) => line.match(/OCTET STRING\s+\[HEX DUMP\]:([0-9A-F]+)/i)?.[1])
-    .find((hex) => hex !== undefined);
-  if (!value) throw new Error('Malformed CMS token: messageDigest carries no value');
-
-  // The digest algorithm follows from the length: the platform signs ML-DSA with SHA-512.
-  const algorithm = { 32: 'sha256', 48: 'sha384', 64: 'sha512' }[value.length / 2];
-  if (!algorithm) throw new Error(`Unexpected messageDigest length ${value.length / 2}`);
-  return { digest: value.toLowerCase(), algorithm };
-}
-
-/**
- * Verifies an ML-DSA timestamp token the way `ts -verify` would, minus the OpenSSL
- * limitation: chain, signature over signedAttrs, and the binding to the returned TSTInfo.
- */
-export function verifyMldsaTimestamp(
-  responsePath: string,
-  caFile: string,
-  dir: string,
-  options: { untrustedFile?: string } = {},
-): VerificationResult {
-  const steps: string[] = [];
-
-  const tokenPath = path.join(dir, 'verify-token.der');
+function extractToken(responsePath: string, dir: string): string | null {
+  const tokenPath = path.join(dir, 'token.der');
   const extract = openssl(['ts', '-reply', '-in', responsePath, '-token_out', '-out', tokenPath]);
-  if (extract.exitCode !== 0) {
-    return { ok: false, output: `could not extract the token: ${extract.stderr}` };
-  }
-
-  const signerPath = tokenSignerCertificate(responsePath, dir);
-  if (!signerPath) {
-    return { ok: false, output: 'the token embeds no signer certificate' };
-  }
-
-  const chainArgs = ['verify', '-CAfile', caFile];
-  if (options.untrustedFile) chainArgs.push('-untrusted', options.untrustedFile);
-  // -purpose timestampsign is what `ts -verify` requires of the signer.
-  chainArgs.push('-purpose', 'timestampsign', signerPath);
-  const chain = openssl(chainArgs);
-  steps.push(`chain: ${(chain.stdout + chain.stderr).trim()}`);
-  if (chain.exitCode !== 0) return { ok: false, output: steps.join('; ') };
-
-  let parts: CmsSignerParts;
-  let messageDigest: { digest: string; algorithm: string };
-  try {
-    parts = parseCmsToken(tokenPath);
-    messageDigest = signedMessageDigest(parts.signedAttributes, dir);
-  } catch (error) {
-    return { ok: false, output: `${steps.join('; ')}; parse: ${String(error)}` };
-  }
-
-  const attributesPath = path.join(dir, 'signedattrs.der');
-  const signaturePath = path.join(dir, 'signature.bin');
-  const publicKeyPath = path.join(dir, 'signer-public.pem');
-  fs.writeFileSync(signaturePath, parts.signature);
-  const publicKey = openssl(['x509', '-in', signerPath, '-pubkey', '-noout']);
-  fs.writeFileSync(publicKeyPath, publicKey.stdout);
-
-  // -rawin is the message-signature interface ML-DSA requires; the digest-then-sign
-  // interface PKCS#7 uses is exactly what OpenSSL refuses for ML-DSA.
-  const signature = openssl([
-    'pkeyutl', '-verify', '-pubin', '-inkey', publicKeyPath,
-    '-rawin', '-in', attributesPath, '-sigfile', signaturePath,
-  ]);
-  const signatureOutput = (signature.stdout + signature.stderr).trim();
-  steps.push(`signature: ${signatureOutput}`);
-  if (signature.exitCode !== 0 || !/Signature Verified Successfully/i.test(signatureOutput)) {
-    return { ok: false, output: steps.join('; ') };
-  }
-
-  // Without this the signature would only prove that *some* TSTInfo was signed, not the one
-  // in the response being asserted on.
-  const actualDigest = createHash(messageDigest.algorithm).update(parts.encapsulatedContent).digest('hex');
-  const bound = actualDigest === messageDigest.digest;
-  steps.push(`messageDigest(${messageDigest.algorithm}): ${bound ? 'binds the returned TSTInfo' : 'MISMATCH'}`);
-
-  return { ok: bound, output: steps.join('; ') };
+  return extract.exitCode === 0 && fs.existsSync(tokenPath) ? tokenPath : null;
 }
 
 /** Certificate embedded in the timestamp token (present when the request set certReq). */
 export function tokenSignerCertificate(responsePath: string, dir: string): string | null {
-  const tokenPath = path.join(dir, 'token.der');
-  const extract = openssl(['ts', '-reply', '-in', responsePath, '-token_out', '-out', tokenPath]);
-  if (extract.exitCode !== 0 || !fs.existsSync(tokenPath)) return null;
+  const tokenPath = extractToken(responsePath, dir);
+  if (!tokenPath) return null;
 
   const certsPath = path.join(dir, 'signer.pem');
   const certs = openssl(['pkcs7', '-inform', 'DER', '-in', tokenPath, '-print_certs', '-out', certsPath]);
