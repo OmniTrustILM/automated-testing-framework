@@ -498,25 +498,31 @@ admin_cert_header() {
   echo "$ADMIN_CERT_HEADER_VALUE"
 }
 
-# ilm_api METHOD PATH [curl args...] -> response body on stdout, non-zero exit on HTTP error.
-# An ingress that terminates TLS sets the ssl-client-cert header itself, so against one the
-# administrator presents ADMIN_CLIENT_P12 over mTLS instead, as the suite does.
-ilm_api() {
+# ilm_request METHOD PATH [curl args...] sets ILM_STATUS and ILM_BODY, for a caller that acts on
+# the status itself; 000 means no complete response. An ingress that terminates TLS sets the
+# ssl-client-cert header itself, so against one the administrator presents ADMIN_CLIENT_P12 over
+# mTLS instead, as the suite does.
+ilm_request() {
   local method="$1" path="$2"; shift 2
-  local body http_code tmp auth
+  local tmp auth
   if [[ -n "${ADMIN_CLIENT_P12:-}" ]]; then
     auth=(--cert-type P12 --cert "$ADMIN_CLIENT_P12" --pass "${ADMIN_CLIENT_P12_PASSWORD:-}")
   else
     auth=(-H "ssl-client-cert: $(admin_cert_header)")
   fi
   tmp=$(mktemp)
-  http_code=$(curl -s -o "$tmp" -w "%{http_code}" -X "$method" \
+  ILM_STATUS=$(curl -s -o "$tmp" -w "%{http_code}" -X "$method" \
     "${auth[@]}" \
     -H "content-type: application/json" \
-    "${ILM_HOST}/api${path}" "$@" 2>/dev/null || echo "000")
-  body=$(<"$tmp"); rm -f "$tmp"
-  echo "$body"
-  [[ "$http_code" =~ ^2[0-9][0-9]$ ]]
+    "${ILM_HOST}/api${path}" "$@" 2>/dev/null) || ILM_STATUS="000"
+  ILM_BODY=$(<"$tmp"); rm -f "$tmp"
+}
+
+# ilm_api METHOD PATH [curl args...] -> response body on stdout, non-zero exit on HTTP error.
+ilm_api() {
+  ilm_request "$@"
+  echo "$ILM_BODY"
+  [[ "$ILM_STATUS" =~ ^2[0-9][0-9]$ ]]
 }
 
 # --- Misc ---------------------------------------------------------------------
