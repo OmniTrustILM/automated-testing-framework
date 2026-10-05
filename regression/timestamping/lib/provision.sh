@@ -9,6 +9,8 @@
 # survives, and regenerated whenever that state is gone (first run, or after --clean).
 
 provisioning_state_file() { echo "${SUITE_DIR}/.state/provisioning.env"; }
+# The summary of the run that pinned the names, which the next run compares its own against.
+provisioning_summary_state_file() { echo "${SUITE_DIR}/.state/provisioning.json"; }
 
 load_or_create_provisioning_names() {
   local state_file
@@ -25,6 +27,9 @@ load_or_create_provisioning_names() {
       write_provisioning_state
     fi
     log "reusing provisioning identity from $(basename "$state_file"): ${CERTIFICATE_DN}"
+    if [[ -f "$(provisioning_summary_state_file)" ]]; then
+      cp "$(provisioning_summary_state_file)" "${RUN_DIR}/provisioning.previous.json"
+    fi
     return 0
   fi
 
@@ -54,7 +59,11 @@ EOF
 }
 
 discard_provisioning_state() {
-  rm -f "$(provisioning_state_file)"
+  rm -f "$(provisioning_state_file)" "$(provisioning_summary_state_file)" "${RUN_DIR}/provisioning.previous.json"
+}
+
+remember_provisioning_summary() {
+  (umask 077 && cp "${RUN_DIR}/provisioning.json" "$(provisioning_summary_state_file)")
 }
 
 # The ssl-client-cert header only authenticates once the certificate is registered as an
@@ -251,6 +260,7 @@ phase_provision() {
     write_provisioning_state
     ok "provisioning complete — summary: ${RUN_DIR}/provisioning.json"
     provision_mldsa_sets
+    remember_provisioning_summary
     return 0
   fi
 
@@ -272,6 +282,7 @@ phase_provision() {
   write_provisioning_state
   ok "provisioning complete after repair — summary: ${RUN_DIR}/provisioning.json"
   provision_mldsa_sets
+  remember_provisioning_summary
 }
 
 # ML-DSA is additional coverage, not the subject of the suite: a platform that cannot

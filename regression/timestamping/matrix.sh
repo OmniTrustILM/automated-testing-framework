@@ -191,6 +191,8 @@ start_matrix_run() {
 # name is pinned while the set provisions cleanly, so a later run reuses the set and issues no
 # certificate. A failed attempt forgets it: its key may already be bound to an EJBCA end entity.
 set_state_file() { echo "${SUITE_DIR}/.state/matrix/${MATRIX_NAME}/$1-$2"; }
+# The summary of the run that pinned the name, which the next run compares its own against.
+set_summary_file() { echo "$(set_state_file "$1" "$2").json"; }
 
 set_identity() {
   local state; state=$(set_state_file "$1" "$2")
@@ -217,20 +219,23 @@ setup_arguments() {
 
 # provision_set TARGET FAMILY SPEC SUMMARY LOG, where FAMILY is one object from target_families.
 provision_set() {
-  local target="$1" family="$2" spec="$3" summary="$4" log_file="$5" name identity state
+  local target="$1" family="$2" spec="$3" summary="$4" log_file="$5" name identity state remembered
   name=$(jq -r .name <<< "$family")
   identity=$(set_identity "$target" "$name")
   state=$(set_state_file "$target" "$name")
+  remembered=$(set_summary_file "$target" "$name")
   setup_arguments "$target" "$family" "$spec" "$identity" "$summary"
+  if [[ -f "$state" && -f "$remembered" ]]; then cp "$remembered" "${summary%.json}.previous.json"; fi
 
   log "${name}: ${identity}"
   if "$TIMESTAMPING_SETUP_SCRIPT" "${SETUP_ARGS[@]}" > "$log_file" 2>&1; then
     mkdir -p "$(dirname "$state")"
     echo "$identity" > "$state"
+    (umask 077 && cp "$summary" "$remembered")
     return 0
   fi
 
-  rm -f "$state"
+  rm -f "$state" "$remembered"
   # Trusting a CA changes what every user of a shared Core accepts, so that is left to its operator.
   needs_issuer_ca_repair "$log_file" \
     && warn "${name}: the issuing CA is not trusted in Core; upload and trust it, then re-run"
@@ -272,7 +277,8 @@ run_target_tests() {
     && auth_env=(ADMIN_CLIENT_P12="$ADMIN_CLIENT_P12" ADMIN_CLIENT_P12_PASSWORD="$ADMIN_CLIENT_P12_PASSWORD")
 
   (cd "${SUITE_DIR}/tests" && env "${auth_env[@]}" ILM_HOST="$ILM_HOST" \
-    PROVISIONING_JSON="${dir}/provisioning.json" RUN_DIR="$dir" \
+    PROVISIONING_JSON="${dir}/provisioning.json" PREVIOUS_PROVISIONING_JSON="${dir}/provisioning.previous.json" \
+    RUN_DIR="$dir" \
     npx playwright "${args[@]}") > "${dir}/playwright.log" 2>&1
 }
 
@@ -298,7 +304,7 @@ record_target() {
 
 run_target() {
   local target="$1" spec dir started provisioning="ok" hits=0 tests=0 failures=0 skipped=0 result
-  local families=() failed=() family name
+  local families=() failed=() family name label
   spec=$(target_spec "$target")
   dir="${MATRIX_RUN_DIR}/${target}"
   mkdir -p "$dir"
@@ -314,9 +320,14 @@ run_target() {
     while IFS= read -r family; do families+=("$family"); done < <(target_families "$target")
     for family in "${families[@]}"; do
       name=$(jq -r .name <<< "$family")
+      label=$(jq -r .label <<< "$family")
       if ! provision_set "$target" "$family" "$spec" "${dir}/provisioning-${name}.json" "${dir}/provisioning-${name}.log" \
-         || ! add_sets_to_summary "${dir}/provisioning.json" "${dir}/provisioning-${name}.json" "$(jq -r .label <<< "$family")"; then
+         || ! add_sets_to_summary "${dir}/provisioning.json" "${dir}/provisioning-${name}.json" "$label"; then
         failed+=("$name")
+      fi
+      if [[ -f "${dir}/provisioning-${name}.previous.json" ]]; then
+        add_sets_to_summary "${dir}/provisioning.previous.json" "${dir}/provisioning-${name}.previous.json" "$label" \
+          || warn "${name}: could not merge the previous summary; its re-run checks will skip"
       fi
     done
     [[ ${#failed[@]} -eq 0 ]] || provisioning="failed: $(IFS=,; echo "${failed[*]}")"
@@ -369,7 +380,9 @@ main() {
   local target name
   if [[ "$FRESH" == "true" ]]; then
     for target in "${SELECTED_TARGETS[@]}"; do
-      while IFS= read -r name; do rm -f "$(set_state_file "$target" "$name")"; done < <(target_families "$target" | jq -r .name)
+      while IFS= read -r name; do
+        rm -f "$(set_state_file "$target" "$name")" "$(set_summary_file "$target" "$name")"
+      done < <(target_families "$target" | jq -r .name)
     done
   fi
 
