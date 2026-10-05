@@ -17,9 +17,12 @@ CORE_MANAGED="false"
 source "${SUITE_DIR}/lib/common.sh"
 # shellcheck source=lib/provision.sh
 source "${SUITE_DIR}/lib/provision.sh"
+# shellcheck source=lib/teardown.sh
+source "${SUITE_DIR}/lib/teardown.sh"
 
 MATRIX_FILE=""
 FRESH="false"
+TEARDOWN="false"
 SKIP_SLOW="false"
 GREP_PATTERN=""
 SELECTED_TARGETS=()
@@ -38,6 +41,7 @@ the backends must already be up.
 Options:
   --matrix FILE      The matrix descriptor (see matrix.json.example)
   --fresh            Provision new TSA sets for the selected targets instead of reusing them
+  --teardown         Delete the pinned TSA sets of the selected targets instead of testing them
   --skip-slow        Skip tests tagged @slow
   --grep PATTERN     Only run tests whose title matches PATTERN
   -h, --help         Show this help
@@ -53,6 +57,7 @@ parse_args() {
     case $1 in
       --matrix)    MATRIX_FILE="$2"; shift 2 ;;
       --fresh)     FRESH="true"; shift ;;
+      --teardown)  TEARDOWN="true"; shift ;;
       --skip-slow) SKIP_SLOW="true"; shift ;;
       --grep)      GREP_PATTERN="$2"; shift 2 ;;
       -h|--help)   usage 0 ;;
@@ -61,6 +66,8 @@ parse_args() {
     esac
   done
   [[ -n "$MATRIX_FILE" ]] || { echo "--matrix is required" >&2; usage 1; }
+  [[ "$FRESH" == "true" && "$TEARDOWN" == "true" ]] && { echo "--fresh and --teardown exclude each other" >&2; usage 1; }
+  return 0
 }
 
 matrix_field() { jq -r "$1 // empty" "$MATRIX_FILE"; }
@@ -353,6 +360,56 @@ run_target() {
       skipped: $skipped, pinHits: $pinHits, seconds: $seconds}')"
 }
 
+# --- Teardown -----------------------------------------------------------------
+# A set is unpinned before its deletion starts, because a partly deleted set cannot be reused.
+# Its summary waits in teardown/ until Core holds nothing of it, so a later --teardown retries.
+teardown_queue() { echo "${SUITE_DIR}/.state/matrix/${MATRIX_NAME}/teardown/$1-$2"; }
+
+# teardown_family TARGET FAMILY -> non-zero when Core keeps part of a set.
+teardown_family() {
+  local target="$1" name="$2" state remembered queue identity file line kept=0
+  state=$(set_state_file "$target" "$name")
+  remembered=$(set_summary_file "$target" "$name")
+  queue=$(teardown_queue "$target" "$name")
+  if [[ -f "$state" ]]; then
+    identity=$(<"$state")
+    if [[ ! -f "$remembered" ]]; then
+      warn "${name}: ${identity} has no remembered summary; run the target once, then tear it down"
+      return 1
+    fi
+    mkdir -p "$queue"
+    mv "$remembered" "${queue}/${identity}.json"
+    rm -f "$state"
+  fi
+
+  for file in "$queue"/*.json; do
+    [[ -f "$file" ]] || continue
+    identity=$(basename "$file" .json)
+    if teardown_summary "$file"; then
+      rm -f "$file"
+      log "${name}: deleted ${identity}"
+    else
+      warn "${name}: Core keeps part of ${identity}; a later --teardown retries it"
+      for line in "${TEARDOWN_LEFT[@]}"; do echo "      ${line}" >&2; done
+      kept=$((kept + 1))
+    fi
+  done
+  rmdir "$queue" "$(dirname "$queue")" 2>/dev/null || true
+  [[ "$kept" -eq 0 ]]
+}
+
+teardown_targets() {
+  local target name keeping=0
+  section "Teardown of matrix ${MATRIX_NAME} at ${ILM_HOST}"
+  for target in "${SELECTED_TARGETS[@]}"; do
+    section "Target ${target}"
+    while IFS= read -r name; do
+      teardown_family "$target" "$name" || keeping=$((keeping + 1))
+    done < <(target_families "$target" | jq -r .name)
+  done
+  [[ "$keeping" -eq 0 ]] || { warn "${keeping} families keep objects in Core"; return 1; }
+}
+
 print_matrix_summary() {
   section "Summary"
   jq -r '.targets[] | [.name, .result, .provisioning, "\(.tests - .failures - .skipped)/\(.tests)",
@@ -369,6 +426,12 @@ main() {
   remember_exported_pins
   load_config
   restore_exported_pins
+  if [[ "$TEARDOWN" == "true" ]]; then
+    require_command curl
+    configure_matrix_admin
+    teardown_targets
+    return
+  fi
   preflight
   configure_matrix_admin
 

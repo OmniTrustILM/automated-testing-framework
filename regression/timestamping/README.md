@@ -148,6 +148,7 @@ shell that starts the runner.
 read -rs SECUROSYS_USER_PIN && export SECUROSYS_USER_PIN
 ./matrix.sh --matrix lab.matrix.json             # every target
 ./matrix.sh --matrix lab.matrix.json securosys   # one target
+./matrix.sh --matrix lab.matrix.json --teardown  # delete every target's TSA sets
 ```
 
 A target provisions one TSA family per entry of its `families` list. A family is a qualified and
@@ -161,6 +162,12 @@ Each target gets TSA sets of its own, pinned in `.state/matrix/<name>/` and reus
 runs, so a re-run issues no certificate. `--fresh` provisions new ones. Tests tagged `@docker`
 drive the local Docker stack and run only when the descriptor sets `localStack`. A missing
 issuing CA stops provisioning, because trusting a CA on a shared Core is its operator's call.
+
+`--teardown` deletes the pinned sets of the selected targets instead of testing them: their
+profiles, signing records, certificates and keys. The objects sets share, such as the token,
+stay. A set is unpinned before its deletion starts, so the next run provisions a new one, and
+whatever Core keeps of it is retried by the next `--teardown`. The certificates stay issued at
+the CA, since Core deletes only its own copy.
 
 Results go to `runs/matrix-<timestamp>/`: one directory per target with the usual artifacts,
 and `matrix.json` with every target's outcome.
