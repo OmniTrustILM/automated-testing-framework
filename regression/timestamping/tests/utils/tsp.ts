@@ -1,7 +1,7 @@
 import { APIRequestContext } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
-import { artifactDir, provisioning } from './env';
+import { artifactDir, basicCredentialFor } from './env';
 import { buildTimestampQuery, Digest, parseTimestampReply, ReplyInfo } from './openssl';
 
 export type TspRoute = 'signing' | 'tsp';
@@ -51,7 +51,7 @@ export async function requestTimestamp(
   options: TimestampRequestOptions,
 ): Promise<TimestampOutcome> {
   const dir = artifactDir(options.label);
-  const credentials = provisioning().tspCredential;
+  const credentials = basicCredentialFor(options.profileName);
 
   let body: Buffer;
   let queryPath: string | undefined;

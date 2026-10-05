@@ -6,6 +6,12 @@ export interface NamedUuid {
   uuid: string;
 }
 
+export interface BasicCredential {
+  username: string;
+  password: string;
+  uuid: string;
+}
+
 export interface TsaSet {
   qualified: boolean;
   /** KeyAlgorithm code of the signing key, such as `RSA` or `ML-DSA`, taken from its family. */
@@ -15,6 +21,7 @@ export interface TsaSet {
   raProfile: NamedUuid;
   certificate: { commonName: string; uuid: string };
   tspProfile: NamedUuid;
+  basicCredential: BasicCredential;
   signingProfile: NamedUuid;
 }
 
@@ -48,7 +55,6 @@ export interface Provisioning {
   vaultProfile: NamedUuid;
   mappedUser: { username: string; uuid: string };
   role: NamedUuid;
-  tspCredential: { username: string; password: string };
   timeQuality: {
     name: string;
     uuid: string;
@@ -93,7 +99,7 @@ function requireNamedSets(summary: Provisioning, file: string): void {
     throw new Error(`${file} lists no TSA sets`);
   }
   for (const [name, set] of entries) {
-    if (!set?.nonQualified || !set?.qualified || !set?.keyAlgorithm) {
+    if (!set?.nonQualified?.basicCredential || !set?.qualified?.basicCredential || !set?.keyAlgorithm) {
       throw new Error(
         `${file}: '${name}' is not a named TSA set. Re-provision with a timestamping-setup.sh from ` +
           'development-environment a0c3297 or later.',
@@ -160,6 +166,16 @@ export function primaryFamily(): TsaFamily {
     throw new Error(`${process.env.PROVISIONING_JSON} has no RSA set, which the protocol specs run on`);
   }
   return family;
+}
+
+/**
+ * Core keeps a Basic credential per TSP profile, so a request authenticates with the credential
+ * of the set it addresses. A name no set serves, as in the unknown-profile cases, takes the first.
+ */
+export function basicCredentialFor(profileName: string): BasicCredential {
+  const sets = provisionedFamilies().flatMap((family) => [family.nonQualified, family.qualified]);
+  const serving = sets.find((set) => set.signingProfile.name === profileName || set.tspProfile.name === profileName);
+  return (serving ?? sets[0]).basicCredential;
 }
 
 /** The cryptography provider connectors behind the provisioned sets, each once. */
