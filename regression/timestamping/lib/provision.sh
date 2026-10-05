@@ -122,16 +122,27 @@ run_mldsa_setup_script() {
 # a spec can pick a family explicitly and an environment provisioned without ML-DSA simply has
 # fewer sets rather than a different shape.
 merge_mldsa_provisioning_summary() {
-  local base="${RUN_DIR}/provisioning.json" mldsa="${RUN_DIR}/provisioning-mldsa.json"
-  local tmp="${RUN_DIR}/provisioning.json.tmp"
-
+  local mldsa="${RUN_DIR}/provisioning-mldsa.json"
   [[ -f "$mldsa" ]] || return 0
-  if jq -s '.[0] + {sets: (.[0].sets + .[1].sets)}' "$base" "$mldsa" > "$tmp" && mv "$tmp" "$base"; then
-    chmod 600 "$base" 2>/dev/null || true
+  add_sets_to_summary "${RUN_DIR}/provisioning.json" "$mldsa" && return 0
+  warn "could not merge the ML-DSA provisioning summary; ML-DSA specs will skip"
+  return 1
+}
+
+# add_sets_to_summary MERGED SUMMARY [LABEL] adds SUMMARY's named sets to MERGED, which starts as
+# SUMMARY when absent. LABEL names the sets' family in test titles; without one, the specs use
+# the key algorithm.
+add_sets_to_summary() {
+  local merged="$1" summary="$2" label="${3:-}" tmp="${1}.tmp" base="null"
+  [[ -f "$merged" ]] && base=$(<"$merged")
+  if jq --argjson base "$base" --arg label "$label" '
+       (.sets | if $label == "" then . else map_values(. + {label: $label}) end) as $sets
+       | ($base // .) + {sets: (($base.sets // {}) + $sets)}' "$summary" > "$tmp" \
+     && mv "$tmp" "$merged"; then
+    chmod 600 "$merged" 2>/dev/null || true
     return 0
   fi
   rm -f "$tmp"
-  warn "could not merge the ML-DSA provisioning summary; ML-DSA specs will skip"
   return 1
 }
 
