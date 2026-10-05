@@ -1,6 +1,6 @@
 import { SigningRecordListItem } from '../utils/adminApi';
 import { waitFor } from '../utils/docker';
-import { runStartedAt } from '../utils/env';
+import { primaryFamily, runStartedAt } from '../utils/env';
 import { expect, test } from '../utils/fixtures';
 import { describeOutcome, requestTimestamp } from '../utils/tsp';
 
@@ -11,8 +11,10 @@ import { describeOutcome, requestTimestamp } from '../utils/tsp';
  * flow itself is out of scope while its certificate-eligibility rules are still being defined.
  */
 test.describe('content-signing canary', () => {
-  test('a timestamp produces a signing record that traces back to its token', async ({ admin, tsp, env }) => {
-    const set = env.sets.nonQualified;
+  const primary = primaryFamily();
+
+  test('a timestamp produces a signing record that traces back to its token', async ({ admin, tsp }) => {
+    const set = primary.nonQualified;
     const outcome = await requestTimestamp(tsp, {
       label: 'record-timestamp',
       profileName: set.signingProfile.name,
@@ -46,8 +48,8 @@ test.describe('content-signing canary', () => {
     expect(Date.parse(detail.signingTime), 'the record carries a parsable signing time').not.toBeNaN();
   });
 
-  test('the timestamping profile exposes a coherent signing-record policy', async ({ admin, env }) => {
-    const profile = await admin.getSigningProfile(env.sets.nonQualified.signingProfile.uuid);
+  test('the timestamping profile exposes a coherent signing-record policy', async ({ admin }) => {
+    const profile = await admin.getSigningProfile(primary.nonQualified.signingProfile.uuid);
     const policy = profile.recordPolicy as Record<string, unknown> | undefined;
 
     expect(policy, 'the signing profile carries a record policy').toBeDefined();
@@ -77,7 +79,7 @@ test.describe('content-signing canary', () => {
     tsp,
     env,
   }) => {
-    const set = env.sets.nonQualified;
+    const set = primary.nonQualified;
     // A well-formed content-signing request on purpose: an incomplete one would be rejected
     // by request validation and prove nothing. This reaches the capability gate — the
     // boundary between content signing and timestamping that the content-signing work moves.
@@ -111,11 +113,11 @@ test.describe('content-signing canary', () => {
     expect(afterwards.reply?.granted, `timestamping after the refusal: ${describeOutcome(afterwards)}`).toBe(true);
   });
 
-  test('every timestamp issued during this run carries its token serial number', async ({ admin, tsp, env }) => {
+  test('every timestamp issued during this run carries its token serial number', async ({ admin, tsp }) => {
     // Scoped to this run rather than the whole table: the database survives between runs and
     // holds records written by older platform versions, which are not this suite's business.
     const since = runStartedAt();
-    const sets = [env.sets.nonQualified, env.sets.qualified];
+    const sets = [primary.nonQualified, primary.qualified];
     const issued: string[] = [];
     for (const set of sets) {
       const outcome = await requestTimestamp(tsp, {

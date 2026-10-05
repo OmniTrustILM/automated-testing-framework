@@ -8,8 +8,8 @@ export interface NamedUuid {
 
 export interface TsaSet {
   qualified: boolean;
-  /** KeyAlgorithm code of the signing key: `RSA` or `ML-DSA`. */
-  keyAlgorithm?: string;
+  /** KeyAlgorithm code of the signing key, such as `RSA` or `ML-DSA`, taken from its family. */
+  keyAlgorithm: string;
   policyOid: string;
   key: NamedUuid;
   raProfile: NamedUuid;
@@ -18,27 +18,35 @@ export interface TsaSet {
   signingProfile: NamedUuid;
 }
 
+export const RSA = 'RSA';
 export const MLDSA = 'ML-DSA';
 
 export function isMldsa(set: TsaSet): boolean {
   return set.keyAlgorithm === MLDSA;
 }
 
+/** One named set of the provisioning summary: a qualified/non-qualified pair on one token. */
+interface SummarySet {
+  cryptoProvider: string;
+  connector: NamedUuid;
+  token: NamedUuid;
+  tokenProfile: NamedUuid;
+  keyAlgorithm: string;
+  nonQualified: Omit<TsaSet, 'keyAlgorithm'>;
+  qualified: Omit<TsaSet, 'keyAlgorithm'>;
+}
+
 export interface Provisioning {
   ilmHost: string;
   connectorHost: string;
-  certificateDnPrefix: string;
   connectors: {
     credentialProvider: NamedUuid;
     ejbca: NamedUuid;
-    cryptographyProvider: NamedUuid;
     timestampFormatting: NamedUuid;
     vault: NamedUuid;
   };
   credential: NamedUuid;
   authority: NamedUuid;
-  token: NamedUuid;
-  tokenProfile: NamedUuid;
   vaultInstance: NamedUuid;
   vaultProfile: NamedUuid;
   mappedUser: { username: string; uuid: string };
@@ -51,13 +59,8 @@ export interface Provisioning {
     ntpServers: string[];
     maxClockDrift: string;
   };
-  sets: {
-    nonQualified: TsaSet;
-    qualified: TsaSet;
-    /** Present only when the environment was provisioned with ML-DSA coverage. */
-    mldsaNonQualified?: TsaSet;
-    mldsaQualified?: TsaSet;
-  };
+  /** Keyed by set name. */
+  sets: Record<string, SummarySet>;
 }
 
 function required(name: string): string {
@@ -79,56 +82,87 @@ export function provisioning(): Provisioning {
     if (!fs.existsSync(file)) {
       throw new Error(`Provisioning summary not found: ${file}`);
     }
-    cachedProvisioning = JSON.parse(fs.readFileSync(file, 'utf8')) as Provisioning;
+    const summary = JSON.parse(fs.readFileSync(file, 'utf8')) as Provisioning;
+    requireNamedSets(summary, file);
+    cachedProvisioning = summary;
   }
   return cachedProvisioning;
 }
 
-/**
- * The provisioned TSA sets, labelled for test titles. The ML-DSA entries are absent on an
- * environment provisioned without them, so specs iterate over what exists rather than
- * failing on a shape they cannot influence.
- */
-export function provisionedSets(): Array<{ label: string; set: TsaSet }> {
-  const sets = provisioning().sets;
-  const candidates: Array<[string, TsaSet | undefined]> = [
-    ['non-qualified', sets.nonQualified],
-    ['qualified', sets.qualified],
-    ['ML-DSA non-qualified', sets.mldsaNonQualified],
-    ['ML-DSA qualified', sets.mldsaQualified],
-  ];
-  return candidates
-    .filter((entry): entry is [string, TsaSet] => entry[1] !== undefined)
-    .map(([label, set]) => ({ label, set }));
+/** A summary from a setup script older than development-environment a0c3297 lists one unnamed pair instead. */
+function requireNamedSets(summary: Provisioning, file: string): void {
+  const entries = Object.entries(summary.sets ?? {});
+  if (entries.length === 0) {
+    throw new Error(`${file} lists no TSA sets`);
+  }
+  for (const [name, set] of entries) {
+    if (!set?.nonQualified || !set?.qualified || !set?.keyAlgorithm) {
+      throw new Error(
+        `${file}: '${name}' is not a named TSA set. Re-provision with a timestamping-setup.sh from ` +
+          'development-environment a0c3297 or later.',
+      );
+    }
+  }
 }
 
 export interface TsaFamily {
+  /** The set's name in the provisioning summary. */
+  name: string;
   /** Signing key algorithm the pair shares, used in test titles. */
   label: string;
+  connector: NamedUuid;
   nonQualified: TsaSet;
   qualified: TsaSet;
 }
 
 /**
- * The provisioned sets grouped into qualified/non-qualified pairs of one key algorithm.
+ * The provisioned sets as qualified/non-qualified pairs of one key algorithm, in summary order.
  *
  * The qualified/non-qualified distinction is a property of a pair: the assertions about it
  * compare two profiles that differ in nothing else, so they have to compare within a family.
  * Comparing an RSA token against an ML-DSA one would conflate the two axes.
  */
 export function provisionedFamilies(): TsaFamily[] {
-  const sets = provisioning().sets;
-  const families: TsaFamily[] = [
-    { label: 'RSA', nonQualified: sets.nonQualified, qualified: sets.qualified },
-  ];
-  if (sets.mldsaNonQualified && sets.mldsaQualified) {
-    families.push({
-      label: MLDSA,
-      nonQualified: sets.mldsaNonQualified,
-      qualified: sets.mldsaQualified,
-    });
+  return Object.entries(provisioning().sets).map(([name, set]) => ({
+    name,
+    label: set.keyAlgorithm,
+    connector: set.connector,
+    nonQualified: { ...set.nonQualified, keyAlgorithm: set.keyAlgorithm },
+    qualified: { ...set.qualified, keyAlgorithm: set.keyAlgorithm },
+  }));
+}
+
+/**
+ * Every provisioned TSA set, labelled for test titles. Specs iterate over what exists, so an
+ * environment provisioned without a family has fewer tests rather than failures.
+ */
+export function provisionedSets(): Array<{ label: string; set: TsaSet }> {
+  return provisionedFamilies().flatMap((family) => {
+    // RSA titles stay unprefixed so each test keeps its title, and its history, across runs.
+    const prefix = family.label === RSA ? '' : `${family.label} `;
+    return [
+      { label: `${prefix}non-qualified`, set: family.nonQualified },
+      { label: `${prefix}qualified`, set: family.qualified },
+    ];
+  });
+}
+
+/**
+ * The RSA family. The protocol and canary specs exercise the TSP endpoints rather than the
+ * signing key, so they run once, on the plainest signer.
+ */
+export function primaryFamily(): TsaFamily {
+  const family = provisionedFamilies().find((candidate) => candidate.label === RSA);
+  if (!family) {
+    throw new Error(`${process.env.PROVISIONING_JSON} has no RSA set, which the protocol specs run on`);
   }
-  return families;
+  return family;
+}
+
+/** The cryptography provider connectors behind the provisioned sets, each once. */
+export function cryptographyConnectors(): NamedUuid[] {
+  const byUuid = new Map(provisionedFamilies().map((family) => [family.connector.uuid, family.connector]));
+  return [...byUuid.values()];
 }
 
 export function adminCertificateHeader(): string {

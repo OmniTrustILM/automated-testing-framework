@@ -1,4 +1,4 @@
-import { isMldsa, provisionedSets, TsaSet } from '../utils/env';
+import { isMldsa, primaryFamily, provisionedSets, TsaSet } from '../utils/env';
 import { expect, test } from '../utils/fixtures';
 import {
   certificateSerial,
@@ -17,6 +17,8 @@ import { describeOutcome, requestTimestamp, TimestampOutcome, TspRoute } from '.
  * does not verify is a failure — that is exactly what a broken signing engine looks like.
  */
 test.describe('TSP happy path', () => {
+  const primary = primaryFamily();
+
   const routes: TspRoute[] = ['signing', 'tsp'];
 
   function expectNonceEchoed(outcome: TimestampOutcome): void {
@@ -91,8 +93,8 @@ test.describe('TSP happy path', () => {
   }
 
   for (const digest of ['sha256', 'sha384', 'sha512'] as Digest[]) {
-    test(`a ${digest} imprint is timestamped and stays bound to the data`, async ({ admin, tsp, env }) => {
-      const set = env.sets.nonQualified;
+    test(`a ${digest} imprint is timestamped and stays bound to the data`, async ({ admin, tsp }) => {
+      const set = primary.nonQualified;
       const outcome = await requestTimestamp(tsp, {
         label: `digest-${digest}`,
         profileName: set.signingProfile.name,
@@ -114,10 +116,10 @@ test.describe('TSP happy path', () => {
     });
   }
 
-  test('a request without a nonce is answered without a nonce', async ({ tsp, env }) => {
+  test('a request without a nonce is answered without a nonce', async ({ tsp }) => {
     const outcome = await requestTimestamp(tsp, {
       label: 'no-nonce',
-      profileName: env.sets.nonQualified.signingProfile.name,
+      profileName: primary.nonQualified.signingProfile.name,
       nonce: false,
     });
     expect(outcome.reply?.granted, describeOutcome(outcome)).toBe(true);
@@ -125,10 +127,10 @@ test.describe('TSP happy path', () => {
     expect(outcome.reply?.nonceSpecified, `nonce was '${outcome.reply?.nonce}'`).toBe(false);
   });
 
-  test('a request without certReq gets a token without the signer certificate', async ({ tsp, env }) => {
+  test('a request without certReq gets a token without the signer certificate', async ({ tsp }) => {
     const outcome = await requestTimestamp(tsp, {
       label: 'no-certreq',
-      profileName: env.sets.nonQualified.signingProfile.name,
+      profileName: primary.nonQualified.signingProfile.name,
       certReq: false,
     });
     expect(outcome.reply?.granted, describeOutcome(outcome)).toBe(true);
@@ -138,11 +140,11 @@ test.describe('TSP happy path', () => {
     ).toBeNull();
   });
 
-  test('the genTime in the token tracks the local clock', async ({ tsp, env }) => {
+  test('the genTime in the token tracks the local clock', async ({ tsp }) => {
     const before = Date.now();
     const outcome = await requestTimestamp(tsp, {
       label: 'gentime',
-      profileName: env.sets.qualified.signingProfile.name,
+      profileName: primary.qualified.signingProfile.name,
     });
     const after = Date.now();
 
@@ -154,8 +156,8 @@ test.describe('TSP happy path', () => {
     expect(genTime).toBeLessThan(after + 60_000);
   });
 
-  test('parallel requests produce unique, verifiable tokens', async ({ admin, tsp, env }) => {
-    const set = env.sets.nonQualified;
+  test('parallel requests produce unique, verifiable tokens', async ({ admin, tsp }) => {
+    const set = primary.nonQualified;
     const trust = await admin.certificateTrustFiles(set.certificate.uuid, 'chain-parallel');
     // Core shares 20 connections per connector with all its traffic and drops a request that waits 10 s for one.
     const requestCount = 10;
