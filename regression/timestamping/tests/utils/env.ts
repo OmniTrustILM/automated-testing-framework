@@ -26,6 +26,8 @@ export interface TsaSet {
 }
 
 export const RSA = 'RSA';
+export const ECDSA = 'ECDSA';
+export const SOFTWARE_V1 = 'software-v1';
 
 /** One named set of the provisioning summary: a qualified/non-qualified pair on one token. */
 interface SummarySet {
@@ -92,6 +94,12 @@ export function provisioning(): Provisioning {
   return cachedProvisioning;
 }
 
+/** The summary of the run that last provisioned these names, which the runner hands over when it reuses them. */
+export function previousProvisioning(): Provisioning | undefined {
+  const file = process.env.PREVIOUS_PROVISIONING_JSON;
+  return file && fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, 'utf8')) as Provisioning) : undefined;
+}
+
 /** A summary from a setup script older than development-environment a0c3297 lists one unnamed pair instead. */
 function requireNamedSets(summary: Provisioning, file: string): void {
   const entries = Object.entries(summary.sets ?? {});
@@ -113,6 +121,8 @@ export interface TsaFamily {
   name: string;
   /** The family's name in test titles: the runner's label, or else the key algorithm. */
   label: string;
+  cryptoProvider: string;
+  keyAlgorithm: string;
   connector: NamedUuid;
   nonQualified: TsaSet;
   qualified: TsaSet;
@@ -129,6 +139,8 @@ export function provisionedFamilies(): TsaFamily[] {
   return Object.entries(provisioning().sets).map(([name, set]) => ({
     name,
     label: set.label ?? set.keyAlgorithm,
+    cryptoProvider: set.cryptoProvider,
+    keyAlgorithm: set.keyAlgorithm,
     connector: set.connector,
     nonQualified: { ...set.nonQualified, keyAlgorithm: set.keyAlgorithm },
     qualified: { ...set.qualified, keyAlgorithm: set.keyAlgorithm },
@@ -153,7 +165,7 @@ export function provisionedSets(): Array<{ label: string; set: TsaSet }> {
 }
 
 function firstRsaFamily(families: TsaFamily[]): TsaFamily | undefined {
-  return families.find((candidate) => candidate.nonQualified.keyAlgorithm === RSA);
+  return families.find((candidate) => candidate.keyAlgorithm === RSA);
 }
 
 /**

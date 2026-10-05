@@ -73,6 +73,11 @@ export class AdminApi {
     return this.get<CertificateDetail>(`/v1/certificates/${uuid}`);
   }
 
+  /** The signature options the certificate's key offers a signing profile. */
+  signatureAttributes(certificateUuid: string): Promise<AttributeDefinition[]> {
+    return this.get<AttributeDefinition[]>(`/v1/signingProfiles/certificates/${certificateUuid}/signatureAttributes`);
+  }
+
   async listSigningRecords(itemsPerPage = 200): Promise<SigningRecordListItem[]> {
     const response = await this.post<{ signingRecords?: SigningRecordListItem[]; items?: SigningRecordListItem[] }>(
       '/v1/signingRecords',
@@ -144,10 +149,43 @@ export interface SigningProfileListItem {
 }
 
 export interface SigningProfileDetail extends SigningProfileListItem {
-  signingScheme?: { certificate?: { uuid: string; commonName?: string } };
+  signingScheme?: {
+    certificate?: { uuid: string; commonName?: string };
+    signingOperationAttributes?: AttributeValue[];
+  };
   tspProfile?: { uuid: string; name: string } | null;
   timeQualityConfiguration?: { uuid: string; name: string } | null;
   [key: string]: unknown;
+}
+
+export interface AttributeContent {
+  data: unknown;
+  reference?: string;
+}
+
+export interface AttributeDefinition {
+  uuid: string;
+  name: string;
+  contentType: string;
+  content?: AttributeContent[];
+  [key: string]: unknown;
+}
+
+export interface AttributeValue {
+  uuid: string;
+  name: string;
+  contentType: string;
+  version: string;
+  content: AttributeContent[];
+}
+
+/** Each attribute's values by name, in a stable order. */
+export function attributeValues(
+  attributes: Array<{ name: string; content?: AttributeContent[] }>,
+): Record<string, string[]> {
+  return Object.fromEntries(
+    attributes.map((attribute) => [attribute.name, (attribute.content ?? []).map((item) => String(item.data)).sort()]),
+  );
 }
 
 export interface TspProfileListItem {

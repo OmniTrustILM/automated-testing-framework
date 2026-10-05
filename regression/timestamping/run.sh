@@ -232,6 +232,7 @@ phase_test() {
     ILM_HOST="$ILM_HOST" \
     ADMIN_CERT_PEM="$ADMIN_CERT_PEM" \
     PROVISIONING_JSON="$provisioning_json" \
+    PREVIOUS_PROVISIONING_JSON="${RUN_DIR}/provisioning.previous.json" \
     RUN_DIR="$RUN_DIR" \
     npx playwright "${args[@]}")
   TEST_EXIT=$?
