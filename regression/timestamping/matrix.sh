@@ -67,6 +67,35 @@ matrix_field() { jq -r "$1 // empty" "$MATRIX_FILE"; }
 
 target_spec() { jq -c --arg name "$1" '.targets[] | select(.name == $name)' "$MATRIX_FILE"; }
 
+# A target's TSA families, one JSON object per line: its own list, else the descriptor's, else the
+# built-in rsa and mldsa65. A string names a built-in family; an object's label defaults to its name.
+target_families() {
+  jq -c --arg name "$1" --arg mldsaCa "${MLDSA_EJBCA_CA:-}" '
+    {
+      rsa:     {name: "rsa",     label: "RSA",    setupArgs: ["--key-algorithm", "RSA"]},
+      mldsa65: {name: "mldsa65", label: "ML-DSA", setupArgs: ["--key-algorithm", "MLDSA", "--ejbca-ca", $mldsaCa]}
+    } as $builtin
+    | (.targets[] | select(.name == $name).families) // .families // ["rsa", "mldsa65"]
+    | .[]
+    | if type == "string" then ($builtin[.] // error("unknown built-in family \(.)"))
+      else {label: .name, setupArgs: []} + . end' "$MATRIX_FILE"
+}
+
+# Family names become part of object names and file paths, and labels part of test titles.
+validate_families() {
+  local target="$1" families problem
+  families=$(target_families "$target" 2>&1) || die "${MATRIX_FILE}: target ${target}: ${families}"
+  problem=$(jq -rs '
+      (if length == 0 then "names no families" else empty end),
+      (map(select((.name // "") | test("^[a-z0-9][a-z0-9-]*$") | not) | .name // "(unnamed)")
+        | if length > 0 then "family names must be lower-case letters, digits and dashes: \(join(" "))" else empty end),
+      (map(.name) | group_by(.) | map(select(length > 1) | .[0])
+        | if length > 0 then "duplicate family names: \(join(" "))" else empty end),
+      (map(.label) | group_by(.) | map(select(length > 1) | .[0])
+        | if length > 0 then "duplicate family labels: \(join(" "))" else empty end)' <<< "$families")
+  [[ -z "$problem" ]] || die "${MATRIX_FILE}: target ${target}: ${problem}"
+}
+
 # Target names become part of object names and file paths.
 validate_matrix() {
   [[ -f "$MATRIX_FILE" ]] || die "Matrix descriptor not found: ${MATRIX_FILE}"
@@ -83,12 +112,15 @@ validate_matrix() {
   [[ -z "$duplicate" ]] || die "${MATRIX_FILE}: duplicate target names: ${duplicate}"
   invalid=$(jq -r '.targets[]? | select(.pinEnv != null and ((.pinEnv | test("^[A-Z_][A-Z0-9_]*$")) | not)) | .name' "$MATRIX_FILE")
   [[ -z "$invalid" ]] || die "${MATRIX_FILE}: pinEnv must name an environment variable: ${invalid}"
+  invalid=$(jq -r '[.targets[]? | select(has("mldsa")) | .name] | join(" ")' "$MATRIX_FILE")
+  [[ -z "$invalid" ]] || die "${MATRIX_FILE}: mldsa is replaced by families, e.g. \"families\": [\"rsa\"]: ${invalid}"
+  local target
+  while IFS= read -r target; do validate_families "$target"; done < <(jq -r '.targets[]?.name' "$MATRIX_FILE")
 
   if [[ ${#SELECTED_TARGETS[@]} -eq 0 ]]; then
     while IFS= read -r target; do SELECTED_TARGETS+=("$target"); done < <(jq -r '.targets[]?.name' "$MATRIX_FILE")
   fi
   [[ ${#SELECTED_TARGETS[@]} -gt 0 ]] || die "${MATRIX_FILE} names no targets"
-  local target
   for target in "${SELECTED_TARGETS[@]}"; do
     [[ -n "$(target_spec "$target")" ]] || die "Unknown target '${target}'. Known: $(jq -r '[.targets[].name] | join(" ")' "$MATRIX_FILE")"
   done
@@ -166,8 +198,8 @@ set_identity() {
 }
 
 # The token defaults to one per target, because a token belongs to one cryptography provider.
-# The descriptor's arguments come after the defaults and win over them; the set's own names
-# come last and are never overridden.
+# The descriptor's, the target's and the family's arguments follow the defaults in that order, each
+# winning over what precedes it; the set's own names come last and are never overridden.
 setup_arguments() {
   local target="$1" family="$2" spec="$3" identity="$4" summary="$5" arg pin_env
   SETUP_ARGS=(--ilm-host "$ILM_HOST" "${SETUP_AUTH_ARGS[@]}"
@@ -178,22 +210,20 @@ setup_arguments() {
 
   pin_env=$(jq -r '.pinEnv // empty' <<< "$spec")
   [[ -n "$pin_env" ]] && SETUP_ARGS+=(--pin-env "$pin_env")
-  case "$family" in
-    rsa)     SETUP_ARGS+=(--key-algorithm RSA) ;;
-    mldsa65) SETUP_ARGS+=(--key-algorithm MLDSA --ejbca-ca "$MLDSA_EJBCA_CA") ;;
-  esac
+  while IFS= read -r arg; do SETUP_ARGS+=("$arg"); done < <(jq -r '.setupArgs[]' <<< "$family")
   SETUP_ARGS+=(--certificate-dn "$identity" --key-name "$identity" --ra-profile-name "$identity"
     --tsp-profile-name "$identity" --signing-profile-name "$identity" --json-summary "$summary")
 }
 
-# provision_set TARGET FAMILY SPEC DIR SUMMARY LOG
+# provision_set TARGET FAMILY SPEC SUMMARY LOG, where FAMILY is one object from target_families.
 provision_set() {
-  local target="$1" family="$2" spec="$3" dir="$4" summary="$5" log_file="$6" identity state
-  identity=$(set_identity "$target" "$family")
-  state=$(set_state_file "$target" "$family")
+  local target="$1" family="$2" spec="$3" summary="$4" log_file="$5" name identity state
+  name=$(jq -r .name <<< "$family")
+  identity=$(set_identity "$target" "$name")
+  state=$(set_state_file "$target" "$name")
   setup_arguments "$target" "$family" "$spec" "$identity" "$summary"
 
-  log "${family}: ${identity}"
+  log "${name}: ${identity}"
   if "$TIMESTAMPING_SETUP_SCRIPT" "${SETUP_ARGS[@]}" > "$log_file" 2>&1; then
     mkdir -p "$(dirname "$state")"
     echo "$identity" > "$state"
@@ -203,7 +233,7 @@ provision_set() {
   rm -f "$state"
   # Trusting a CA changes what every user of a shared Core accepts, so that is left to its operator.
   needs_issuer_ca_repair "$log_file" \
-    && warn "${family}: the issuing CA is not trusted in Core; upload and trust it, then re-run"
+    && warn "${name}: the issuing CA is not trusted in Core; upload and trust it, then re-run"
   grep -m5 -E 'ERROR|HTTP [0-9]{3}' "$log_file" | redact_pin "$spec" >&2 || true
   return 1
 }
@@ -268,6 +298,7 @@ record_target() {
 
 run_target() {
   local target="$1" spec dir started provisioning="ok" hits=0 tests=0 failures=0 skipped=0 result
+  local families=() failed=() family name
   spec=$(target_spec "$target")
   dir="${MATRIX_RUN_DIR}/${target}"
   mkdir -p "$dir"
@@ -278,26 +309,30 @@ run_target() {
   if [[ -n "$pin_env" && -z "${!pin_env:-}" ]]; then
     warn "${pin_env} is not set; export the token PIN before running this target"
     provisioning="no PIN"
-  elif ! provision_set "$target" rsa "$spec" "$dir" "${dir}/provisioning.json" "${dir}/provisioning.log"; then
-    provisioning="failed"
-  elif [[ "$(jq -r '.mldsa != false' <<< "$spec")" == "true" ]]; then
-    if provision_set "$target" mldsa65 "$spec" "$dir" "${dir}/provisioning-mldsa.json" "${dir}/provisioning-mldsa.log"; then
-      RUN_DIR="$dir" merge_mldsa_provisioning_summary || provisioning="failed"
-    else
-      provisioning="failed"
-    fi
-  fi
-
-  if [[ "$provisioning" == "ok" ]]; then
+  else
+    # Read up front, because the setup script inherits stdin.
+    while IFS= read -r family; do families+=("$family"); done < <(target_families "$target")
+    for family in "${families[@]}"; do
+      name=$(jq -r .name <<< "$family")
+      if ! provision_set "$target" "$family" "$spec" "${dir}/provisioning-${name}.json" "${dir}/provisioning-${name}.log" \
+         || ! add_sets_to_summary "${dir}/provisioning.json" "${dir}/provisioning-${name}.json" "$(jq -r .label <<< "$family")"; then
+        failed+=("$name")
+      fi
+    done
+    [[ ${#failed[@]} -eq 0 ]] || provisioning="failed: $(IFS=,; echo "${failed[*]}")"
     hits=$(pin_hits "$spec" "$dir")
     [[ "$hits" -eq 0 ]] || warn "the ${pin_env} value occurs ${hits} times in ${dir}; check whether that is the PIN"
-    if run_target_tests "$dir"; then result="passed"; else result="failed"; fi
+  fi
+
+  # The families that did provision are tested even when another one failed.
+  if [[ -f "${dir}/provisioning.json" ]]; then
+    if run_target_tests "$dir" && [[ ${#failed[@]} -eq 0 ]]; then result="passed"; else result="failed"; fi
     read -r tests failures skipped <<< "$(junit_counts "${dir}/junit.xml")"
     log "tests: $((tests - failures - skipped)) passed, ${failures} failed, ${skipped} skipped — ${dir}/playwright.log"
   else
     result="failed"
-    log "provisioning ${provisioning} — ${dir}"
   fi
+  [[ "$provisioning" == "ok" ]] || log "provisioning ${provisioning} — ${dir}"
 
   [[ "$result" == "passed" ]] || FAILED_TARGETS=$((FAILED_TARGETS + 1))
   record_target "$(jq -n --arg name "$target" --arg result "$result" --arg provisioning "$provisioning" \
@@ -331,9 +366,11 @@ main() {
     (cd "${SUITE_DIR}/tests" && npm install --no-audit --no-fund) >/dev/null 2>&1 || die "npm install failed"
   fi
 
-  local target
+  local target name
   if [[ "$FRESH" == "true" ]]; then
-    for target in "${SELECTED_TARGETS[@]}"; do rm -f "$(set_state_file "$target" rsa)" "$(set_state_file "$target" mldsa65)"; done
+    for target in "${SELECTED_TARGETS[@]}"; do
+      while IFS= read -r name; do rm -f "$(set_state_file "$target" "$name")"; done < <(target_families "$target" | jq -r .name)
+    done
   fi
 
   start_matrix_run

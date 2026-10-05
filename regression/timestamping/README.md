@@ -150,6 +150,13 @@ read -rs SECUROSYS_USER_PIN && export SECUROSYS_USER_PIN
 ./matrix.sh --matrix lab.matrix.json securosys   # one target
 ```
 
+A target provisions one TSA family per entry of its `families` list. A family is a qualified and
+non-qualified pair, and its setup-script arguments choose the key algorithm and signature
+options. Without a list, the descriptor's top-level `families` apply, and without those the
+built-in `rsa` and `mldsa65`, which a list can also name. The per-set specs run on every family.
+The protocol and canary specs run once, on the target's first RSA family. A family that fails to
+provision fails the target, and the families that did provision are still tested.
+
 Each target gets TSA sets of its own, pinned in `.state/matrix/<name>/` and reused by later
 runs, so a re-run issues no certificate. `--fresh` provisions new ones. Tests tagged `@docker`
 drive the local Docker stack and run only when the descriptor sets `localStack`. A missing
