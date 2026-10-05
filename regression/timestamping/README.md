@@ -202,20 +202,15 @@ second outage would prove nothing and cost another few minutes.
 ML-DSA provisioning is additional coverage, not the subject of the suite: when it fails the run
 says so and continues with the RSA sets alone.
 
-Two things differ from the RSA path and are handled by the runner:
+Two things differ from the RSA path and are handled by the suite:
 
 - **The post-quantum CA is not discoverable from the leaf.** Certificates issued by the `MLDSA`
   CA carry only an OCSP URI in their AIA, no CA Issuers URI, so the existing repair has nothing
   to follow. It now falls back to EJBCA's certificate distribution servlet, looking the CA up by
   the issuer DN the leaf reports (`EJBCA_PUBLIC_WEB_BASE`).
-- **`openssl ts -verify` cannot check an ML-DSA token.** `PKCS7_signatureVerify` drives the
-  signature through `EVP_DigestVerify`, and OpenSSL's ML-DSA implementation refuses that
-  interface — `provider signature not supported: ML-DSA-65 verify_init`. The token is sound;
-  openssl verifies the very same signature through `pkeyutl -rawin`. `verifyMldsaTimestamp`
-  therefore performs the checks `ts -verify` would perform, one at a time: the signer's chain is
-  trusted for `timestampsign`, the ML-DSA signature over the re-tagged `SET OF` signedAttrs is
-  valid, and the signed `messageDigest` is the digest of the TSTInfo actually returned. That last
-  step is what stops the signature proving only that *some* TSTInfo was signed.
+- **`openssl ts -verify` checks RSA PKCS#1 v1.5 and ECDSA tokens only.** The suite verifies
+  every other token, ML-DSA among them, with `openssl cms -verify`, and then binds its TSTInfo to
+  the request.
 
 ## Known deviations
 

@@ -19,11 +19,6 @@ export interface TsaSet {
 }
 
 export const RSA = 'RSA';
-export const MLDSA = 'ML-DSA';
-
-export function isMldsa(set: TsaSet): boolean {
-  return set.keyAlgorithm === MLDSA;
-}
 
 /** One named set of the provisioning summary: a qualified/non-qualified pair on one token. */
 interface SummarySet {
