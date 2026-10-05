@@ -1,3 +1,4 @@
+import { primaryFamily } from '../utils/env';
 import { expect, test } from '../utils/fixtures';
 import { describeOutcome, requestTimestamp, TimestampOutcome } from '../utils/tsp';
 
@@ -7,6 +8,8 @@ import { describeOutcome, requestTimestamp, TimestampOutcome } from '../utils/ts
  * caller anything about the platform's internals or about which profiles exist.
  */
 test.describe('TSP error paths', () => {
+  const primary = primaryFamily();
+
   const INTERNALS = /exception|sql|com\.otilm|hibernate|nullpointer|stacktrace/i;
 
   function assertNoLeak(outcome: TimestampOutcome): void {
@@ -14,19 +17,19 @@ test.describe('TSP error paths', () => {
     expect(INTERNALS.test(text), `rejection text leaks internals: "${text}"`).toBe(false);
   }
 
-  test('a wrong Basic password is refused with HTTP 401', async ({ tsp, env }) => {
+  test('a wrong Basic password is refused with HTTP 401', async ({ tsp }) => {
     const outcome = await requestTimestamp(tsp, {
       label: 'error-wrong-password',
-      profileName: env.sets.nonQualified.signingProfile.name,
+      profileName: primary.nonQualified.signingProfile.name,
       password: 'definitely-not-the-password',
     });
     expect(outcome.httpStatus, describeOutcome(outcome)).toBe(401);
   });
 
-  test('a request without credentials is refused with HTTP 401', async ({ tsp, env }) => {
+  test('a request without credentials is refused with HTTP 401', async ({ tsp }) => {
     const outcome = await requestTimestamp(tsp, {
       label: 'error-no-auth',
-      profileName: env.sets.nonQualified.signingProfile.name,
+      profileName: primary.nonQualified.signingProfile.name,
       username: null,
     });
     expect(outcome.httpStatus, describeOutcome(outcome)).toBe(401);
@@ -53,8 +56,8 @@ test.describe('TSP error paths', () => {
     expect(outcome.responseLength, 'no token is returned').toBe(0);
   });
 
-  test('a disabled signing profile stops issuing and recovers when re-enabled', async ({ admin, tsp, env }) => {
-    const set = env.sets.nonQualified;
+  test('a disabled signing profile stops issuing and recovers when re-enabled', async ({ admin, tsp }) => {
+    const set = primary.nonQualified;
     await admin.raw('PATCH', `/v1/signingProfiles/${set.signingProfile.uuid}/disable`);
     try {
       const outcome = await requestTimestamp(tsp, {
@@ -75,10 +78,10 @@ test.describe('TSP error paths', () => {
     expect(recovered.reply?.granted, `re-enabled profile issues again: ${describeOutcome(recovered)}`).toBe(true);
   });
 
-  test('a malformed request body is rejected as bad data, not as a server error', async ({ tsp, env }) => {
+  test('a malformed request body is rejected as bad data, not as a server error', async ({ tsp }) => {
     const outcome = await requestTimestamp(tsp, {
       label: 'error-malformed-body',
-      profileName: env.sets.nonQualified.signingProfile.name,
+      profileName: primary.nonQualified.signingProfile.name,
       body: Buffer.from('this is not a DER encoded TimeStampReq'),
     });
     expect(outcome.httpStatus, describeOutcome(outcome)).toBeLessThan(500);
@@ -88,10 +91,10 @@ test.describe('TSP error paths', () => {
     }
   });
 
-  test('a truncated DER request is rejected without a token', async ({ tsp, env }) => {
+  test('a truncated DER request is rejected without a token', async ({ tsp }) => {
     const outcome = await requestTimestamp(tsp, {
       label: 'error-truncated-der',
-      profileName: env.sets.nonQualified.signingProfile.name,
+      profileName: primary.nonQualified.signingProfile.name,
       body: Buffer.from([0x30, 0x82, 0x01, 0x00, 0x02, 0x01]),
     });
     expect(outcome.httpStatus, describeOutcome(outcome)).toBeLessThan(500);
@@ -100,7 +103,7 @@ test.describe('TSP error paths', () => {
     }
   });
 
-  test('an authenticated user without the timestamp right is refused', async ({ admin, tsp, env }) => {
+  test('an authenticated user without the timestamp right is refused', async ({ admin, tsp }) => {
     const username = 'regression-unprivileged';
     const password = 'unprivileged-changeme';
 
@@ -116,7 +119,7 @@ test.describe('TSP error paths', () => {
       });
     }
 
-    const tspProfileUuid = env.sets.nonQualified.tspProfile.uuid;
+    const tspProfileUuid = primary.nonQualified.tspProfile.uuid;
     const credentials = await admin.get<Array<{ username: string }>>(`/v1/tspProfiles/${tspProfileUuid}/basicCredentials`);
     if (!credentials.some((credential) => credential.username === username)) {
       await admin.post(`/v1/tspProfiles/${tspProfileUuid}/basicCredentials`, {
@@ -128,7 +131,7 @@ test.describe('TSP error paths', () => {
 
     const outcome = await requestTimestamp(tsp, {
       label: 'error-unprivileged-user',
-      profileName: env.sets.nonQualified.signingProfile.name,
+      profileName: primary.nonQualified.signingProfile.name,
       username,
       password,
     });
@@ -179,7 +182,7 @@ test.describe('TSP error paths', () => {
     // A previous run may have left the account disabled; enable is idempotent.
     await admin.raw('PATCH', `/v1/users/${user.uuid}/enable`);
 
-    const tspProfileUuid = env.sets.nonQualified.tspProfile.uuid;
+    const tspProfileUuid = primary.nonQualified.tspProfile.uuid;
     const credentials = await admin.get<Array<{ username: string }>>(`/v1/tspProfiles/${tspProfileUuid}/basicCredentials`);
     if (!credentials.some((credential) => credential.username === username)) {
       await admin.post(`/v1/tspProfiles/${tspProfileUuid}/basicCredentials`, {
@@ -189,7 +192,7 @@ test.describe('TSP error paths', () => {
       });
     }
 
-    const profileName = env.sets.nonQualified.signingProfile.name;
+    const profileName = primary.nonQualified.signingProfile.name;
     const baseline = await requestTimestamp(tsp, {
       label: 'error-deprovisioned-user-baseline',
       profileName,
@@ -232,10 +235,10 @@ test.describe('TSP error paths', () => {
     expect(recovered.reply?.granted, `re-enabling the user restores issuance: ${describeOutcome(recovered)}`).toBe(true);
   });
 
-  test('a JSON content type is refused without issuing a token', async ({ tsp, env }) => {
+  test('a JSON content type is refused without issuing a token', async ({ tsp }) => {
     const outcome = await requestTimestamp(tsp, {
       label: 'error-wrong-content-type',
-      profileName: env.sets.nonQualified.signingProfile.name,
+      profileName: primary.nonQualified.signingProfile.name,
       contentType: 'application/json',
     });
     expect(outcome.httpStatus, describeOutcome(outcome)).toBeGreaterThanOrEqual(400);
@@ -245,7 +248,7 @@ test.describe('TSP error paths', () => {
     ).toBe(false);
   });
 
-  test('a JSON content type is currently answered with HTTP 500', async ({ tsp, env }) => {
+  test('a JSON content type is currently answered with HTTP 500', async ({ tsp }) => {
     // Pinned deviation, not an endorsement: HttpMediaTypeNotSupportedException reaches the
     // generic handler in Core's ExceptionHandlingAdvice, so an unsupported media type is
     // reported as a server error instead of 415. Asserted exactly rather than marked
@@ -253,14 +256,14 @@ test.describe('TSP error paths', () => {
     // starts answering 415, this test fails and is the record of why it changed.
     const outcome = await requestTimestamp(tsp, {
       label: 'error-wrong-content-type-status',
-      profileName: env.sets.nonQualified.signingProfile.name,
+      profileName: primary.nonQualified.signingProfile.name,
       contentType: 'application/json',
     });
     expect(outcome.httpStatus, describeOutcome(outcome)).toBe(500);
   });
 
-  test('the digest allow-list is enforced exactly as the profile declares it', async ({ admin, tsp, env }) => {
-    const set = env.sets.nonQualified;
+  test('the digest allow-list is enforced exactly as the profile declares it', async ({ admin, tsp }) => {
+    const set = primary.nonQualified;
     const profile = await admin.getSigningProfile(set.signingProfile.uuid);
     const allowed = ((profile.workflow as Record<string, unknown>).allowedDigestAlgorithms ?? []) as string[];
     const sha1Allowed =
@@ -285,8 +288,8 @@ test.describe('TSP error paths', () => {
     }
   });
 
-  test('the policy allow-list is enforced exactly as the profile declares it', async ({ admin, tsp, env }) => {
-    const set = env.sets.nonQualified;
+  test('the policy allow-list is enforced exactly as the profile declares it', async ({ admin, tsp }) => {
+    const set = primary.nonQualified;
     const profile = await admin.getSigningProfile(set.signingProfile.uuid);
     const allowed = ((profile.workflow as Record<string, unknown>).allowedPolicyIds ?? []) as string[];
     let policySuffix = 1;
@@ -318,8 +321,8 @@ test.describe('TSP error paths', () => {
     }
   });
 
-  test('a request for the profile policy is granted and carries it', async ({ tsp, env }) => {
-    const set = env.sets.nonQualified;
+  test('a request for the profile policy is granted and carries it', async ({ tsp }) => {
+    const set = primary.nonQualified;
     const outcome = await requestTimestamp(tsp, {
       label: 'policy-profile-oid',
       profileName: set.signingProfile.name,

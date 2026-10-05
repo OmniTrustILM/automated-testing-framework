@@ -1,4 +1,5 @@
 import { containerState, DOCKER, listQueues } from '../utils/docker';
+import { cryptographyConnectors } from '../utils/env';
 import { expect, test } from '../utils/fixtures';
 
 /**
@@ -41,7 +42,7 @@ test.describe('environment', () => {
     const expected = [
       env.connectors.credentialProvider,
       env.connectors.ejbca,
-      env.connectors.cryptographyProvider,
+      ...cryptographyConnectors(),
       env.connectors.timestampFormatting,
       env.connectors.vault,
     ];

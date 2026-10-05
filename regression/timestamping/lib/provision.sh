@@ -118,24 +118,28 @@ run_mldsa_setup_script() {
     > "$log_file" 2>&1
 }
 
-# The suite reads one summary. The ML-DSA sets join the RSA ones under their own keys, so a
-# spec can pick a family explicitly and an environment provisioned without ML-DSA simply has
-# no such entries rather than a different shape.
+# The suite reads one summary. The ML-DSA sets join the RSA ones under their own set names, so
+# a spec can pick a family explicitly and an environment provisioned without ML-DSA simply has
+# fewer sets rather than a different shape.
 merge_mldsa_provisioning_summary() {
   local base="${RUN_DIR}/provisioning.json" mldsa="${RUN_DIR}/provisioning-mldsa.json"
   local tmp="${RUN_DIR}/provisioning.json.tmp"
 
   [[ -f "$mldsa" ]] || return 0
-  if jq -s '.[0] * {sets: (.[0].sets + {
-           mldsaNonQualified: .[1].sets.nonQualified,
-           mldsaQualified:    .[1].sets.qualified
-         })}' "$base" "$mldsa" > "$tmp" && mv "$tmp" "$base"; then
+  if jq -s '.[0] + {sets: (.[0].sets + .[1].sets)}' "$base" "$mldsa" > "$tmp" && mv "$tmp" "$base"; then
     chmod 600 "$base" 2>/dev/null || true
     return 0
   fi
   rm -f "$tmp"
   warn "could not merge the ML-DSA provisioning summary; ML-DSA specs will skip"
   return 1
+}
+
+# The specs read the summary keyed by set name, which timestamping-setup.sh writes from
+# development-environment a0c3297 on. That revision also introduced --set-name.
+require_named_set_summary() {
+  grep -q -- '--set-name)' "$TIMESTAMPING_SETUP_SCRIPT" \
+    || die "${TIMESTAMPING_SETUP_SCRIPT} writes a provisioning summary the suite cannot read. Point TIMESTAMPING_SETUP_SCRIPT at a timestamping-setup.sh from development-environment a0c3297 or later."
 }
 
 # --- Repair: issuing CA missing from the platform -----------------------------
@@ -225,6 +229,7 @@ attempt_issuer_ca_repair() {
 
 phase_provision() {
   section "Provisioning"
+  require_named_set_summary
   load_or_create_provisioning_names
   bootstrap_admin_if_needed
 

@@ -138,8 +138,7 @@ preflight() {
   require_command npm
   require_command perl
   [[ -x "$TIMESTAMPING_SETUP_SCRIPT" ]] || die "Setup script not executable: ${TIMESTAMPING_SETUP_SCRIPT}"
-  grep -q -- '--crypto-provider)' "$TIMESTAMPING_SETUP_SCRIPT" \
-    || die "${TIMESTAMPING_SETUP_SCRIPT} has no --crypto-provider. Point TIMESTAMPING_SETUP_SCRIPT at a timestamping-setup.sh from development-environment 224c59d or later."
+  require_named_set_summary
 }
 
 start_matrix_run() {
