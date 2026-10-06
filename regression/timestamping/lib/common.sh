@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Shared helpers for the timestamping regression runner.
-# Sourced by run.sh; not executable on its own.
+# Sourced by test-local.sh and test-instance.sh; not executable on its own.
 
 # --- Component topology -------------------------------------------------------
 # A component is a piece of the system under test. Each one is either `published` — taken
@@ -289,7 +289,7 @@ load_config() {
   EJBCA_PUBLIC_WEB_BASE="${EJBCA_PUBLIC_WEB_BASE:-https://ejbca.3key.company/ejbca}"
 
   apply_component_sources
-  # matrix.sh reaches a Core it does not manage, at the address its descriptor names.
+  # test-instance.sh reaches a Core it does not manage, at the address its descriptor names.
   if [[ "${CORE_MANAGED:-true}" == "true" ]]; then resolve_core_endpoints; fi
 
   [[ -f "$ADMIN_CERT_PEM" ]] || die "Admin certificate not found: $ADMIN_CERT_PEM"

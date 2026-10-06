@@ -11,8 +11,8 @@ nothing is built.
 
 ```bash
 cp config.env.example config.env    # once: local certificate, EJBCA bundle, ports
-./run.sh --clone                    # the full cycle against the latest published builds
-./run.sh                            # subsequent runs
+./test-local.sh --clone                    # the full cycle against the latest published builds
+./test-local.sh                            # subsequent runs
 ```
 
 ## Component sources
@@ -21,10 +21,10 @@ A component is either `published` — pulled from `hub.omnitrustregistry.com`, t
 `local`, built from a checkout in the workspace. `--local` names the exceptions:
 
 ```bash
-./run.sh                                                 # QA: everything published
-./run.sh --local interfaces,core                         # dev: Maven side local
-./run.sh --local timestamp-formatting-connector          # dev: one image local
-./run.sh --local all                                     # build everything from sources
+./test-local.sh                                                 # QA: everything published
+./test-local.sh --local interfaces,core                         # dev: Maven side local
+./test-local.sh --local timestamp-formatting-connector          # dev: one image local
+./test-local.sh --local all                                     # build everything from sources
 ```
 
 `all` covers `interfaces`, `core` and the five connectors. The platform services — `auth`,
@@ -124,7 +124,7 @@ locally".
 
 ## Options
 
-`./run.sh --help` is the full list. Worth knowing before the first run: `--local` (build a
+`./test-local.sh --help` is the full list. Worth knowing before the first run: `--local` (build a
 component from sources instead of pulling it), `--clone` (fetch the repositories that are
 missing), `--clean` (wipe the database and re-provision), `--tests-only` (run against an
 environment that is already up) and `--skip-slow` (drop the `@slow` time-quality scenarios).
@@ -134,7 +134,7 @@ and the run manifest records `dirty: true` next to the commit that was actually 
 
 ## Matrix runs
 
-`matrix.sh` runs the suite once per target against a Core that is already up, such as a lab
+`test-instance.sh` runs the suite once per target against a Core that is already up, such as a lab
 instance behind an ingress. A target is one cryptography provider and, for pkcs11, one HSM
 token. Core and the backends must already be running.
 
@@ -146,9 +146,9 @@ shell that starts the runner.
 
 ```bash
 read -rs SECUROSYS_USER_PIN && export SECUROSYS_USER_PIN
-./matrix.sh --matrix lab.matrix.json             # every target
-./matrix.sh --matrix lab.matrix.json securosys   # one target
-./matrix.sh --matrix lab.matrix.json --teardown  # delete every target's TSA sets
+./test-instance.sh --matrix lab.matrix.json             # every target
+./test-instance.sh --matrix lab.matrix.json securosys   # one target
+./test-instance.sh --matrix lab.matrix.json --teardown  # delete every target's TSA sets
 ```
 
 A target provisions one TSA family per entry of its `families` list. A family is a qualified and

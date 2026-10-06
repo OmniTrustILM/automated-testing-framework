@@ -71,7 +71,7 @@ export interface Provisioning {
 function required(name: string): string {
   const value = process.env[name];
   if (!value) {
-    throw new Error(`Environment variable ${name} is not set — start the suite through run.sh`);
+    throw new Error(`Environment variable ${name} is not set — start the suite through test-local.sh or test-instance.sh`);
   }
   return value;
 }
