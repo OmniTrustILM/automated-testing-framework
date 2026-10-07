@@ -26,11 +26,13 @@ export class CertificatePage {
     readonly main: Locator;
     readonly addCertificateButton: Locator;
 
-    // Upload Certificate
     readonly uploadButton: Locator;
-    readonly uploadModal: Locator;
-    readonly uploadFileContentTextarea: Locator;
-    readonly uploadSubmitButton: Locator;
+    readonly importModal: Locator;
+    readonly importFileContent: Locator;
+    readonly importDetectedContent: Locator;
+    readonly importSubmitButton: Locator;
+    readonly importResults: Locator;
+    readonly importDoneButton: Locator;
 
     // Delete certificate from Details page
     readonly deleteButton: Locator;
@@ -60,9 +62,12 @@ export class CertificatePage {
         this.addCertificateButton = this.main.getByTestId('add-certificate-button');
 
         this.uploadButton = this.main.getByTestId('upload-button');
-        this.uploadModal = page.getByRole('dialog').filter({ hasText: 'Upload Certificate' });
-        this.uploadFileContentTextarea = this.uploadModal.locator('#__fileUpload__fileContent');
-        this.uploadSubmitButton = this.uploadModal.getByTestId('progress-button');
+        this.importModal = page.getByRole('dialog', { name: 'Import certificates and keys' });
+        this.importFileContent = this.importModal.getByRole('textbox', { name: 'File content' });
+        this.importDetectedContent = this.importModal.getByRole('region', { name: /Detected content/ });
+        this.importSubmitButton = this.importModal.getByRole('button', { name: /Import \d+ entr/ });
+        this.importResults = this.importModal.getByRole('region', { name: 'Import results' });
+        this.importDoneButton = this.importModal.getByRole('button', { name: 'Done', exact: true });
 
         this.deleteButton = this.main.getByTestId('trash-button');
         this.deleteConfirmDialog = page.getByRole('dialog').filter({ hasText: 'Delete Certificate' });
@@ -99,21 +104,52 @@ export class CertificatePage {
         await expect(this.page).toHaveURL(/\/certificates\/add/);
     }
 
-    async openUploadModal(): Promise<void> {
-        logger.info('Opening Upload Certificate modal');
+    async openImportModal(): Promise<void> {
+        logger.info('Opening Import certificates and keys');
         await this.uploadButton.click();
-        await expect(this.uploadModal).toBeVisible();
+        await expect(this.importModal).toBeVisible();
     }
 
     async pasteCertificatePem(pem: string): Promise<void> {
-        logger.info('Pasting certificate PEM into textarea');
-        await this.uploadFileContentTextarea.fill(pem);
+        logger.info('Pasting certificate PEM');
+        await this.importFileContent.fill(pem);
+        await expect(this.importDetectedContent).toBeVisible();
+        await expect(this.importDetectedContent.getByRole('checkbox')).toBeChecked();
+        await this.importFileContent.blur();
     }
 
-    async submitUpload(): Promise<void> {
-        logger.info('Submitting upload');
-        await this.uploadSubmitButton.click();
-        await expect(this.uploadModal).not.toBeVisible();
+    async importPastedCertificate(): Promise<void> {
+        logger.info('Importing the detected certificate');
+        await expect(this.importSubmitButton).toBeEnabled();
+        await this.importSubmitButton.click();
+        await expect(this.importResults).toBeVisible();
+        await expect(this.importResults.getByTestId('badge')).toHaveText('Imported');
+    }
+
+    async closeImportModal(): Promise<void> {
+        logger.info('Closing the import modal');
+        await this.importDoneButton.click();
+        await expect(this.importModal).not.toBeVisible();
+    }
+
+    async openCertificateFromList(commonName: string): Promise<void> {
+        logger.info(`Opening certificate from the list: ${commonName}`);
+        await this.main.getByRole('link', { name: commonName, exact: true }).click();
+        await expect(this.page).toHaveURL(/\/certificates\/detail\//);
+    }
+
+    async assertUploadedCertificateDetails(commonName: string): Promise<void> {
+        logger.info('Asserting uploaded certificate Details tab');
+        await this.openTab('Details');
+        await expect(this.main.locator('tr[data-id="commonName"]')).toContainText(commonName);
+        const serial = (await this.main.locator('tr[data-id="serialNumber"]').locator('td').last().textContent())?.trim() ?? '';
+        expect(serial, 'Serial Number should be non-empty').not.toBe('');
+        const fingerprint = (await this.main.locator('tr[data-id="fingerprint"]').locator('td').last().textContent())?.trim() ?? '';
+        expect(fingerprint, 'Fingerprint should be non-empty').not.toBe('');
+        const stateRow = this.main.locator('tr[data-id="certState"]');
+        await expect(stateRow.locator('[data-testid="certificate-status"]')).toHaveText('Issued');
+        await expect(this.main.locator('tr[data-id="keySize"]')).toContainText('2048');
+        await expect(this.main.locator('tr[data-id="subjectType"]')).toContainText('Self-signed End Entity');
     }
 
     async deleteFromDetail(): Promise<void> {
