@@ -5,12 +5,13 @@
  * 
  * HOW: test flow:
  *      1. Login → Certificates list
- *      2. Upload 1 cert via UI-modal (UI-path upload validation) (note: we'll be using self-signed certs and generate them via node-forge, so no external fixtures)
- *      3. Upload 2 more certs via API (faster, hermetic)
- *      4. Filter by our unique CN-prefix (don't touch someone else inventory)
- *      5. Single delete via detail page → verify 2 remain
- *      6. Batch delete remaining via list toolbar → verify clean
- *      7. afterEach — API cleanup if test fails ahead of batch delete
+ *      2. Import 1 cert via the Import certificates and keys wizard
+ *      3. After Done, open that certificate and check the Details tab
+ *      4. Upload 2 more certs via API (faster, hermetic)
+ *      5. Filter by our unique CN-prefix (don't touch someone else inventory)
+ *      6. Single delete via detail page → verify 2 remain
+ *      7. Batch delete remaining via list toolbar → verify clean
+ *      8. afterEach — API cleanup if test fails ahead of batch delete
  */
 
 import { recordCleanupFailure, statusOf } from '../../utils/cleanupLedger';
@@ -68,13 +69,21 @@ test.describe('@smoke upload-cert', () => {
 
         await loginAsSmokeUser(page, env);
 
-        await test.step('Upload cert #1 via UI modal', async () => {
-            await certPage.goToList();
-            await certPage.openUploadModal();
-            await certPage.pasteCertificatePem(cert1.pem);
-            await certPage.submitUpload();
+        await test.step('Import cert #1 via the import wizard', async () => {
             uploadedFingerprints.push(cert1.fingerprint);
-            logger.info(`Uploaded via UI: ${cert1.fingerprint}`);
+            await certPage.goToList();
+            await certPage.openImportModal();
+            await certPage.pasteCertificatePem(cert1.pem);
+            await certPage.importPastedCertificate();
+            await certPage.closeImportModal();
+            logger.info(`Imported via UI: ${cert1.fingerprint}`);
+        });
+
+        await test.step('Open imported certificate and check Details', async () => {
+            const commonName = `${cnPrefix}-1.example.com`;
+            await certPage.openCertificateFromList(commonName);
+            await certPage.assertUploadedCertificateDetails(commonName);
+            await certPage.goToList();
         });
 
         await test.step('Upload certs #2 and #3 via API', async () => {
