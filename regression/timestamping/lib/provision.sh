@@ -163,12 +163,14 @@ require_named_set_summary() {
 }
 
 # --- Repair: issuing CA missing from the platform -----------------------------
-# Symptom: "issuerCertificateUuid is still empty after N attempts", later surfacing as
+# Symptom: "issuerCertificateUuid is still empty after N attempts" or, from a newer setup
+# script, "Core holds no issuer certificate", later surfacing as
 # "Certificate is not eligible for signing workflow type TIMESTAMPING". The leaf cannot be
 # validated because its issuer was never uploaded, so the signing profile is refused.
 # Fix: pull the CA from the leaf's AIA extension, upload it, trust it, revalidate the leaf.
 needs_issuer_ca_repair() {
   grep -q -e "issuerCertificateUuid is still empty" \
+          -e "Core holds no issuer certificate" \
           -e "not eligible for signing workflow type TIMESTAMPING" "$1"
 }
 
