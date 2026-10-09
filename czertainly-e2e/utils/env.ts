@@ -54,7 +54,20 @@ export type SmokeEnv = {
 
   // SMK-005 - Issue Certificate through ACME
   namespace?: string;  // SMOKE_TESTS_NAMESPACE — where the test creates Issuer / Certificate / Secret
+  acmeSolverDomain?: string;  // ACME_SOLVER_DOMAIN — parent domain of the name the HTTP-01 solver answers on
+  acmeIngressClass?: string;  // ACME_INGRESS_CLASS — ingress class cert-manager gives the solver's Ingress
 };
+
+/**
+ * The platform has to reach the HTTP-01 solver by name, and the solver's Ingress lives in the
+ * runner's cluster. When that is the cluster the environment under test is served from, a name
+ * next to BASE_URL's host is already covered by its wildcard DNS: `fe-pr-1.preview.example.com`
+ * gives `preview.example.com`, and the solver answers on `smk005-<ts>.preview.example.com`.
+ */
+export function parentDomainOf(baseUrl: string): string {
+  const labels = new URL(baseUrl).hostname.split('.');
+  return labels.slice(1).join('.');
+}
 
 function required(name: string): string {
   const value = process.env[name];
@@ -99,6 +112,8 @@ export function loadEnv(): TestEnv {
       ejbcaCertificateProfile: process.env.EJBCA_CERTIFICATE_PROFILE,
 
       namespace: process.env.SMOKE_TESTS_NAMESPACE,
+      acmeSolverDomain: process.env.ACME_SOLVER_DOMAIN || parentDomainOf(required('BASE_URL')),
+      acmeIngressClass: process.env.ACME_INGRESS_CLASS || 'nginx',
     },
   };
 
