@@ -1,3 +1,4 @@
+import { waitFor } from '../utils/docker';
 import { primaryFamily, provisionedSets } from '../utils/env';
 import { expect, test } from '../utils/fixtures';
 import {
@@ -67,6 +68,29 @@ test.describe('TSP happy path', () => {
       const platformCertificate = await admin.getCertificate(set.certificate.uuid);
       const expectedSerial = platformCertificate.serialNumber.replace(/^0+/, '').toLowerCase();
       expect(certificateSerial(signerPem!), 'signer certificate serial number').toBe(expectedSerial);
+    });
+
+    test(`${label} token is recorded under its signing profile`, async ({ admin, tsp }) => {
+      const set = provisioned;
+      const outcome = await requestTimestamp(tsp, {
+        label: `record-${label}`,
+        profileName: set.signingProfile.name,
+      });
+      expect(outcome.reply?.granted, describeOutcome(outcome)).toBe(true);
+
+      const serial = outcome.reply!.serialNumberHex!;
+      const records = await waitFor(
+        () => admin.listSigningRecords(),
+        (all) => all.some((record) => record.timestampTokenSerialNumbers?.includes(serial)),
+        60_000,
+        2000,
+      );
+      const record = records.find((candidate) => candidate.timestampTokenSerialNumbers?.includes(serial));
+      expect(record, `no signing record carries token serial '${serial}' (artifacts: ${outcome.dir})`).toBeDefined();
+      expect(record!.protocol, 'the record is attributed to the TSP protocol').toBe('tsp');
+      expect(record!.signingProfile?.uuid, 'the record names the signing profile that issued the token').toBe(
+        set.signingProfile.uuid,
+      );
     });
   }
 
