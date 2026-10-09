@@ -228,7 +228,6 @@ asserts the current outcome exactly, so a test fails the moment any of it change
 | Test | Deviation | Issue |
 |---|---|---|
 | `a JSON content type is currently answered with HTTP 500` | `HttpMediaTypeNotSupportedException` reaches the generic handler in Core's `ExceptionHandlingAdvice` and is rendered as HTTP 500 instead of 415 | [core#2140](https://github.com/OmniTrustILM/core/issues/2140) |
-| `RSA's PSS scheme is currently accepted on the … certificate` | a signing profile on an ECDSA or post-quantum certificate accepts and stores `data_rsaSigScheme`, a field only RSA keys offer | [core#2423](https://github.com/OmniTrustILM/core/issues/2423) |
 
 Playwright's `test.fail()` was deliberately not used for any of this: it marks the whole test
 as expected-to-fail, so an unrelated breakage on the same request — a 401, a malformed
