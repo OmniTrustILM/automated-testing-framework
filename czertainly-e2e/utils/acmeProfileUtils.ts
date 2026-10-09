@@ -56,8 +56,10 @@ export async function createAcmeProfile(
             raProfileUuid: options.raProfileUuid,
             dnsResolverIp: options.dnsResolverIp,
             dnsResolverPort: options.dnsResolverPort,
+            // The platform's documented defaults. `validity` is how long an Order stays open, not how
+            // long the certificate lasts: set short, the Order expires between challenge and finalize.
             retryInterval: 30,
-            validity: 30,
+            validity: 36000,
             requireContact: false,
             requireTermsOfService: false,
             issueCertificateAttributes: [],
