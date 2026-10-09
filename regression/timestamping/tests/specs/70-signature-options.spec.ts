@@ -2,7 +2,7 @@ import { AdminApi, AttributeDefinition, attributeValues } from '../utils/adminAp
 import { Provisioning, provisionedFamilies, provisionedSets, RSA, SOFTWARE_V1, TsaFamily } from '../utils/env';
 import { expect, test } from '../utils/fixtures';
 import { certificateKeyAlgorithm, tokenSignature } from '../utils/openssl';
-import { expectedSignature, signatureField, V2_OFFER } from '../utils/signatureOptions';
+import { expectedSignature, postQuantumOffer, signatureField, V2_OFFER } from '../utils/signatureOptions';
 import { describeOutcome, requestTimestamp } from '../utils/tsp';
 
 /** Values outside the v2 offer, which Core must refuse rather than store. */
@@ -76,10 +76,16 @@ test.describe('signature options', () => {
   for (const family of v2Families) {
     test(`the ${family.label} certificates offer the signature options of their key algorithm`, async ({ admin }) => {
       for (const set of [family.nonQualified, family.qualified]) {
-        const offer = await admin.signatureAttributes(set.certificate.uuid);
-        expect(attributeValues(offer), `options offered for '${set.certificate.commonName}'`).toEqual(
-          V2_OFFER[family.keyAlgorithm] ?? {},
-        );
+        const offer = attributeValues(await admin.signatureAttributes(set.certificate.uuid));
+        const label = `options offered for '${set.certificate.commonName}'`;
+        const expected = V2_OFFER[family.keyAlgorithm];
+        if (expected) {
+          expect(offer, label).toEqual(expected);
+        } else {
+          expect(Object.keys(offer), label).toEqual(['signatureAlgorithm']);
+          expect(offer.signatureAlgorithm, label).toHaveLength(1);
+          expect(offer.signatureAlgorithm[0], label).toMatch(postQuantumOffer(family.keyAlgorithm));
+        }
       }
     });
   }
@@ -114,7 +120,9 @@ test.describe('signature options', () => {
           [field]: value,
         });
         expect(attempt.status, attempt.body).toBe(422);
-        expect(attempt.body, 'the refusal names the field').toContain(`Name=${field}`);
+        expect(attempt.body, 'the refusal names the combination as unknown').toContain(
+          'do not match a known RSA or ECDSA field combination',
+        );
       });
     }
   }

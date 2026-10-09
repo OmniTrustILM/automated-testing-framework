@@ -4,11 +4,16 @@ import { RSASSA_PSS, TokenSignature } from './openssl';
 
 const V2_DIGESTS = ['SHA-256', 'SHA-384', 'SHA-512'];
 
-/** What a v2 provider offers per key algorithm. A post-quantum key fixes its own signature and offers nothing. */
+/** What a v2 provider offers per key algorithm. */
 export const V2_OFFER: Record<string, Record<string, string[]>> = {
   [RSA]: { data_rsaSigScheme: ['PKCS1-v1_5', 'PSS'], data_sigDigest: V2_DIGESTS },
   [ECDSA]: { data_sigDigest: V2_DIGESTS },
 };
+
+/** A post-quantum key offers the one signature algorithm its parameter set fixes, such as ML-DSA-65. */
+export function postQuantumOffer(keyAlgorithm: string): RegExp {
+  return new RegExp(`^${keyAlgorithm}-\\d+$`);
+}
 
 const DIGEST_OIDS: Record<string, string> = {
   'SHA-256': '2.16.840.1.101.3.4.2.1',
