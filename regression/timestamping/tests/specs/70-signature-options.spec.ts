@@ -15,7 +15,6 @@ const REFUSED_ON_RSA: Array<[string, string]> = [
 interface Attempt {
   status: number;
   body: string;
-  stored?: Record<string, string[]>;
 }
 
 /** Tries a signing profile on the family's non-qualified certificate and deletes it if Core creates one. */
@@ -59,13 +58,8 @@ async function attemptSigningProfile(
   const attempt: Attempt = { status: response.status(), body: await response.text() };
   const uuid = response.ok() ? (JSON.parse(attempt.body) as { uuid?: string }).uuid : undefined;
   if (uuid) {
-    try {
-      const stored = await admin.getSigningProfile(uuid);
-      attempt.stored = attributeValues(stored.signingScheme?.signingOperationAttributes ?? []);
-    } finally {
-      const deleted = await admin.raw('DELETE', `/v1/signingProfiles/${uuid}`);
-      expect(deleted.status(), `deleting the signing profile ${uuid} this test created`).toBe(204);
-    }
+    const deleted = await admin.raw('DELETE', `/v1/signingProfiles/${uuid}`);
+    expect(deleted.status(), `deleting the signing profile ${uuid} this test created`).toBe(204);
   }
   return attempt;
 }
@@ -131,19 +125,15 @@ test.describe('signature options', () => {
     );
     if (!rsa) continue;
 
-    test(`RSA's PSS scheme is currently accepted on the ${family.label} certificate`, async ({ admin, env }) => {
-      // Pinned deviation, OmniTrustILM/core#2423: Core stores data_rsaSigScheme, a field only RSA
-      // keys offer, on any certificate. Asserted exactly rather than marked test.fail(), which
-      // would also swallow an unrelated failure. When Core starts refusing it, this test fails
-      // and is the record of why.
+    test(`RSA's PSS scheme is refused on the ${family.label} certificate`, async ({ admin, env }) => {
       const own = await admin.signatureAttributes(family.nonQualified.certificate.uuid);
       const rsaOffer = await admin.signatureAttributes(rsa.nonQualified.certificate.uuid);
       const attempt = await attemptSigningProfile(admin, env, family, [...own, ...rsaOffer], {
         data_rsaSigScheme: 'PSS',
         data_sigDigest: 'SHA-512',
       });
-      expect(attempt.status, attempt.body).toBe(201);
-      expect(attempt.stored, 'what Core stored').toEqual({ data_rsaSigScheme: ['PSS'], data_sigDigest: ['SHA-512'] });
+      expect(attempt.status, attempt.body).toBe(422);
+      expect(attempt.body, 'the refusal names the key').toContain('not supported by the key');
     });
   }
 });
