@@ -178,7 +178,7 @@ and `matrix.json` with every target's outcome.
 |---|---|
 | `00-environment` | Core health, container health, connector status and health, Core's subscription to the time-quality exchange |
 | `10-provisioning` | signing and TSP profiles enabled and mutually linked, certificates validating against a complete trusted chain, time-quality wiring, mapped user, object-scoped `timestamp` grants, and a re-run under pinned names reusing every object |
-| `20-tsp-happy-path` | every provisioned set over both routes, SHA-256/384/512, exact nonce echo and certReq variants, signature verification with separated trust anchors and intermediates, signer identity, genTime, concurrent issuance with unique serials |
+| `20-tsp-happy-path` | every provisioned set over both routes, SHA-256/384/512, exact nonce echo and certReq variants, signature verification with separated trust anchors and intermediates, signer identity, genTime, concurrent issuance with unique serials, and a signing record naming each set's profile |
 | `30-token-structure` | qualified vs non-qualified differences within each key algorithm — `qcStatements`, accuracy equal to the time-quality configuration, policy OID — including a guard that the two profiles must not produce identical tokens |
 | `40-tsp-errors` | authentication failures, unknown and disabled profiles, malformed requests, an unprivileged user, digest and policy handling, and the invariants that errors never become 5xx and never leak internals |
 | `50-time-quality` | `@slow`: losing NTP must stop every qualified profile while plain ones keep working, and all must recover |
