@@ -181,6 +181,7 @@ and `matrix.json` with every target's outcome.
 | `20-tsp-happy-path` | every provisioned set over both routes, SHA-256/384/512, exact nonce echo and certReq variants, signature verification with separated trust anchors and intermediates, signer identity, genTime, concurrent issuance with unique serials, and a signing record naming each set's profile |
 | `30-token-structure` | qualified vs non-qualified differences within each key algorithm — `qcStatements`, accuracy equal to the time-quality configuration, policy OID — including a guard that the two profiles must not produce identical tokens |
 | `40-tsp-errors` | authentication failures, unknown and disabled profiles, malformed requests, an unprivileged user, digest and policy handling, and the invariants that errors never become 5xx and never leak internals |
+| `45-tsp-http` | the TSP endpoints as HTTP resources: the Basic challenge of each TSP profile and none for an unknown one, no cookies, request media types, `Accept` negotiation, methods, and empty, oversized and trailing-slash requests |
 | `50-time-quality` | `@slow`: losing NTP or the time-quality monitor must stop every qualified profile while plain ones keep working, and all must recover |
 | `60-content-signing-canary` | timestamps land in the signing-record subsystem with the token serial number, record policy stays coherent, the timestamping, content-signing and raw-signing workflow types stay published, and the capability gate still refuses a content-signing profile built on the timestamping connector without disturbing timestamping |
 | `70-signature-options` | the signature schemes and digests each certificate offers, tokens signed the way their profile states, and refusal of options outside the offer |
@@ -228,6 +229,7 @@ asserts the current outcome exactly, so a test fails the moment any of it change
 | Test | Deviation | Issue |
 |---|---|---|
 | `a JSON content type is currently answered with HTTP 500` | `HttpMediaTypeNotSupportedException` reaches the generic handler in Core's `ExceptionHandlingAdvice` and is rendered as HTTP 500 instead of 415 | [core#2140](https://github.com/OmniTrustILM/core/issues/2140) |
+| `a '…' content type is refused like JSON`, `a client accepting only JSON is currently answered with HTTP 500` | the form and binary media types meet the same generic handler, and so does `HttpMediaTypeNotAcceptableException`, which would be 406 | [core#2140](https://github.com/OmniTrustILM/core/issues/2140) |
 
 Playwright's `test.fail()` was deliberately not used for any of this: it marks the whole test
 as expected-to-fail, so an unrelated breakage on the same request — a 401, a malformed
