@@ -183,6 +183,7 @@ and `matrix.json` with every target's outcome.
 | `40-tsp-errors` | authentication failures, unknown and disabled profiles, malformed requests, an unprivileged user, digest and policy handling, and the invariants that errors never become 5xx and never leak internals |
 | `45-tsp-http` | the TSP endpoints as HTTP resources: the Basic challenge of each TSP profile and none for an unknown one, no cookies, request media types, `Accept` negotiation, methods, and empty, oversized and trailing-slash requests |
 | `50-time-quality` | `@slow`: losing NTP or the time-quality monitor must stop every qualified profile while plain ones keep working, and all must recover |
+| `55-connector-outage` | `@slow`: an outage of the cryptography provider or the formatting connector is an in-band system failure, and issuing resumes when it returns |
 | `60-content-signing-canary` | timestamps land in the signing-record subsystem with the token serial number, record policy stays coherent, the timestamping, content-signing and raw-signing workflow types stay published, and the capability gate still refuses a content-signing profile built on the timestamping connector without disturbing timestamping |
 | `70-signature-options` | the signature schemes and digests each certificate offers, tokens signed the way their profile states, and refusal of options outside the offer |
 

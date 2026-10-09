@@ -35,6 +35,11 @@ export function containerImageId(name: string): string {
   return result.exitCode === 0 ? result.stdout.trim() : '';
 }
 
+/** The Compose container serving a cryptography provider, as the provisioning summary names the provider. */
+export function cryptographyProviderContainer(cryptoProvider: string): string {
+  return cryptoProvider === 'pkcs11' ? 'pkcs11-cryptography-provider' : 'software-cryptography-provider';
+}
+
 export function stopContainer(name: string): void {
   docker(['stop', name]);
 }
