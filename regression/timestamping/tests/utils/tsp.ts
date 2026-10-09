@@ -22,6 +22,9 @@ export interface TimestampRequestOptions {
   /** Raw request body, bypassing query generation (malformed-request cases). */
   body?: Buffer;
   contentType?: string;
+  accept?: string;
+  /** GET sends no body. */
+  method?: 'POST' | 'GET' | 'PUT';
 }
 
 export interface TimestampOutcome {
@@ -32,6 +35,8 @@ export interface TimestampOutcome {
   dataPath?: string;
   responsePath?: string;
   responseLength: number;
+  /** Response headers, names lower-cased. */
+  headers: Record<string, string>;
   reply?: ReplyInfo;
 }
 
@@ -83,9 +88,15 @@ export async function requestTimestamp(
     headers.Authorization = `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
   }
 
-  const response = await request.post(tspUrl(options.route ?? 'signing', options.profileName), {
+  if (options.accept) {
+    headers.Accept = options.accept;
+  }
+
+  const method = options.method ?? 'POST';
+  const response = await request.fetch(tspUrl(options.route ?? 'signing', options.profileName), {
+    method,
     headers,
-    data: body,
+    data: method === 'GET' ? undefined : body,
   });
 
   const outcome: TimestampOutcome = {
@@ -95,6 +106,7 @@ export async function requestTimestamp(
     queryPath,
     dataPath,
     responseLength: 0,
+    headers: response.headers(),
   };
 
   const responseBody = await response.body();
