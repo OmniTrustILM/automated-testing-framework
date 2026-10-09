@@ -114,13 +114,25 @@ async function waitForReady(
     name: string,
     timeoutMs: number,
     explain: () => Promise<string>,
+    progress?: () => Promise<string>,
 ): Promise<void> {
-    const deadline = Date.now() + timeoutMs;
+    const started = Date.now();
+    const deadline = started + timeoutMs;
     let last: Condition | undefined;
+    // Each change in progress is logged with the seconds since the wait began, so a slow run shows
+    // which step took the time rather than only that the total ran out.
+    let lastProgress = '';
     while (Date.now() < deadline) {
         last = readyCondition(await getObject(namespace, plural, name));
+        if (progress) {
+            const now = await progress();
+            if (now !== lastProgress) {
+                logger.info(`+${Math.round((Date.now() - started) / 1000)}s ${plural}/${name}: ${now}`);
+                lastProgress = now;
+            }
+        }
         if (last?.status === 'True') {
-            logger.info(`${plural}/${name} is Ready (${last.reason ?? 'no reason'})`);
+            logger.info(`${plural}/${name} is Ready (${last.reason ?? 'no reason'}) after ${Math.round((Date.now() - started) / 1000)}s`);
             return;
         }
         // A False here is not final: cert-manager retries a failed account registration or order
@@ -136,7 +148,35 @@ export async function waitForIssuerReady(namespace: string, name: string, timeou
 }
 
 export async function waitForCertificateReady(namespace: string, name: string, timeoutMs = 180_000): Promise<void> {
-    await waitForReady(namespace, 'certificates', name, timeoutMs, () => describeAcmeProgress(namespace, name));
+    await waitForReady(namespace, 'certificates', name, timeoutMs,
+        () => describeAcmeProgress(namespace, name),
+        () => acmeProgressLine(namespace, name));
+}
+
+/** One line of Order and Challenge states, for the timeline the wait logs as they change. */
+async function acmeProgressLine(namespace: string, certificateName: string): Promise<string> {
+    try {
+        const { orders, challenges } = await listAcmeObjects(namespace, certificateName);
+        const parts = [
+            ...orders.map((o) => `order=${o.status?.state ?? '-'}${o.status?.reason ? ` (${o.status.reason})` : ''}`),
+            ...challenges.map((c) => `challenge=${c.status?.state ?? '-'} presented=${c.status?.presented ?? '-'}`),
+        ];
+        return parts.length ? parts.join(' ') : 'no order yet';
+    } catch (e) {
+        return `unreadable: ${e}`;
+    }
+}
+
+/**
+ * Orders are owned by a CertificateRequest named <certificate>-<n>; matching the prefix keeps
+ * another run's objects out of this one's report.
+ */
+async function listAcmeObjects(namespace: string, certificateName: string): Promise<{ orders: K8sObject[]; challenges: K8sObject[] }> {
+    const api = getCustomObjectsApi();
+    const list = async (plural: string) =>
+        ((await api.listNamespacedCustomObject({ group: ACME_GROUP, version: VERSION, namespace, plural })) as { items: K8sObject[] }).items;
+    const mine = (o: K8sObject) => (o.metadata?.name ?? '').startsWith(`${certificateName}-`);
+    return { orders: (await list('orders')).filter(mine), challenges: (await list('challenges')).filter(mine) };
 }
 
 /**
@@ -146,15 +186,7 @@ export async function waitForCertificateReady(namespace: string, name: string, t
  */
 export async function describeAcmeProgress(namespace: string, certificateName: string): Promise<string> {
     try {
-        const api = getCustomObjectsApi();
-        const list = async (plural: string) =>
-            ((await api.listNamespacedCustomObject({ group: ACME_GROUP, version: VERSION, namespace, plural })) as { items: K8sObject[] }).items;
-
-        // Orders are owned by a CertificateRequest named <certificate>-<n>; matching the prefix
-        // keeps another run's objects out of this one's report.
-        const mine = (o: K8sObject) => (o.metadata?.name ?? '').startsWith(`${certificateName}-`);
-        const orders = (await list('orders')).filter(mine);
-        const challenges = (await list('challenges')).filter(mine);
+        const { orders, challenges } = await listAcmeObjects(namespace, certificateName);
 
         const lines = [
             ...orders.map((o) => `  order ${o.metadata?.name}: state=${o.status?.state ?? '-'} reason=${o.status?.reason ?? '-'}`),

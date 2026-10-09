@@ -168,7 +168,14 @@ test.describe('@smoke acme', () => {
                     dnsName: thisRun.dnsName,
                     secretName: thisRun.tlsSecretName,
                 });
-                await certManager.waitForCertificateReady(thisRun.namespace, thisRun.certificateName);
+                try {
+                    await certManager.waitForCertificateReady(thisRun.namespace, thisRun.certificateName);
+                } catch (e) {
+                    // cert-manager's status only says what it last heard; the platform says what it did.
+                    throw new Error(`${(e as Error).message}${await acmeProfileUtils.describePlatformSide(api, {
+                        acmeProfileUuid: thisRun.acmeProfile!.uuid, dnsName: thisRun.dnsName,
+                    })}`);
+                }
             });
 
             let fingerprint = '';

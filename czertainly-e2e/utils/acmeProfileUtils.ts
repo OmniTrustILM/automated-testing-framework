@@ -104,3 +104,44 @@ export async function deleteAcmeProfile(
     await ensureOk(await request.patch(`/api/v1/acmeProfiles/${options.uuid}/disable`), `Disable ACME Profile ${options.uuid}`, [404]);
     await ensureOk(await request.delete(`/api/v1/acmeProfiles/${options.uuid}`), `Delete ACME Profile ${options.uuid}`, [404]);
 }
+
+/**
+ * The platform's side of an ACME run, for a failure message: the order counters of every account
+ * registered on the profile, and each certificate for the name with its event history. Together
+ * they say whether finalize reached the platform, and when the certificate was issued — which
+ * cert-manager's own status cannot tell, since it only records what it last heard back.
+ */
+export async function describePlatformSide(
+    request: APIRequestContext,
+    options: { acmeProfileUuid: string; dnsName: string },
+): Promise<string> {
+    const lines: string[] = [];
+    try {
+        const accounts = await (await request.get('/api/v1/acmeAccounts')).json() as Array<{ uuid: string; acmeProfileUuid: string }>;
+        for (const a of accounts.filter((x) => x.acmeProfileUuid === options.acmeProfileUuid)) {
+            const d = await (await request.get(`/api/v1/acmeProfiles/${options.acmeProfileUuid}/acmeAccounts/${a.uuid}`)).json();
+            lines.push(`  account ${d.accountId} ${d.status}: total=${d.totalOrders} pending=${d.pendingOrders} ` +
+                `processing=${d.processingOrders} valid=${d.validOrders} failed=${d.failedOrders}`);
+        }
+
+        const search = await request.post('/api/v1/certificates', {
+            data: {
+                itemsPerPage: 50, pageNumber: 1, includeArchived: false,
+                filters: [{ fieldSource: 'property', fieldIdentifier: 'COMMON_NAME', condition: 'EQUALS', value: options.dnsName }],
+            },
+        });
+        const certs = (await search.json() as { certificates: Array<{ uuid: string; state: string }> }).certificates;
+        if (certs.length === 0) lines.push(`  no certificate for ${options.dnsName} in the inventory`);
+        for (const c of certs) {
+            lines.push(`  certificate ${c.uuid} state=${c.state}`);
+            const history = await (await request.get(`/api/v1/certificates/${c.uuid}/history`)).json() as
+                Array<{ created: string; event: string; status: string; message?: string }>;
+            for (const h of [...history].sort((x, y) => x.created.localeCompare(y.created))) {
+                lines.push(`    ${h.created} ${h.event} ${h.status}${h.message ? ` — ${h.message}` : ''}`);
+            }
+        }
+    } catch (e) {
+        lines.push(`  (could not read the platform side: ${e})`);
+    }
+    return `\nplatform side at ${new Date().toISOString()}:\n${lines.join('\n')}`;
+}
