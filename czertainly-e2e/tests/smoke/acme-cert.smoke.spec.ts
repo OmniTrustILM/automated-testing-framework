@@ -27,6 +27,7 @@ import { getAuthorizationApi } from '../../utils/k8sClient';
 import * as acmeProfileUtils from '../../utils/acmeProfileUtils';
 import * as certManager from '../../utils/certManagerUtils';
 import { findCertificateByFingerprint, revokeCertificate, deleteCertificate, waitForCertificateState } from '../../utils/certificateUtils';
+import { getCertificateKeyUuid, deleteKeyIfOrphaned } from '../../utils/keyUtils';
 import { attemptCleanup } from '../../utils/cleanupLedger';
 import { readSmokeState, SmokeState } from '../../utils/smokeState';
 import { Logger } from '../../utils/Logger';
@@ -43,6 +44,11 @@ interface AcmeRun {
     dnsName: string;
     acmeProfile?: acmeProfileUtils.AcmeProfileDto;
     k8sTouched: boolean;
+    /**
+     * When the run began, less a minute for clock difference with the platform. The public-key
+     * entry core creates for the certificate is removed only if it is newer than this.
+     */
+    startedAt: Date;
 }
 
 /**
@@ -81,7 +87,10 @@ async function cleanUp(run: AcmeRun, state: SmokeState, api: APIRequestContext):
         await attemptCleanup({ resource: 'certificate', name: run.dnsName }, () => Promise.reject(e));
     }
     for (const uuid of uuids) {
-        await attemptCleanup({ resource: 'certificate', uuid, name: run.dnsName }, async () => {
+        // Core links the certificate to a `certKey_<CN>` public-key entry and keeps it after the
+        // certificate is deleted. Read the link now, while the certificate still exists.
+        const keyUuid = await getCertificateKeyUuid(api, uuid).catch(() => undefined);
+        const deleted = await attemptCleanup({ resource: 'certificate', uuid, name: run.dnsName }, async () => {
             // Already revoked on the retry is fine — the delete is what matters. Revoke only queues
             // an action, and deleting before it has run makes it fail on a missing certificate
             // (core#2519), so wait for Revoked first.
@@ -90,6 +99,10 @@ async function cleanUp(run: AcmeRun, state: SmokeState, api: APIRequestContext):
                 .catch((e) => logger.warn(`Revoke of ${uuid} failed, deleting anyway: ${e}`));
             await deleteCertificate(api, uuid);
         });
+        if (deleted && keyUuid) {
+            await attemptCleanup({ resource: 'key', uuid: keyUuid, name: `certKey_${run.dnsName}` },
+                () => deleteKeyIfOrphaned(api, keyUuid, run.startedAt));
+        }
     }
 
     if (run.acmeProfile) {
@@ -137,6 +150,7 @@ test.describe('@smoke acme', () => {
             tlsSecretName: `smk005-tls-${ts}`,
             dnsName: `smk005-${ts}.${env.smoke.acmeSolverDomain}`,
             k8sTouched: false,
+            startedAt: new Date(ts - 60_000),
         };
         run = thisRun;
         logger.info(`ACME run: ${thisRun.dnsName}, ingress class ${env.smoke.acmeIngressClass}, namespace ${thisRun.namespace}`);
