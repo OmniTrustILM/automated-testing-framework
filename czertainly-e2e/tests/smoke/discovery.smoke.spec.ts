@@ -1,10 +1,12 @@
-import { recordCleanupFailure } from '../../utils/cleanupLedger';
+import { attemptCleanup, recordCleanupFailure } from '../../utils/cleanupLedger';
 import { test, expect, loginAsSmokeUser, getAuthenticatedApiContext } from '../../fixtures/testFixtures';
 import { Navigation } from '../../pages/Navigation';
 import { TablePage } from '../../pages/TablePage';
 import { DiscoveryPage } from '../../pages/DiscoveryPage';
 import * as connectorUtils from '../../utils/connectorUtils';
-import { waitForDiscoveryCompletion } from '../../utils/discoveryUtils';
+import { waitForDiscoveryCompletion, listNewlyDiscoveredInventoryUuids, deleteDiscovery } from '../../utils/discoveryUtils';
+import { deleteCertificate } from '../../utils/certificateUtils';
+import { getCertificateKeyUuid, deleteKeyIfOrphaned } from '../../utils/keyUtils';
 import { readSmokeState } from '../../utils/smokeState';
 import { Logger } from '../../utils/Logger';
 
@@ -13,26 +15,56 @@ const logger = new Logger('DiscoverySmokeTest');
 const DISCOVERY_TIMEOUT_MS = 60_000; // Was 300_000 (5min); discoveries actually take ~10s
 
 test.describe('@smoke discovery', () => {
-  test.afterEach(async ({ page }) => {
-    // Test self-skips when smoke state file is missing — nothing was created, nothing to clean.
-    // Guard prevents afterEach from hitting the platform unauthenticated and timing out on a login redirect.
-    if (!readSmokeState()) return;
+  // What this run created, for afterEach. Cleanup goes by these UUIDs only: a "select all" on the
+  // list pages also deleted what the test on the other worker had just created.
+  let discoveryUuid: string | undefined;
+  let discoveryName: string | undefined;
+  // Keys the platform adds alongside our certificates are recognised partly by creation time.
+  // A minute of slack covers clock difference between the runner and the platform.
+  let startedAt = new Date();
 
-    const tablePage = new TablePage(page);
+  test.beforeEach(() => {
+    discoveryUuid = undefined;
+    discoveryName = undefined;
+    startedAt = new Date(Date.now() - 60_000);
+  });
 
-    const cleanupEntity = async (url: string, name: string) => {
-      try {
-        await tablePage.visit(url);
-        await tablePage.bulkDelete(name);
-      } catch (e) {
-        recordCleanupFailure({ resource: name.toLowerCase(), message: String(e) });
-        logger.warn(`Failed to cleanup ${name}:`, e);
+  test.afterEach(async ({ request, env }) => {
+    if (!discoveryUuid) {
+      // The discovery was submitted but its UUID never came back from the page, so there is
+      // nothing to delete by UUID. Say so instead of guessing by name.
+      if (discoveryName) {
+        recordCleanupFailure({ resource: 'discovery', name: discoveryName, message: 'discovery UUID unknown; remove it by hand' });
       }
+      return;
     }
+    const uuid = discoveryUuid;
 
-    await cleanupEntity('/administrator/#/discoveries', 'Discoveries');
-    await cleanupEntity('/administrator/#/certificates', 'Certificates');
-    await cleanupEntity('/administrator/#/keys', 'Keys');
+    const api = await getAuthenticatedApiContext(request, env);
+    try {
+      // The certificate list first: deleting the discovery drops it, but not the certificates.
+      let certUuids: string[] = [];
+      const listed = await attemptCleanup({ resource: 'certificate', name: `added by discovery ${uuid}` },
+        async () => { certUuids = await listNewlyDiscoveredInventoryUuids(api, uuid); });
+
+      for (const certUuid of certUuids) {
+        const keyUuid = await getCertificateKeyUuid(api, certUuid).catch(() => undefined);
+        const deleted = await attemptCleanup({ resource: 'certificate', uuid: certUuid },
+          () => deleteCertificate(api, certUuid));
+        if (deleted && keyUuid) {
+          await attemptCleanup({ resource: 'key', uuid: keyUuid },
+            () => deleteKeyIfOrphaned(api, keyUuid, startedAt));
+        }
+      }
+
+      // Without the list we cannot tell our certificates apart later, so keep the discovery.
+      if (listed) {
+        await attemptCleanup({ resource: 'discovery', uuid, name: discoveryName },
+          () => deleteDiscovery(api, uuid));
+      }
+    } finally {
+      await api.dispose();
+    }
   });
 
   test('SMK-003: network discovery and certificate details', async ({ page, request, env }) => {
@@ -104,9 +136,8 @@ test.describe('@smoke discovery', () => {
     await discoveryPage.goToPage();
 
     // --- Step 2: Create Discovery ---
-    let discoveryUuid: string;
     await test.step('Create Network Discovery', async () => {
-      const discoveryName = `smoke-discovery-${Date.now()}`;
+      discoveryName = `smoke-discovery-${Date.now()}`;
       discoveryUuid = await discoveryPage.createDiscovery(
         discoveryName,
         env.smoke.discoveryProviderName!,
