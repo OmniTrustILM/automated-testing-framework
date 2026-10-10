@@ -34,6 +34,7 @@ import {
     findCustomAttributeByName,
     deleteCustomAttribute,
 } from '../../utils/customAttributeUtils';
+import { getCertificateKeyUuid, deleteKeyIfOrphaned } from '../../utils/keyUtils';
 import { Logger } from '../../utils/Logger';
 
 const logger = new Logger('CustomAttributeSmokeTest');
@@ -42,6 +43,9 @@ test.describe('@smoke custom-attribute', () => {
     // Track for cleanup
     let uploadedFingerprint: string | undefined;
     let createdAttributeName: string | undefined;
+    // Core adds a certKey_<CN> entry for the uploaded certificate and keeps it after the certificate
+    // is deleted. Only an entry newer than this (less a minute of clock slack) is ours to remove.
+    let startedAt = new Date();
 
     test.afterEach(async ({ request, env }) => {
         const api = await getAuthenticatedApiContext(request, env);
@@ -51,8 +55,10 @@ test.describe('@smoke custom-attribute', () => {
                 try {
                     const found = await findCertificateByFingerprint(api, uploadedFingerprint);
                     if (found) {
+                        const keyUuid = await getCertificateKeyUuid(api, found.uuid);
                         await deleteCertificate(api, found.uuid);
                         logger.info(`Cleaned up leftover cert: ${uploadedFingerprint}`);
+                        if (keyUuid) await deleteKeyIfOrphaned(api, keyUuid, startedAt);
                     }
                 } catch (e) {
                     recordCleanupFailure({ resource: 'certificate', name: uploadedFingerprint, status: statusOf(e), message: String(e) });
@@ -82,6 +88,7 @@ test.describe('@smoke custom-attribute', () => {
     });
 
     test('SMK-008: Custom Attribute lifecycle (create → assign → unassign → re-assign → delete)', async ({ page, request, env }) => {
+        startedAt = new Date(Date.now() - 60_000);
         const cn = `smoke-ca-${Date.now()}.example.com`;
         const attrName = `smoke-attr-${Date.now()}`;
         const attrLabel = attrName;  // keep same for simplicity
