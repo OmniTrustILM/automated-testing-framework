@@ -9,6 +9,7 @@ import {
     revokeCertificate, deleteCertificate,
 } from '../../utils/certificateUtils';
 import { readSmokeState } from '../../utils/smokeState';
+import { getCertificateKeyUuid, deleteKeyIfOrphaned } from '../../utils/keyUtils';
 import { CERTIFICATE_DETAILS_TABS } from '../../utils/constants';
 import { Logger } from '../../utils/Logger';
 
@@ -23,6 +24,9 @@ const SHALLOW_TABS = CERTIFICATE_DETAILS_TABS.filter(t => !DEEP_TABS.includes(t)
 test.describe('@smoke certificate', () => {
     // Scoped here so afterEach can see it across this describe
     let issuedCertUuid: string | undefined;
+    // Core adds a certKey_<CN> entry for the CSR's public key and keeps it after the certificate is
+    // deleted. Only an entry newer than this (less a minute of clock slack) is ours to remove.
+    let startedAt = new Date();
 
     test.afterEach(async ({ request, env }) => {
         if (!issuedCertUuid) return;
@@ -43,7 +47,9 @@ test.describe('@smoke certificate', () => {
                 // Revoke only queues an action. Deleting before it runs makes the action fail on a
                 // certificate that is gone (core#2519), so wait for the platform to finish it.
                 await waitForCertificateState(api, certUuid, 'revoked', 30_000);
+                const keyUuid = await getCertificateKeyUuid(api, certUuid);
                 await deleteCertificate(api, certUuid);
+                if (keyUuid) await deleteKeyIfOrphaned(api, keyUuid, startedAt);
             } finally {
                 await api.dispose();
             }
@@ -65,6 +71,7 @@ test.describe('@smoke certificate', () => {
         }
 
         const certPage = new CertificatePage(page);
+        startedAt = new Date(Date.now() - 60_000);
         const cn = `qa-smoke-test-${Date.now()}.example.com`;
         const { csr } = generateCsr(cn);
 

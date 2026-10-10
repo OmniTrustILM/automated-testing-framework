@@ -20,6 +20,7 @@ test, expect, loginAsSmokeUser, getAuthenticatedApiContext } from '../../fixture
 import { CertificatePage } from '../../pages/CertificatePage';
 import { TablePage } from '../../pages/TablePage';
 import { Logger } from '../../utils/Logger';
+import { getCertificateKeyUuid, deleteKeyIfOrphaned } from '../../utils/keyUtils';
 import {
     generateSelfSignedCert,
     uploadCertificate,
@@ -33,6 +34,12 @@ const logger = new Logger('UploadCertSmokeTest');
 test.describe('@smoke upload-cert', () => {
     // Track fingerprints of uploaded certs — for afterEach cleanup
     const uploadedFingerprints: string[] = [];
+    // Core adds a certKey_<CN> entry for each uploaded certificate and keeps it after the
+    // certificate is deleted. The test deletes the certificates itself, through the UI, so the
+    // entries are looked up while the certificates still exist and removed in afterEach. Only an
+    // entry newer than startedAt (less a minute of clock slack) is ours to remove.
+    const keyUuids: string[] = [];
+    let startedAt = new Date();
 
     test.afterEach(async ({ request, env }) => {
         if (uploadedFingerprints.length === 0) return;
@@ -51,15 +58,25 @@ test.describe('@smoke upload-cert', () => {
                     logger.warn(`Cleanup failed for fingerprint ${fingerprint}: ${e}`);
                 }
             }
+            for (const keyUuid of keyUuids) {
+                try {
+                    await deleteKeyIfOrphaned(api, keyUuid, startedAt);
+                } catch (e) {
+                    recordCleanupFailure({ resource: 'key', uuid: keyUuid, status: statusOf(e), message: String(e) });
+                    logger.warn(`Cleanup failed for key ${keyUuid}: ${e}`);
+                }
+            }
         } finally {
             await api.dispose();
             uploadedFingerprints.length = 0;  // Reset for potential next run
+            keyUuids.length = 0;
         }
     });
 
     test('SMK-007: upload certificate and delete (single + batch)', async ({ page, request, env }) => {
         const certPage = new CertificatePage(page);
         const tablePage = new TablePage(page);
+        startedAt = new Date(Date.now() - 60_000);
         const cnPrefix = `smoke-upload-${Date.now()}`;
 
         // 1. Generate 3 self-signed certs with unique CN sharing our timestamp prefix
@@ -109,6 +126,23 @@ test.describe('@smoke upload-cert', () => {
             });
             await expect(tablePage.rows).toHaveCount(3, { timeout: 15000 });
         });
+
+        // All three certificates exist now; the deletes below remove them. Not a test step: a failed
+        // lookup costs only a leftover key, so it is logged rather than failing the test.
+        {
+            const api = await getAuthenticatedApiContext(request, env);
+            try {
+                for (const fingerprint of uploadedFingerprints) {
+                    const found = await findCertificateByFingerprint(api, fingerprint);
+                    const keyUuid = found && await getCertificateKeyUuid(api, found.uuid);
+                    if (keyUuid) keyUuids.push(keyUuid);
+                }
+            } catch (e) {
+                logger.warn(`Could not read the key entries of the uploaded certificates: ${e}`);
+            } finally {
+                await api.dispose();
+            }
+        }
 
         await test.step('Delete cert #1 via detail page → verify 2 remain', async () => {
             // Click first cert's CN link → navigate to detail
