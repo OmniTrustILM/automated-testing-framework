@@ -26,7 +26,7 @@ import { test, expect, getAuthenticatedApiContext } from '../../fixtures/testFix
 import { getAuthorizationApi } from '../../utils/k8sClient';
 import * as acmeProfileUtils from '../../utils/acmeProfileUtils';
 import * as certManager from '../../utils/certManagerUtils';
-import { findCertificateByFingerprint, revokeCertificate, deleteCertificate } from '../../utils/certificateUtils';
+import { findCertificateByFingerprint, revokeCertificate, deleteCertificate, waitForCertificateState } from '../../utils/certificateUtils';
 import { attemptCleanup } from '../../utils/cleanupLedger';
 import { readSmokeState, SmokeState } from '../../utils/smokeState';
 import { Logger } from '../../utils/Logger';
@@ -82,8 +82,11 @@ async function cleanUp(run: AcmeRun, state: SmokeState, api: APIRequestContext):
     }
     for (const uuid of uuids) {
         await attemptCleanup({ resource: 'certificate', uuid, name: run.dnsName }, async () => {
-            // Already revoked on the retry is fine — the delete is what matters.
+            // Already revoked on the retry is fine — the delete is what matters. Revoke only queues
+            // an action, and deleting before it has run makes it fail on a missing certificate
+            // (core#2519), so wait for Revoked first.
             await revokeCertificate(api, { authorityUuid: state.authorityUuid, raProfileUuid: state.raProfileUuid, certUuid: uuid })
+                .then(() => waitForCertificateState(api, uuid, 'revoked', 30_000))
                 .catch((e) => logger.warn(`Revoke of ${uuid} failed, deleting anyway: ${e}`));
             await deleteCertificate(api, uuid);
         });

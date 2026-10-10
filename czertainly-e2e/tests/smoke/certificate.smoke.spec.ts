@@ -40,6 +40,9 @@ test.describe('@smoke certificate', () => {
                     raProfileUuid: state.raProfileUuid,
                     certUuid,
                 });
+                // Revoke only queues an action. Deleting before it runs makes the action fail on a
+                // certificate that is gone (core#2519), so wait for the platform to finish it.
+                await waitForCertificateState(api, certUuid, 'revoked', 30_000);
                 await deleteCertificate(api, certUuid);
             } finally {
                 await api.dispose();

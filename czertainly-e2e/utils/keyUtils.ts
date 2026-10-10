@@ -69,8 +69,8 @@ export async function deleteKeyIfOrphaned(
     if (!del.ok() && del.status() !== 404) {
         throw new Error(`Delete key ${keyUuid} failed: ${del.status()} - ${await del.text()}`);
     }
-    // The bulk delete answers 204 even for a key it skipped (one still in use, for instance), so
-    // only a 404 afterwards proves the key is gone. Throwing lets the cleanup ledger name it.
+    // The bulk delete answers 204 even for a UUID it did not find, so only a 404 afterwards proves
+    // the key is gone. Throwing lets the cleanup ledger name it.
     for (let attempt = 0; attempt < 5; attempt++) {
         if ((await request.get(`/api/v1/keys/${keyUuid}`)).status() === 404) return true;
         await new Promise((r) => setTimeout(r, 1000));
