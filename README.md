@@ -13,6 +13,8 @@ rather than a deployed cluster. [regression/timestamping/](regression/timestampi
 exercises RFC 3161 timestamping end to end: it checks out every dependent repository,
 including `development-environment`, rebuilds Core and the connector images, provisions the
 environment and runs the API suite against it.
+[regression/key-onboarding/](regression/key-onboarding/README.md) lists the key pairs on a
+PKCS#11 token and onboards them against a stack that is already running.
 
 ## How to run the tests
 
