@@ -82,29 +82,35 @@ export class TablePage {
         await this.addFilterButton.click();
     }
 
-    async bulkDelete(logName: string) {
-        logger.info(`Attempting bulk delete for ${logName}`);
+    /**
+     * Deletes every row on the current page through "select all".
+     *
+     * "Select all" takes whatever the page shows, so the caller has to say what it expects to
+     * delete: the exact number of rows, and text that each of them must contain (the test's own
+     * name prefix, say). If the page shows anything else, this throws before ticking the box and
+     * nothing is deleted. A cleanup that forgot to filter used to remove other tests' objects this
+     * way (atf#99).
+     */
+    async bulkDelete(logName: string, expected: { rows: number; eachRowContains: string }) {
+        logger.info(`Attempting bulk delete for ${logName}: ${expected.rows} row(s) containing "${expected.eachRowContains}"`);
 
-        if (!(await this.hasData())) {
-            logger.info(`No data found to delete for ${logName}`);
-            return;
+        await expect(this.rows, `${logName}: the page must show exactly the rows to delete`).toHaveCount(expected.rows);
+        const foreign = await this.rows.filter({ hasNotText: expected.eachRowContains }).count();
+        if (foreign > 0) {
+            throw new Error(`${logName}: ${foreign} row(s) on the page do not contain "${expected.eachRowContains}"; refusing to select all`);
         }
 
-        if (await this.selectAllCheckbox.isVisible()) {
-            await this.selectAllCheckbox.check();
-            logger.info(`Selected all items for ${logName}`);
+        await this.selectAllCheckbox.check();
+        logger.info(`Selected all items for ${logName}`);
 
-            await expect(this.deleteButton).toBeVisible();
-            await this.deleteButton.click();
-            logger.info(`Clicked delete button for ${logName}`);
+        await expect(this.deleteButton).toBeVisible();
+        await this.deleteButton.click();
+        logger.info(`Clicked delete button for ${logName}`);
 
-            await expect(this.confirmModal).toBeVisible();
-            await this.confirmDeleteButton.click();
+        await expect(this.confirmModal).toBeVisible();
+        await this.confirmDeleteButton.click();
 
-            await expect(this.confirmModal).not.toBeVisible();
-            logger.info(`Confirmed deletion for ${logName}`);
-        } else {
-            logger.warn(`Select all checkbox not visible for ${logName}`);
-        }
+        await expect(this.confirmModal).not.toBeVisible();
+        logger.info(`Confirmed deletion for ${logName}`);
     }
 }

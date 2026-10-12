@@ -157,7 +157,7 @@ test.describe('@smoke upload-cert', () => {
         });
 
         await test.step('Batch delete remaining 2 certs → verify all gone', async () => {
-            await tablePage.bulkDelete('Certificates');
+            await tablePage.bulkDelete('Certificates', { rows: 2, eachRowContains: cnPrefix });
 
             // The deletion is asynchronous - the toast says the operation was *initiated* - and the
             // list does not always pick the result up on its own, the same way it does not pick up a
