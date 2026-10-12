@@ -123,7 +123,8 @@ export class CertificatePage {
         await expect(this.importSubmitButton).toBeEnabled();
         await this.importSubmitButton.click();
         await expect(this.importResults).toBeVisible();
-        await expect(this.importResults.getByTestId('badge')).toHaveText('Imported');
+        // The result badge has its own test id since fe-administrator#2274; it used to be the generic 'badge'.
+        await expect(this.importResults.getByTestId('import-result-badge')).toHaveText('Imported');
     }
 
     async closeImportModal(): Promise<void> {
