@@ -6,7 +6,7 @@ runs:
 
   steps:
     - name: Create k8s cluster
-      uses: balchua/microk8s-actions@v0.3.0
+      uses: balchua/microk8s-actions@v0.4.3
       with:
         channel: '1.26/stable'
         addons: '["dns", "rbac", "ingress", "hostpath-storage"]'
