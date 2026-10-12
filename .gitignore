@@ -41,3 +41,8 @@ czertainly-e2e/.smoke-state.json
 /regression/timestamping/runs/
 /regression/timestamping/.state/
 /regression/timestamping/tests/node_modules/
+
+# Key onboarding regression suite: local configuration and run artifacts
+/regression/key-onboarding/config.env
+/regression/key-onboarding/runs/
+/regression/key-onboarding/tests/node_modules/
