@@ -16,6 +16,9 @@
     "fixtures",
     "pages",
     "utils",
-    "playwright.config.ts"
+    "playwright.config.ts",
+    "playwright.regression.config.ts",
+    "playwright.api.config.ts",
+    "playwright.unit.config.ts"
   ]
 }
