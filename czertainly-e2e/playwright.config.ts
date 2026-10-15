@@ -11,10 +11,15 @@ export default defineConfig({
   testDir: './tests',
 
   // Only the smoke suite belongs to this config. The visual baselines need reference images that
-  // are captured per environment and deliberately not committed, and the unit tests need no
-  // environment at all - both have their own config, and a bare `playwright test` here must not
-  // sweep them up along with the suite it is meant to run.
-  testIgnore: ['**/visual/**', '**/unit/**'],
+  // are captured per environment and deliberately not committed, the unit tests need no
+  // environment at all, and the main-functionality regression (REG-*) and the API suite (API-*)
+  // have their own configs (playwright.regression.config.ts, playwright.api.config.ts: one worker,
+  // longer timeouts, no smoke provisioning, run-end teardown of own objects) - a bare
+  // `playwright test` here must not sweep any of them up along with the suite it is meant to run.
+  // Each ignore is anchored to this folder: Playwright matches testIgnore against absolute paths,
+  // so an unanchored `**/api/**` would drop every smoke test of a clone that sits below any
+  // directory named `api`.
+  testIgnore: ['visual', 'unit', 'regression', 'api'].map((dir) => path.join(__dirname, 'tests', dir, '**')),
 
   globalSetup: require.resolve('./global-setup'),
   globalTeardown: require.resolve('./global-teardown'),

@@ -12,9 +12,11 @@
  * the first end-to-end run (Task 11) if any locator misses.
  */
 
-import { Page, Locator, expect } from '@playwright/test';
+import { Page, Locator, Response, expect } from '@playwright/test';
 import { Logger } from '../utils/Logger';
+import { SanSet, sameSans } from '../utils/regression/pki';
 import { Navigation } from './Navigation';
+import { widget } from './RegressionUi';
 
 const logger = new Logger('CertificatePage');
 
@@ -127,6 +129,25 @@ export class CertificatePage {
         await expect(this.importResults.getByTestId('import-result-badge')).toHaveText('Imported');
     }
 
+    /**
+     * Click Import and return the platform's answer to the import call (`POST /api/v1/certificates/import`): its
+     * `results[].certificateUuid` / `certificateOutcome` let a spec record what the import created before asserting
+     * anything (review Q14). The result badge is not checked here: `expectImportResult` does that.
+     */
+    async submitImport(): Promise<Response> {
+        logger.info('Submitting the import');
+        await expect(this.importSubmitButton).toBeEnabled();
+        const answer = this.page.waitForResponse((r) => r.request().method() === 'POST' && /\/api\/v1\/certificates\/import$/.test(new URL(r.url()).pathname));
+        await this.importSubmitButton.click();
+        return answer;
+    }
+
+    /** The import results region shows the given outcome badge (`Imported`, `Already in inventory`, …). */
+    async expectImportResult(text: string): Promise<void> {
+        await expect(this.importResults).toBeVisible();
+        await expect(this.importResults.getByTestId('import-result-badge')).toHaveText(text);
+    }
+
     async closeImportModal(): Promise<void> {
         logger.info('Closing the import modal');
         await this.importDoneButton.click();
@@ -189,9 +210,35 @@ export class CertificatePage {
     }
 
     async submitIssue(): Promise<string> {
+        return (await this.submitIssueWithWarnings()).uuid;
+    }
+
+    /**
+     * Click Create and reach the new certificate's detail page. Two outcomes of a successful issue (fe-administrator
+     * origin/main, certificates/form): the redirect to `/certificates/detail/<uuid>`, or — lenient validation that let
+     * the CSR through — the "Certificate request accepted with warnings" panel (`compliance-errors-panel`, severity
+     * warning) with an "Open certificate" button in place of Create; that button is clicked and the warning messages
+     * are returned so the spec can annotate them (incident fix, B1 live run 1: REG-USE-04.1 threw on the redirect and
+     * its certificate was never recorded). A failed issue stays on the form: the expectation below times out.
+     */
+    async submitIssueWithWarnings(): Promise<{ uuid: string; warnings: string[] }> {
         logger.info('Submitting Issue Certificate');
         await this.submitButton.click();
-        await expect(this.page).toHaveURL(/\/certificates\/detail\/[a-f0-9-]+/);
+        const detailUrl = /\/certificates\/detail\/[a-f0-9-]+/;
+        const openCertificate = this.page.getByRole('button', { name: 'Open certificate', exact: true });
+        await expect(async () => {
+            if (detailUrl.test(this.page.url())) return;
+            await expect(openCertificate).toBeVisible({ timeout: 100 });
+        }, 'the detail page opens, or the request is accepted with warnings').toPass({ timeout: 15_000 });
+        let warnings: string[] = [];
+        if (!detailUrl.test(this.page.url())) {
+            const panel = this.page.getByTestId('compliance-errors-panel');
+            warnings = (await panel.locator('li').allTextContents()).map((t) => t.trim()).filter(Boolean);
+            if (!warnings.length) warnings = [((await panel.textContent()) ?? '').trim()].filter(Boolean);
+            logger.warn(`Certificate request accepted with warnings: ${warnings.join(' | ')}`);
+            await openCertificate.click();
+            await expect(this.page).toHaveURL(detailUrl);
+        }
         const url = this.page.url();
         const match = url.match(/\/certificates\/detail\/([a-f0-9-]+)/);
         if (!match) {
@@ -199,7 +246,7 @@ export class CertificatePage {
         }
         const certUuid = match[1];
         logger.info(`Issued certificate UUID: ${certUuid}`);
-        return certUuid;
+        return { uuid: certUuid, warnings };
     }
 
     async openTab(tabName: string): Promise<void> {
@@ -245,6 +292,51 @@ export class CertificatePage {
 
         const formatRow = this.main.locator('tr[data-id="certificateRequestFormat"]');
         await expect(formatRow).toContainText('pkcs10');
+    }
+
+    /**
+     * The state badge and identity of an issued certificate on the Details tab (REG-USE-04 / 04.1; phase-05 B1.1): the
+     * common name row, the state label `Issued` and the RA profile name. The caller reloads first: the detail page opened
+     * by Create does not poll (cert-lifecycle UI-9).
+     */
+    async assertIssuedDetails(expected: { commonName: string; raProfileName: string }): Promise<void> {
+        logger.info('Asserting the Details tab of an issued certificate');
+        await this.openTab('Details');
+        await expect(this.main.locator('tr[data-id="commonName"]')).toContainText(expected.commonName);
+        await expect(this.main.locator('tr[data-id="certState"] [data-testid="certificate-status"]')).toHaveText('Issued');
+        await expect(this.main).toContainText(expected.raProfileName);
+    }
+
+    /** The `Subject Alternative Names` widget of the Details tab (rows `tr[data-id=<SAN type>]`, values joined by ", "). */
+    get sanWidget(): Locator {
+        return widget(this.main, 'Subject Alternative Names');
+    }
+
+    /**
+     * The DNS names and IP addresses the Details tab shows in its `Subject Alternative Names` widget (rows `dNSName` and
+     * `iPAddress`; the frontend renders `subjectAlternativeNames` of the detail as one row per type, values joined by ", ").
+     */
+    async sanValues(): Promise<SanSet> {
+        await this.openTab('Details');
+        await expect(this.sanWidget).toBeVisible();
+        const valuesOf = async (type: string): Promise<string[]> => {
+            const row = this.sanWidget.locator(`tr[data-id="${type}"]`);
+            if (!(await row.count())) return [];
+            const text = (await row.locator('td').last().innerText()).trim();
+            return text ? text.split(/,\s*/).map((v) => v.trim()).filter(Boolean) : [];
+        };
+        return { dns: await valuesOf('dNSName'), ip: await valuesOf('iPAddress') };
+    }
+
+    /**
+     * The Details tab shows the expected SANs: `exact` = set equality of DNS and IP (no extras), `dns` = every expected
+     * DNS name is shown (a CA whose template rewrites the SAN extension: REG-USE-04.1 oracle on a non-EJBCA CA).
+     */
+    async assertSans(expected: SanSet, mode: 'exact' | 'dns' = 'exact'): Promise<void> {
+        const shown = await this.sanValues();
+        logger.info(`SANs shown: ${shown.dns.length} DNS, ${shown.ip.length} IP (${mode})`);
+        if (mode === 'exact') expect(sameSans(shown, expected), `Details SANs ${JSON.stringify(shown)} = ${JSON.stringify(expected)}`).toBe(true);
+        else for (const d of expected.dns) expect(shown.dns.map((x) => x.toLowerCase()), `Details SANs include ${d}`).toContain(d.toLowerCase());
     }
 
     async assertHistoryTabHasEntry(pattern: RegExp): Promise<void> {

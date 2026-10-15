@@ -6,7 +6,7 @@
  * here keeps that failure next to the code that produces it.
  */
 import { test, expect } from '@playwright/test';
-import { parentDomainOf } from '../../utils/env';
+import { loadEnv, parentDomainOf } from '../../utils/env';
 
 test('the solver domain is BASE_URL\'s host without its first label', () => {
     expect(parentDomainOf('https://fe-pr-1.preview.example.com/')).toBe('preview.example.com');
@@ -15,4 +15,19 @@ test('the solver domain is BASE_URL\'s host without its first label', () => {
 
 test('port and path do not leak into the solver domain', () => {
     expect(parentDomainOf('https://env.example.com:8443/administrator/')).toBe('example.com');
+});
+
+test('AUTH_MODE=header is refused for a BASE_URL that is not loopback / TIER_LOCAL_HOSTS (review R25)', () => {
+  const saved = { AUTH_MODE: process.env.AUTH_MODE, BASE_URL: process.env.BASE_URL, TIER_LOCAL_HOSTS: process.env.TIER_LOCAL_HOSTS };
+  try {
+    delete process.env.TIER_LOCAL_HOSTS;
+    process.env.AUTH_MODE = 'header';
+    process.env.BASE_URL = 'https://qa.example.com';
+    expect(() => loadEnv()).toThrow(/AUTH_MODE=header .* loopback/);
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
 });
