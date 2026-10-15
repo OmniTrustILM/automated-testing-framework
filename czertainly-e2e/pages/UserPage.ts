@@ -129,7 +129,7 @@ export class UserPage {
      * after the dialog opened sent `customAttributes: []` and core answered 422 "Content for required Custom attribute ... is not provided").
      * The busy overlay is gone, the "Custom attributes" tab (when the tier has custom attributes) shows its editor, and every
      * REQUIRED list attribute shows a value (not the "Select ..." placeholder); then the tab that was active is selected again.
-     * If a required value stays empty after the wait, the form did not take it from the user: candidate C15 (the error says so).
+     * If a required value stays empty after the wait, the form did not take it from the user: suspected defect (the error says so).
      */
     private async waitForCustomAttributeEditor(dialog: Locator): Promise<void> {
         await expect(dialog.getByTestId('widget-busy-overlay')).toHaveCount(0);
@@ -144,10 +144,10 @@ export class UserPage {
             for (const label of await labels.all()) {
                 const forId = (await label.getAttribute('for'))!;
                 const trigger = this.page.getByTestId(`select-${forId}-trigger`).or(this.page.getByTestId(`select-${forId}Select-trigger`)).first();
-                if (await trigger.count()) expect((await trigger.innerText()).trim(), `required attribute ${(await label.innerText()).trim()} holds its stored value (else candidate C15)`).not.toMatch(/^Select /);
+                if (await trigger.count()) expect((await trigger.innerText()).trim(), `required attribute ${(await label.innerText()).trim()} holds its stored value (else suspected defect)`).not.toMatch(/^Select /);
                 else {
                     const input = dialog.locator(`[id="${forId}"]`);
-                    if (await input.count()) expect(await input.inputValue(), `required attribute ${(await label.innerText()).trim()} holds its stored value (else candidate C15)`).not.toBe('');
+                    if (await input.count()) expect(await input.inputValue(), `required attribute ${(await label.innerText()).trim()} holds its stored value (else suspected defect)`).not.toBe('');
                 }
             }
         }).toPass({ timeout: 15_000 });

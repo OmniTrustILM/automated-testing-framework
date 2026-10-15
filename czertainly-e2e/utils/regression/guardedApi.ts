@@ -52,7 +52,7 @@
  *   header (`identityOverride` refused too), no `text/plain`, never a redirect follow (`maxRedirects: 0` only), and a
  *   path that is a side-effect GET (SIDE_EFFECT_GETS) is refused outright, own object or not. Sent through `fetch` only.
  *   Any other method token (PROPFIND, FOO, …) stays refused.
- * - Guard-integration pass (2026-10-14, design assets/plan/guard-requests.md GD-01…GD-14 + platform / lifecycle / protocols):
+ * - Guard-integration pass (2026-10-14, design the test plan GD-01…GD-14 + platform / lifecycle / protocols):
  *   GD-08 `POST /v1/inspections` and GD-09 `POST /v1/certificates/import` (shape rule CREATE_BODY_SHAPES), lifecycle G1
  *   `…/certificates/register` and platform G-4 `POST /v2/connectors` are allow-listed CREATES (body judged); GD-10 a read
  *   POST may declare `application/xml`, `application/octet-stream` or `multipart/form-data; boundary=…` (READ_POST_TYPES,

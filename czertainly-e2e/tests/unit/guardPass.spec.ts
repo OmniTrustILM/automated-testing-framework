@@ -1,5 +1,5 @@
 /**
- * Guard-integration pass (2026-10-14; design assets/plan/guard-requests.md GD-01…GD-14 + the platform / lifecycle /
+ * Guard-integration pass (2026-10-14; design the test plan GD-01…GD-14 + the platform / lifecycle /
  * protocols requests), proven on the wire: every request goes through a REAL Playwright APIRequestContext to a loopback
  * fake core (tests/unit/helpers/loopbackServer.ts) and a second loopback origin that must never see anything. Each
  * accepted item has its allowance AND its limits here; each rejected item keeps a pin that the guard did not widen.

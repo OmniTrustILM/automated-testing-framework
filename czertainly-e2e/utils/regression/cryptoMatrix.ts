@@ -1,5 +1,5 @@
 /**
- * cryptoMatrix — §3 of the platform plan (assets/plan/platform-keys-connectors.md) as data, for the catalogue-L rows
+ * cryptoMatrix — §3 of the platform plan (the test plan) as data, for the catalogue-L rows
  * API-KEY-09…16 / 26 and REG-KEY-04 / 06: what each provider MUST offer, MUST NOT offer, and which cells the suite
  * executes (generate, sign / verify, encrypt / decrypt). Pure data and pure functions, no environment, no network.
  *

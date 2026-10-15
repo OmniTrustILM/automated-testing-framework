@@ -200,11 +200,11 @@ export async function removeComplianceProfile(ctx: TeardownContext, uuid: string
             const first = await ctx.api.delete(`/api/v1/complianceProfiles/${uuid}`);
             if (first.ok()) return first;
             if (first.status() === 404) {
-                // C12 (bug candidate): a dangling association to a deleted RA profile makes core answer 404 although the profile exists.
+                // suspected defect: a dangling association to a deleted RA profile makes core answer 404 although the profile exists.
                 // A 404 is success only when a re-read no longer finds the profile; otherwise it is reported blocked, never forced.
                 const again = await ctx.api.get(`/api/v1/complianceProfiles/${uuid}`);
                 if (again.status() === 404) return first;
-                throw blocked(`compliance profile ${uuid}: DELETE answered 404 but the profile still exists (GET ${again.status()}) — dangling association to a deleted RA profile (core bug candidate C12), left as is, not force-deleted`, `compliance profile association of a deleted RA profile ${uuid}`);
+                throw blocked(`compliance profile ${uuid}: DELETE answered 404 but the profile still exists (GET ${again.status()}) — dangling association to a deleted RA profile (core suspected product defect), left as is, not force-deleted`, `compliance profile association of a deleted RA profile ${uuid}`);
             }
             const firstText = (await first.text()).replace(/\s+/g, ' ').slice(0, 300);
             // F1 (Fable review): core's v2 force deletes EVERY association of the profile, foreign ones too. v1 refuses exactly because
