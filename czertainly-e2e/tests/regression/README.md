@@ -159,6 +159,9 @@ copied at runtime and never stored in this repository.
 | `REG-USE-05-issue-acme` | Usage 5: ACME (RFC 8555 client in `utils/regression/acmeClient.ts`); B1 `.1[rsa-2048 / ec-p256]` order expiry, Retry-After, chain, SAN, key; `.2` second finalize → `orderNotReady` | pass |
 | `REG-USE-06-issue-cert-manager` | Usage 6: cert-manager issuer — B1 `.1`: driven by `raProfileUuid` (the CRD's required field; `raProfileName` is never read) | skipped without a cluster (env vars, then `requireTool('kubectl')` and the NAMESPACED preflight: both kinds listable in the namespace, `auth can-i` create / delete on them and get / delete on secrets) |
 | `REG-USE-07-issue-api` | Usage 7: v2 operations API issue, poll, detail, history, download; B1 `.1`: the exact response contract, SANs, history text, garbage CSR → 400 `{message}`, no token → 401 | pass |
+| `REG-AUTH-01-session` | ilm#426 (auth-rbac area): `REG-AUTH-01[session]` sign-in as the test user + `session-id` cookie, `REG-AUTH-02` the session holds across navigation, reloads and a second tab (skips in header mode: no session), `REG-AUTH-07` disabled user's live session (second identity, `test.fixme` until the guard accepts the dedicated user); under `describeLocal`: `REG-AUTH-01[header]`, `REG-AUTH-05` core restart (`@needs:keycloak-local`), `REG-AUTH-07[delete]` | not run yet |
+| `REG-AUTH-08-rbac-ui` | ilm#427: a refused page renders the lock widget (`REG-AUTH-08[F0|F1]`) and a group-scoped user sees only its certificates (`REG-AUTH-10`); both need the second identity and `test.fixme` until the guard accepts the dedicated user | not run yet |
+| `REG-AUTH-99-logout` | ilm#426: `REG-AUTH-03` sign-out ends the browser and identity-provider sessions (runs last: it ends the shared admin's single-sign-on session) | not run yet |
 
 **Known failures** are marked with `test.fail()`. They pass the run while the bug exists, and they turn red
 ("expected to fail, but passed") once it is fixed. Remove the marker then.
@@ -230,7 +233,8 @@ Environment variables are listed at the end of `.env.example` (`REG_*`). The usu
   (the `api` fixture); `apiRoutes.ts`: the bulk routes, API words and side-effect GETs the guard allow-lists; `guardProof.ts`: the blocking spy of the guard proof; `k8s.ts`: kubectl under the k8s contract;
   `runTeardown.ts` + `teardownHandlers.ts`: the run-end deletion; `nonInterference.ts`: the API-GEN-33 snapshot and
   comparison.
-- `utils/regression/tools.ts`: runner tool preflight (`requireTool`).
+- `utils/regression/invariants.ts`: filter, sort and paging oracles; `build.ts`: build marker (`/v1/info`);
+  `tools.ts`: runner tool preflight (`requireTool`).
 - `utils/regression/regressionApi.ts`: reads and own-object API helpers; `ensure*` returns the run object or
   creates it through the API. B1: the run RA profile is CA-agnostic (`ensureRaProfile`: the first CA in
   `REG_CA_CONNECTORS` whose connector answers its LIVE health and has an enabled RA profile; the run creates its OWN RA
@@ -239,7 +243,8 @@ Environment variables are listed at the end of `.env.example` (`REG_*`). The usu
   (REG_RA_PROFILE_NAME) before anything is activated on it; `createOwnRole` / `createOwnUser` / `setOwnUserRoles`;
   `recordCertificatesNamed` / `recordAcmeAccount` / `recordDerivedKeyOf` record what a protocol or the platform made.
 - `utils/regression/connectorApi.ts` (B1): live connector health by version (v1 `ok`, v2 `UP`), read-only attribute
-  probes, the anonymous probe reader; `errorContract.ts`: the 422 array / `{message}` body shapes.
+  probes, the anonymous probe reader; `errorContract.ts`: the 422 array / `{message}` body shapes;
+  `inventorySeed.ts`: the run's own inventory seeds with an exact manifest (B1: the API-GEN-32 null-last subset).
 - `utils/regression/pki.ts`: CSR with DNS / IP SAN (RSA, node-forge; EC P-256 through @peculiar/x509), certificate SANs
   and SPKI, the leaf-first chain check, PKCS#12, fingerprints.
 - `utils/regression/acmeClient.ts`: a minimal ACME client (ES256, node:crypto). It does not answer
@@ -248,3 +253,32 @@ Environment variables are listed at the end of `.env.example` (`REG_*`). The usu
   toasts (`assertToast`, `assertAnnounced`), required custom attributes, inventory filter. B1 page objects:
   `RaProfilePage` (protocol activation by row), `RolePage`, `UserPage`; `CertificatePage` gained the SAN widget and the
   issued-details assertions, `LoginPage` the session helpers of the API-GEN-32 session sentinel.
+
+## Events and discovery rows (ilm#424 Phase 7)
+
+Workflows (REG-WFL-*, API-WFL-*), notification instances / profiles and network discovery (REG-DISC-*, API-DISC-*).
+
+- **Own objects only.** Conditions, rules, executions, actions, triggers, notification instances / profiles, discoveries and the
+  groups / RA profiles / certificates the rows use are created by the run (ledger before assertion, `workflowApi.ts`,
+  `notificationApi.ts`, `discoveryApi.ts`, `eventsDrivers.ts`). An event association is recorded as an `eventAssociations` ledger
+  line (id-named; the (event, resource, object) in `note`) BEFORE it is sent, and the teardown clears it with the same replace-all
+  (empty list) on an own scope, ahead of the triggers (`utils/workflowUtils.ts`). Nothing is associated at platform level on a
+  shared tier: the platform-level rows (`Certificate uploaded` triggers, schedules, delivery) are `@local` only.
+- **Discovery targets.** Only the run's own TLS target (`utils/regression/tlsTarget.ts`, listeners on `REG_SCAN_BIND`, named
+  `REG_SCAN_HOST`, `@needs:scan-target`) or RFC 5737 documentation ranges (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24).
+  Never the "select all" cleanup of SMK-003: the certificates a run onboards are recorded as `derived` ledger lines
+  (`recordOnboarded`, server-clock `createdAfter`) and deleted by uuid. A generation that is not registered is a named deploy gate
+  (`@needs:v1-discovery` / `@needs:v2-discovery`), never a pass.
+- **Notifications.** Delivery is asserted only in the local notification overlay (`@local:notif`; `REG_SMTP_CATCHER_URL`,
+  `REG_WEBHOOK_HOST` / `REG_WEBHOOK_BIND`, runner-hosted `WebhookReceiver`); on a shared tier the rows use internal-only profiles or
+  assert the stored state. Sender / URL values use the reserved `.test` names.
+- **Shared-tier hygiene of the firing rows.** A row that asserts an exact firing, a history row or "nothing happened" reads the platform event
+  settings first (`getPlatformTriggerGate`, read only) and skips with a named reason when a platform-level trigger already listens on its
+  events, as the `@local` rows do for an occupied platform list. An absence over a clock window ("no second run", "nothing delivered") keeps
+  its window but reads API state through it and asserts on every read (`assertHeldFor`).
+- **UI builds.** REG-WFL-01 / 03 / 23 build their objects through the UI forms (`pages/WorkflowPage.ts`, `ConditionFilterWidget.ts`,
+  `EventsAssociationWidget.ts`, `EventHistoryWidget.ts`, `NotificationPage.ts`, `DiscoveryRunPage.ts`); the other rows build through the
+  API and use the UI only to read.
+- **Needs tags.** `@needs:scan-target`, `@needs:v1-discovery`, `@needs:v2-discovery`, `@needs:smtp-catcher`, `@needs:webhook-receiver`,
+  `@needs:email-provider`, `@needs:webhook-provider`: a missing one skips the row with the named deploy gate.
+
