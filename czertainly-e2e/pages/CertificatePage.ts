@@ -1,20 +1,18 @@
 /**
- * CertificatePage — Page Object Model for the Certificates UI flow (SMK-004).
- *
- * Encapsulates:
- *   - Navigation to the Certificates list and detail pages
- *   - The "Issue New Certificate" modal flow (RA Profile + External CSR)
- *   - Tab assertions on the detail page (deep on Details/Request/History,
- *     shallow on the other 7 tabs)
- *
- * Locators that proved stable in SMK-003 (testids, ARIA roles) are reused;
- * unknowns are semantic getByRole/getByLabel — will be tightened up after
- * the first end-to-end run (Task 11) if any locator misses.
+ * CertificatePage — the Certificates list, the import dialog, the Issue-now fields of the Add Certificate form and the
+ * Details / Request / History tabs of a certificate (smoke SMK-004 / SMK-007 and the main regression flows). The
+ * Pre-register fields and Create live on CertificateAddPage, the lifecycle toolbar and widgets on CertificateDetailPage;
+ * the former names the smoke specs call stay here as thin aliases.
  */
 
-import { Page, Locator, expect } from '@playwright/test';
+import { Page, Locator, Response, expect } from '@playwright/test';
 import { Logger } from '../utils/Logger';
+import { SanSet, sameSans } from '../utils/regression/pkiBuilders';
 import { Navigation } from './Navigation';
+import { CertificateAddPage } from './CertificateAddPage';
+import { ImportCertificatesDialog } from './ImportCertificatesDialog';
+import { chooseOption } from './ui/select';
+import { widgetTitled } from './ui/widget';
 
 const logger = new Logger('CertificatePage');
 
@@ -33,6 +31,8 @@ export class CertificatePage {
     readonly importSubmitButton: Locator;
     readonly importResults: Locator;
     readonly importDoneButton: Locator;
+    /** The import dialog's page object; the import methods below that the regression specs call delegate to it. */
+    readonly importDialog: ImportCertificatesDialog;
 
     // Delete certificate from Details page
     readonly deleteButton: Locator;
@@ -53,7 +53,6 @@ export class CertificatePage {
     readonly customAttributeSelectTrigger: Locator;
     readonly saveCustomValueButton: Locator;
 
-
     constructor(page: Page) {
         this.page = page;
         this.navigation = new Navigation(page);
@@ -68,11 +67,11 @@ export class CertificatePage {
         this.importSubmitButton = this.importModal.getByRole('button', { name: /Import \d+ entr/ });
         this.importResults = this.importModal.getByRole('region', { name: 'Import results' });
         this.importDoneButton = this.importModal.getByRole('button', { name: 'Done', exact: true });
+        this.importDialog = new ImportCertificatesDialog(page);
 
         this.deleteButton = this.main.getByTestId('trash-button');
         this.deleteConfirmDialog = page.getByRole('dialog').filter({ hasText: 'Delete Certificate' });
         this.deleteConfirmButton = this.deleteConfirmDialog.getByRole('button', { name: 'Delete', exact: true });
-
 
         this.requestTypeIssue = this.main.getByTestId('requestType-issue');
         this.raProfileTrigger = this.main.getByTestId('select-raProfile-trigger');
@@ -127,6 +126,21 @@ export class CertificatePage {
         await expect(this.importResults.getByTestId('import-result-badge')).toHaveText('Imported');
     }
 
+    /**
+     * Click Import and return the platform's answer to the import call (`POST /api/v1/certificates/import`): its
+     * `results[].certificateUuid` / `certificateOutcome` let a spec record what the import created before asserting
+     * anything. The result badge is not checked here: `assertImportResult` does that.
+     */
+    async submitImport(): Promise<Response> {
+        logger.info('Submitting the import');
+        return this.importDialog.submit();
+    }
+
+    /** The import results region shows the given outcome badge (`Imported`, `Already in inventory`, …). */
+    async assertImportResult(text: string): Promise<void> {
+        await this.importDialog.assertResults([text]);
+    }
+
     async closeImportModal(): Promise<void> {
         logger.info('Closing the import modal');
         await this.importDoneButton.click();
@@ -168,18 +182,12 @@ export class CertificatePage {
 
     async selectRaProfile(raProfileName: string): Promise<void> {
         logger.info(`Selecting RA Profile: ${raProfileName}`);
-        await this.raProfileTrigger.click();
-        const option = this.page.getByRole('option', { name: raProfileName, exact: true });
-        await option.waitFor({ state: 'visible' });
-        await option.click();
+        await chooseOption(this.page, this.raProfileTrigger, raProfileName);
     }
 
     async selectKeySourceExternal(): Promise<void> {
         logger.info('Selecting Key Source: External key');
-        await this.keySourceTrigger.click();
-        const option = this.page.getByRole('option', { name: /external/i });
-        await option.waitFor({ state: 'visible' });
-        await option.click();
+        await chooseOption(this.page, this.keySourceTrigger, /external/i);
     }
 
     async pasteCsr(csrPem: string): Promise<void> {
@@ -188,18 +196,9 @@ export class CertificatePage {
         await this.csrTextarea.fill(csrPem);
     }
 
+    /** Create on the Add Certificate form (the smoke spec's entry point); the outcomes are CertificateAddPage's. */
     async submitIssue(): Promise<string> {
-        logger.info('Submitting Issue Certificate');
-        await this.submitButton.click();
-        await expect(this.page).toHaveURL(/\/certificates\/detail\/[a-f0-9-]+/);
-        const url = this.page.url();
-        const match = url.match(/\/certificates\/detail\/([a-f0-9-]+)/);
-        if (!match) {
-            throw new Error(`Could not extract certificate UUID from URL: ${url}`);
-        }
-        const certUuid = match[1];
-        logger.info(`Issued certificate UUID: ${certUuid}`);
-        return certUuid;
+        return (await new CertificateAddPage(this.page).submitIssueWithWarnings()).uuid;
     }
 
     async openTab(tabName: string): Promise<void> {
@@ -247,6 +246,50 @@ export class CertificatePage {
         await expect(formatRow).toContainText('pkcs10');
     }
 
+    /**
+     * The state badge and identity of an issued certificate on the Details tab: the common name row, the state label
+     * `Issued` and the RA profile name. The caller reloads first: the detail page opened by Create does not poll.
+     */
+    async assertIssuedDetails(expected: { commonName: string; raProfileName: string }): Promise<void> {
+        logger.info('Asserting the Details tab of an issued certificate');
+        await this.openTab('Details');
+        await expect(this.main.locator('tr[data-id="commonName"]')).toContainText(expected.commonName);
+        await expect(this.main.locator('tr[data-id="certState"] [data-testid="certificate-status"]')).toHaveText('Issued');
+        await expect(this.main).toContainText(expected.raProfileName);
+    }
+
+    /** The `Subject Alternative Names` widget of the Details tab (rows `tr[data-id=<SAN type>]`, values joined by ", "). */
+    get sanWidget(): Locator {
+        return widgetTitled(this.main, 'Subject Alternative Names');
+    }
+
+    /**
+     * The DNS names and IP addresses the Details tab shows in its `Subject Alternative Names` widget (rows `dNSName` and
+     * `iPAddress`; the frontend renders `subjectAlternativeNames` of the detail as one row per type, values joined by ", ").
+     */
+    async sanValues(): Promise<SanSet> {
+        await this.openTab('Details');
+        await expect(this.sanWidget).toBeVisible();
+        const valuesOf = async (type: string): Promise<string[]> => {
+            const row = this.sanWidget.locator(`tr[data-id="${type}"]`);
+            if (!(await row.count())) return [];
+            const text = (await row.locator('td').last().innerText()).trim();
+            return text ? text.split(/,\s*/).map((v) => v.trim()).filter(Boolean) : [];
+        };
+        return { dns: await valuesOf('dNSName'), ip: await valuesOf('iPAddress') };
+    }
+
+    /**
+     * The Details tab shows the expected SANs: `exact` = set equality of DNS and IP (no extras), `dns` = every expected
+     * DNS name is shown (a CA whose template rewrites the SAN extension, the oracle on a CA other than EJBCA-NG).
+     */
+    async assertSans(expected: SanSet, mode: 'exact' | 'dns' = 'exact'): Promise<void> {
+        const shown = await this.sanValues();
+        logger.info(`SANs shown: ${shown.dns.length} DNS, ${shown.ip.length} IP (${mode})`);
+        if (mode === 'exact') expect(sameSans(shown, expected), `Details SANs ${JSON.stringify(shown)} = ${JSON.stringify(expected)}`).toBe(true);
+        else for (const d of expected.dns) expect(shown.dns.map((x) => x.toLowerCase()), `Details SANs include ${d}`).toContain(d.toLowerCase());
+    }
+
     async assertHistoryTabHasEntry(pattern: RegExp): Promise<void> {
         logger.info(`Asserting History tab has entry matching ${pattern}`);
         await this.openTab('History');
@@ -255,7 +298,8 @@ export class CertificatePage {
         await expect(table).toContainText(pattern);
     }
 
-    async verifyOtherTabsOpenWithoutError(tabs: string[]): Promise<void> {
+    /** Each listed tab that is shown opens without an error text (a tab that is not shown is skipped with a warning). */
+    async assertTabsOpenWithoutError(tabs: string[]): Promise<void> {
         for (const tabName of tabs) {
             logger.info(`Opening tab (shallow check): ${tabName}`);
             const tab = this.tablist.getByRole('tab', { name: tabName, exact: true });
@@ -269,10 +313,14 @@ export class CertificatePage {
         }
     }
 
+    /** The former name of `assertTabsOpenWithoutError`; the smoke spec calls it. */
+    async verifyOtherTabsOpenWithoutError(tabs: string[]): Promise<void> {
+        await this.assertTabsOpenWithoutError(tabs);
+    }
+
     async assignCustomAttributeValue(attributeName: string, value: string): Promise<void> {
         logger.info(`Assigning custom attribute "${attributeName}" with value "${value}"`);
-        await this.customAttributeSelectTrigger.click();
-        await this.page.getByRole('option', { name: attributeName, exact: true }).click();
+        await chooseOption(this.page, this.customAttributeSelectTrigger, attributeName);
         const valueInput = this.main.getByTestId(`text-input-${attributeName}`);
         await valueInput.click();
         await valueInput.fill(value);

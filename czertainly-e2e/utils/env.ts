@@ -14,10 +14,16 @@
  *      validation still applies in both modes.
  */
 
-import * as dotenv from 'dotenv';
-dotenv.config(); // reads .env in current dir, copies KEY=VALUE into process.env
+import { loadDotenv } from './envFile';
+import { assertAuthModeAllowed } from './regression/tier';
+// Reads REG_ENV_FILE when set (and then NEVER the working directory's .env), else ./.env; existing variables win, so
+// what a REG / API config loaded and froze at load time cannot be changed here. API_ENV_FILE is NOT read
+// here: the REG / API configs resolve it and pin REG_ENV_FILE, a smoke run never follows it.
+loadDotenv();
 
-type AuthMode = 'local' | 'oidc';
+// header: local development stack — the frontend dev proxy injects the client certificate (ssl-client-cert),
+// no identity provider; API calls send the same header when AUTH_CLIENT_CERT is set.
+type AuthMode = 'local' | 'oidc' | 'header';
 
 export type TestEnv = {
   baseUrl: string;
@@ -79,9 +85,11 @@ function required(name: string): string {
 
 export function loadEnv(): TestEnv {
   const authMode = (process.env.AUTH_MODE ?? 'local') as AuthMode;
-  if (authMode !== 'local' && authMode !== 'oidc') {
-    throw new Error(`AUTH_MODE must be either 'local' or 'oidc', but got: ${process.env.AUTH_MODE}`);
+  if (authMode !== 'local' && authMode !== 'oidc' && authMode !== 'header') {
+    throw new Error(`AUTH_MODE must be 'local', 'oidc' or 'header', but got: ${process.env.AUTH_MODE}`);
   }
+  // header mode trusts a dev proxy to inject an admin client certificate: only on a loopback / TIER_LOCAL_HOSTS stack.
+  assertAuthModeAllowed(process.env);
 
   const env: TestEnv = { // build up the object
     baseUrl: required('BASE_URL'),
