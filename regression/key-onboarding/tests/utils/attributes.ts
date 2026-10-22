@@ -7,6 +7,13 @@ export interface AttributeDefinition {
   content?: Array<{ data: unknown; reference?: string }>;
 }
 
+/** A metadata attribute as Core returns it, which the suite passes back whole. */
+export interface MetadataAttribute {
+  uuid: string;
+  name: string;
+  content?: Array<{ data: unknown; reference?: string }>;
+}
+
 export function definitionNamed(definitions: AttributeDefinition[], name: string): AttributeDefinition {
   const definition = definitions.find((candidate) => candidate.name === name);
   if (!definition) {

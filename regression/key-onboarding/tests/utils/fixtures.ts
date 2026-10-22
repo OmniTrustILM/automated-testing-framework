@@ -1,5 +1,6 @@
 import { test as base, expect } from '@playwright/test';
 import { AdminApi, TokenKey } from './adminApi';
+import { MetadataAttribute } from './attributes';
 import { provisioning, Provisioning } from './env';
 
 interface WorkerFixtures {
@@ -38,11 +39,16 @@ export function labelled(keys: TokenKey[], label: string): TokenKey {
   return found;
 }
 
-/** The handle of a listed pair by label, for a pair the listing can address. */
-export function handleOf(keys: TokenKey[], label: string): string {
-  const { keyHandle } = labelled(keys, label);
-  if (!keyHandle) {
-    throw new Error(`The token lists the key pair labelled ${label} without a handle`);
+/** The metadata of a listed pair by label, for a pair the listing can address. */
+export function keyPairMetaOf(keys: TokenKey[], label: string): MetadataAttribute[] {
+  const { keyPairMeta } = labelled(keys, label);
+  if (!keyPairMeta) {
+    throw new Error(`The token lists the key pair labelled ${label} without metadata`);
   }
-  return keyHandle;
+  return keyPairMeta;
+}
+
+/** A listed pair's metadata as one string, which the next listing of the same pair repeats. */
+export function identityOf(key: TokenKey): string | undefined {
+  return key.keyPairMeta && JSON.stringify(key.keyPairMeta);
 }

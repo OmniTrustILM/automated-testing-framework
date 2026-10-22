@@ -1,5 +1,5 @@
 import { APIRequestContext, APIResponse, request as playwrightRequest } from '@playwright/test';
-import { AttributeDefinition, definitionNamed, offered, requestAttribute } from './attributes';
+import { AttributeDefinition, definitionNamed, MetadataAttribute, offered, requestAttribute } from './attributes';
 import { adminCertificateHeader, config } from './env';
 
 type Method = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
@@ -133,6 +133,11 @@ export class AdminApi {
     await this.json<void>('DELETE', `/v1/keys/${keyUuid}`, WHOLE_KEY);
   }
 
+  /** Enables every item of the key. An onboarded key starts disabled. */
+  async enableKey(keyUuid: string): Promise<void> {
+    await this.patch<void>(`/v1/keys/${keyUuid}/enable`, WHOLE_KEY);
+  }
+
   removeKeyFromInventory(keyUuid: string): Promise<APIResponse> {
     return this.raw('PATCH', `/v1/keys/${keyUuid}/removeFromInventory`);
   }
@@ -166,7 +171,7 @@ export class AdminApi {
 }
 
 export interface TokenKey {
-  keyHandle?: string;
+  keyPairMeta?: MetadataAttribute[];
   label?: string;
   keyAlgorithm: string;
   length?: number | null;
@@ -177,7 +182,10 @@ export interface TokenKey {
     | 'inInventoryWithoutToken'
     | 'importInProgress'
     | 'noPublicKey'
-    | 'noUniqueId';
+    | 'noUsableId'
+    | 'unsupportedKeyType'
+    | 'unreadable'
+    | 'gone';
   fingerprint?: string;
   suggestedName?: string;
   inventoryKeyUuid?: string;
@@ -194,12 +202,12 @@ export interface TokenKeyPage {
 }
 
 export interface TokenKeySelection {
-  keyHandle: string;
+  keyPairMeta: MetadataAttribute[];
   name?: string;
 }
 
 export interface OnboardingResult {
-  keyHandle: string;
+  keyPairMeta: MetadataAttribute[];
   onboarded: boolean;
   intoExistingKey: boolean;
   keyUuid?: string;
