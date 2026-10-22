@@ -14,7 +14,6 @@ import { expect, Locator, Page } from '@playwright/test';
 import type { ApiAnswer } from '../utils/regression/apiReads';
 import { setSwitch, submitButtonOf } from './ui/form';
 import { actAndWaitForApi, answerFrom, UUID } from './ui/waitForResponse';
-import { iconButton } from './ui/widget';
 
 /** What a save sent and what the platform answered. */
 export interface SavedPermissions {
@@ -78,7 +77,8 @@ export class RolePermissionsPage {
     /** The open resource's "Add object" button (an icon only) → the object-level dialog → the object's row ticked → Save. */
     async addObject(objectName: string): Promise<void> {
         const heading = this.main.getByRole('heading', { name: 'Object Action Permissions' });
-        await iconButton(heading.locator('..'), 'plus').first().click();
+        // The product gives this button no test id and no accessible name (a tooltip only): the icon class is the handle.
+        await heading.locator('..').locator('button:has(svg.lucide-plus)').first().click();
         const dialog = this.page.getByRole('dialog', { name: 'Edit Object Level Permissions' });
         await expect(dialog).toBeVisible();
         await dialog.locator('tr', { has: this.page.getByRole('cell', { name: objectName, exact: true }) }).getByRole('checkbox').check();

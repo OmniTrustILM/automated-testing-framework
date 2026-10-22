@@ -18,8 +18,8 @@ import { SearchableListWidget } from './SearchableListWidget';
 import { ApiAnswer } from '../utils/regression/apiReads';
 import { CreateAnswer, createAnswerOf } from './ui/createAnswer';
 import { entityScreens, type EntityScreens } from './ui/entityScreens';
-import { customAttributeEditor, customAttributesDefined, fillRequiredCustomAttributes } from './ui/form';
-import { UUID, watchApiCall } from './ui/waitForResponse';
+import { customAttributeEditor, customAttributesDefined, fillRequiredCustomAttributes, fillText } from './ui/form';
+import { actAndWaitForApi, answerFrom, UUID, watchApiCall } from './ui/waitForResponse';
 import { FORM_READY_MS } from '../utils/regression/timeouts';
 
 const logger = new Logger('UserPage');
@@ -163,12 +163,32 @@ export class UserPage {
         if (activeName && !/^Custom attributes$/i.test(activeName)) await dialog.getByRole('tab', { name: activeName, exact: true }).click();
     }
 
-    /** Detail → Edit → change names / e-mail → Save; returns the answer of `PUT /api/v1/users/{uuid}`. */
-    async editUser(fields: { firstName?: string; lastName?: string; email?: string }): Promise<ApiAnswer> {
-        const dialog = await this.openEditDialog();
+    /**
+     * Detail → Edit → change names / e-mail → Save; returns the answer of `PUT /api/v1/users/{uuid}` and the body the form sent.
+     * UserForm resets its fields in an effect that runs once the user detail is loaded, and its Widget shows the spinner (`busy`)
+     * while that fetch or any other of the form runs: when the detail answer is in and the spinner is gone, the reset has happened.
+     * Typing earlier would be overwritten by the stored values, so the form is waited for, typed into, and read back before Save.
+     */
+    async editUser(fields: { firstName?: string; lastName?: string; email?: string }): Promise<ApiAnswer & { sent: Record<string, unknown> }> {
+        const form = this.editDialog;
+        const refetch = await actAndWaitForApi(this.page, { method: 'GET', path: new RegExp(`/api/v1/users/${UUID}$`) }, () => this.openEditDialog());
+        const stored = (await refetch.json()) as { firstName?: string | null; lastName?: string | null; email?: string | null };
+        const dialog = form.dialog;
+        await expect(dialog.getByTestId('spinner'), 'the user form has finished loading').toHaveCount(0);
+        await expect(form.input('firstName'), 'the form shows the stored first name').toHaveValue(stored.firstName ?? '');
+        await expect(form.input('lastName'), 'the form shows the stored last name').toHaveValue(stored.lastName ?? '');
+        await expect(form.input('email'), 'the form shows the stored e-mail').toHaveValue(stored.email ?? '');
         await this.waitForCustomAttributeEditor(dialog);
-        await this.editDialog.fillTexts({ firstName: fields.firstName, lastName: fields.lastName, email: fields.email });
-        return this.editDialog.submit({ method: 'PUT', path: new RegExp(`/api/v1/users/${UUID}$`) });
+        for (const field of ['firstName', 'lastName', 'email'] as const) {
+            if (fields[field] !== undefined) await fillText(form.input(field), fields[field]!);
+        }
+        for (const field of ['firstName', 'lastName', 'email'] as const) {
+            if (fields[field] !== undefined) await expect(form.input(field), `${field} still holds the typed value before Save`).toHaveValue(fields[field]!);
+        }
+        const startedAt = Date.now();
+        const response = await actAndWaitForApi(this.page, { method: 'PUT', path: new RegExp(`/api/v1/users/${UUID}$`) }, () => form.submitButton.click());
+        const sent = (response.request().postDataJSON() ?? {}) as Record<string, unknown>;
+        return { ...(await answerFrom(response, startedAt)), sent };
     }
 
     /** Detail → Delete → "Delete User" → Delete; returns the answer of `DELETE /api/v1/users/{uuid}`. */

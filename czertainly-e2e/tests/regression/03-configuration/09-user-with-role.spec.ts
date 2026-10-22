@@ -102,8 +102,9 @@ test.describe('User with a role', { tag: tags.regression }, () => {
             });
 
             await test.step('Edit first name, last name, e-mail → Save', async () => {
-                const { status } = await users.editUser(edited);
+                const { status, sent } = await users.editUser(edited);
                 expect(status, 'PUT /api/v1/users/{uuid}').toBeLessThan(300);
+                expect(sent, 'the Save request carries the new names and e-mail').toMatchObject(edited);
                 await expect(users.editDialog.dialog).toBeHidden();
             });
 
