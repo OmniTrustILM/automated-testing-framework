@@ -5,7 +5,8 @@
  *       message list, a single message), the credential connector or a named skip, a valid Basic body, and the delete of an
  *       own object followed by its 404 read-back and the `deleted` ledger line.
  * WHY: The three specs repeat the same refusal checks and the same delete-and-prove step; one copy keeps them equal.
- * HOW: The refusal readers delegate to the error contract; `deleteOwnAndProveGone` deletes an own object, reads back the 404 and writes the `deleted` ledger line.
+ * HOW: The refusal readers delegate to the error contract; `deleteOwnAndProveGone` deletes an own object, reads back the 404 and writes the
+ * `deleted` ledger line.
  */
 import { expect, test } from '../../../fixtures/testFixtures';
 import { expect422Messages, expectMessageObject } from '../errorContract';
@@ -46,7 +47,10 @@ export async function basicBody(api: GuardedApi, c: CredentialConnector, name: u
     return credentialBody(c, name, basicAttributes(c, given, opts), await requiredCustomAttributes(api, 'credentials', runName('ca')), over);
 }
 
-/** DELETE own (`deleteOwn`), expect 204 and an empty body, read it back as 404 (message per the error contract); the delete is recorded after the read-back. */
+/**
+ * DELETE own (`deleteOwn`), expect 204 and an empty body, read it back as 404 (message per the error contract); the delete is recorded
+ * after the read-back.
+ */
 export async function deleteOwnAndProveGone(api: GuardedApi, kind: 'credentials' | 'groups', ref: OwnRef, type: string, spec: string): Promise<void> {
     const del = await deleteOwn(api, kind, ref, spec, { note: 'delete under test: 204, then 404 on read-back', readBack: () => expectGoneWith404(api, kind, ref.uuid, type) });
     expect(del.status, del.text.slice(0, 300)).toBe(204);

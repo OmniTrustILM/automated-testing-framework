@@ -169,7 +169,10 @@ export function foreignKeyRows(def: ResourceDef, rows: Json[]): Record<string, I
     return out;
 }
 
-/** Keys on a window cut are re-read by detail; the detail shows every item, so a run-named item outside the windows makes the key the run's own. */
+/**
+ * Keys on a window cut are re-read by detail; the detail shows every item, so a run-named item outside the windows makes the key the run's
+ * own.
+ */
 export const keyWindowCuts: NonNullable<ResourceDef['windowCuts']> = {
     find: keysChangedDuringRun,
     markOf: (detail) => (((detail.items as Json[] | undefined) ?? []).some((it) => isRunNamed(String(it?.name ?? ''))) ? undefined : keyMarksFromDetail(detail)),

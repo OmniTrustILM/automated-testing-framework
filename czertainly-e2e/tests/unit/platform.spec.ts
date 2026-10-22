@@ -297,7 +297,7 @@ test('core\'s secret body (secret polymorphic on type), and the credential provi
     });
 }
 
-// ------------------------------------------------------------------ scheduledJobs teardown handler and stackConfig, own fake API (block scope)
+// ------------------------------------------------------------- scheduledJobs teardown handler and stackConfig, own fake API (block scope)
 
 {
     /**

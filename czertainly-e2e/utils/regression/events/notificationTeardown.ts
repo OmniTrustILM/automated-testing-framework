@@ -1,5 +1,6 @@
 /**
- * notificationTeardown — how the run-end teardown removes the notification objects the events area creates (own objects only, deleted at run end).
+ * notificationTeardown — how the run-end teardown removes the notification objects the events area creates (own objects only, deleted at
+ * run end).
  *
  * WHAT: the teardown handlers of the ledger types `notificationProfiles` and `notificationInstances`. The resource-type
  * registry names this module for them, and runTeardown wraps each handler with `wrapHandlerWithGuard` (dry-run check, then

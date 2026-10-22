@@ -23,7 +23,7 @@ import { Arrived, LoopbackServer } from './helpers/loopbackServer';
 import { registerGuardRig } from './helpers/guardRig';
 import { guardVerdict } from './helpers/guardVerdict';
 import { randomBytes } from 'node:crypto';
-// Run-scoped generated test passwords (merge follow-up 2026-10-15): no password-like literal in the file.
+// Run-scoped generated test passwords: no password-like literal in the file.
 const GEN_PW_1 = `qa-${randomBytes(9).toString('base64url')}`;
 const GEN_PW_2 = `qa-${randomBytes(9).toString('base64url')}`;
 
@@ -299,8 +299,7 @@ test('raw bodies: xml, octet-stream and multipart are sent as written on the rea
 
 // ------------------------------------------------------------------ probe methods
 
-// probe methods (a): QAPROBE is sent as that method, bodyless, through fetch only; PROPFIND, FOO and lower-case variants stay
-// refused
+// probe methods (a): QAPROBE is sent as that method, bodyless, through fetch only; PROPFIND, FOO and lower-case variants stay refused
 test('probe methods: QAPROBE is sent bodyless through fetch only; PROPFIND and FOO stay refused', async () => {
     expect([...PROBE_METHODS]).toEqual(['TRACE', 'QAPROBE']);
     expect([...METHOD_TABLES.METHODS]).toEqual(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', ...PROBE_METHODS]);
@@ -533,7 +532,8 @@ test('a callback on a pre-existing connector stays refused; POST /v2/connectors 
     expect(mutationsSeen()).toEqual(['POST /api/v2/connectors', 'POST /api/v2/connectors']);
     A.reset();
     expect(await outcome(g.post('/api/v2/connectors', { data: { name: `${RUN}-stub`, url: 'http://x', authType: 'none', proxyUuid: FOREIGN } }))).toBe('request');
-    // A pre-existing proxy named by its CODE (no uuid) binds the new connector: refused on both creates, any depth / case; blank / null / absent pass.
+    // A pre-existing proxy named by its CODE (no uuid) binds the new connector: refused on both creates, any depth / case; blank / null /
+    // absent pass.
     for (const path of ['/api/v2/connectors', '/api/v1/connectors']) {
         const base = { name: `${RUN}-stub`, url: 'http://x', authType: 'none' };
         for (const body of [{ ...base, proxyCode: 'edge-1' }, { ...base, ProxyCode: 'edge-1' }, { ...base, proxyCode: ' x ' }, { ...base, proxyCode: 1 }, { ...base, proxyCode: ['edge-1'] }, { ...base, customAttributes: [{ proxyCode: 'edge-1' }] }, { ...base, nested: { proxycode: 'e' } }]) {

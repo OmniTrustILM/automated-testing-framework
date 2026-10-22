@@ -6,8 +6,8 @@
  *          attempts, an expiry of now plus the default window, and Complete enabled.
  *       3. The challenge appears nowhere: not on the page, not in the detail JSON, not in the history.
  *       4. Pre-register without a challenge → Registered, no Registration widget.
- *       5. Complete with a wrong secret (REG-CERT-13) → "The certificate registration challenge is invalid.", 1 failed attempt,
- *          still Registered.
+ *       5. Complete with a wrong secret (REG-CERT-13) → "The certificate registration challenge is invalid.", 1 failed attempt, still
+ *          Registered.
  *       6. Complete with the right secret and a CSR → Issued, 0 failed attempts, the public key is the CSR's.
  * WHY: pre-registration lets an operator reserve a certificate and let someone else complete it with a secret; the secret must
  *      never be shown, and a wrong one must be counted and refused.
@@ -26,7 +26,6 @@ import { historyMessages, historyOf } from '../../../utils/regression/lifecycle/
 import { msBetween, newChallenge, registrationDefaults } from '../../../utils/regression/lifecycle/preRegistration';
 import { newKeyPair, csrFromKey, parseCertificate, publicKeyPemOf } from '../../../utils/regression/pkiBuilders';
 import { apiJsonWithDate, getCertificate, serverCreatedAfter } from '../../../utils/regression/apiReads';
-import { recordDerivedKeyOf } from '../../../utils/regression/issuedRecords';
 import { ownCommonName } from '../../../utils/regression/ledger/runState';
 import { waitIssued } from '../../../utils/regression/ownCertificates';
 import { testMeta, tags } from '../../../utils/regression/tags';
@@ -186,7 +185,7 @@ test.describe('Pre-register and complete in the web UI', { tag: tags.regression 
                 const answer = await complete.submit();
                 expect(answer.status, answer.text.slice(0, 300)).toBe(200);
                 await waitIssued(api, uuid);
-                await recordDerivedKeyOf(api, uuid, createdAfter, own.spec);
+                await own.derivedKey(uuid, createdAfter);
                 await detail.openFresh(uuid);
                 await detail.assertState('Issued');
                 await detail.assertRegistration({ state: 'Active', failedAttempts: 0 });

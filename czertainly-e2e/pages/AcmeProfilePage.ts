@@ -71,8 +71,7 @@ export class AcmeProfilePage {
     }
 
     /**
-     * Clicks Create and returns the answer of `POST /api/v1/acmeProfiles` (status, new uuid, request body); the dialog is not waited
-     * for.
+     * Clicks Create and returns the answer of `POST /api/v1/acmeProfiles` (status, new uuid, request body); the dialog is not waited for.
      */
     async submitCreateForm(): Promise<CreateAnswer> {
         return submitCreate(this.page, this.createDialog, { endpoint: '/api/v1/acmeProfiles' });

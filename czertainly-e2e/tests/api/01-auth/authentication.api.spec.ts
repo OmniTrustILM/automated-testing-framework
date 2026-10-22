@@ -25,9 +25,8 @@ import { expectHealthGroupUp, PROBE_PATHS } from '../../../utils/regression/plat
 import { anonymousTarget, callAs, callWithAuthorization, coreReplicas, isNotGrantableAction, leaksInternals, parseProfile, readProfile, replicaBlocker, restrictedIdentity } from '../../../utils/regression/rbac/identities';
 import { ANONYMOUS_VARIANTS, buildVariant, claimOf, echoesToken, TOKEN_VARIANTS, TOKENLESS_VARIANTS, TokenVariant } from '../../../utils/regression/rbac/jwtTools';
 import { usersOrRolesNamed } from '../../../utils/regression/listReads';
-import { recordIfAccepted } from '../../../utils/regression/ownCrud';
 import { ownName } from '../../../utils/regression/ledger/runState';
-import { ensureRestrictedUserOrSkip, restrictedRoleSwitch } from '../../../utils/regression/rbac/permissionObjects';
+import { restrictedRoleSwitch } from '../../../utils/regression/rbac/permissionObjects';
 import { testMeta, tags } from '../../../utils/regression/tags';
 import { answerOf } from '../../../utils/regression/apiReads';
 
@@ -97,7 +96,7 @@ test.describe('Authentication of API callers', { tag: tags.api }, () => {
                 const started = Date.now();
                 const answer = await answerOf(await anonymousApi.post('/api/v1/roles', { data: { name, description: 'API-AUTH-01 anonymous probe', customAttributes: [] } }), started);
                 // Ledger before assertion: a role an anonymous caller managed to create is this run's object.
-                recordIfAccepted('roles', answer, name, own.spec, 'role created without credentials (API-AUTH-01[mutations])');
+                own.probe('roles', answer, { name, note: 'role created without credentials (API-AUTH-01[mutations])' });
                 expect(answer.status, answer.text.slice(0, 200)).toBe(401);
                 expect(leaksInternals(answer.text)).toBeUndefined();
                 return name;
@@ -153,9 +152,8 @@ test.describe('Authentication of API callers', { tag: tags.api }, () => {
         });
 
     test('the profile\'s username equals the username claim decoded from the bearer token',
-        testMeta({ id: 'API-AUTH-02', row: 'claim', prio: 'P1', issue: 'ilm#426', rule: ['the username claim is the identity; ilm#426 step 7 — the claim is decoded WITHOUT verification: it only proves the profile belongs to the token'] }),
-        async ({ api, adminToken, env }) => {
-            test.skip(adminToken === undefined, `no bearer token on AUTH_MODE=${env.authMode} (header mode authenticates with the certificate header; @needs:keycloak-local)`);
+        testMeta({ id: 'API-AUTH-02', row: 'claim', prio: 'P1', issue: 'ilm#426', needs: 'bearer-token', rule: ['the username claim is the identity; ilm#426 step 7 — the claim is decoded WITHOUT verification: it only proves the profile belongs to the token'] }),
+        async ({ api, adminToken }) => {
             const profile = await readProfile(api);
             expect(String(claimOf(adminToken!.bearer(), 'username')).toLowerCase()).toBe(profile.username.toLowerCase());
         });
@@ -194,7 +192,7 @@ test.describe('Authentication of API callers', { tag: tags.api }, () => {
     for (const variant of TOKENLESS_VARIANTS) {
         test(`a bearer built from nothing (${variant}) is refused with 401 between two controls`,
             testMeta({
-                id: 'API-AUTH-03', row: variant, prio: 'P1', issue: 'ilm#426',
+                id: 'API-AUTH-03', row: variant, prio: 'P1', issue: 'ilm#426', needs: 'bearer-token',
                 rule: [
                     'the provider is chosen by iss; validators: issuer, timestamp, audience; refusal texts "Token is not an instance of Signed JWT.", "Issuer URI is not present in JWT.", "No OAuth2 Provider with issuer URI … configured"; each answers 401; ilm#426 step 8',
                     'each variant runs between two controls with the untouched token (200 before and after), so a 401 cannot come from a bad base token',
@@ -226,9 +224,8 @@ test.describe('Authentication of API callers', { tag: tags.api }, () => {
                     'the FIRST signature character is changed (the last base64url character of an RS256 signature has four padding bits: another character can decode to the identical bytes and the token would stay valid)',
                 ],
             }),
-            async ({ api, anonymousApi, adminToken, env }) => {
+            async ({ api, anonymousApi, adminToken }) => {
                 test.setTimeout(SEVERAL_STEPS_TEST_MS);
-                test.skip(adminToken === undefined, `no bearer token on AUTH_MODE=${env.authMode} (@needs:keycloak-local)`);
                 const me = await readProfile(api);
                 const req = buildVariant(variant, { username: me.username, validToken: adminToken?.bearer() });
                 const res = variant === 'query-only'
@@ -257,7 +254,7 @@ test.describe('Authentication of API callers', { tag: tags.api }, () => {
             test.skip(!!blocker, blocker);
             test.skip(restrictedToken === undefined, `no bearer token for the second identity on AUTH_MODE=${env.authMode}`);
             const dedicatedUser = restrictedIdentity()!;
-            const user = await test.step('The dedicated ILM user (created by this run; the identity-provider account is provisioned outside the suite)', async () => ensureRestrictedUserOrSkip(api, own.spec, dedicatedUser, (reason) => test.skip(true, reason)));
+            const user = await test.step('The dedicated ILM user (created by this run; the identity-provider account is provisioned outside the suite)', async () => own.restrictedUser());
             const sw = restrictedRoleSwitch(api, user, restrictedToken!.bearer());
 
             const tampered = await test.step('Reference: a tampered token\'s 401 (the shape a disabled user must share)', async () => {

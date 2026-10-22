@@ -6,7 +6,8 @@
  *       RA profile and a protocol profile this run created (`assertOwnLive` on both), so the run RA profile and every
  *       pre-existing object stay untouched.
  * WHY: Protocol activation must never touch the run RA profile or a pre-existing profile.
- * HOW: Create (recorded before any assertion), enable, activate and deactivate with `assertOwnLive` on both objects, plus the teardown handlers for `scepProfiles` and `cmpProfiles`.
+ * HOW: Create (recorded before any assertion), enable, activate and deactivate with `assertOwnLive` on both objects, plus the teardown
+ * handlers for `scepProfiles` and `cmpProfiles`.
  */
 import * as crypto from 'crypto';
 import { Logger } from '../../Logger';
@@ -53,7 +54,10 @@ export interface ScepProfileOptions {
     description?: string;
 }
 
-/** `POST /v1/scepProfiles` (ScepProfileRequestDto); the profile is created DISABLED. Recorded (ledger before any assertion); parents: the CA certificate and the default RA profile. */
+/**
+ * `POST /v1/scepProfiles` (ScepProfileRequestDto); the profile is created DISABLED. Recorded (ledger before any assertion); parents: the CA
+ * certificate and the default RA profile.
+ */
 export async function createOwnScepProfile(api: GuardedApi, spec: string, suffix: string, o: ScepProfileOptions): Promise<OwnRef> {
     const { answer: _answer, ...ref } = await createOwn(api, spec, {
         type: 'scepProfiles',
@@ -145,7 +149,10 @@ export interface CmpProfileOptions {
     description?: string;
 }
 
-/** `POST /v1/cmpProfiles` (CmpProfileRequestDto); created DISABLED. Default: v2 / sharedSecret / sharedSecret. Recorded before any assertion. */
+/**
+ * `POST /v1/cmpProfiles` (CmpProfileRequestDto); created DISABLED. Default: v2 / sharedSecret / sharedSecret. Recorded before any
+ * assertion.
+ */
 export async function createOwnCmpProfile(api: GuardedApi, spec: string, suffix: string, o: CmpProfileOptions = {}): Promise<OwnRef> {
     const request = o.requestProtectionMethod ?? 'sharedSecret';
     const response = o.responseProtectionMethod ?? 'sharedSecret';
@@ -228,7 +235,7 @@ export function pathOfUrl(url: string): string {
 /** The origin (`scheme://host[:port]`) of a protocol URL, for `openssl cmp -server`. */
 export const originOfUrl = (url: string): string => new URL(url).origin;
 
-// ------------------------------------------------------------------ run-end teardown (registry: scepProfiles / cmpProfiles → protocolProfiles)
+// ------------------------------------------------------------- run-end teardown (registry: scepProfiles / cmpProfiles → protocolProfiles)
 
 /** The authority of an RA profile: the ledger's parents, else the RA profile detail (read-only). */
 async function authorityOf(ctx: TeardownContext, raProfileUuid: string): Promise<string | undefined> {

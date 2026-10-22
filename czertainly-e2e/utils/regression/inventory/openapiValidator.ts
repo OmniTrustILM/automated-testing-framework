@@ -214,7 +214,9 @@ export function pageProblems(body: unknown): string[] {
 
 const ZONE = /(Z|[+-]\d{2}:?\d{2})$/;
 
-/** Every string that looks like a date-time (ISO date + `T` + time) must carry a zone designator; returns the offenders as `pointer: value`. */
+/**
+ * Every string that looks like a date-time (ISO date + `T` + time) must carry a zone designator; returns the offenders as `pointer: value`.
+ */
 export function dateTimeZoneProblems(body: unknown, max = 5): string[] {
     const out: string[] = [];
     const walk = (v: unknown, at: string): void => {

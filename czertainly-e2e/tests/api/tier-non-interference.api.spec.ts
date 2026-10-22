@@ -1,11 +1,13 @@
 /**
  * API-GEN-33 — Non-interference: the run changed nothing it did not create. ilm#428.
  *
- * WHAT: 1. After every other project, a second snapshot of the shared tier is compared with the "before" snapshot of the setup spec and with the run's ledger: no object that
- *          existed before the run changed or vanished, and every object created in between belongs to this run (other tools' creates are confirmed by one detail read each).
- * WHY: the suite is create-only on shared tiers; this is the proof that it stayed so. A missing before snapshot fails the test, because there would be no proof.
- * HOW: runs as the `non-interference` project after every other project, failed or not; shared tiers only (skipped on a local stack); reads only. The comparison lives in
- *      utils/regression/teardown/nonInterference.ts and attaches non-interference.json.
+ * WHAT: 1. After every other project, a second snapshot of the shared tier is compared with the "before" snapshot of the setup spec and
+ *          with the run's ledger: no object that existed before the run changed or vanished, and every object created in between belongs to
+ *          this run (other tools' creates are confirmed by one detail read each).
+ * WHY: the suite is create-only on shared tiers; this is the proof that it stayed so. A missing before snapshot fails the test, because
+ * there would be no proof.
+ * HOW: runs as the `non-interference` project after every other project, failed or not; shared tiers only (skipped on a local stack); reads
+ *      only. The comparison lives in utils/regression/teardown/nonInterference.ts and attaches non-interference.json.
  */
 import { expect, test } from '../../fixtures/testFixtures';
 import { compareSnapshots, confirmForeignCreates, readSnapshot, snapshotTier } from '../../utils/regression/teardown/nonInterference';

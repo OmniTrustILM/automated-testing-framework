@@ -4,8 +4,10 @@
  * WHAT: The labels the filter widget shows, computed from the platform enums and the search catalogue: source, condition and
  *       enum labels (read from `GET /api/v1/enums`, where the admin UI reads them), the Field select labels with the
  *       disambiguation of shared labels, the widget input for an API-shaped filter and the text of its badge.
- * WHY: A page test needs the exact words of the widget, and they come from the platform enums and the search catalogue, not from the page under test.
- * HOW: Source, condition and enum labels read from `GET /api/v1/enums`, the Field select labels with the disambiguation of shared labels, the widget input for an API-shaped filter and the badge text.
+ * WHY: A page test needs the exact words of the widget, and they come from the platform enums and the search catalogue, not from the page
+ * under test.
+ * HOW: Source, condition and enum labels read from `GET /api/v1/enums`, the Field select labels with the disambiguation of shared labels,
+ * the widget input for an API-shaped filter and the badge text.
  */
 import type { APIRequestContext } from '@playwright/test';
 import { CatalogueGroup, Filter, findField } from './searchApi';
@@ -80,13 +82,18 @@ export function fieldLabelMap(fields: readonly WidgetField[], contentTypeLabel: 
     return new Map(withType.map((o) => [o.id, (shown.get(normalizeLabel(o.label)) ?? 0) > 1 ? `${o.label} — ${o.id}` : o.label]));
 }
 
-/** The labels the Field select shows for a catalogue group, in order: fields without a condition are left out (`FilterWidget/index.tsx`). */
+/**
+ * The labels the Field select shows for a catalogue group, in order: fields without a condition are left out (`FilterWidget/index.tsx`).
+ */
 export function expectedFieldLabels(fields: readonly WidgetField[], contentTypeLabel: (code: string) => string): string[] {
     const labels = fieldLabelMap(fields, contentTypeLabel);
     return fields.filter((f) => f.conditions.length > 0).map((f) => labels.get(f.fieldIdentifier)!);
 }
 
-/** The label a list option shows for a catalogue value: the platform enum label for an enum-backed field, a group object's `name`, else the value itself (`FilterWidget/index.tsx`). */
+/**
+ * The label a list option shows for a catalogue value: the platform enum label for an enum-backed field, a group object's `name`, else the
+ * value itself (`FilterWidget/index.tsx`).
+ */
 export function valueOptionLabel(labels: PlatformLabels, field: { platformEnum?: string }, value: unknown): string {
     if (typeof value === 'object' && value !== null) return String((value as { name?: unknown }).name ?? JSON.stringify(value));
     return field.platformEnum ? labels.display(field.platformEnum, String(value)) : String(value);
@@ -117,7 +124,10 @@ export function catalogueFieldLabel(catalogue: readonly CatalogueGroup[], labels
     return label;
 }
 
-/** What the widget needs to add an API-shaped filter: labels for source, field and condition, and the value to type or pick (list values by their option labels). */
+/**
+ * What the widget needs to add an API-shaped filter: labels for source, field and condition, and the value to type or pick (list values by
+ * their option labels).
+ */
 export function widgetSpecOf(f: Filter, catalogue: readonly CatalogueGroup[], labels: PlatformLabels): LabelledFilterSpec {
     const field = findField(catalogue as CatalogueGroup[], f.fieldIdentifier, f.fieldSource);
     if (!field) throw new Error(`the catalogue has no field ${f.fieldIdentifier}`);

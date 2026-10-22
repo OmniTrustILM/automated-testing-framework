@@ -99,8 +99,7 @@ const wire = (s: LoopbackServer = A) => s.mutations().map((a) => `${a.method} ${
 /** Everything that reached a server except the guard's own live reads of the own objects. */
 const sentTo = (s: LoopbackServer) => s.arrived.filter((a) => !(a.method === 'GET' && live[a.url] !== undefined)).map((a) => `${a.method} ${a.url}`);
 
-// input snapshot: options the guard does not forward are refused; neither server sees anything (no url / request /
-// encodedParams smuggling)
+// input snapshot: options the guard does not forward are refused; neither server sees anything (no url / request / encodedParams smuggling)
 test('input snapshot: options the guard does not forward are refused and neither server sees anything', async () => {
     const g = looseApi(guard());
     const foreignUrl = `/api/v1/roles/${FOREIGN_ROLE}`;
@@ -423,8 +422,7 @@ test('minor cases: persisting GETs run on own objects only; encoded spellings ar
     ]);
 });
 
-// input snapshot: redirects never carry the token elsewhere — a mutation follows none, a GET only same-origin ones the guard
-// re-judges
+// input snapshot: redirects never carry the token elsewhere — a mutation follows none, a GET only same-origin ones the guard re-judges
 test('input snapshot: redirects never carry the token elsewhere; a mutation follows none', async () => {
     const g = looseApi(guard());
     // GET 307 to another origin: not followed, the 3xx is the answer.

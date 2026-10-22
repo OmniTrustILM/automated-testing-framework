@@ -5,7 +5,8 @@
  *       need no challenge), enabled, and activated on an own RA profile only. `ensureAcmeProfile` reuses the run's profile from
  *       the run state, else creates and records it.
  * WHY: Protocol specs need an ACME profile they may change, and a shared tier must never see one of its existing profiles touched.
- * HOW: `createOwnAcmeProfile` records the create before any assertion, `ensureAcmeProfile` reuses the run's profile from the run state, and activation passes the live own-object check on both objects.
+ * HOW: `createOwnAcmeProfile` records the create before any assertion, `ensureAcmeProfile` reuses the run's profile from the run state, and
+ * activation passes the live own-object check on both objects.
  */
 import { apiJson } from '../apiReads';
 import { requiredCustomAttributes } from '../customAttributes';
@@ -36,7 +37,10 @@ export interface AcmeProfileOptions {
     note?: string;
 }
 
-/** An own ACME profile with one exact, pre-authorized DNS identifier: orders for it need no challenge. Created disabled; recorded before any assertion. */
+/**
+ * An own ACME profile with one exact, pre-authorized DNS identifier: orders for it need no challenge. Created disabled; recorded before any
+ * assertion.
+ */
 async function createOwnAcmeProfile(api: GuardedApi, spec: string, suffix: string, o: AcmeProfileOptions): Promise<OwnRef> {
     const { answer: _answer, ...ref } = await createOwn(api, spec, {
         type: 'acmeProfiles',

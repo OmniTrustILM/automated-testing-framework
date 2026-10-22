@@ -26,8 +26,7 @@ test('toRequestAttribute copies uuid, name, content type, content and the versio
 const NOW = new Date('2026-10-15T13:45:56.789Z');
 const def = (o: Json): Json => ({ uuid: 'aaaaaaaa-0000-4000-8000-000000000001', name: 'attr', properties: { required: true }, ...o });
 
-// requiredAttributeItems: version v3 by default (the definition's own kept) and the contentType on the attribute AND on every
-// item
+// requiredAttributeItems: version v3 by default (the definition's own kept) and the contentType on the attribute AND on every item
 test('requiredAttributeItems defaults to v3 and sets the contentType on attribute and every item', () => {
     const out = requiredAttributeItems([def({ contentType: 'string' }), def({ contentType: 'string', version: 'v2', uuid: 'aaaaaaaa-0000-4000-8000-000000000002' })], 'users', 'val', NOW);
     expect(out[0]).toMatchObject({ version: 'v3', contentType: 'string', content: [{ data: 'val', contentType: 'string' }] });
@@ -108,7 +107,10 @@ test('attributeRequest: a predefined-list value carries reference, data and cont
 
 // ------------------------------------------------------------------ a fifth copy fails the suite
 
-/** Functions of utils/ that read connector attribute DEFINITIONS (not custom attributes) and fill their own required ones: a different contract (v2 data attributes). */
+/**
+ * Functions of utils/ that read connector attribute DEFINITIONS (not custom attributes) and fill their own required ones: a different
+ * contract (v2 data attributes).
+ */
 const CONNECTOR_ATTRIBUTE_FILLERS = new Set(['requestAttributesFrom', 'signatureAttributesFrom']);
 
 function sourceFiles(dir: string): string[] {

@@ -28,7 +28,6 @@ import { historyMessages, historyOf } from '../../../utils/regression/lifecycle/
 import { approvalClosedText } from '../../../utils/regression/lifecycle/certificateLabels';
 import { csrWithSan } from '../../../utils/regression/pkiBuilders';
 import { getCertificate, serverCreatedAfter } from '../../../utils/regression/apiReads';
-import { recordDerivedKeyOf } from '../../../utils/regression/issuedRecords';
 import { ownCommonName } from '../../../utils/regression/ledger/runState';
 import { waitIssued } from '../../../utils/regression/ownCertificates';
 import { testMeta, tags } from '../../../utils/regression/tags';
@@ -75,7 +74,7 @@ test.describe('Approvals in the web UI', { tag: tags.regression }, () => {
 
                 const approval = await test.step('After reload the state is Pending approval; the Approvals tab shows the approval Pending', async () => {
                     await waitForCertificateState(api, uuid, 'pending_approval', APPROVAL_STATE_WAIT_MS);
-                    await recordDerivedKeyOf(api, uuid, createdAfter, own.spec); // the key core links at request time (it stays behind when the request is refused)
+                    await own.derivedKey(uuid, createdAfter); // the key core links at request time (it stays behind when the request is refused)
                     const a = await findApproval(api, { uuid, name: cn, kind: 'own' }, own.spec, { status: 'Pending' });
                     await detail.openFresh(uuid);
                     await detail.assertState('Pending approval');
@@ -94,7 +93,7 @@ test.describe('Approvals in the web UI', { tag: tags.regression }, () => {
 
                 await test.step('The certificate is Issued (API poll); History "Approval for action issue with approval profile <AP> closed with status Approved"', async () => {
                     await waitIssued(api, uuid);
-                    await recordDerivedKeyOf(api, uuid, createdAfter, own.spec);
+                    await own.derivedKey(uuid, createdAfter);
                     expect(historyMessages(await historyOf(api, uuid))).toContainEqual(expect.stringContaining(approvalClosedText('issue', gate.approvalProfile.name, 'Approved')));
                     await detail.openFresh(uuid);
                     await detail.assertState('Issued');
@@ -145,7 +144,7 @@ test.describe('Approvals in the web UI', { tag: tags.regression }, () => {
                     const id = (await addPage.waitForCreatedCertificate({ acceptWarnings: true })).uuid;
                     await waitForCertificateState(api, id, 'pending_approval', APPROVAL_STATE_WAIT_MS);
                     // Core links a key at request time and leaves it behind on the rejected path: record it now.
-                    await recordDerivedKeyOf(api, id, createdAfter17, own.spec);
+                    await own.derivedKey(id, createdAfter17);
                     return id;
                 });
 

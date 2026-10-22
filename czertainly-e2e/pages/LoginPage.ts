@@ -1,8 +1,7 @@
 /**
  * LoginPage — the sign-in screen, the session and sign-out.
  *
- * WHAT: the sign-in screen (provider choice, credential form), the session cookie, the header's user menu and
- *       sign-out.
+ * WHAT: the sign-in screen (provider choice, credential form), the session cookie, the header's user menu and sign-out.
  * WHY: every UI test signs in through it; REG-AUTH-01 checks the session across reloads and tabs, REG-AUTH-08 signs
  *       in as the dedicated second identity in its own context, REG-AUTH-99 signs out and expects a credential
  *       prompt (no silent single sign-on).

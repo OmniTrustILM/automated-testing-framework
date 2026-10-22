@@ -24,7 +24,7 @@ import { CertificatePage } from '../../../pages/CertificatePage';
 import { AcmeClient } from '../../../utils/regression/protocols/acmeClient';
 import { certificateInfo, chainProblems, csrWithSan, ecCsrWithSan, firstPem, parseCertificate, pemBlocks, publicKeyPemOf, sha256Fingerprint, sha256FingerprintOfPem } from '../../../utils/regression/pkiBuilders';
 import { apiJson, getCertificate, searchCertificates, serverCreatedAfter } from '../../../utils/regression/apiReads';
-import { recordAcmeAccount, recordingIssued } from '../../../utils/regression/issuedRecords';
+import { recordingIssued } from '../../../utils/regression/issuedRecords';
 import { sanOracle } from '../../../utils/regression/ownCertificates';
 import { ensureAcmeOnRaProfile } from '../../../utils/regression/ownRaProfiles';
 import { createdAfterMarker } from '../../../utils/regression/ledger/ledger';
@@ -54,7 +54,7 @@ test.describe('Certificate issue over ACME', { tag: tags.regression }, () => {
                 const res = await client.newAccount(`${runName('acme')}@example.test`);
                 expect(res.location).toBeTruthy();
                 // Recorded before the assertion on its state (ledger before assertion).
-                await recordAcmeAccount(api, res.location!, acmeProfile, own.spec);
+                await own.acmeAccount(res.location!, acmeProfile);
                 expect(res.body.status).toBe('valid');
                 return res.location!;
             });

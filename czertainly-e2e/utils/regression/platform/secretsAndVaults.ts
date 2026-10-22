@@ -5,7 +5,8 @@
  *       the parents a later delete needs, the secret state wait, and the run's vault chain kept in RunState. A pre-existing
  *       vault instance may only be the parent of an own vault profile; the content of a pre-existing secret is never read.
  * WHY: Vault rows need a chain they own without reading anyone else's secret.
- * HOW: Creates recorded with the parents a later delete needs, a secret state wait and the vault chain kept in the run state; a pre-existing vault instance is only ever a parent.
+ * HOW: Creates recorded with the parents a later delete needs, a secret state wait and the vault chain kept in the run state; a
+ * pre-existing vault instance is only ever a parent.
  */
 import type { APIRequestContext, APIResponse } from '@playwright/test';
 import { Logger } from '../../Logger';
@@ -57,7 +58,9 @@ export async function createOwnVaultInstance(api: GuardedApi, spec: string, suff
     return { ...ref, detail: answer.json };
 }
 
-/** The data attributes of the first pre-existing (not run-named) vault instance of a connector, as request attributes; undefined when none. */
+/**
+ * The data attributes of the first pre-existing (not run-named) vault instance of a connector, as request attributes; undefined when none.
+ */
 async function copiedVaultAttributes(api: APIRequestContext, connectorUuid: string): Promise<JsonObject[] | undefined> {
     const rows = (await listVaultInstances(api)).filter((v) => !hasRunFamilyPrefix(String(v.name)));
     for (const row of rows.sort((a, b) => (String(a.name) < String(b.name) ? -1 : 1))) {
@@ -136,7 +139,10 @@ export function secretAttributesFor(defs: AttributeDefinition[], type: SecretTyp
     return requestAttributesFrom(defs, values, value);
 }
 
-/** The `secret` of core's SecretRequestDto: generic / apiKey / jwtToken / secretKey → `{ type, content }`; basicAuth → `{ type, username, password }`. */
+/**
+ * The `secret` of core's SecretRequestDto: generic / apiKey / jwtToken / secretKey → `{ type, content }`; basicAuth → `{ type, username,
+ * password }`.
+ */
 export function secretContentFor(type: SecretType, value: string, username = 'qa'): JsonObject {
     return type === 'basicAuth' ? { type, username, password: value } : { type, content: value };
 }
@@ -159,7 +165,8 @@ export async function createOwnSecret(api: GuardedApi, spec: string, suffix: str
         note: `own ${type} secret`,
         parents: { vaultProfile: profile.uuid },
         body: {
-            // Core's SecretRequestDto (SecretManagementController.createSecret), NOT the connector's DTO: `secret` is mandatory and polymorphic on `type`.
+            // Core's SecretRequestDto (SecretManagementController.createSecret), NOT the connector's DTO: `secret` is mandatory and
+            // polymorphic on `type`.
             description: `REG run ${runId()}`,
             secret: secretContentFor(type, value),
             attributes: secretAttributesFor(defs, type, value),
@@ -171,8 +178,8 @@ export async function createOwnSecret(api: GuardedApi, spec: string, suffix: str
 
 const getSecret = (api: APIRequestContext, uuid: string): Promise<JsonObject> => apiJson<JsonObject>(api, 'GET', `/api/v1/secrets/${uuid}`);
 /**
- * A secret is created INACTIVE and activated by an asynchronous action once the vault connector wrote it (core `createSecretAction`; FAILED on
- * an error): polls `GET /v1/secrets/{uuid}` until `state` is `want` (REG-SEC-03). Throws with the detail on `failed` or at the timeout.
+ * A secret is created INACTIVE and activated by an asynchronous action once the vault connector wrote it (core `createSecretAction`; FAILED
+ * on an error): polls `GET /v1/secrets/{uuid}` until `state` is `want` (REG-SEC-03). Throws with the detail on `failed` or at the timeout.
  * `enabled` is a separate action and is not waited for.
  */
 export async function waitForSecretState(api: APIRequestContext, uuid: string, want: string, timeoutMs = 60_000, intervalMs = 1_000): Promise<JsonObject> {
@@ -191,6 +198,19 @@ export async function waitForSecretState(api: APIRequestContext, uuid: string, w
 }
 
 export const getSecretVersions = (api: APIRequestContext, uuid: string): Promise<JsonObject[]> => apiJson<JsonObject[]>(api, 'GET', `/api/v1/secrets/${uuid}/versions`);
+
+/**
+ * Enables an own secret (`PATCH /v1/secrets/{uuid}/enable`), as the product requires before its content is read, and waits until the
+ * detail shows `enabled`. Own secrets only: the live own-object check runs first. Throws with the answer on a refusal or a timeout.
+ */
+export async function enableOwnSecret(api: GuardedApi, secret: OwnRef, timeoutMs = 30_000, intervalMs = 500): Promise<JsonObject> {
+    await assertOwnLive(api, 'secrets', secret, 'secretsAndVaults.enableOwnSecret');
+    const answer = await api.patch(`/api/v1/secrets/${secret.uuid}/enable`);
+    if (answer.status() >= 300) throw new Error(`enabling secret ${secret.uuid} answered ${answer.status()}: ${(await answer.text()).slice(0, 300)}`);
+    const detail = await pollUntil(() => getSecret(api, secret.uuid), (d) => d.enabled === true, { timeoutMs, intervalMs, tolerateErrors: 0, onTimeout: 'return' });
+    if (detail.enabled !== true) throw new Error(`secret ${secret.uuid} is still not enabled ${timeoutMs} ms after the enable answered ${answer.status()}: ${JSON.stringify(detail).slice(0, 300)}`);
+    return detail;
+}
 
 /** `GET /v1/secrets/{uuid}/content` (a side-effect GET: own secrets only; the guard refuses a pre-existing one). */
 export async function readOwnSecretContent(api: GuardedApi, secret: OwnRef): Promise<JsonObject> {

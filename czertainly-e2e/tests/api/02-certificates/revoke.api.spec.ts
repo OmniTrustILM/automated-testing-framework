@@ -81,8 +81,8 @@ test.describe('Certificate revoke through the v2 API', { tag: tags.api }, () => 
             test.skip(enabled !== true, enabled === false ? 'certificate validation is disabled for the run RA profile / platform (settings read): no validation status to judge' : 'certificate validation settings not readable: the validation status cannot be judged');
             const cert = await test.step('Fixture: an own certificate, revoked', async () => {
                 const c = await own.certificate.issue(ra, { suffix: 'c11v' });
-                // The validator answers invalid on an incomplete chain before it looks at CRL / OCSP: read the chain check first. It can only
-                // be read on an issued certificate, so this skip runs after the issue (the certificate is already on the ledger).
+                // The validator answers invalid on an incomplete chain before it looks at CRL / OCSP: read the chain check first. It can
+                // only be read on an issued certificate, so this skip runs after the issue (the certificate is already on the ledger).
                 const problem = chainNotValid(await revalidate(api, c));
                 test.skip(problem !== undefined, problem);
                 const a = await revokeOwnCertificate(api, c, ra, { reason: 'keyCompromise', destroyKey: false });

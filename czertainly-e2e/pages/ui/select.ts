@@ -2,9 +2,8 @@
  * select — the Select helper.
  *
  * WHAT: the one place that opens, reads and chooses from the admin UI's custom Select (a Radix popover).
- * WHY: one matching rule for a text choice: the exact accessible name of the option; a prefix only by an explicit
- *       opt-in with a reason, never "contains", so "Equals" never hits "Not equals"; a choice that names no option
- *       fails.
+ * WHY: one matching rule for a text choice: the exact accessible name of the option; a prefix only by an explicit opt-in with a reason,
+ *       never "contains", so "Equals" never hits "Not equals"; a choice that names no option fails.
  * HOW: trigger and content by test id (`select-<id>-trigger` / `select-<id>-content`, options with role option and
  *       a `data-value` code); inside a dialog the popover is modal, so a multi select is closed with Escape, never
  *       by a click elsewhere; a single select closes itself after a pick; a RegExp is tested against the option

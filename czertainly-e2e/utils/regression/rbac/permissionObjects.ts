@@ -1,9 +1,12 @@
 /**
  * permissionObjects — the own objects the permission table acts on and the dedicated second identity.
  *
- * WHAT: Creates once per run the RA profiles, groups and certificates the fixture documents name, creates the dedicated restricted ILM user, and applies a fixture role to it through a role switch.
- * WHY: The table of expected answers needs real objects to ask about, created create-only and recorded before any assertion, and a second identity that the suite owns and is the only user it changes.
- * HOW: Objects are found again through the ledger, so a repeat creates nothing; a restricted user that exists but is not this run's makes the caller skip with a named reason.
+ * WHAT: Creates once per run the RA profiles, groups and certificates the fixture documents name, creates the dedicated restricted ILM
+ * user, and applies a fixture role to it through a role switch.
+ * WHY: The table of expected answers needs real objects to ask about, created create-only and recorded before any assertion, and a second
+ * identity that the suite owns and is the only user it changes.
+ * HOW: Objects are found again through the ledger, so a repeat creates nothing; a restricted user that exists but is not this run's makes
+ * the caller skip with a named reason.
  */
 
 import { APIRequestContext, expect } from '@playwright/test';

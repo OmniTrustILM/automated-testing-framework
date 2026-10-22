@@ -12,7 +12,8 @@
  *       needs `reflect-metadata` and is loaded lazily, on the first call that needs it.
  *       No openssl, no network: everything runs in-process.
  * WHY: No module should carry its own copy of these primitives.
- * HOW: node-forge builds the RSA CSRs, `@peculiar/x509` (lazy, with reflect-metadata) adds EC CSRs and reads certificates and chains; everything runs in process, no openssl, no network.
+ * HOW: node-forge builds the RSA CSRs, `@peculiar/x509` (lazy, with reflect-metadata) adds EC CSRs and reads certificates and chains;
+ * everything runs in process, no openssl, no network.
  */
 import * as crypto from 'crypto';
 import * as forge from 'node-forge';

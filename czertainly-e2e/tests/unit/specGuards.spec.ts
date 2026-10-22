@@ -295,7 +295,7 @@ test('every row that needs the second identity or the local Keycloak CALLS its p
             const where = `${rel}:${b.line} ${b.title.slice(0, 60)}`;
             if (b.tags.includes('@needs:second-identity')) {
                 secondIdentity += 1;
-                if (!/\b(?:secondIdentityBlocker|ensureRestrictedUserOrSkip|prepare)\s*\(/.test(body)) offenders.push(`${where}: no second-identity preflight call`);
+                if (!/\b(?:secondIdentityBlocker|ensureRestrictedUserOrSkip|prepare)\s*\(|\bown\.restrictedUser\s*\(/.test(body)) offenders.push(`${where}: no second-identity preflight call`);
             }
             if (b.tags.includes('@needs:keycloak-local')) {
                 keycloak += 1;

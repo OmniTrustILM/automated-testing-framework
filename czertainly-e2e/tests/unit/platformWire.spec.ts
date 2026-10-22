@@ -12,7 +12,7 @@ import { toRequestAttributes } from '../../utils/regression/customAttributes';
 import { patchOwnComplianceRule } from '../../utils/regression/platform/complianceProfiles';
 import { findCredentialConnector } from '../../utils/regression/platform/connectorLookup';
 import { teardownHandlers as platformHandlers } from '../../utils/regression/platform/platformTeardown';
-import { createOwnVaultProfile } from '../../utils/regression/platform/secretsAndVaults';
+import { createOwnVaultProfile, enableOwnSecret } from '../../utils/regression/platform/secretsAndVaults';
 import { PlatformStack, stackConfig } from '../../utils/regression/platform/localStack';
 import { readLedger, recordCreated } from '../../utils/regression/ledger/ledger';
 import { runId } from '../../utils/regression/ledger/runState';
@@ -47,6 +47,10 @@ class PlatformCore extends BaseCore {
         if (a.method === 'POST') return this.post(path, body);
         if (a.method === 'DELETE' && last) {
             this.deleted.add(last);
+            return { status: 204 };
+        }
+        if (a.method === 'PATCH' && last && /\/secrets\/[0-9a-f-]{36}\/enable$/.test(path) && this.store.has(last)) {
+            this.store.set(last, { ...this.store.get(last)!, enabled: true });
             return { status: 204 };
         }
         return { status: 204 };
@@ -211,6 +215,18 @@ test('own vault profile under a pre-existing vault: POST /vaults/{vault}/vaultPr
     expect(server.mutations().map((a) => `${a.method} ${arrivedPath(a)}`)).toEqual([`DELETE /api/v1/vaults/${VAULT}/vaultProfiles/${profile.uuid}`]);
     // The vault parent of the LINE decides the URL: a line without it (and a detail without the vault) is refused, not guessed.
     await expect(platformHandlers.vaultProfiles.remove({ ...ctx, live: {} }, { ...line, parents: undefined })).rejects.toThrow(/no vault known/);
+});
+
+test('enableOwnSecret: PATCH /secrets/{uuid}/enable on the own secret, then the detail shows enabled; a secret that is not own is refused before any write', async () => {
+    const SECRET = U(120);
+    core.store.set(SECRET, { uuid: SECRET, name: `${runId()}-sec`, state: 'active', enabled: false });
+    const secret = recordCreated('secrets', { uuid: SECRET, name: `${runId()}-sec` }, { spec: SPEC });
+    const detail = await enableOwnSecret(api, secret, 5_000, 10);
+    expect(detail.enabled).toBe(true);
+    expect(server.mutations().map((a) => `${a.method} ${arrivedPath(a)}`)).toEqual([`PATCH /api/v1/secrets/${SECRET}/enable`]);
+    server.reset();
+    await expect(enableOwnSecret(api, { uuid: U(121), name: 'pre-existing-secret' } as never, 1_000, 10)).rejects.toThrow();
+    expect(server.mutations(), 'no write for an object that is not own').toEqual([]);
 });
 
 test('response readers on DTO-shaped fixtures; operationUrl; signatureAttributesFor carries the picked option; toRequestAttributes drops info attributes', () => {

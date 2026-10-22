@@ -5,7 +5,8 @@
  *       which cells the tests run (generate, sign / verify, encrypt / decrypt), with the software cryptography provider's
  *       attribute names. Pure data and functions; the live attribute definitions are still read before a key is made.
  * WHY: The algorithm matrix must be read as data, with the provider's names in one place.
- * HOW: Per provider what must be offered, must not be offered and which cells run; pure, while the live attribute definitions are still read before a key is made.
+ * HOW: Per provider what must be offered, must not be offered and which cells run; pure, while the live attribute definitions are still
+ * read before a key is made.
  */
 
 export type Provider = 'scp-v1' | 'scp-v2' | 'pkcs11';
@@ -113,7 +114,10 @@ export function absentFamilies(provider: Provider): Family[] {
     return (Object.keys(MATRIX) as Family[]).filter((f) => MATRIX[f][provider] === 'absent');
 }
 
-/** Algorithm entries that must never appear in a create-key algorithm list (software-cryptography-provider#50: Unknown / AES / deprecated names). */
+/**
+ * Algorithm entries that must never appear in a create-key algorithm list (software-cryptography-provider#50: Unknown / AES / deprecated
+ * names).
+ */
 const NEVER_OFFERED_ALGORITHMS: readonly string[] = ['Unknown', 'AES', 'CRYSTALS-Dilithium', 'SPHINCS+'];
 
 /** The must-offer algorithm list per provider (SoftHSM behind PKCS#11 reports RSA and ECDSA only, ilm#415). */
@@ -237,9 +241,8 @@ export type Usage = 'sign' | 'verify' | 'encrypt' | 'decrypt' | 'wrap' | 'unwrap
 export const PROFILE_USAGES: readonly Usage[] = ['sign', 'verify', 'encrypt', 'decrypt'];
 
 /**
- * The usages a key ITEM gets at creation from the profile's usages (core's `CryptographyUtil`): the private
- * item never VERIFY / ENCRYPT / WRAP, the public item never SIGN / DECRYPT / UNWRAP, and an ECDSA item never ENCRYPT /
- * DECRYPT.
+ * The usages a key ITEM gets at creation from the profile's usages (core's `CryptographyUtil`): the private item never VERIFY / ENCRYPT /
+ * WRAP, the public item never SIGN / DECRYPT / UNWRAP, and an ECDSA item never ENCRYPT / DECRYPT.
  */
 export function expectedItemUsages(profileUsages: readonly Usage[], item: 'private' | 'public', algorithm: Algorithm | string): Usage[] {
     const forbidden = new Set<Usage>(item === 'private' ? ['verify', 'encrypt', 'wrap'] : ['sign', 'decrypt', 'unwrap']);

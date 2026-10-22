@@ -78,9 +78,8 @@ export function guardApiWithSeams(api: APIRequestContext, opts: GuardOptions & G
 }
 
 /**
- * Unit tests only: the guard's verdict on one request, without sending it. It reads and checks the request exactly as a
- * guarded `fetch(url, { method, data, ...options })` does and resolves when the guard would send it, or throws the
- * refusal.
+ * Unit tests only: the guard's verdict on one request, without sending it. It reads and checks the request exactly as a guarded `fetch(url,
+ * { method, data, ...options })` does and resolves when the guard would send it, or throws the refusal.
  */
 export async function judgeWithSeams(
     api: APIRequestContext, opts: GuardOptions & GuardTestSeams, method: string, url: string, data?: unknown, options: Record<string, unknown> = {},

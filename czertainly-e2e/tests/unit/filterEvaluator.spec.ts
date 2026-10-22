@@ -1,11 +1,10 @@
 /**
  * Unit tests of the one filter evaluator and of the decisions its callers take from it.
  *
- * WHAT: `satisfiesFilter` refuses a condition that takes one value when it is given several, and a non-numeric value for
- *       an ordering; it reads ordering numerically ("999" before "1000"); the callers (the exact row sets of
- *       `expectedRows`, the row predicate `expectRowsSatisfy`, the reference evaluator `matchesCondition`, the AND pairs
- *       of `findAndPairs`) decide what they decided before; the certificate list stand-in models only the conditions it
- *       always modelled.
+ * WHAT: `satisfiesFilter` refuses a condition that takes one value when it is given several, and a non-numeric value for an ordering; it
+ *       reads ordering numerically ("999" before "1000"); the callers (the exact row sets of `expectedRows`, the row predicate
+ *       `expectRowsSatisfy`, the reference evaluator `matchesCondition`, the AND pairs of `findAndPairs`) decide what they decided before;
+ *       the certificate list stand-in models only the conditions it always modelled.
  * WHY: four modules answer "does this row satisfy this filter" through one function; a change to it must not move any of
  *      their answers unnoticed.
  * HOW: pure calls over small row sets, one table per caller; the stand-in is asked through its list answer.

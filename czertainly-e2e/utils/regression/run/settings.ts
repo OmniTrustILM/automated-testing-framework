@@ -68,7 +68,10 @@ export function settings(env: NodeJS.ProcessEnv = process.env) {
         get phase(): string | undefined { return env.REG_PHASE; },
         /** REG_BUILD: `sb41` or `main` / `baseline`; unset: the build marker of the tier decides. */
         get build(): string | undefined { return env.REG_BUILD; },
-        /** REG_UNIT_NO_DOCKER=1 (set by the unit config): the real docker CLI is never run. The process value counts too, so an injected `env` cannot lift it. */
+        /**
+         * REG_UNIT_NO_DOCKER=1 (set by the unit config): the real docker CLI is never run. The process value counts too, so an injected
+         * `env` cannot lift it.
+         */
         get unitNoDocker(): boolean { return env.REG_UNIT_NO_DOCKER === '1' || process.env.REG_UNIT_NO_DOCKER === '1'; },
 
         // ------------------------------------------------------------------ the tier
@@ -139,7 +142,9 @@ export function settings(env: NodeJS.ProcessEnv = process.env) {
         /** REG_DOCKER_BIN as set; `dockerBin` in requireTool applies the unit-test rules and the default. */
         get dockerBinOverride(): string | undefined { return env.REG_DOCKER_BIN || undefined; },
         get kubectlBin(): string { return env.REG_KUBECTL_BIN || 'kubectl'; },
-        /** The binary of a runner tool (`REG_OPENSSL_BIN`, `REG_SSCEP_BIN`, `REG_DOCKER_BIN`, `REG_KUBECTL_BIN`), else the tool's own name. */
+        /**
+         * The binary of a runner tool (`REG_OPENSSL_BIN`, `REG_SSCEP_BIN`, `REG_DOCKER_BIN`, `REG_KUBECTL_BIN`), else the tool's own name.
+         */
         toolBin(tool: 'openssl' | 'sscep' | 'docker' | 'kubectl'): string { return env[TOOL_VARIABLES[tool]] ?? tool; },
 
         // ------------------------------------------------------------------ hosts of the runner

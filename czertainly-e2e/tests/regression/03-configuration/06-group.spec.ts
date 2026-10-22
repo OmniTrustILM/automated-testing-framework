@@ -14,7 +14,7 @@ import { expect, test } from '../../../fixtures/regressionFixtures';
 import { GroupPage } from '../../../pages/GroupPage';
 import { findByName, rowsNamed } from '../../../utils/regression/listReads';
 import { ownName } from '../../../utils/regression/ledger/runState';
-import { lookupInList, recordIfCreated, submitRecordingByNameOnFailure } from '../../../utils/regression/ledger/uiCreates';
+import { lookupInList, submitRecordingByNameOnFailure } from '../../../utils/regression/ledger/uiCreates';
 import { testMeta, tags } from '../../../utils/regression/tags';
 
 test.describe('Certificate group configuration', { tag: tags.regression }, () => {
@@ -60,8 +60,10 @@ test.describe('Certificate group configuration', { tag: tags.regression }, () =>
                 await groups.openCreateDialog();
                 await groups.fillCreateForm(form);
                 const again = await submitRecordingByNameOnFailure({ type: 'groups', name, spec: own.spec, note, lookup }, () => groups.submitCreateForm());
-                // A duplicate the platform accepted is this run's object too; the assertions below then fail.
-                recordIfCreated('groups', again, name, own.spec, note);
+                // A duplicate the platform accepted is this run's object too; the assertions below then fail. The answer may carry no id:
+                // the rows of the name are adopted from the list as well.
+                own.probe('groups', again, { name, note });
+                await own.adoptNamed('groups', name, { note });
                 await groups.assertDuplicateNameRefused();
                 expect(await rowsNamed(api, '/api/v1/groups', name), 'exactly one group has that name').toHaveLength(1);
                 await groups.closeCreateDialog();

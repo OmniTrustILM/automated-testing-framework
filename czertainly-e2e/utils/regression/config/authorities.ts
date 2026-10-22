@@ -8,7 +8,8 @@
  *       REG_ADCS_SOURCE_AUTHORITY / REG_ADCS_CONNECTOR); its CA host and name are read at runtime and never stored here.
  *       Also an own Basic credential and an own authority that copies a pre-existing one's data attributes (REG-CONN-14).
  * WHY: The configuration rows need a real CA behind an own authority without storing any CA host in the suite.
- * HOW: The pre-existing source authority is read only; the own authority and credential are created under run-prefixed names and recorded; health is read live and a tier without a healthy connector gets a named skip.
+ * HOW: The pre-existing source authority is read only; the own authority and credential are created under run-prefixed names and recorded;
+ * health is read live and a tier without a healthy connector gets a named skip.
  */
 import { APIRequestContext, expect } from '@playwright/test';
 import { Logger } from '../../Logger';
@@ -209,4 +210,12 @@ export async function probeOwnAuthorityLike(api: GuardedApi, spec: string, suffi
         },
     });
     return { name, answer, ref: recordIfAccepted('authorities', answer, name, spec, `own authority like ${source.connectorName} with the own credential`) };
+}
+
+/**
+ * True when a refused authority create names a logon or credential refusal by the connector (the CA behind it rejects the own
+ * credential): the one refusal an own test credential can never avoid. Any other refusal is not matched.
+ */
+export function isCredentialLogonRefusal(text: string): boolean {
+    return /STATUS_LOGON_FAILURE|0xc000006d|logon failure|login failed|invalid credentials|bad credentials/i.test(text);
 }

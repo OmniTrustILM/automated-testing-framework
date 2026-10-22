@@ -315,7 +315,9 @@ export async function ensureProtocolCaCertificate(api: GuardedApi, spec: string)
     throw new ProtocolCaBlocked(`[blocked: core#2508] certificate detail answers 500 for a certificate on ${tried.join(', ')} and no other software provider is registered`);
 }
 
-/** A spec's skip helper: runs `work`, turning the fixture's named refusals into a skip (RaProfileSourceMissing is left to orSkipWithoutCa). */
+/**
+ * A spec's skip helper: runs `work`, turning the fixture's named refusals into a skip (RaProfileSourceMissing is left to orSkipWithoutCa).
+ */
 export async function orSkipWithoutProtocolCa<T>(work: Promise<T>, skip: (reason: string) => void): Promise<T> {
     try {
         return await work;

@@ -2,7 +2,8 @@
  * notificationConnector — the notification connector of the tier and its live definitions.
  *
  * WHAT: Finds the connected e-mail or webhook notification connector, reads its instance attribute definitions and its mapping attributes.
- * WHY: Every notification create starts from the connector's live definitions, and a tier without a connector is a named skip, not a failure.
+ * WHY: Every notification create starts from the connector's live definitions, and a tier without a connector is a named skip, not a
+ * failure.
  * HOW: Read-only calls through the guarded client; the connector is chosen by kind and health.
  */
 

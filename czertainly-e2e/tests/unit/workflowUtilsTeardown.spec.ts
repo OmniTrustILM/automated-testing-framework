@@ -1,8 +1,8 @@
 /**
- * The run-end teardown handlers of utils/regression/events/workflowTeardown.ts and notificationTeardown.ts, loaded the way runTeardown loads
- * them (HANDLER_MODULES, wrapped by wrapHandlerWithGuard) against an in-memory core: workflow and notification objects are read,
- * deleted and proven absent (a foreign object is refused); an own scope's event association is cleared and proven, a foreign
- * one or a platform line is never cleared; DELETE_ORDER removes actions before the executions they use.
+ * The run-end teardown handlers of utils/regression/events/workflowTeardown.ts and notificationTeardown.ts, loaded the way runTeardown
+ * loads them (HANDLER_MODULES, wrapped by wrapHandlerWithGuard) against an in-memory core: workflow and notification objects are read,
+ * deleted and proven absent (a foreign object is refused); an own scope's event association is cleared and proven, a foreign one or a
+ * platform line is never cleared; DELETE_ORDER removes actions before the executions they use.
  */
 import { APIRequestContext, expect, test } from '@playwright/test';
 import { LiveObjectMissing, OwnObjectViolation } from '../../utils/regression/ledger/ownership';

@@ -28,8 +28,8 @@ export class RenewDialog extends CertificateToolbarDialog {
     }
 
     /**
-     * The Challenge field is shown and marked as required: the FE marks it with the red asterisk of its label, not with an HTML
-     * `required` attribute.
+     * The Challenge field is shown and marked as required: the FE marks it with the red asterisk of its label, not with an HTML `required`
+     * attribute.
      */
     async assertChallengeRequired(): Promise<void> {
         await expect(this.challenge).toBeVisible();

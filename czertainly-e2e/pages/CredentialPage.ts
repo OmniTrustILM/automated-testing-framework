@@ -69,8 +69,7 @@ export class CredentialPage {
     }
 
     /**
-     * Clicks Create and returns the answer of `POST /api/v1/credentials` (status, new uuid, request body); the redirect is not
-     * waited for.
+     * Clicks Create and returns the answer of `POST /api/v1/credentials` (status, new uuid, request body); the redirect is not waited for.
      */
     async submitCreateForm(): Promise<CreateAnswer> {
         return submitCreate(this.page, this.createDialog.dialog, { endpoint: '/api/v1/credentials' });

@@ -277,7 +277,8 @@ test('API-AUTH-01: m', async ({ anonymousApi, env }) => {
     expect(rawMutations("test('T', async ({ other }) => { await other.post('/api/v1/roles', { data: {} }); });", 'tests/api/X.spec.ts').map((m) => m.rule)).toEqual(['context-method']);
 });
 
-// the spec-facing fixtures of fixtures/regressionFixtures.ts: `test` may come from there, `localApi` is guarded like `api`, `signedIn` is a page, and none can be replaced by `test.use`
+// the spec-facing fixtures of fixtures/regressionFixtures.ts: `test` may come from there, `localApi` is guarded like `api`, `signedIn` is a
+// page, and none can be replaced by `test.use`
 test('the regression fixtures: test comes from them, localApi is guarded, signedIn is a page, no test.use replaces one', () => {
     const rules = (src: string): string[] => rawMutations(src, 'tests/regression/X.spec.ts').map((m) => m.rule);
     expect(rules("import { test, expect } from '../../fixtures/regressionFixtures';")).toEqual([]);
@@ -301,7 +302,7 @@ test('the regression fixtures: test comes from them, localApi is guarded, signed
     // signedIn is the page after the sign-in: its request context is raw, like page.request.
     expect(rules("test('x', async ({ signedIn }) => { await signedIn.request.post('/api/v1/roles', { data: {} }); });")).toEqual(['raw-request-use']);
     expect(rules("test('x', async ({ signedIn }) => { await signedIn.request.get('/api/v1/roles'); });")).toEqual([]);
-    for (const name of ['own', 'live', 'needs', 'signedIn', 'regressionEnv', 'localApi', 'ownRaProfile']) {
+    for (const name of ['own', 'live', 'needs', 'signedIn', 'regressionEnv', 'localApi', 'workerApi', 'ownRaProfile']) {
         expect(rules(`test.use({ ${name}: undefined });`), `test.use({ ${name} })`).toEqual(['fixture-extend']);
     }
     // A LiveOwn is only built by live(): a cast would fake the proof.
@@ -309,8 +310,7 @@ test('the regression fixtures: test comes from them, localApi is guarded, signed
     expect(rules("test('x', async ({ live }) => { const h = await live('roles', ref); });")).toEqual([]);
 });
 
-// token use: the token fixtures may be used as a header value / helper argument / truthiness check, never printed, compared or
-// annotated
+// token use: the token fixtures may be used as a header value / helper argument / truthiness check, never printed, compared or annotated
 test('token use: token fixtures may be a header or argument, never printed, compared or annotated', () => {
     const ok = `
 test('API-AUTH-02: claim', async ({ api, adminToken, restrictedToken }, testInfo) => {
@@ -343,7 +343,7 @@ test('API-AUTH-02: claim', async ({ api, adminToken, restrictedToken }, testInfo
     expect(rawMutations("test('T', async ({ adminToken }) => { helper(adminToken); }); function helper(adminToken: unknown) { console.log(adminToken); }", 'tests/api/X.spec.ts')).toEqual([]);
 });
 
-// ------------------------------------------------------------------ the lint: process through aliases, dynamic code, request options the guard does not forward (own helpers, so a block scope)
+// ------------ the lint: process through aliases, dynamic code, request options the guard does not forward (own helpers, so a block scope)
 
 {
     const HEAD = "import { test, expect } from '../../fixtures/testFixtures';\n";
@@ -409,7 +409,7 @@ test('API-AUTH-02: claim', async ({ api, adminToken, restrictedToken }, testInfo
     });
 }
 
-// ------------------------------------------------------------------ the spec rules: imports by allow-list, env and fs writes, the literal raw POST (own helpers, so a block scope)
+// ------------------------- the spec rules: imports by allow-list, env and fs writes, the literal raw POST (own helpers, so a block scope)
 
 {
     /**
@@ -456,8 +456,8 @@ test('API-AUTH-02: claim', async ({ api, adminToken, restrictedToken }, testInfo
         expect(wrong).toEqual([]);
     });
 
-    // spec-import: relative imports stay inside the suite; @playwright/test for types only; built-ins by allow-list; dynamic module
-    // names refused
+    // spec-import: relative imports stay inside the suite; @playwright/test for types only; built-ins by allow-list; dynamic module names
+    // refused
     test('spec-import: relative imports stay in the suite; @playwright/test types only; built-ins allow-listed', () => {
         const flagged = (src: string) => rawMutations(HEAD + src, 'tests/api/probe.api.spec.ts').filter((h) => h.rule === 'spec-import').length;
         expect(flagged("import { x } from '../../node_modules/undici/index';")).toBe(1);
@@ -531,7 +531,7 @@ test('API-AUTH-02: claim', async ({ api, adminToken, restrictedToken }, testInfo
     });
 }
 
-// ------------------------------------------------------------------ one positive and one negative case per rule (own helpers, so a block scope)
+// ------------------------------------------------------------ one positive and one negative case per rule (own helpers, so a block scope)
 
 {
     const FIXTURES = "import { test, expect } from '../../fixtures/testFixtures';\n";

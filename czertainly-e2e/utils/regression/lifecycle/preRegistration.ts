@@ -5,7 +5,8 @@
  *       challenge), the registration block of a detail, the registration and validation settings of the tier (read, never
  *       set), and the re-validation of an own certificate. The placeholder a register makes is recorded before any assertion.
  * WHY: A placeholder certificate registered with or without a challenge must be recorded and completed like any own certificate.
- * HOW: The register call, the registration block of a detail, the registration and validation settings (read, never set) and re-validation; the placeholder is recorded before any assertion.
+ * HOW: The register call, the registration block of a detail, the registration and validation settings (read, never set) and re-validation;
+ * the placeholder is recorded before any assertion.
  */
 import type { APIRequestContext } from '@playwright/test';
 import { apiJson, getCertificate, ApiAnswer } from '../apiReads';
@@ -141,7 +142,10 @@ export async function validationEnabledFor(api: APIRequestContext, ra: Pick<RaLi
     return typeof platform === 'boolean' ? platform : undefined;
 }
 
-/** `GET /v1/certificates/{own}/validate`: re-runs the validation of an OWN certificate (a side-effect GET the guard admits on own objects only). */
+/**
+ * `GET /v1/certificates/{own}/validate`: re-runs the validation of an OWN certificate (a side-effect GET the guard admits on own objects
+ * only).
+ */
 export async function revalidate(api: GuardedApi, cert: OwnRef): Promise<JsonObject> {
     await assertOwnLive(api, 'certificates', cert, 'revalidate');
     return apiJson<JsonObject>(api, 'GET', `/api/v1/certificates/${cert.uuid}/validate`);

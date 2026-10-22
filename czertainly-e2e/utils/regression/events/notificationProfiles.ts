@@ -1,7 +1,8 @@
 /**
  * notificationProfiles — own notification profiles: create, probe, read, update and delete.
  *
- * WHAT: Builds the profile body for each recipient type, creates own profiles (recorded before any assertion), probes a create that may be refused, reads versions, updates and deletes own profiles.
+ * WHAT: Builds the profile body for each recipient type, creates own profiles (recorded before any assertion), probes a create that may be
+ * refused, reads versions, updates and deletes own profiles.
  * WHY: Profiles decide who receives a notification; their recipient rules are the behaviour under test and must be created create-only.
  * HOW: Every change first passes the live own-object check; the run-end teardown is notificationTeardown.ts.
  */

@@ -6,8 +6,10 @@
  *       a raw context may GET (BASE_URL's origin only) and send a read-only / protocol POST; any other method, a create
  *       included, needs the guarded context. `apiJsonWithDate` also returns the server clock (`createdAfterOf`) so derived
  *       objects get a server-time bound. Certificate reads: detail, search, the fingerprint lookup.
- * WHY: Every helper that reads an API answer needs the same status, text and parsed body, and the server clock that bounds a derived object; one reader keeps them from drifting apart.
- * HOW: `answerOf` builds the `ApiAnswer`; `apiJson` is deny by default (a raw context may only GET or send a read-only POST, anything else needs the guarded context) and `apiJsonWithDate` adds the server time through `createdAfterOf`.
+ * WHY: Every helper that reads an API answer needs the same status, text and parsed body, and the server clock that bounds a derived
+ * object; one reader keeps them from drifting apart.
+ * HOW: `answerOf` builds the `ApiAnswer`; `apiJson` is deny by default (a raw context may only GET or send a read-only POST, anything else
+ * needs the guarded context) and `apiJsonWithDate` adds the server time through `createdAfterOf`.
  *
  *       The clock rule of a derived object (a platform-made key or certificate the teardown may delete): its age is judged
  *       on the SERVER's clock. Where the answer carries no server time, `createdAfterOf` returns `keepingBound()`, a bound
@@ -42,7 +44,10 @@ export interface ApiAnswer {
     json?: any;
     /** The server's Date header (absent when the proxy strips it). */
     serverAt?: Date;
-    /** The runner's clock just before the request was sent; `elapsedMs` is measured from it. Never a `createdAfter`: that comes from the server Date. */
+    /**
+     * The runner's clock just before the request was sent; `elapsedMs` is measured from it. Never a `createdAfter`: that comes from the
+     * server Date.
+     */
     startedAt: Date;
     elapsedMs: number;
 }
@@ -133,13 +138,19 @@ export async function searchCertificates(api: APIRequestContext, filters: JsonOb
 /** The inventory search filter for one certificate fingerprint (lowercase hex SHA-256 of the DER). */
 export const fingerprintFilter = (fingerprint: string): JsonObject[] => [{ fieldSource: 'property', fieldIdentifier: 'FINGERPRINT', condition: 'EQUALS', value: fingerprint }];
 
-/** The inventory row of a certificate by fingerprint, polled (issuance through the connector may land a moment later); undefined after `timeoutMs`. */
+/**
+ * The inventory row of a certificate by fingerprint, polled (issuance through the connector may land a moment later); undefined after
+ * `timeoutMs`.
+ */
 export async function pollCertificateByFingerprint(api: APIRequestContext, fingerprint: string, timeoutMs = 60_000): Promise<JsonObject | undefined> {
     const rows = await pollUntil(() => searchCertificates(api, fingerprintFilter(fingerprint)), (found) => found.length > 0, { timeoutMs, intervalMs: 3000, tolerateErrors: 0, onTimeout: 'return' });
     return rows?.[0];
 }
 
-/** A `createdAfter` from the SERVER's clock: the Date header of a read just before an action the UI performs (else `keepingBound()`, logged: no server time means the object is kept). */
+/**
+ * A `createdAfter` from the SERVER's clock: the Date header of a read just before an action the UI performs (else `keepingBound()`, logged:
+ * no server time means the object is kept).
+ */
 export async function serverCreatedAfter(api: GuardedApi): Promise<string> {
     return createdAfterOf(await apiJsonWithDate(api, 'GET', '/api/v1/auth/profile'), 'server clock read');
 }

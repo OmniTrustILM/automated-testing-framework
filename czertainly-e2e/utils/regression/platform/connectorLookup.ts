@@ -5,19 +5,24 @@
  *       vault (named by env, else the credential provider v2, else any connected one with the interface) and the v1 credential
  *       connector for a credential kind. Nothing is created or changed here.
  * WHY: A vault or credential spec must find its connector or skip with a named reason.
- * HOW: Chooses the secret-interface connector (env name, else the credential provider v2, else any connected one with the interface) and the v1 credential connector for a kind; nothing is created.
+ * HOW: Chooses the secret-interface connector (env name, else the credential provider v2, else any connected one with the interface) and
+ * the v1 credential connector for a kind; nothing is created.
  */
 import type { APIRequestContext } from '@playwright/test';
 import { apiJson } from '../apiReads';
 import type { JsonObject } from '../json';
 import { settings } from '../run/settings';
 
-/** The chart's registration name of the credential provider's v2 record (the default secret-interface connector); the registered name differs between tiers by a space or a hyphen before `v2`. */
+/**
+ * The chart's registration name of the credential provider's v2 record (the default secret-interface connector); the registered name
+ * differs between tiers by a space or a hyphen before `v2`.
+ */
 const DEFAULT_SECRET_CONNECTOR_RE = /^Common-Credential-Connector[ -]v2$/i;
 
 /**
  * The first connected connector whose v2 interfaces include a code matching `code` (e.g. /^secret/i): the one named by
- * `settings(env).secretConnector`, else the credential provider v2 (`DEFAULT_SECRET_CONNECTOR_RE`), else the first connected one with the interface.
+ * `settings(env).secretConnector`, else the credential provider v2 (`DEFAULT_SECRET_CONNECTOR_RE`), else the first connected one with the
+ * interface.
  */
 export async function findConnectorWithInterface(api: APIRequestContext, code: RegExp, env: NodeJS.ProcessEnv = process.env): Promise<{ uuid: string; name: string; interfaceUuid: string } | undefined> {
     const rows = await apiJson<JsonObject[]>(api, 'GET', '/api/v1/connectors');

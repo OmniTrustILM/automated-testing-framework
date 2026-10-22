@@ -5,7 +5,8 @@
  *       attribute value and one without, so a sort by owner or by the attribute puts the empty one last in both directions.
  *       Own objects only, recorded in the ledger before any assertion; the manifest is reused within a run.
  * WHY: A sort by owner or by an attribute needs one row without a value to prove empty values come last.
- * HOW: Two certificates with the run's owner and one without, two with a custom attribute value and one without; own objects only, recorded before any assertion, manifest reused within a run.
+ * HOW: Two certificates with the run's owner and one without, two with a custom attribute value and one without; own objects only, recorded
+ * before any assertion, manifest reused within a run.
  */
 import { Logger } from '../../Logger';
 import { GuardedApi } from '../guard/types';

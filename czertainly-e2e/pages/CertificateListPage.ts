@@ -143,8 +143,8 @@ export class CertificateListPage {
     }
 
     /**
-     * The headings as the page renders them (the heading span named by the header's `aria-labelledby`; CSS upper-casing is not part of
-     * the text).
+     * The headings as the page renders them (the heading span named by the header's `aria-labelledby`; CSS upper-casing is not part of the
+     * text).
      */
     async columnHeadings(): Promise<string[]> {
         return this.headers.evaluateAll((els) =>

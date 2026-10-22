@@ -7,7 +7,7 @@ import { Browser, BrowserContext, expect, Page, Route, test } from '@playwright/
 import { ImportCertificatesDialog } from '../../pages/ImportCertificatesDialog';
 import { randomBytes } from 'node:crypto';
 
-// Run-scoped generated test passwords (merge follow-up 2026-10-15): no password-like literal in the file.
+// Run-scoped generated test passwords: no password-like literal in the file.
 const GEN_PW_1 = `qa-${randomBytes(9).toString('base64url')}`;
 
 test.describe.configure({ timeout: 60_000 });

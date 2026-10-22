@@ -5,7 +5,8 @@
  *       page shows: the 16 Standard columns, the date format in the browser time zone, the expected text of each cell, the
  *       words a rendered table must never hold, and the comparison of the filters a list request carries.
  * WHY: The page must be judged against the display rules of the admin UI, never against what the page happens to show.
- * HOW: Pure functions compute the 16 Standard columns, the cell text in the browser time zone, the words a table must never hold and the comparison of the request filters.
+ * HOW: Pure functions compute the 16 Standard columns, the cell text in the browser time zone, the words a table must never hold and the
+ * comparison of the request filters.
  */
 import type { PlatformLabels } from './fieldLabels';
 import { JsonObject } from '../json';

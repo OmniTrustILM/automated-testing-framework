@@ -1,8 +1,10 @@
 /**
  * permissionMatrix — the permission fixture roles and the answers each one must get (pure data).
  *
- * WHAT: Defines the fixture roles F0 to F6 as permission documents, the expected status of each certificate, RA-profile, role and user call per fixture, the deny nuances, and the contract of an access-denied body.
- * WHY: A reader wants to read the decision table without the live code around it, and the table must stay rule-derived: a mismatch is a finding to confirm, never an oracle to adjust.
+ * WHAT: Defines the fixture roles F0 to F6 as permission documents, the expected status of each certificate, RA-profile, role and user call
+ * per fixture, the deny nuances, and the contract of an access-denied body.
+ * WHY: A reader wants to read the decision table without the live code around it, and the table must stay rule-derived: a mismatch is a
+ * finding to confirm, never an oracle to adjust.
  * HOW: Plain constants and pure functions; nothing here reads the environment or calls the server.
  */
 
@@ -176,7 +178,9 @@ export const MATRIX_B_USERS_LIST: Record<Fixture, Cell> = MATRIX_B_ROLES_LIST;
 export const MATRIX_B_ROLE_CREATE: Record<Fixture, Cell> = row(no, no, no, no, no, no, no, no, ok, denied('Create', 'Role'));
 export const MATRIX_B_USER_PERMISSIONS: Record<Fixture, Cell> = row(no, no, no, no, no, no, no, no, ok, ok);
 
-/** Administration table — fixtures whose nested-bean gate sample must answer 403 each, never a silent 2xx (F2, F2b, F5 are not asserted). */
+/**
+ * Administration table — fixtures whose nested-bean gate sample must answer 403 each, never a silent 2xx (F2, F2b, F5 are not asserted).
+ */
 export const NESTED_GATE_FIXTURES: readonly Fixture[] = ['F0', 'F1', 'F3', 'F4a', 'F4b', 'F4c', 'F6'];
 
 /** API-AUTH-33 — the deny-per-action nuances. */

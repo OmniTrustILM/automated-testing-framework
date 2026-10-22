@@ -6,7 +6,8 @@
  *       a count: the second, independent derivation); a unit test checks they agree. A row whose engine behaviour is a filed bug
  *       carries `bug`, a row without a written rule `pin` (a behaviour word or an issue id).
  * WHY: The filter rows must name their expected result twice, once by rule and once by hand, so a wrong rule cannot agree with itself.
- * HOW: Each row has `expect` (a predicate that states the rule) and `expectedIds`; a unit test checks they agree; a known product bug is `bug`, a row without a written rule is `pin`.
+ * HOW: Each row has `expect` (a predicate that states the rule) and `expectedIds`; a unit test checks they agree; a known product bug is
+ * `bug`, a row without a written rule is `pin`.
  */
 import type { Filter } from './searchApi';
 import { propertyFilter, customAttributeFilter } from './searchApi';
@@ -117,7 +118,10 @@ export const DATE_REFUSALS: ReadonlyArray<{ row: string; title: string; value: (
     { row: 'D-3b', title: 'NOT_AFTER EQUALS a date-only value', value: (m) => notAfterOf(m, 'C03').slice(0, 10), bug: 'core#2504' },
 ];
 
-/** Bad durations: 422 `Filter field value … cannot be parsed to a Duration.` (the empty value may also answer the "requires at least one value" text). */
+/**
+ * Bad durations: 422 `Filter field value … cannot be parsed to a Duration.` (the empty value may also answer the "requires at least one
+ * value" text).
+ */
 export const DURATION_REFUSALS: ReadonlyArray<{ row: string; value: string; text: RegExp }> = [
     { row: 'D-14a', value: '30 days', text: /Filter field value 30 days cannot be parsed to a Duration\./ },
     { row: 'D-14b', value: '', text: /(cannot be parsed to a Duration\.|requires at least one value\.)/ },
@@ -185,7 +189,7 @@ export const COLLECTION_ROWS: readonly FilterRow[] = [
  * (core FilterField.java, SearchFieldTypeEnum.LIST), whose conditions are EQUALS / NOT_EQUALS / EMPTY / NOT_EMPTY — the string
  * conditions are refused 422 "Field OWNER does not support the … condition; it supports EQUALS, NOT_EQUALS, EMPTY, NOT_EMPTY."
  * (FilterPredicatesBuilder.requireAdvertisedCondition). The asymmetry (NOT_CONTAINS includes null columns, NOT_MATCHES excludes them,
- * the filter rules) needs a nullable STRING property field no seed can set; it is not asserted. Plan deviation, reported.
+ * the filter rules) needs a nullable STRING property field no seed can set; it is not asserted.
  */
 export const OWNER_REFUSALS: ReadonlyArray<{ row: string; condition: string; value: string }> = [
     { row: 'O-2a', condition: 'NOT_CONTAINS', value: 'zzz' },
@@ -194,12 +198,13 @@ export const OWNER_REFUSALS: ReadonlyArray<{ row: string; condition: string; val
 ];
 
 /**
- * COUNT_* conditions with a non-integer value. The intended answer is the same for all four conditions: 422 "Filter field value <v> cannot be
- * parsed as an Integer." (core's own FilterPredicatesBuilderITest expects a ValidationException for COUNT_EQUAL / COUNT_NOT_EQUAL too).
- * Today the GREATER / LESS rows are green because those conditions parse the value, while EQUAL / NOT_EQUAL hand it to the query unparsed and
- * answer 500 (known bug core#2562, so the COUNT_EQUAL and COUNT_NOT_EQUAL string rows carry `bug` and the test calls `test.fail()` right
- * before the failing step). The JSON-number row (1.5 on COUNT_EQUAL): the number is compared with the group count without conversion and answers 500 as well; whatever the
- * refusal text should be, a refusal is a 4xx and never a 5xx, so it asserts that (`anyRefusal`) and has no text.
+ * COUNT_* conditions with a non-integer value. The intended answer is the same for all four conditions: 422 "Filter field value <v> cannot
+ * be parsed as an Integer." (core's own FilterPredicatesBuilderITest expects a ValidationException for COUNT_EQUAL / COUNT_NOT_EQUAL too).
+ * Today the GREATER / LESS rows are green because those conditions parse the value, while EQUAL / NOT_EQUAL hand it to the query unparsed
+ * and answer 500 (known bug core#2562, so the COUNT_EQUAL and COUNT_NOT_EQUAL string rows carry `bug` and the test calls `test.fail()`
+ * right before the failing step). The JSON-number row (1.5 on COUNT_EQUAL): the number is compared with the group count without conversion
+ * and answers 500 as well; whatever the refusal text should be, a refusal is a 4xx and never a 5xx, so it asserts that (`anyRefusal`) and
+ * has no text.
  */
 export interface CountRefusal {
     row: string;
@@ -367,7 +372,10 @@ export function expectedUuidOrder(m: Omit<CertificateSeedPlan, 'certificates'> &
     return expectedOrderGroups(m as CertificateSeedPlan, field, dir).flatMap((g) => g.map((id) => uuidOf.get(id)!).sort());
 }
 
-/** Does an actual id sequence follow the groups (each group's members contiguous, in group order, as sets)? Returns the problem or undefined. */
+/**
+ * Does an actual id sequence follow the groups (each group's members contiguous, in group order, as sets)? Returns the problem or
+ * undefined.
+ */
 export function orderProblem(actual: readonly CertId[], groups: readonly CertId[][]): string | undefined {
     let i = 0;
     for (const [n, g] of groups.entries()) {

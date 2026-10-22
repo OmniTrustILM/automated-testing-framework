@@ -5,7 +5,8 @@
  *       attribute (read-only), the missing / empty attribute arms, the texts core answers for them, and the create and
  *       validate probes (an accepted create is in the ledger before this returns).
  * WHY: The create form's required attribute is a server rule that must be probed without leaving objects behind.
- * HOW: Finds the authority whose schema has a required attribute (read-only), builds the missing and empty arms, and probes create and validate; an accepted create is recorded before this returns.
+ * HOW: Finds the authority whose schema has a required attribute (read-only), builds the missing and empty arms, and probes create and
+ * validate; an accepted create is recorded before this returns.
  */
 import type { APIRequestContext } from '@playwright/test';
 import { requestVersion } from '../attributeVersion';
@@ -43,16 +44,27 @@ export const emptyAttributeCase = (base: readonly JsonObject[], def: JsonObject)
     { version: requestVersion(def), uuid: def.uuid, name: def.name, contentType: String(def.contentType).toLowerCase() },
 ];
 
-/** "Content for required Data attribute <name> is not provided." (AttributeEngine): core's own text for a v3 authority, the attribute is not in the request. */
+/**
+ * "Content for required Data attribute <name> is not provided." (AttributeEngine): core's own text for a v3 authority, the attribute is not
+ * in the request.
+ */
 const engineAttributeNotProvidedText = (name: string): string => `Content for required Data attribute ${name} is not provided.`;
 
-/** "Attribute is required and no content is sent" (AttributeEngine; a pipe and the attribute dump follow): core's own text for a v3 authority, the attribute is listed without content. */
+/**
+ * "Attribute is required and no content is sent" (AttributeEngine; a pipe and the attribute dump follow): core's own text for a v3
+ * authority, the attribute is listed without content.
+ */
 const ENGINE_ATTRIBUTE_NO_CONTENT_TEXT = 'Attribute is required and no content is sent';
 
-/** The connector interface version an authority is bound to: v3 is validated by core's attribute engine, v1 / v2 relay the connector's text. */
+/**
+ * The connector interface version an authority is bound to: v3 is validated by core's attribute engine, v1 / v2 relay the connector's text.
+ */
 export type AuthorityInterface = 'v2' | 'v3';
 
-/** The interface of an authority row of `GET /v1/authorities` (`connectorInterface.version`; null for a legacy connector, which relays like v2). */
+/**
+ * The interface of an authority row of `GET /v1/authorities` (`connectorInterface.version`; null for a legacy connector, which relays like
+ * v2).
+ */
 export const authorityInterfaceOf = (row: JsonObject): AuthorityInterface => (String(objectOf(row?.connectorInterface).version ?? '').toLowerCase() === 'v3' ? 'v3' : 'v2');
 
 /**
@@ -117,12 +129,17 @@ export async function validRaAttributes(api: APIRequestContext, authorityUuid: s
     return attributes.length ? attributes : undefined;
 }
 
-/** A `POST /v1/authorities/{a}/raProfiles` body: the attributes under test plus the custom attributes the tier requires (core checks them first). */
+/**
+ * A `POST /v1/authorities/{a}/raProfiles` body: the attributes under test plus the custom attributes the tier requires (core checks them
+ * first).
+ */
 export async function raProfileBody(api: APIRequestContext, name: string, attributes: JsonObject[]): Promise<JsonObject> {
     return { name, description: 'API-GEN-28 required-attribute probe', attributes, customAttributes: await requiredCustomAttributes(api, 'raProfiles', runName('ca')) };
 }
 
-/** `POST /v1/authorities/{authority}/raProfiles` (the authority is a scope parent); an accepted create is in the ledger before this returns. */
+/**
+ * `POST /v1/authorities/{authority}/raProfiles` (the authority is a scope parent); an accepted create is in the ledger before this returns.
+ */
 export async function probeRaProfile(api: GuardedApi, spec: string, authorityUuid: string, body: JsonObject, note = 'RA profile create probe'): Promise<ApiAnswer> {
     return probeCollectionCreate(api, spec, { type: 'raProfiles', path: `/api/v1/authorities/${authorityUuid}/raProfiles`, body, note, parents: { authority: authorityUuid } });
 }

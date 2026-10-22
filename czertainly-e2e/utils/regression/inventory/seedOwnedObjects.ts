@@ -5,7 +5,8 @@
  *       seeds: every non-GET goes through the guarded `api`, every create is in the ledger before any assertion, and every
  *       change checks the object is this run's first. Uploads are synchronous, so `created` follows the upload order.
  * WHY: The seeds create certificates, groups and attributes that the run must own and remove.
- * HOW: Every non-GET goes through the guarded `api`, every create is recorded before any assertion, every change first checks the object is this run's; uploads are synchronous so `created` follows upload order.
+ * HOW: Every non-GET goes through the guarded `api`, every create is recorded before any assertion, every change first checks the object is
+ * this run's; uploads are synchronous so `created` follows upload order.
  */
 import type { GuardedApi } from '../guard/types';
 import { requestVersion } from '../attributeVersion';
@@ -41,7 +42,10 @@ export interface AttributeValue {
     list?: boolean;
 }
 
-/** `RequestAttribute` is polymorphic on `version` (v2 default, items without contentType): custom attributes are v3, every item carries its contentType (same rules as `requiredAttributeItems`). */
+/**
+ * `RequestAttribute` is polymorphic on `version` (v2 default, items without contentType): custom attributes are v3, every item carries its
+ * contentType (same rules as `requiredAttributeItems`).
+ */
 export const attributeRequest = (v: AttributeValue): JsonObject => ({
     version: requestVersion(undefined, 'v3'),
     uuid: v.uuid,
@@ -73,7 +77,8 @@ export interface CertificatePatch {
 }
 
 /**
- * `PATCH /v1/certificates/{uuid}` on an OWN certificate (groups / owner / trusted-CA mark; `groupUuids` replaces the set). The answer's status and body are returned (a negative caller asserts them); a 2xx is not asserted here.
+ * `PATCH /v1/certificates/{uuid}` on an OWN certificate (groups / owner / trusted-CA mark; `groupUuids` replaces the set). The answer's
+ * status and body are returned (a negative caller asserts them); a 2xx is not asserted here.
  */
 export async function patchOwnCertificate(api: GuardedApi, cert: OwnRef, body: CertificatePatch | JsonObject): Promise<ApiAnswer> {
     await assertOwnLive(api, 'certificates', cert, 'patchOwnCertificate');

@@ -46,8 +46,7 @@ const created5 = [manLine('certificate', CERT, '2026-10-15T06:06:00.000Z', 'uplo
 const deleted5 = (at = INSIDE) => [manLine('certificate', CERT, at, 'DELETED (own) 2026-10-16'), manLine('key', KEY, at, 'DELETED (own) 2026-10-16')];
 const compare = (b: TierSnapshot, a: TierSnapshot, text: string[]) => compareSnapshots(b, a, { ledger: parseLedger(text.join('\n')), runId: RUN, tolerance: 0 });
 
-// seen on a live tier: a foreign certificate and key deleted by another tool's cleanup inside the run window — no violation,
-// one note
+// seen on a live tier: a foreign certificate and key deleted by another tool's cleanup inside the run window — no violation, one note
 test('seen on a live tier: a foreign certificate and key deleted by another tool give one note', () => {
     const r = compare(before5(), after5(), [...created5, ...deleted5()]);
     expect(r.violations).toEqual([]);
@@ -97,8 +96,7 @@ test('creates by another tool inside the window explain the growth of a total', 
     expect(compare(smallBefore(), smallAfter(), [text[0]]).violations).toEqual(['raProfiles: total 3 -> 5 (+2), the ledger explains +1']);
 });
 
-// limits: unreadable and malformed lines, an ambiguous note, this run's own id, another tier and an unknown type explain
-// nothing
+// limits: unreadable and malformed lines, an ambiguous note, this run's own id, another tier and an unknown type explain nothing
 test('limits: unreadable or malformed lines, ambiguous note, own run id and other tier explain nothing', () => {
     const bad = [
         '{"at": "2026-10-15T22:41:28.123Z", "runId": "qa-man-1", "type": "certificate", "uuid": "' + CERT, // truncated JSON
@@ -161,8 +159,7 @@ test('limits: a create of an object stored before, or missing after, explains no
     expect(compare(b, a, line).violations, 'a before snapshot without the sample proves nothing').toEqual(['certificates: total 161203 -> 161204 (+1), the ledger explains +0']);
 });
 
-// an object that existed in the middle of a large collection is not new: its created line plus a detail read hide no unrecorded
-// +1
+// an object that existed in the middle of a large collection is not new: its created line plus a detail read hide no unrecorded +1
 test('an object from the middle of a large collection is not new: created line plus detail read hide no +1', () => {
     // The counterexample: total 1000 -> 1001, a created line of another tool names a uuid that existed before the run
     // outside both windows, and a detail read answers 200 for it. The +1 stays unexplained.
@@ -251,8 +248,7 @@ test('confirmForeignCreates: keys are proven new by their detail creation time; 
     expect(reads, 'certificates, small collections, created-then-deleted and stored-before objects are not read').toEqual([U(40), U(41), U(42), U(46), U(47)].map((u) => `/api/v1/keys/${u}`));
 });
 
-// limits: a deletion line of an object that is still there explains no shrinking; an own uuid is never explained by another
-// tool
+// limits: a deletion line of an object that is still there explains no shrinking; an own uuid is never explained by another tool
 test('limits: a deletion line of an object still there explains no shrinking; own uuids never explained', () => {
     const b = smallBefore();
     const a = smallAfter([], 2);

@@ -1,8 +1,10 @@
 /**
  * notificationInstances — own notification instances: create, probe, read, update and delete.
  *
- * WHAT: Builds the instance body, creates own instances (recorded before any assertion), probes a create that may be refused, reads, updates and deletes own instances, and finds instances by name.
- * WHY: Instances are the sender side of a notification; they are created and validated only, delivery belongs to the local-stack rows with the catchers of notificationCatchers.ts.
+ * WHAT: Builds the instance body, creates own instances (recorded before any assertion), probes a create that may be refused, reads,
+ * updates and deletes own instances, and finds instances by name.
+ * WHY: Instances are the sender side of a notification; they are created and validated only, delivery belongs to the local-stack rows with
+ * the catchers of notificationCatchers.ts.
  * HOW: Every change first passes the live own-object check; the run-end teardown is notificationTeardown.ts.
  */
 

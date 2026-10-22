@@ -11,6 +11,7 @@
  */
 import { expect, Locator, Page, Response } from '@playwright/test';
 import { Logger } from '../utils/Logger';
+import { openHashRoute } from './ui/openHashRoute';
 import { SHELL_VISIBLE_MS } from '../utils/regression/timeouts';
 
 const logger = new Logger('AppShell');
@@ -29,8 +30,7 @@ export interface ApiWatch {
     /** The 401 / 403 answers among them. */
     refusals(): SeenApiCall[];
     /**
-     * The 200 answers of endpoints that are NOT public: data only a signed-in user may read (public: branding, health,
-     * oauth2 providers).
+     * The 200 answers of endpoints that are NOT public: data only a signed-in user may read (public: branding, health, oauth2 providers).
      */
     dataAnswers(): SeenApiCall[];
     stop(): void;
@@ -72,10 +72,13 @@ export class AppShell {
         };
     }
 
-    /** Open a hash route and wait for the shell; the page's own data calls may still be running (`loadingData` waits for them). */
+    /**
+     * Open a hash route (a reload when the page is already on it) and wait for the shell; the page's own data calls may still be running
+     * (`loadingData` waits for them).
+     */
     async goTo(route: string): Promise<void> {
         logger.info(`opening #/${route}`);
-        await this.page.goto(`administrator/#/${route}`);
+        await openHashRoute(this.page, route);
         await expect(this.shell, `the shell is shown on #/${route}`).toBeVisible({ timeout: SHELL_VISIBLE_MS });
     }
 

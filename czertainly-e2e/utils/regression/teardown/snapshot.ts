@@ -2,9 +2,8 @@
  * snapshot — reads a tier into a `TierSnapshot` and stores it.
  *
  * WHAT: `snapshotTier` reads every resource of `SNAPSHOT_RESOURCES` (total, foreign objects with their marks, the windows of a large
- * collection, the platform event associations and system jobs), `unreadableRequired` names the required resources it could not
- * read, and `writeSnapshot` / `readSnapshot` / `deleteSnapshot` / `purgeOldSnapshots` carry the before snapshot across
- * processes.
+ * collection, the platform event associations and system jobs), `unreadableRequired` names the required resources it could not read, and
+ * `writeSnapshot` / `readSnapshot` / `deleteSnapshot` / `purgeOldSnapshots` carry the before snapshot across processes.
  *
  * WHY: the before snapshot is taken by the `snapshot` project and judged by the run-end teardown, two processes that
  * share only the state directory. Reading is the only I/O of the proof, so it is kept apart from the pure comparison.
@@ -122,7 +121,9 @@ const READERS: Record<ResourceDef['read'], (api: SnapshotReader, def: ResourceDe
 
 // ------------------------------------------------------------------ one resource
 
-/** The foreign objects among the rows (the default: a row whose name is not run-named; a resource may bring its own, `ResourceDef.foreign`). */
+/**
+ * The foreign objects among the rows (the default: a row whose name is not run-named; a resource may bring its own, `ResourceDef.foreign`).
+ */
 function foreignOf(def: ResourceDef, rows: JsonObject[]): Record<string, ItemMark> {
     if (def.foreign) return def.foreign(def, rows);
     const uuidOf = def.uuid ?? ((i: JsonObject) => i.uuid);

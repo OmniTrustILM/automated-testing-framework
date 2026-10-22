@@ -20,7 +20,7 @@ import { apiJson } from '../../../utils/regression/apiReads';
 import { ensureRunRole } from '../../../utils/regression/ownRoles';
 import { findByName, rowsNamed } from '../../../utils/regression/listReads';
 import { ownName, runName } from '../../../utils/regression/ledger/runState';
-import { lookupInList, recordIfCreated, submitRecordingByNameOnFailure } from '../../../utils/regression/ledger/uiCreates';
+import { lookupInList, submitRecordingByNameOnFailure } from '../../../utils/regression/ledger/uiCreates';
 import { testMeta, tags } from '../../../utils/regression/tags';
 import { LIST_STATE_MS } from '../../../utils/regression/timeouts';
 
@@ -81,8 +81,10 @@ test.describe('Role configuration', { tag: tags.regression }, () => {
                     { type: 'roles', name: role.name, spec: own.spec, note, lookup: lookupInList(api, '/api/v1/roles') },
                     () => roles.submitCreateForm());
             });
-            // Ledger first: a duplicate the platform accepted is this run's object, whatever the status says.
-            recordIfCreated('roles', answer, role.name, own.spec, note);
+            // Ledger first: a duplicate the platform accepted is this run's object, whatever the status says. The answer may carry no id:
+            // the rows of the name are adopted from the list as well.
+            own.probe('roles', answer, { name: role.name, note });
+            await own.adoptNamed('roles', role.name, { note });
 
             const rows = await test.step('Exactly one role carries the name (read from the full list)', async () => rowsNamed(api, '/api/v1/roles', role.name));
 

@@ -10,6 +10,7 @@
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { Logger } from '../utils/Logger';
+import { openHashRoute } from './ui/openHashRoute';
 import { actAndWaitForApi } from './ui/waitForResponse';
 
 const logger = new Logger('DashboardPage');
@@ -46,7 +47,7 @@ export class DashboardPage {
     /** Opens the certificates dashboard by its route; returns the statistics the page loaded, once the first chart is drawn. */
     async goToCertificatesDashboard(): Promise<DashboardStatistics> {
         logger.info('Opening the certificates dashboard');
-        const answer = await actAndWaitForApi(this.page, { method: 'GET', path: /\/api\/v1\/statistics/ }, () => this.page.goto('administrator/#/dashboard/certificates'));
+        const answer = await actAndWaitForApi(this.page, { method: 'GET', path: /\/api\/v1\/statistics/ }, () => openHashRoute(this.page, 'dashboard/certificates'));
         const statistics = (await answer.json()) as DashboardStatistics;
         await expect(this.chart('Certificates by State')).toBeVisible();
         return statistics;

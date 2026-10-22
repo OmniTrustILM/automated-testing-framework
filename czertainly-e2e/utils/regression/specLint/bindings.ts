@@ -35,8 +35,11 @@ const SAMPLE_UUID = '00000000-0000-4000-8000-000000000000';
 const FS_MODULES = new Set(['fs', 'fs/promises']);
 /** Globals `process` is reachable through. */
 const GLOBAL_OBJECTS = new Set(['globalThis', 'global', 'self']);
-/** The guarded context fixtures (`anonymousApi` is the same guard around a credential-less context; `localApi` the local-stack guard of a `@local` row). */
-const GUARDED_FIXTURES = new Set(['api', 'anonymousApi', 'localApi']);
+/**
+ * The guarded context fixtures (`anonymousApi` is the same guard around a credential-less context; `localApi` the local-stack guard of a
+ * `@local` row; `workerApi` the guarded context a worker-scoped fixture takes).
+ */
+const GUARDED_FIXTURES = new Set(['api', 'anonymousApi', 'localApi', 'workerApi']);
 /** The page fixtures (`signedIn` is `page` after the sign-in): `.request` on one is a raw context. */
 const PAGE_FIXTURES = new Set(['page', 'signedIn']);
 /** The opaque token fixtures: never printed, never compared, never annotated (`token-use`). */

@@ -6,8 +6,7 @@
  *       2. A fresh role: RA Profiles List at resource level, plus an object-level Detail and Members on one RA profile → Save →
  *          the resource level keeps List only and the object carries Detail and Members (it is not granted on every RA profile;
  *          fe-administrator#2283, fixed, guarded against its return).
- * WHY: a permission set on one object must not widen to the whole resource, and what the editor shows must be what the API
- *      stores.
+ * WHY: a permission set on one object must not widen to the whole resource, and what the editor shows must be what the API stores.
  * HOW: create-only: only this suite's roles change (the run role, and a fresh role of this run recorded in the ledger before
  *      it is edited); the browser is not behind the API guard, so each role passes the live own-object check (`live`) first. The
  *      save request is captured and attached. The object-level check uses the run's own RA profile.

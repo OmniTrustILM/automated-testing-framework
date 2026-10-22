@@ -1,12 +1,12 @@
 /**
  * approvals — the run's approval profile and the approval gate.
  *
- * WHAT: the run's approval profile, the approval gate on an own RA-profile clone (the run RA profile is never
- *       gated), the approvals of an own certificate (recorded in the ledger when found) and their decisions through the
- *       override path. The API answers a status with the enum name, the UI with the label: compare through
- *       `sameApprovalStatus`.
+ * WHAT: the run's approval profile, the approval gate on an own RA-profile clone (the run RA profile is never gated), the approvals of an
+ *       own certificate (recorded in the ledger when found) and their decisions through the override path. The API answers a status with
+ *       the enum name, the UI with the label: compare through `sameApprovalStatus`.
  * WHY: Approval tests need a gate that never touches the run RA profile and decisions that go through the override path.
- * HOW: The gate sits on an own clone of the run RA profile; approvals of an own certificate are recorded when found; `sameApprovalStatus` compares the API enum name with the UI label.
+ * HOW: The gate sits on an own clone of the run RA profile; approvals of an own certificate are recorded when found; `sameApprovalStatus`
+ * compares the API enum name with the UI label.
  */
 import type { APIRequestContext } from '@playwright/test';
 import { apiJson, ApiAnswer } from '../apiReads';

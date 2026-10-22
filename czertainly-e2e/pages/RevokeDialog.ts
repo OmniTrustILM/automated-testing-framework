@@ -2,8 +2,7 @@
  * RevokeDialog — the "Revoke Certificate" dialog.
  *
  * WHAT: the "Revoke Certificate" dialog: the reason select and submit.
- * WHY: REG-CERT-10 checks the exact set of reasons offered and revokes with Key compromise; the status goes back to
- *       the spec.
+ * WHY: REG-CERT-10 checks the exact set of reasons offered and revokes with Key compromise; the status goes back to the spec.
  * HOW: a `CertificateToolbarDialog` (open, close, answer reading are shared); opened from the detail toolbar; the
  *       reasons are read from the open option list (the placeholder is not a reason).
  */

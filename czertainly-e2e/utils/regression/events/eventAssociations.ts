@@ -84,9 +84,10 @@ export async function getAssociations(api: GuardedApi, resource: AssociationScop
 }
 
 /**
- * `@local` only: the platform-level association of an event (no object): REPLACES the platform list. The guard refuses it
- * unless `localStack` on a proven local stack (`describeLocalOnly` + a context from `getGuardedApiContext(request, env, { localStack: true })`: a spec may not `test.use` the guard options).
- * The caller READS the platform list first (`getPlatformAssociations`) and restores it afterwards.
+ * `@local` only: the platform-level association of an event (no object): REPLACES the platform list. The guard refuses it unless
+ * `localStack` on a proven local stack (`describeLocalOnly` + a context from `getGuardedApiContext(request, env, { localStack: true })`: a
+ * spec may not `test.use` the guard options). The caller READS the platform list first (`getPlatformAssociations`) and restores it
+ * afterwards.
  */
 export async function platformAssociate(api: GuardedApi, spec: string, event: EventCode, triggers: OwnRef[]): Promise<ApiAnswer> {
     for (const t of triggers) await assertOwnLive(api, 'triggers', t, 'platformAssociate (trigger)');

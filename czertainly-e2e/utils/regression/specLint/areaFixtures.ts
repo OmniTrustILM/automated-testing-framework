@@ -1,6 +1,5 @@
 /**
- * areaFixtures — the shape rule of an area fixture (`fixtures/areas/<name>.ts`), the per-folder setup a spec may take
- * `test` from.
+ * areaFixtures — the shape rule of an area fixture (`fixtures/areas/<name>.ts`), the per-folder setup a spec may take `test` from.
  *
  * WHAT: an area fixture has exactly one shape: one named import of `test` from the spec-facing fixtures (or another area
  * fixture), used once, in `export const test = <base>.extend<…>({ … })`. The object literal only ADDS fixtures: no key is a
@@ -61,12 +60,12 @@ export const PLAYWRIGHT_FIXTURES: ReadonlySet<string> = new Set([
  * credentials: handed on under a new name they escape the token and secret rules; a spec reads its settings itself).
  */
 export const AREA_FIXTURE_INPUTS: ReadonlySet<string> = new Set([
-    'api', 'anonymousApi', 'localApi', 'own', 'live', 'needs', 'declaredNeeds', 'ownRaProfile',
+    'api', 'anonymousApi', 'localApi', 'workerApi', 'own', 'live', 'needs', 'declaredNeeds', 'ownRaProfile',
 ]);
 /**
  * Member names that read a credential or a cluster key (`regressionEnv.userPassword`, `.restrictedPassword`, `.kubeconfig`,
- * `.cmAuthSecret`, an access / admin / bearer token, a private key): an area fixture reads none of them. A plain `token` is
- * the platform's cryptographic token object (a key store), not a credential, and stays readable; by access or destructuring, so no secret reaches a spec
+ * `.cmAuthSecret`, an access / admin / bearer token, a private key): an area fixture reads none of them. A plain `token` is the platform's
+ * cryptographic token object (a key store), not a credential, and stays readable; by access or destructuring, so no secret reaches a spec
  * under a name the spec lint's token and secret rules do not know. (`env`, the raw TestEnv with the admin login, is no input.)
  */
 const SECRET_MEMBER = /password|passwd|secret|kubeconfig|credential|username|privateKey|apiKey|bearer|(access|refresh|id|auth|admin|restricted)Token/i;

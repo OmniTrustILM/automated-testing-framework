@@ -1,11 +1,11 @@
 /**
  * detailRoute — a create form's submit and the detail route it leaves behind.
  *
- * WHAT: `submitCreate` clicks the Create button of a form scope and returns the create request's answer (the
- *       `CreateAnswer` of `createAnswer.ts`: status, uuid, request, body and the shared `ApiAnswer`, which the brief
- *       called `CreateOutcome`); the later `waitForDetailRoute` waits for the redirect to `#/<route>/detail/<uuid>`;
- *       `uuidFromHash` reads the uuid out of that route (the second uuid of a two-id route with `segments: 2`, the
- *       version of a versioned route with `version: true`; a trailing tab or query is allowed).
+ * WHAT: `submitCreate` clicks the Create button of a form scope and returns the create request's answer (the `CreateAnswer` of
+ *       `createAnswer.ts`: status, uuid, request, body and the shared `ApiAnswer`, formerly `CreateOutcome`); the later
+ *       `waitForDetailRoute` waits for the redirect to `#/<route>/detail/<uuid>`; `uuidFromHash` reads the uuid out of that route (the
+ *       second uuid of a two-id route with `segments: 2`, the version of a versioned route with `version: true`; a trailing tab or query is
+ *       allowed).
  * WHY: the answer comes first so that the spec writes the ledger line from it before any wait for the redirect: an
  *      object created on a shared tier must be on the ledger even when the page never redirects. The pages share one
  *      submit and one uuid reader instead of four click-and-wait copies and five regexes.

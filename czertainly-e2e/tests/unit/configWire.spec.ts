@@ -14,7 +14,7 @@ import { connectorsAlive, findConnector, healthByVersion, probeAttributes, waitF
 import { GuardedApi } from '../../utils/regression/guard/types';
 import { buildSeedSubset, manifestProblems, planSeedSubset } from '../../utils/regression/inventory/seedMinimal';
 import { derivedDeletable, OwnObjectViolation } from '../../utils/regression/ledger/ownership';
-import { adcsBlocker } from '../../utils/regression/config/authorities';
+import { adcsBlocker, isCredentialLogonRefusal } from '../../utils/regression/config/authorities';
 import { issueWithCsr, uploadOwnCertificate } from '../../utils/regression/ownCertificates';
 import {
     recordAcmeAccount,
@@ -81,7 +81,10 @@ class ConfigCore extends BaseCore {
     adcsRaAttrStatus = 200;
     /** `acmeAvailable` after the activation. */
     acmeAvailable = true;
-    /** Called with the 1-based number of each certificate search before it is answered: a certificate can appear or change between two reads. */
+    /**
+     * Called with the 1-based number of each certificate search before it is answered: a certificate can appear or change between two
+     * reads.
+     */
     onCertificateSearch: ((n: number) => void) | undefined;
     private searches = 0;
     /** How many certificate searches arrived. */
@@ -611,4 +614,12 @@ test('uploadOwnCertificate: the derived key is recorded by name when its first d
     const ref = await uploadOwnCertificate(api, selfSignedPem(cn).pem, cn, 'T', 'uploaded');
     const cert = core.certs.find((c) => c.uuid === ref.uuid)!;
     expect(readLedger().filter((l) => l.event === 'created').map((l) => `${l.type}:${l.uuid}`)).toEqual([`certificates:${ref.uuid}`, `keys:${cert.key.uuid}`]);
+});
+
+test('isCredentialLogonRefusal names only the connector\'s logon refusal of the credential', () => {
+    expect(isCredentialLogonRefusal('{"message":"STATUS_LOGON_FAILURE 0xc000006d from the connector"}')).toBe(true);
+    expect(isCredentialLogonRefusal('Login failed for the account')).toBe(true);
+    expect(isCredentialLogonRefusal('connector unreachable (timeout)')).toBe(false);
+    expect(isCredentialLogonRefusal('attribute "template" is required')).toBe(false);
+    expect(isCredentialLogonRefusal('')).toBe(false);
 });

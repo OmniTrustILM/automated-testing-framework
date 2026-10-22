@@ -51,8 +51,7 @@ test('string findings: canonical uuids must be own; non-canonical forms refused;
     expect(findUuidsInString(` ${K}`).nonCanonical[0]).not.toContain(K);
 });
 
-// body findings: keys are scanned, attribute subtrees skipped, reference fields waived at the top level only and for canonical
-// values only
+// body findings: keys are scanned, attribute subtrees skipped, reference fields waived at the top level only and for canonical values only
 test('body findings: keys scanned, attribute subtrees skipped, reference fields waived at top level', () => {
     expect(findUuidsInBody({ map: { [U]: ['read'] } }).canonical, 'a uuid as a map key').toEqual([U]);
     expect(findUuidsInBody({ [` ${U}`]: 1 }).nonCanonical, 'a padded uuid key').toHaveLength(1);
@@ -128,8 +127,8 @@ test('unsafePath: printable ASCII, path as written equals as sent, no non-canoni
     expect(pathProblem(`/api/v1/roles/${url22}`)).toBeUndefined();
 });
 
-// the platform deny-list: v1 and v2, case-insensitive, purge / CBOM / OID / schedule / settings / local admins, objectUuid must
-// be canonical
+// the platform deny-list: v1 and v2, case-insensitive, purge / CBOM / OID / schedule / settings / local admins, objectUuid must be
+// canonical
 test('the platform deny-list covers v1 and v2, is case-insensitive, and objectUuid must be canonical', () => {
     for (const p of ['/v1/auditLogs/purge', '/v1/cboms', '/v1/cboms/upload', '/v1/cboms/sync', '/v1/oids', '/v1/oids/1.2.3', '/v1/discoveries/schedule',
         '/v2/settings/platform', '/v1/Settings/platform', '/V1/settings', '/v1/LOCAL/admins']) {

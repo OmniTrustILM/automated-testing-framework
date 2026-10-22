@@ -13,8 +13,7 @@ const def = (o: Json): Json => ({ uuid: 'aaaaaaaa-0000-4000-8000-000000000001', 
 
 // ------------------------------------------------------------------ seen on a live tier: version is a NUMBER on the wire
 
-// requestVersion turns core's NUMERIC definition version (3 / 2) and the string forms into "v3" / "v2"; absent follows the
-// fallback
+// requestVersion turns core's NUMERIC definition version (3 / 2) and the string forms into "v3" / "v2"; absent follows the fallback
 test('requestVersion turns numeric and string definition versions into v3 / v2; absent uses fallback', () => {
     expect([3, '3', 'v3', 'V3'].map((v) => requestVersion({ version: v }))).toEqual(['v3', 'v3', 'v3', 'v3']);
     expect([2, '2', 'v2'].map((v) => requestVersion({ version: v }))).toEqual(['v2', 'v2', 'v2']);

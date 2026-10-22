@@ -214,7 +214,9 @@ const parses = (text: string): boolean => {
 /** What the guard sends of a body: the view it judges and the exact value it hands Playwright. */
 export interface BodySnapshot {
     view: BodyView;
-    /** undefined: no body is sent. A string goes with `content-type: application/json` (`text/plain`: as written); a Buffer byte for byte. */
+    /**
+     * undefined: no body is sent. A string goes with `content-type: application/json` (`text/plain`: as written); a Buffer byte for byte.
+     */
     send?: string | Buffer;
 }
 

@@ -23,7 +23,6 @@ import { createdAfterOfAnswer, messagesOf } from '../../../utils/regression/life
 import { submitOwnCertificate, waitIssued } from '../../../utils/regression/ownCertificates';
 import { csrFromKey } from '../../../utils/regression/pkiBuilders';
 import { getCertificate } from '../../../utils/regression/apiReads';
-import { recordDerivedKeyOf } from '../../../utils/regression/issuedRecords';
 import { testMeta, tags } from '../../../utils/regression/tags';
 import { QUICK_STATE_WAIT_MS, SLOW_LIFECYCLE_MS, STATE_CHANGE_WAIT_MS } from '../../../utils/regression/timeouts';
 import { waitForCertificateState } from '../../../utils/regression/wait/certificateState';
@@ -59,7 +58,7 @@ test.describe('Certificate approvals through the v2 API', { tag: tags.api }, () 
                     const d = await decideApproval(api, first.approval, 'approve');
                     expect(d.status, d.text.slice(0, 200)).toBe(204);
                     await waitIssued(api, first.cert.uuid);
-                    await recordDerivedKeyOf(api, first.cert.uuid, createdAfterOfAnswer(first.cert.answer), own.spec);
+                    await own.derivedKey(first.cert.uuid, createdAfterOfAnswer(first.cert.answer));
                     const detail = await waitForApprovalStatus(api, first.approval, 'Approved', QUICK_STATE_WAIT_MS);
                     expect(approvalStatusLabel(detail.status)).toBe('Approved');
                     expect(recipientComments(detail)).toContain('Approval flow overridden');

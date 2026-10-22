@@ -5,7 +5,8 @@
  *       second read answers the same order, asc and desc mirror each other, composition and tie-break. Text order is checked
  *       only where it is decidable without the database collation; enum columns are checked structurally.
  * WHY: Ordering bugs hide in empty values, page boundaries and ties.
- * HOW: Non-decreasing in both directions with empty values last, page 2 continues page 1, a repeat read gives the same order, asc and desc mirror, composition and tie-break; text order only where decidable, enums structurally.
+ * HOW: Non-decreasing in both directions with empty values last, page 2 continues page 1, a repeat read gives the same order, asc and desc
+ * mirror, composition and tie-break; text order only where decidable, enums structurally.
  */
 import type { Filter, Sort } from '../searchApi';
 import { expectSorted, InvariantViolation } from '../listInvariants';
@@ -165,8 +166,7 @@ export async function runTieBreak(run: ListingRun, target: SortTarget): Promise<
 }
 
 // ====================================================================================================================
-// 9. Sort refusals
-// ====================================================================================================================
+// 9. Sort refusals ====================================================================================================================
 
 /** The sort a refusal probe sends. */
 export const sortOf = (fieldIdentifier: string, fieldSource: Sort['fieldSource'] = 'property', direction: Sort['direction'] = 'asc'): Sort => ({ fieldSource, fieldIdentifier, direction });

@@ -16,7 +16,10 @@ import { DashboardCounts, DashboardPage, DashboardStatistics } from '../../../pa
 import { filterBadges, waitForListRows } from '../../../pages/ui/list';
 import { testMeta, tags } from '../../../utils/regression/tags';
 
-/** A legend the second test clicks, and the statistic that says whether the tier has data behind it (a legend item exists only for a non-zero count). */
+/**
+ * A legend the second test clicks, and the statistic that says whether the tier has data behind it (a legend item exists only for a
+ * non-zero count).
+ */
 const DRILL_DOWNS: ReadonlyArray<{ chart: string; item: string; counts: (s: DashboardStatistics) => DashboardCounts | undefined; key: RegExp }> = [
     { chart: 'Certificates by State', item: 'Issued', counts: (s) => s.certificateStatByState, key: /^issued$/i },
     { chart: 'Certificates by Validation', item: 'Expired', counts: (s) => s.certificateStatByValidationStatus, key: /^expired$/i },

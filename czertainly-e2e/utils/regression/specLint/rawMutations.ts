@@ -86,14 +86,13 @@ import { RULES, type Rule } from './rules';
  *                      `__testHookLookup`, …) or a `method` outside `fetch`; `test.use({ api | request | … })` overriding a
  *                      context fixture is a fixture-extend.
  * Guarded fixtures and token fixtures:
- * - `anonymousApi` is a guarded fixture like `api`, and `localApi` (the local-stack guard) too (CONTEXT_FIXTURES, GUARDED_FIXTURES); `signedIn`
- *   is a page fixture like `page` (`signedIn.request` is a raw context), and every spec-facing fixture is in CONTEXT_FIXTURES;
- * - token-use           the opaque token fixtures `adminToken` / `restrictedToken` may not be printed, compared or
- *                      annotated: a template literal, `expect(token…)`, a string concatenation, an object-literal
- *                      property value (`annotations.push({ description: token })`), `String(token)`, `JSON.stringify`,
- *                      `console.*` / `logger.*` / `.push` arguments are violations; `token.bearer()` / `token.claims()`,
- *                      a truthiness check, `test.skip(!token, …)` and a call argument of a helper (`callAs(api, token.bearer(), …)`,
- *                      jwtTools) pass.
+ * - `anonymousApi` is a guarded fixture like `api`, and `localApi` (the local-stack guard) too (CONTEXT_FIXTURES, GUARDED_FIXTURES);
+ *   `signedIn` is a page fixture like `page` (`signedIn.request` is a raw context), and every spec-facing fixture is in CONTEXT_FIXTURES;
+ * - token-use the opaque token fixtures `adminToken` / `restrictedToken` may not be printed, compared or annotated: a template literal,
+ *                      `expect(token…)`, a string concatenation, an object-literal property value (`annotations.push({ description: token
+ *                      })`), `String(token)`, `JSON.stringify`, `console.*` / `logger.*` / `.push` arguments are violations;
+ *                      `token.bearer()` / `token.claims()`, a truthiness check, `test.skip(!token, …)` and a call argument of a helper
+ *                      (`callAs(api, token.bearer(), …)`, jwtTools) pass.
  * - live-forge          `as LiveOwn` / `<LiveOwn>`: a `LiveOwn` is the proof that `live(type, ref)` ran the live own-object check, and only
  *                      `LiveOwn.prove` builds one (private constructor); a cast would fake the proof;
  * A receiver is GUARDED when it is the `api` fixture of a test / hook, a parameter typed `GuardedApi`, the result of

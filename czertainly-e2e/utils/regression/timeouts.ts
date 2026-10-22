@@ -94,7 +94,10 @@ export const HEALTH_UP_MS = 3 * MINUTE_MS;
 /** An audit-log entry arrives through the message broker: 1 minute. */
 export const AUDIT_ENTRY_MS = MINUTE_MS;
 
-/** One test that stops the broker and polls `/health` (3 minutes), and one that restarts it and waits for health and the audit entry (5 minutes). */
+/**
+ * One test that stops the broker and polls `/health` (3 minutes), and one that restarts it and waits for health and the audit entry (5
+ * minutes).
+ */
 export const BROKER_STOP_TEST_MS = 3 * MINUTE_MS;
 export const BROKER_START_TEST_MS = 5 * MINUTE_MS;
 
@@ -147,13 +150,19 @@ export const FILTER_BADGE_REOPEN_MS = 15_000;
 /** A certificate reaches a state that needs no CA decision (pending approval, rejected, registered after a retry): 1 minute. */
 export const STATE_CHANGE_WAIT_MS = MINUTE_MS;
 
-/** A certificate or an approval shows a state that the platform sets within the same request chain (registered, approval closed): 30 seconds. */
+/**
+ * A certificate or an approval shows a state that the platform sets within the same request chain (registered, approval closed): 30
+ * seconds.
+ */
 export const QUICK_STATE_WAIT_MS = 30 * 1000;
 
 /** An event firing on one object (a trigger over a certificate event) is awaited in the history: 3 minutes. */
 export const EVENT_FIRING_WAIT_MS = 3 * MINUTE_MS;
 
-/** The property oracles walk every row of a whole listing (keys, discoveries, the audit log's closed window), two re-reads at most: 25 minutes. */
+/**
+ * The property oracles walk every row of a whole listing (keys, discoveries, the audit log's closed window), two re-reads at most: 25
+ * minutes.
+ */
 export const LISTING_ORACLES_MS = 25 * MINUTE_MS;
 
 /** One probe that is sent once (a refused method): 20 seconds. */
@@ -207,7 +216,10 @@ export const UI_ISSUE_FLOW_MS = 5 * MINUTE_MS;
 /** One ACME order (finalize, settle, download) and its checks: 5 minutes. */
 export const ACME_ORDER_MS = 5 * MINUTE_MS;
 
-/** Removing the cert-manager objects of one row: three kubectl deletes of up to 150 s each, the settle poll of the issued certificates and a margin: 10 minutes. */
+/**
+ * Removing the cert-manager objects of one row: three kubectl deletes of up to 150 s each, the settle poll of the issued certificates and a
+ * margin: 10 minutes.
+ */
 export const CLUSTER_CLEANUP_MS = 10 * MINUTE_MS;
 
 /** An uploaded or imported certificate shows up in the inventory search: 30 seconds. */
@@ -275,3 +287,45 @@ export const PAGE_ROUTE_MS = 30_000;
 
 /** The connector's attribute form renders after its schema loaded: 20 seconds. */
 export const ATTRIBUTE_FORM_MS = 20_000;
+
+/** A read-only API test over one short list: 30 seconds. */
+export const API_READ_TEST_MS = 30_000;
+
+/** An API test that makes one object (or none) and reads the refusal back: 1 minute. */
+export const API_SHORT_TEST_MS = MINUTE_MS;
+
+/** An API test that makes a few own objects and reads them back: 90 seconds. */
+export const API_OWN_OBJECTS_TEST_MS = 90_000;
+
+/** An API test that makes a chain of own objects (a key and its operations, a trigger chain) and checks them: 2 minutes. */
+export const API_STANDARD_TEST_MS = 2 * MINUTE_MS;
+
+/** An API test around one discovery run on a range nothing answers on: 2.5 minutes. */
+export const API_DISCOVERY_RUN_TEST_MS = 150_000;
+
+/** An API test with several variants or objects in a row (refusals with seeds, key sizes and curves): 3 minutes. */
+export const API_VARIANTS_TEST_MS = 3 * MINUTE_MS;
+
+/** An API test over a whole matrix (every sign or encrypt variant of a key family, several key families): 4 minutes. */
+export const API_MATRIX_TEST_MS = 4 * MINUTE_MS;
+
+/** An API test that moves key material between two tokens (export, import, sign, verify per family): 5 minutes. */
+export const API_ROUND_TRIP_TEST_MS = 5 * MINUTE_MS;
+
+/** An API test that walks every algorithm a hardware token offers: 10 minutes. */
+export const API_TOKEN_MATRIX_TEST_MS = 10 * MINUTE_MS;
+
+/** A discovery run reaches the state a stop, resume or cancel asked for: 1 minute. */
+export const DISCOVERY_CONTROL_WAIT_MS = MINUTE_MS;
+
+/** A run over a small dark range (a /29) completes: 90 seconds. */
+export const DISCOVERY_SMALL_RUN_WAIT_MS = 90_000;
+
+/** A small own run is completed before a state refusal is read on it: 2 minutes. */
+export const DISCOVERY_DONE_RUN_WAIT_MS = 2 * MINUTE_MS;
+
+/** The seed run of a duplicate-name probe completes: 2.5 minutes. */
+export const DISCOVERY_SEED_RUN_WAIT_MS = 150_000;
+
+/** A v1 run over a /27 completes (the v1 connector tries every port): 200 seconds. */
+export const DISCOVERY_V1_RUN_WAIT_MS = 200_000;

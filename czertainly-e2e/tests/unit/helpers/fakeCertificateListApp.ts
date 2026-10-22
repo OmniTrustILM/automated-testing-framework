@@ -186,7 +186,10 @@ const sortKeyOf = (row: FakeRow, field: string, direction: 'asc' | 'desc'): stri
     throw new Error(`the fake list API cannot sort by ${field}`);
 };
 
-/** The list answer for a request body: filters ANDed, sort (empty last both ways, uuid tie-break), paging; default order = created descending. */
+/**
+ * The list answer for a request body: filters ANDed, sort (empty last both ways, uuid tie-break), paging; default order = created
+ * descending.
+ */
 export function listAnswer(data: FakeData, body: JsonObject): { status: number; json: unknown } {
     const now = data.clock.getTime();
     let rows = [...data.rows];

@@ -205,7 +205,8 @@ test.describe('FilterWidget', () => {
             const shown = await filter.pickDate({ year: 2030, month: 2, day: 20 });
             expect(shown).toBe('20.02.2030');
             const seen = await filter.add();
-            // a date-only field goes out as the picked yyyy-MM-dd: the value is parsed as UTC midnight and cut at the T (dateUtil.ts:128-130), so the zone does not shift the day
+            // a date-only field goes out as the picked yyyy-MM-dd: the value is parsed as UTC midnight and cut at the T
+            // (dateUtil.ts:128-130), so the zone does not shift the day
             expect(seen.body.filters?.[0].value).toBe('2030-02-20');
             const picked = { year: 2026, month: 11, day: 3, hours: 8, minutes: 0, seconds: 0 };
             await filter.addFilter({ source: 'Property', field: 'Valid From', condition: 'lesser than', value: picked });

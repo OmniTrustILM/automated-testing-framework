@@ -27,7 +27,10 @@ export class LiveOwn<Type extends string = string> {
         readonly proof: LiveOwnership,
     ) {}
 
-    /** Runs the live own-object check and hands back the proof; throws `OwnObjectViolation` / `LiveObjectMissing` when the object is not a live object of this run. */
+    /**
+     * Runs the live own-object check and hands back the proof; throws `OwnObjectViolation` / `LiveObjectMissing` when the object is not a
+     * live object of this run.
+     */
     static async prove<Type extends string>(api: APIRequestContext, type: Type, ref: { uuid: string; name?: string }, helper = 'live'): Promise<LiveOwn<Type>> {
         const proof = await assertOwnLive(api, type, ref, helper);
         return new LiveOwn(type, { uuid: ref.uuid, name: proof.line.name, kind: 'own' }, proof);

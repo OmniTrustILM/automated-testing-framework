@@ -28,12 +28,11 @@ import {
     expectImportRefused, pkcs12TwoPassphrases, pkcs7Der, pkcs7Pem, pkcs8Key, REFUSAL, requestsInOnePem, ROUTES, uploadBody,
 } from '../../../utils/regression/inventory/importFixtures';
 import { getCertificate, serverCreatedAfter } from '../../../utils/regression/apiReads';
-import { recordCertificatesNamed, recordDerivedKeyOf } from '../../../utils/regression/issuedRecords';
-import { requiredCustomAttributes, UnfillableAttributeError } from '../../../utils/regression/customAttributes';
-import { recordIfAccepted } from '../../../utils/regression/ownCrud';
+import { requiredCustomAttributes } from '../../../utils/regression/customAttributes';
 import { runName } from '../../../utils/regression/ledger/runState';
 import { testMeta, tags } from '../../../utils/regression/tags';
 import type { GuardedApi } from '../../../utils/regression/guard/types';
+import type { OwnObjects } from '../../../utils/regression/ownObjects';
 import { randomBytes } from 'node:crypto';
 // Run-scoped generated test passwords: no password-like literal in the file.
 const GEN_PW_1 = `qa-${randomBytes(9).toString('base64url')}`;
@@ -248,15 +247,11 @@ const UPLOAD_SPEC_GAP = 'the published OpenAPI document declares no 409 / 422 fo
 const canonicalUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /**
- * The required custom attributes of certificates (a tier may define some): upload carries them. Only "the suite cannot fill it" skips,
- * with the reason; a failed read of the definitions fails the test. Call it before the first write of a test.
+ * The required custom attributes of certificates (a tier may define some): upload carries them. A failed read of the definitions fails the
+ * test; a test that uploads asks `needs.requiredAttributesFillable('certificates')` first, which skips when the suite cannot fill one.
  */
 async function certificateAttributes(api: GuardedApi): Promise<Json[]> {
-    return requiredCustomAttributes(api, 'certificates', runName('ca')).catch((e: Error) => {
-        if (!(e instanceof UnfillableAttributeError)) throw e;
-        test.skip(true, `a required custom attribute of certificates cannot be filled by the suite (${e.message.slice(0, 120)})`);
-        return [] as Json[];
-    });
+    return requiredCustomAttributes(api, 'certificates', runName('ca'));
 }
 
 /** The certificates the search finds under a common name (the authoritative read). */
@@ -268,24 +263,24 @@ async function certificatesNamed(api: GuardedApi, commonName: string): Promise<J
  * A plain upload that must create a certificate: ledger (and derived key) right after the call, then the 201 contract and the read-back.
  * `attributes` are the required custom attributes when the caller already read them (a test with more than one upload reads them first).
  */
-async function uploadCreating(api: GuardedApi, spec: string, identity: Identity, file: Buffer, note: string, attributes?: Json[]): Promise<{ uuid: string }> {
+async function uploadCreating(api: GuardedApi, own: OwnObjects, identity: Identity, file: Buffer, note: string, attributes?: Json[]): Promise<{ uuid: string }> {
     const filled = attributes ?? await certificateAttributes(api);
     const createdAfter = await serverCreatedAfter(api);
     const answer = await send(api, 'POST', ROUTES.upload, { data: uploadBody(file, filled) });
     const uuid = (answer.json as Json | undefined)?.uuid as string | undefined;
     // Ledger before assertion: a 201 created an object whatever the rest of the test finds.
-    recordIfAccepted('certificates', answer, identity.cn, spec, note);
-    if (answer.status === 201 && uuid) await recordDerivedKeyOf(api, uuid, createdAfter, spec);
+    own.probe('certificates', answer, { name: identity.cn, note });
+    if (answer.status === 201 && uuid) await own.derivedKey(uuid, createdAfter);
     expect(answer.status, `POST /v1/certificates/upload: ${answer.text.slice(0, 300)}`).toBe(201);
     expect(uuid, 'the 201 answers {uuid}').toMatch(canonicalUuid);
     return { uuid: uuid! };
 }
 
 /** A refused plain upload: status 422 and exactly one message, and nothing created under the certificate's name. */
-async function uploadRefused(api: GuardedApi, spec: string, file: Buffer, text: string, prefix: string): Promise<void> {
+async function uploadRefused(api: GuardedApi, own: OwnObjects, file: Buffer, text: string, prefix: string): Promise<void> {
     const answer = await send(api, 'POST', ROUTES.upload, { data: uploadBody(file, []) });
     // Ledger first: a refusal that wrongly succeeds created an own certificate (found by its run-prefixed name).
-    if (answer.status < 300) await recordCertificatesNamed(api, prefix, spec, 'accepted although the upload should have been refused');
+    if (answer.status < 300) await own.recordNamed(prefix, 'accepted although the upload should have been refused');
     expectImportRefused(answer, text, 'POST /v1/certificates/upload');
     expect(await certificatesNamed(api, prefix), `certificates named ${prefix}`).toHaveLength(0);
 }
@@ -310,10 +305,11 @@ test.describe('plain upload', { tag: tags.api }, () => {
     for (const r of UPLOAD_CREATING) {
         test(`${r.title} gives 201 and reads back with the uploaded fingerprint`,
             testMeta({ id: 'API-CERT-68', row: r.row, prio: 'P1', issue: 'ilm#428', rule: [RULE_68, 'core#2137 AC / ilm#248 Regression Risk: plain PEM / DER / PKCS#7 uploads must not regress', r.behaviour] }),
-            async ({ api, own }, testInfo) => {
+            async ({ api, own, needs }, testInfo) => {
+                await needs.requiredAttributesFillable('certificates');
                 testInfo.annotations.push({ type: 'spec-gap', description: UPLOAD_SPEC_GAP });
                 const identity = certificate(importCn(`up-${r.row}`));
-                const { uuid } = await uploadCreating(api, own.spec, identity, r.file(identity), `plain upload (${r.row})`);
+                const { uuid } = await uploadCreating(api, own, identity, r.file(identity), `plain upload (${r.row})`);
 
                 const detail = await getCertificate(api, uuid);
                 expect(detail.state, 'state of the uploaded certificate').toBe('issued');
@@ -325,8 +321,9 @@ test.describe('plain upload', { tag: tags.api }, () => {
 
     test('the asynchronous upload answers 202 and the certificate appears',
         testMeta({ id: 'API-CERT-68', row: 'async', prio: 'P1', issue: 'ilm#428', rule: [RULE_68, '`/upload/async` answers 202 `{fingerprint}`', 'the certificate appears (found by a poll) with that fingerprint'] }),
-        async ({ api, own }, testInfo) => {
+        async ({ api, own, needs }, testInfo) => {
             test.setTimeout(MANY_STEPS_TEST_MS);
+            await needs.requiredAttributesFillable('certificates');
             testInfo.annotations.push({ type: 'spec-gap', description: UPLOAD_SPEC_GAP });
             const identity = certificate(importCn('up-async'));
             const attributes = await certificateAttributes(api);
@@ -334,19 +331,19 @@ test.describe('plain upload', { tag: tags.api }, () => {
 
             const answer = await send(api, 'POST', ROUTES.uploadAsync, { data: uploadBody(Buffer.from(identity.pem), attributes) });
             // Ledger before assertion: whatever the answer was, a certificate that already exists under the name is recorded now.
-            let uuids: string[] = await recordCertificatesNamed(api, identity.cn, own.spec, 'async upload (before the check)').catch(() => []);
+            let uuids: string[] = await own.recordNamed(identity.cn, 'async upload (before the check)').catch(() => []);
             try {
                 expect(answer.status, `POST /v1/certificates/upload/async: ${answer.text.slice(0, 300)}`).toBe(202);
                 expect((answer.json as Json).fingerprint, 'the 202 answers {fingerprint}').toBe(identity.fingerprint);
                 // Ledger from the poll: the certificate is recorded the moment it exists (it is found by its run-prefixed name).
                 await expect
-                    .poll(async () => (uuids = await recordCertificatesNamed(api, identity.cn, own.spec, 'async upload')).length, { timeout: ASYNC_UPLOAD_WAIT_MS, message: 'the async upload became a certificate' })
+                    .poll(async () => (uuids = await own.recordNamed(identity.cn, 'async upload')).length, { timeout: ASYNC_UPLOAD_WAIT_MS, message: 'the async upload became a certificate' })
                     .toBe(1);
             } finally {
                 // A late arrival after a failed poll must not leak.
-                if (!uuids.length) uuids = await recordCertificatesNamed(api, identity.cn, own.spec, 'async upload (late)').catch(() => []);
+                if (!uuids.length) uuids = await own.recordNamed(identity.cn, 'async upload (late)').catch(() => []);
             }
-            await recordDerivedKeyOf(api, uuids[0], createdAfter, own.spec);
+            await own.derivedKey(uuids[0], createdAfter);
             const detail = await getCertificate(api, uuids[0]);
             expect(detail.fingerprint).toBe(identity.fingerprint);
             expect(detail.state).toBe('issued');
@@ -357,7 +354,7 @@ test.describe('plain upload', { tag: tags.api }, () => {
         async ({ api, own }, testInfo) => {
             testInfo.annotations.push({ type: 'spec-gap', description: UPLOAD_SPEC_GAP });
             const cn = importCn('up-keystore');
-            await uploadRefused(api, own.spec, pkcs12(cn, GEN_PW_5).bytes, REFUSAL.uploadKeystore, cn);
+            await uploadRefused(api, own, pkcs12(cn, GEN_PW_5).bytes, REFUSAL.uploadKeystore, cn);
         });
 
     test('a PEM certificate request is refused 422 as not a certificate, and nothing is created',
@@ -365,7 +362,7 @@ test.describe('plain upload', { tag: tags.api }, () => {
         async ({ api, own }, testInfo) => {
             testInfo.annotations.push({ type: 'spec-gap', description: UPLOAD_SPEC_GAP });
             const cn = importCn('up-csr');
-            await uploadRefused(api, own.spec, Buffer.from(csrPem(cn).pem), REFUSAL.uploadNotCertificate('CERTIFICATE REQUEST'), cn);
+            await uploadRefused(api, own, Buffer.from(csrPem(cn).pem), REFUSAL.uploadNotCertificate('CERTIFICATE REQUEST'), cn);
         });
 
     test('bytes that are no certificate are refused 422 as an unsupported format',
@@ -374,21 +371,22 @@ test.describe('plain upload', { tag: tags.api }, () => {
             testInfo.annotations.push({ type: 'spec-gap', description: UPLOAD_SPEC_GAP });
             // A garbage file carries no common name, so a companion certificate cannot be looked up: the refusal itself is the oracle
             // and the unchanged certificate count of the run's name prefix is checked on a name the file never held.
-            await uploadRefused(api, own.spec, garbageBytes(), REFUSAL.uploadInvalid, importCn('up-garbage'));
+            await uploadRefused(api, own, garbageBytes(), REFUSAL.uploadInvalid, importCn('up-garbage'));
         });
 
     test('the same certificate twice is refused 409 and still one certificate exists',
         testMeta({ id: 'API-CERT-68', row: 'duplicate', prio: 'P1', issue: 'ilm#428', rule: [RULE_68, 'CertificateUploadServiceImpl → AlreadyExistException → 409 (ExceptionHandlingAdvice)', '409 {message} "Certificate already exists with fingerprint <fp>"'] }),
-        async ({ api, own }, testInfo) => {
+        async ({ api, own, needs }, testInfo) => {
             testInfo.annotations.push({ type: 'spec-gap', description: UPLOAD_SPEC_GAP });
             const identity = certificate(importCn('up-dup'));
             // Read before the first write: an unfillable required attribute skips the test before anything is uploaded.
+            await needs.requiredAttributesFillable('certificates');
             const attributes = await certificateAttributes(api);
-            await uploadCreating(api, own.spec, identity, Buffer.from(identity.pem), 'plain upload (first of a duplicate pair)', attributes);
+            await uploadCreating(api, own, identity, Buffer.from(identity.pem), 'plain upload (first of a duplicate pair)', attributes);
 
             const second = await send(api, 'POST', ROUTES.upload, { data: uploadBody(Buffer.from(identity.pem), attributes) });
             // A second 201 would be a second object: ledger first.
-            recordIfAccepted('certificates', second, identity.cn, own.spec, 'a duplicate upload accepted');
+            own.probe('certificates', second, { name: identity.cn, note: 'a duplicate upload accepted' });
             expectRefused(second, { status: 409, text: REFUSAL.uploadDuplicate(identity.fingerprint), what: 'second POST /v1/certificates/upload' });
             const byFingerprint = await searchPage(api, { filters: [propertyFilter('FINGERPRINT', 'EQUALS', identity.fingerprint)], itemsPerPage: 10, pageNumber: 1, includeArchived: true });
             expect(byFingerprint.totalItems, 'certificates with that fingerprint').toBe(1);
@@ -396,10 +394,11 @@ test.describe('plain upload', { tag: tags.api }, () => {
 
     test(`the same certificate through /import answers 200 \`existing\``,
         testMeta({ id: 'API-CERT-68', row: 'existing-through-import', prio: 'P1', issue: 'ilm#428', rule: [RULE_68, 'core#2414: "An import never changes an object that already exists"; an existing certificate behaves the same in the wizard and in a plain upload', 'the intended difference to the plain upload\'s 409', 'still one certificate'] }),
-        async ({ api, own }, testInfo) => {
+        async ({ api, own, needs }, testInfo) => {
+            await needs.requiredAttributesFillable('certificates');
             testInfo.annotations.push({ type: 'spec-gap', description: UPLOAD_SPEC_GAP });
             const identity = certificate(importCn('up-existing'));
-            const first = await uploadCreating(api, own.spec, identity, Buffer.from(identity.pem), 'plain upload (then imported again)');
+            const first = await uploadCreating(api, own, identity, Buffer.from(identity.pem), 'plain upload (then imported again)');
 
             const file = Buffer.from(identity.pem);
             const answer = await send(api, 'POST', ROUTES.import, { data: importBody(file, [identity.fingerprint]) });

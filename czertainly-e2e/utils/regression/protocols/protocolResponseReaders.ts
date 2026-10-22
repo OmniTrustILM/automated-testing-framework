@@ -68,10 +68,10 @@ export function scepCaSetProblems(certificates: Pkcs7Certificate[], expectedFing
 }
 
 /**
- * A degenerate PKCS#7 holding the given certificates (PEM, any key type: built from their raw DER, no forge certificate
- * parsing): the unit tests' and the malformed-request pins' fixture, and nothing else.
- *   ContentInfo ::= SEQUENCE { contentType signedData, content [0] EXPLICIT SignedData }
- *   SignedData ::= SEQUENCE { version 1, digestAlgorithms SET {}, encapContentInfo SEQUENCE { data }, certificates [0] IMPLICIT SET, signerInfos SET {} }
+ * A degenerate PKCS#7 holding the given certificates (PEM, any key type: built from their raw DER, no forge certificate parsing): the unit
+ * tests' and the malformed-request pins' fixture, and nothing else. ContentInfo ::= SEQUENCE { contentType signedData, content [0] EXPLICIT
+ * SignedData } SignedData ::= SEQUENCE { version 1, digestAlgorithms SET {}, encapContentInfo SEQUENCE { data }, certificates [0] IMPLICIT
+ * SET, signerInfos SET {} }
  */
 export function degeneratePkcs7Of(certificatePems: string[]): Buffer {
     const a = forge.asn1;

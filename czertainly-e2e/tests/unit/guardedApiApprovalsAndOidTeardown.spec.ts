@@ -136,8 +136,7 @@ const gets = (url: string) => A.arrived.filter((a) => a.method === 'GET' && a.ur
 
 // ------------------------------------------------------------------ approval decisions
 
-// approval decision: an own approval of an own certificate and an own approval profile is decided on the override and the
-// recipient path
+// approval decision: an own approval of an own certificate and an own approval profile is decided on the override and the recipient path
 test('approval decision: an own approval of an own certificate and profile is decided on the override path', async () => {
     const g = guard();
     await g.patch(`/api/v1/approvals/${APR.own}/approve`);
@@ -224,8 +223,7 @@ test('approval decision: every other route, method, identity and body is refused
 const apBody = (step: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
     ({ name: `${RUN}-ap-self`, enabled: true, expiry: 24, approvalSteps: [{ order: 1, requiredApprovals: 1, ...step }], ...extra });
 
-// caller as approver: an own approval profile step may name the caller (create and update of an own profile); the profile is
-// read once
+// caller as approver: an own approval profile step may name the caller (create and update of an own profile); the profile is read once
 test('caller as approver: an own approval profile step may name the caller on create and update, read once', async () => {
     const g = guard();
     await g.post('/api/v1/approvalProfiles', { data: apBody({ userUuid: SELF }) });
@@ -301,8 +299,7 @@ async function teardown(type: string, l: LedgerLine, env: Record<string, string>
     });
 }
 
-// teardown oidEntries: only on a proven local stack, with a live run-prefixed displayName and a matching key; absence proven by
-// GET
+// teardown oidEntries: only on a proven local stack, with a live run-prefixed displayName and a matching key; absence proven by GET
 test('teardown oidEntries: proven local stack only, run-prefixed entry; absence proven by GET', async ({}, testInfo) => {
     const own = mk('oidEntries', oidEntryLedgerUuid(OID), `${RUN}-oid`, undefined, { key: OID });
     oids.set(OID, { oid: OID, displayName: `${RUN}-oid` });

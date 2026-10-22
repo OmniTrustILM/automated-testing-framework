@@ -107,7 +107,10 @@ export interface RunState {
     tokenProfile?: OwnRef;
     key?: KeyRef;
     keyCertificate?: OwnRef;
-    /** The protocol CA's own chain (utils/regression/protocols/protocolCa.ts): its token, token profile and key stay apart from the key specs' chain above. */
+    /**
+     * The protocol CA's own chain (utils/regression/protocols/protocolCa.ts): its token, token profile and key stay apart from the key
+     * specs' chain above.
+     */
     protocolCaToken?: OwnRef;
     protocolCaTokenProfile?: OwnRef;
     protocolCaKey?: KeyRef;

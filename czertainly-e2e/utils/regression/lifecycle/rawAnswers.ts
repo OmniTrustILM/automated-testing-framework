@@ -5,7 +5,8 @@
  *       its error body: a 422 string array, a 400 / 404 `{message}`, the words an error body must never carry. Negatives
  *       assert status AND body shape through these.
  * WHY: A negative must assert status and body shape, so its helper may not throw on a 4xx.
- * HOW: `sendRaw` returns an `ApiAnswer`; the readers take a 422 string array, a 400 or 404 `{message}` and the words an error body must never carry.
+ * HOW: `sendRaw` returns an `ApiAnswer`; the readers take a 422 string array, a 400 or 404 `{message}` and the words an error body must
+ * never carry.
  */
 import { errorShape, internalLeaks } from '../errorContract';
 import { GuardedApi, assertGuarded } from '../guard/types';

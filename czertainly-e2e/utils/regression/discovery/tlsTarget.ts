@@ -5,8 +5,10 @@
  *       (a root, an optional intermediate, one leaf per listener, every name run-prefixed), so every certificate a discovery
  *       onboards is recognisable and recorded, and `servedFingerprints()` is an oracle the test computed itself. The discovery rows
  *       scan only this server or RFC 5737 documentation ranges. REG_SCAN_HOST = the dotted name or address the connector reaches.
- * WHY: A discovery test needs certificates it can recognise and compute itself, and must never scan anything but its own server or documentation ranges.
- * HOW: Runner-hosted listeners on random ports serve per-run, run-prefixed certificates; `servedFingerprints()` is the oracle the test computes itself.
+ * WHY: A discovery test needs certificates it can recognise and compute itself, and must never scan anything but its own server or
+ * documentation ranges.
+ * HOW: Runner-hosted listeners on random ports serve per-run, run-prefixed certificates; `servedFingerprints()` is the oracle the test
+ * computes itself.
  */
 import * as forge from 'node-forge';
 import * as net from 'net';
@@ -201,7 +203,12 @@ export async function startTlsTarget(opts: TlsTargetOptions = {}): Promise<TlsTa
 
 /** A dark `/29` (6 usable addresses) of the first documentation range: a run that completes in seconds with no certificate. */
 export const DARK_SMALL = '192.0.2.8/29';
-/** Two dark documentation /24 ranges (508 targets = two chunks of 256 on the v2 connector): REG-DISC-03's extra work next to the own target. */
+/**
+ * Two dark documentation /24 ranges (508 targets = two chunks of 256 on the v2 connector): REG-DISC-03's extra work next to the own target.
+ */
 export const DARK_TWO_RANGES = '192.0.2.0/24,198.51.100.0/24';
-/** Three dark documentation /24 ranges (762 usable targets, ~6 minutes at parallelism 1 and a 500 ms connect timeout): held in progress while API-DISC-03 walks the state matrix. */
+/**
+ * Three dark documentation /24 ranges (762 usable targets, ~6 minutes at parallelism 1 and a 500 ms connect timeout): held in progress
+ * while API-DISC-03 walks the state matrix.
+ */
 export const DARK_LARGE = '192.0.2.0/24,198.51.100.0/24,203.0.113.0/24';

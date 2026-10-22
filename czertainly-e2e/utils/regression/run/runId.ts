@@ -15,10 +15,9 @@
  * id keeps its objects unless API_DELETE_OWN=1 is given explicitly). `<state dir>/<run id>.lock` holds the runner's pid:
  * a second live run with the same id is refused; a lock whose pid is gone is taken over.
  *
- * HOW: `setRunEnvDefaults()` runs inside `prepareRun()` (run/prepareRun.ts), the first call of both configs. Playwright loads the
- * config in the runner and again in every worker; workers inherit the runner's environment, so the values decided
- * first win everywhere. This module imports nothing from the suite, so the config can call it before any helper reads
- * `REG_RUN_ID`.
+ * HOW: `setRunEnvDefaults()` runs inside `prepareRun()` (run/prepareRun.ts), the first call of both configs. Playwright loads the config in
+ * the runner and again in every worker; workers inherit the runner's environment, so the values decided first win everywhere. This module
+ * imports nothing from the suite, so the config can call it before any helper reads `REG_RUN_ID`.
  *
  * Two readers: production code reads the run id through `runId()` (ledger/runState.ts: frozen when that module is first
  * imported, so one run has one id); `currentRunId(env)` reads the live variable and is for the places that honour an

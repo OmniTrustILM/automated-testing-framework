@@ -10,7 +10,9 @@
  *       reference and common name); `IssuedCertificate` adds what an issue from a CSR keeps (CSR, key pair, SANs, RA profile,
  *       the answer).
  * WHY: Issue and upload are written by many specs; their ledger-before-assertion rule must be written once.
- * HOW: Issued from an external CSR through the v2 API or uploaded; every creator records the certificate with its parents and the platform-made key as a derived object right after the call; `sanOracle` holds the SAN rule per CA and `waitIssued` / `waitRevoked` the named waits.
+ * HOW: Issued from an external CSR through the v2 API or uploaded; every creator records the certificate with its parents and the
+ * platform-made key as a derived object right after the call; `sanOracle` holds the SAN rule per CA and `waitIssued` / `waitRevoked` the
+ * named waits.
  */
 import type * as forge from 'node-forge';
 import { waitForCertificateState } from './wait/certificateState';
@@ -68,7 +70,9 @@ export interface IssueOptions {
     /** Extra request body fields (negatives); `request` / `format` / `attributes` / `customAttributes` are set unless overridden. */
     body?: JsonObject;
     note?: string;
-    /** Fill the tier's REQUIRED custom attributes of certificates into the request (default: send none); `body.customAttributes` overrides. */
+    /**
+     * Fill the tier's REQUIRED custom attributes of certificates into the request (default: send none); `body.customAttributes` overrides.
+     */
     fillRequiredAttributes?: boolean;
 }
 
@@ -155,10 +159,16 @@ export async function issueWithCsr(api: GuardedApi, authorityUuid: string, raPro
     return { uuid: answer.json.uuid, body: answer.json, createdAfter: createdAfterOf(answer, 'v2 issue') };
 }
 
-/** Waits until the certificate is `issued` (fails at once on `failed` / `rejected`); the budget is `ISSUED_WAIT_MS` unless a spec needs another. */
+/**
+ * Waits until the certificate is `issued` (fails at once on `failed` / `rejected`); the budget is `ISSUED_WAIT_MS` unless a spec needs
+ * another.
+ */
 export const waitIssued = (api: APIRequestContext, uuid: string, timeoutMs: number = ISSUED_WAIT_MS): Promise<void> => waitForCertificateState(api, uuid, 'issued', timeoutMs);
 
-/** Waits until the certificate is `revoked` (fails at once on `failed` / `rejected`); the budget is `REVOKED_WAIT_MS` unless a spec needs another. */
+/**
+ * Waits until the certificate is `revoked` (fails at once on `failed` / `rejected`); the budget is `REVOKED_WAIT_MS` unless a spec needs
+ * another.
+ */
 export const waitRevoked = (api: APIRequestContext, uuid: string, timeoutMs: number = REVOKED_WAIT_MS): Promise<void> => waitForCertificateState(api, uuid, 'revoked', timeoutMs);
 
 /**

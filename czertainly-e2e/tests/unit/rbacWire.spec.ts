@@ -20,7 +20,7 @@ import { Answer, Arrived, LoopbackServer } from './helpers/loopbackServer';
 import { FakeCore as BaseCore } from './helpers/fakeCore';
 import { registerFakeCore, rawAsGuarded } from './helpers/guardRig';
 import { randomBytes } from 'node:crypto';
-// Run-scoped generated test passwords (merge follow-up 2026-10-15): no password-like literal in the file.
+// Run-scoped generated test passwords: no password-like literal in the file.
 const GEN_PW_1 = `qa-${randomBytes(9).toString('base64url')}`;
 const GEN_PW_2 = `qa-${randomBytes(9).toString('base64url')}`;
 
@@ -45,7 +45,7 @@ class AuthCore extends BaseCore {
     caHealthy = true;
     /** What `POST /users` answers for a username that exists (the known bug core#2297 answers 500). */
     duplicateStatus = 500;
-    /** Merge F3: `POST /users` answers this non-2xx status WITH a uuid in the body and creates nothing. */
+    /** Fixture F3: `POST /users` answers this non-2xx status WITH a uuid in the body and creates nothing. */
     failCreateWithUuid: number | undefined;
     /** The username whose bearer is `DED-TOKEN` (the dedicated identity-provider account). */
     dedicatedUsername = 'qa-restricted-account';

@@ -64,9 +64,9 @@ export async function createOwn(api: GuardedApi, spec: string, o: CreateOwnDescr
 }
 
 /**
- * The record step of a create the platform may refuse (a probe, or a copy the connector may reject): a 2xx answer with a uuid is an object this run made, so it
- * goes on the ledger (a name that is not a string is recorded as a placeholder: it carries no run prefix, so the teardown
- * reports it and never deletes it). Returns the reference, or undefined when the platform refused as expected.
+ * The record step of a create the platform may refuse (a probe, or a copy the connector may reject): a 2xx answer with a uuid is an object
+ * this run made, so it goes on the ledger (a name that is not a string is recorded as a placeholder: it carries no run prefix, so the
+ * teardown reports it and never deletes it). Returns the reference, or undefined when the platform refused as expected.
  */
 export function recordIfAccepted(type: string, answer: ApiAnswer, name: unknown, spec: string, note: string, parents?: LedgerLine['parents']): OwnRef | undefined {
     const uuid = createdUuid(answer);

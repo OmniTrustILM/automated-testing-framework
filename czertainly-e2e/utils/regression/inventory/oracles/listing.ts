@@ -5,7 +5,8 @@
  *       (the guarded `api` fixture in the specs, a fake listing in the unit tests), the baseline walk, and the one re-read
  *       that absorbs a concurrent change of the tier (a second mismatch fails). Read-only on the target.
  * WHY: The same oracles run against the guarded API in a spec and against a fake listing in a unit test.
- * HOW: A `Transport` hides the difference; `ListingSpec` describes a resource, `loadBaseline` walks it, `ListingRun` carries the four values every oracle needs, and one re-read absorbs a concurrent change (a second mismatch fails). Read-only.
+ * HOW: A `Transport` hides the difference; `ListingSpec` describes a resource, `loadBaseline` walks it, `ListingRun` carries the four
+ * values every oracle needs, and one re-read absorbs a concurrent change (a second mismatch fails). Read-only.
  */
 import type { GuardedApi } from '../../guard/types';
 import { send, readAnswer } from '../searchApi';

@@ -5,7 +5,8 @@
  *       bundles, CSRs, garbage bytes) and the exact refusal texts core answers for them. No network, no file system, no ledger:
  *       a builder returns bytes and the reference values a test recomputes; names are run-prefixed (`importCn`).
  * WHY: Import rows need many shapes of certificate container and the exact refusal text core answers for each, with no file on disk.
- * HOW: Builders return bytes and the reference values a test recomputes; no network, no file system, no ledger; names are run-prefixed through `importCn`.
+ * HOW: Builders return bytes and the reference values a test recomputes; no network, no file system, no ledger; names are run-prefixed
+ * through `importCn`.
  */
 import { expectRefused, type RefusedAnswer } from '../errorContract';
 import * as crypto from 'crypto';
@@ -35,7 +36,10 @@ export const REFUSAL = {
         'The file is not in a supported format: PKCS#12, JKS, JCEKS, PEM, PKCS#7, a certificate, a certificate request, a PKCS#8 key, an OpenSSL traditional key or an OpenSSH private key.',
     /** ContainerRefusal.PEM_TOO_MANY_KEYS. */
     pemTooManyKeys: 'A PEM file can hold at most one private key.',
-    /** ContainerRefusal.PEM_BLOCK_UNSUPPORTED with the block type, repeated when it matches `[A-Za-z0-9 .-]{1,64}` (KeyFileRefusal.REPEATABLE). */
+    /**
+     * ContainerRefusal.PEM_BLOCK_UNSUPPORTED with the block type, repeated when it matches `[A-Za-z0-9 .-]{1,64}`
+     * (KeyFileRefusal.REPEATABLE).
+     */
     pemBlockUnsupported: (type: string): string => `The file holds a PEM block of type ${type}, which is not supported.`,
     /** ContainerRefusal.INTEGRITY_FAILED: a PKCS#12 whose MAC does not verify — password wrong OR missing, one string. */
     integrityFailed: "The file's integrity check failed: the passphrase is wrong or missing, or the file is damaged.",
@@ -47,15 +51,24 @@ export const REFUSAL = {
     certificateCount: limitExceeded('certificate count', LIMITS.certificates),
     /** `LIMIT_EXCEEDED` with ContainerLimits.ENTRY_LIMIT ("entry count") and the maximum. */
     entryCount: limitExceeded('entry count', LIMITS.otherEntries),
-    /** `UploadRequestDto.isFileWithinLimit` (interfaces model/client/upload/UploadRequestDto.java), prefixed with the property name by bean validation. */
+    /**
+     * `UploadRequestDto.isFileWithinLimit` (interfaces model/client/upload/UploadRequestDto.java), prefixed with the property name by bean
+     * validation.
+     */
     fileTooLarge: `fileWithinLimit file must not exceed ${LIMITS.fileBytes} bytes`,
     /** `@NotNull(message = "file is required")` (UploadRequestDto.java), prefixed with the field. */
     fileRequired: 'file file is required',
     /** FileInspectionServiceImpl.NOT_A_UUID (core service/impl/FileInspectionServiceImpl.java). */
     tokenProfileNotUuid: 'tokenProfileUuid must be a UUID',
-    /** NotFoundException(TokenProfile.class, uuid) (FileInspectionServiceImpl.java via KeyImportGates.requireAccess:94-99): the 404 `{message}`. */
+    /**
+     * NotFoundException(TokenProfile.class, uuid) (FileInspectionServiceImpl.java via KeyImportGates.requireAccess:94-99): the 404
+     * `{message}`.
+     */
     tokenProfileNotFound: (uuid: string): string => `Object of type 'TokenProfile' identified by ${uuid} is not found.`,
-    /** `UploadedFileDeserializer.WRONG_FORMAT` (interfaces model/core/secret/UploadedFileDeserializer.java): answered as the 400 "Unable to read HTTP message" (ExceptionHandlingAdvice.java). */
+    /**
+     * `UploadedFileDeserializer.WRONG_FORMAT` (interfaces model/core/secret/UploadedFileDeserializer.java): answered as the 400 "Unable to
+     * read HTTP message" (ExceptionHandlingAdvice.java).
+     */
     unreadableMessage: 'Unable to read HTTP message',
     // Plain upload (`POST /v1/certificates/upload`, `/upload/async`)
     /** CertificateUtil.parseUploadedCertificateContent (core util/CertificateUtil.java). */
@@ -70,7 +83,10 @@ export const REFUSAL = {
     requestNotImported: 'Certificate requests are not imported',
 } as const;
 
-/** The red alert of the wizard for a refused inspection: `extractError(err, 'Failed to read the uploaded file')` (FE ducks/inspections-epics.ts, utils/net.ts). */
+/**
+ * The red alert of the wizard for a refused inspection: `extractError(err, 'Failed to read the uploaded file')` (FE
+ * ducks/inspections-epics.ts, utils/net.ts).
+ */
 export const inspectionAlert = (status: number, text: string): string => `Failed to read the uploaded file (${status}): ${text}`;
 
 // ------------------------------------------------------------------ names, encodings, references
@@ -344,14 +360,19 @@ export function paddedCertificatePem(cn: string, bytes: number): { file: Buffer;
     return { file, identity };
 }
 
-/** `count` distinct self-signed certificates, one key pair shared, as one PEM bundle (201 → "certificate count" refusal; 200 → accepted). */
+/**
+ * `count` distinct self-signed certificates, one key pair shared, as one PEM bundle (201 → "certificate count" refusal; 200 → accepted).
+ */
 export function certificatesInOnePem(count: number, cnPrefix: string): { pem: string; certs: Identity[] } {
     const k = sharedKeys();
     const certs = Array.from({ length: count }, (_, i) => certificate(`${cnPrefix}-${i + 1}`, { keys: k }));
     return { pem: certs.map((c) => c.pem).join(''), certs };
 }
 
-/** `count` distinct certificate requests (one key pair shared) as one PEM file: they count as "other entries" (101 → "entry count" refusal; 100 → accepted). */
+/**
+ * `count` distinct certificate requests (one key pair shared) as one PEM file: they count as "other entries" (101 → "entry count" refusal;
+ * 100 → accepted).
+ */
 export function requestsInOnePem(count: number, cnPrefix: string): { pem: string; references: string[] } {
     const k = sharedKeys();
     const csrs = Array.from({ length: count }, (_, i) => csrWithSan(`${cnPrefix}-${i + 1}`, [], { key: k.keys }));
@@ -386,7 +407,9 @@ export const ROUTES = {
 /** The body of a plain upload: the file as base64 in `certificate` (`UploadCertificateRequestDto`), plus the custom attributes. */
 export const uploadBody = (file: Buffer, customAttributes: unknown[] = []): { certificate: string; customAttributes: unknown[] } => ({ certificate: toBase64(file), customAttributes });
 
-/** What the `file` member holds: the bytes (sent as base64), a value sent as it is (a malformed file member), or nothing (a missing member). */
+/**
+ * What the `file` member holds: the bytes (sent as base64), a value sent as it is (a malformed file member), or nothing (a missing member).
+ */
 export type FileMember = Buffer | { raw: unknown } | undefined;
 
 const withFile = (file: FileMember): { file?: unknown } => (file === undefined ? {} : Buffer.isBuffer(file) ? { file: toBase64(file) } : { file: file.raw });
@@ -400,7 +423,10 @@ export function inspectionBody(file: FileMember, opts: { passphrase?: string; to
     };
 }
 
-/** The body of a certificate-only import (`CertificateImportRequestDto`): the file and the entries named by their references; no `keyDestination`. */
+/**
+ * The body of a certificate-only import (`CertificateImportRequestDto`): the file and the entries named by their references; no
+ * `keyDestination`.
+ */
 export function importBody(file: Buffer, references: string[], opts: { passphrase?: string; customAttributes?: unknown[] } = {}): Record<string, unknown> {
     return {
         file: toBase64(file),

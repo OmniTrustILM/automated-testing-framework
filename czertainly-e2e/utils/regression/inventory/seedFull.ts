@@ -13,7 +13,8 @@
  *       - the clock is read ONCE per seed (`clock`), values are read back from the API after the upload and the read-back values
  *         are what the tests use as EQUALS literals.
  * WHY: Exact row-set checks need a known data set in a known default order.
- * HOW: Uploaded in a fixed order and recorded before any assertion; the manifest is reused while every object is still this run's; the clock is read once and read-back values become the EQUALS literals.
+ * HOW: Uploaded in a fixed order and recorded before any assertion; the manifest is reused while every object is still this run's; the
+ * clock is read once and read-back values become the EQUALS literals.
  */
 import { Logger } from '../../Logger';
 import { assertOwn } from '../ledger/ownership';

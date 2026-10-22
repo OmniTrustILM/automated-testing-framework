@@ -6,7 +6,7 @@
  */
 import { GuardedApi } from '../guard/types';
 import { createOwnGroup } from '../ownGroups';
-import { createOwnRaProfileOrSkip, OwnRaProfile } from '../ownRaProfiles';
+import { createOwnRaProfile, OwnRaProfile } from '../ownRaProfiles';
 import { issueOwnCertificateInGroup, revokeOwnCertificateAndWait } from './workflowFixtures';
 import { OwnCertificate } from '../ownCertificates';
 import { createOwnUser } from '../ownUsers';
@@ -30,9 +30,12 @@ export const addressOf = (name: string): string => `${name}@example.test`;
 /** The suffix of the rig's certificate: short, because it becomes part of a common name that has a 64-character limit. */
 export const rigCertificateSuffix = (suffix: string): string => `${suffix}-c`;
 
-/** RA profile, group (with a contact e-mail), owner (with an e-mail) and one issued certificate in the group owned by the owner. */
-export async function buildRig(api: GuardedApi, spec: string, suffix: string, skip: (reason: string) => void): Promise<Rig> {
-    const ra = await createOwnRaProfileOrSkip(api, spec, `${suffix}-ra`, skip);
+/**
+ * RA profile, group (with a contact e-mail), owner (with an e-mail) and one issued certificate in the group owned by the owner. A tier
+ * without a healthy CA is the `ca` need's to skip before this runs: here it is an error.
+ */
+export async function buildRig(api: GuardedApi, spec: string, suffix: string): Promise<Rig> {
+    const ra = await createOwnRaProfile(api, spec, `${suffix}-ra`);
     const owner = await createOwnUser(api, spec, `${suffix}-owner`, { email: addressOf(`${suffix}-owner`) });
     const group = await createOwnGroup(api, spec, `${suffix}-group`, { email: addressOf(`${suffix}-group`) });
     const cert = await issueOwnCertificateInGroup(api, ra, spec, group, owner, rigCertificateSuffix(suffix));

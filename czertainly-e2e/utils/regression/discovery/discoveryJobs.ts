@@ -1,9 +1,12 @@
 /**
  * discoveryJobs — the one-time scheduled discovery of the run and its scheduler job.
  *
- * WHAT: Schedules an own discovery as a one-time scheduler job, reads the job and its history, lists the runs the job created and records them as own discoveries, and deletes the own job.
- * WHY: A schedule runs for everyone on the tier, so it is local-stack only and has its own helpers apart from the creates and reads of a plain discovery.
- * HOW: Every job and every run it creates is recorded in the ledger before the spec asserts on it; the delete passes the live own-object check.
+ * WHAT: Schedules an own discovery as a one-time scheduler job, reads the job and its history, lists the runs the job created and records
+ * them as own discoveries, and deletes the own job.
+ * WHY: A schedule runs for everyone on the tier, so it is local-stack only and has its own helpers apart from the creates and reads of a
+ * plain discovery.
+ * HOW: Every job and every run it creates is recorded in the ledger before the spec asserts on it; the delete passes the live own-object
+ * check.
  */
 
 import { GuardedApi } from '../guard/types';

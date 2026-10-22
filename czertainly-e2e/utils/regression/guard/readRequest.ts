@@ -47,7 +47,9 @@ export interface Snapshot {
     pass: Record<string, number | boolean>;
     /** GET: how many same-origin redirects the guard follows; every other method: 0. */
     maxRedirects: number;
-    /** The caller asked to send an identity header of its own (never forwarded; judged: the refused-method and no-handler probes refuse it). */
+    /**
+     * The caller asked to send an identity header of its own (never forwarded; judged: the refused-method and no-handler probes refuse it).
+     */
     identityOverride: boolean;
 }
 

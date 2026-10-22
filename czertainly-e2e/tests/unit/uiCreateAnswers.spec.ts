@@ -177,7 +177,8 @@ test('submitRecordingByNameOnFailure: an answer that never arrives, or a 2xx wit
         const name = own('named');
         const base = { type: 'groups', name, spec: SPEC, note: 'own group' };
         const found = (...uuids: string[]) => async () => ({ rows: uuids.map((uuid) => ({ uuid })) });
-        // No answer at all (the create may still land): EVERY object of the name is recorded (a double click may have made two), the error continues.
+        // No answer at all (the create may still land): EVERY object of the name is recorded (a double click may have made two), the error
+        // continues.
         await expect(submitRecordingByNameOnFailure({ ...base, lookup: found(U1, U2) }, async () => { throw new Error('no answer within 60 s'); })).rejects.toThrow(/no answer/);
         expect(readLedger().map((l) => l.uuid)).toEqual([U1, U2]);
         // A 2xx without a uuid: adopted by name, and the answer carries the recorded uuid instead of failing "without an id" later.

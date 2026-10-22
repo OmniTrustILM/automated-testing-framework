@@ -84,13 +84,13 @@ test('characterisation: without the guard, Playwright strips tab / LF, trims spa
         await raw.fetch(u, { method: 'PATCH', data: [] });
         return wire(A);
     };
-    // This is why the guard must judge the URL as sent, not as written (N1).
+    // This is why the guard must judge the URL as sent, not as written.
     expect(await sent(`/api/v1/roles/${F}\t/users`)).toEqual([`PATCH /api/v1/roles/${F}/users`]);
     expect(await sent(`/api/v1/roles/${F}\n/users`)).toEqual([`PATCH /api/v1/roles/${F}/users`]);
     expect(await sent(`/api/v1/roles/${F.slice(0, 18)}\t${F.slice(18)}/users`)).toEqual([`PATCH /api/v1/roles/${F}/users`]);
     expect(await sent(` /api/v1/roles/${F}`)).toEqual([`PATCH /api/v1/roles/${F}`]);
     expect(await sent(`/api/v1/roles/${F}\t`)).toEqual([`PATCH /api/v1/roles/${F}`]);
-    // ... and dot segments are normalised (N2).
+    // ... and dot segments are normalised.
     expect(await sent('/api/v1/protocols/acme/x/.\t./.\t./.\t./auditLogs/purge')).toEqual(['PATCH /api/v1/auditLogs/purge']);
     // A data object is sent as JSON.stringify(data): toJSON wins (the guard walks JSON.parse(JSON.stringify(data))).
     A.reset();
@@ -98,8 +98,7 @@ test('characterisation: without the guard, Playwright strips tab / LF, trims spa
     expect(A.mutations()[0].body).toBe('["FROM-TOJSON"]');
 });
 
-// control characters: a foreign uuid with a trailing space / tab / NUL / \\u0001 / LF / CR, or a tab inside it, never reaches
-// the server
+// control characters: a foreign uuid with a trailing space / tab / NUL / \\u0001 / LF / CR, or a tab inside it, never reaches the server
 test('control characters: a foreign uuid with trailing space, tab, NUL, LF or CR never reaches the server', async () => {
     const g = guard();
     const F = FOREIGN_ROLE;

@@ -10,7 +10,7 @@ import { certificateInfo, csrInfo, pemToDer, sha256Hex } from '../../utils/regre
 import { asFile, certificate, certificateFingerprint, certificatesInOnePem, containerDigest, csrPem, dhParametersPem, entryReference, garbageBytes, importBody, importCn, inspectionAlert, inspectionBody, keyReference, LIMITS, limitExceeded, paddedCertificatePem, pemBlock, pemTwoKeys, pkcs12, pkcs12TwoPassphrases, pkcs7Der, pkcs7Pem, pkcs8Key, REFUSAL, requestsInOnePem, ROUTES, toBase64, uploadBody } from '../../utils/regression/inventory/importFixtures';
 import { runId } from '../../utils/regression/ledger/runState';
 import { randomBytes } from 'node:crypto';
-// Run-scoped generated test passwords (merge follow-up 2026-10-15): no password-like literal in the file.
+// Run-scoped generated test passwords: no password-like literal in the file.
 const GEN_PW_1 = `qa-${randomBytes(9).toString('base64url')}`;
 const GEN_PW_2 = `qa-${randomBytes(9).toString('base64url')}`;
 const GEN_PW_3 = `qa-${randomBytes(9).toString('base64url')}`;

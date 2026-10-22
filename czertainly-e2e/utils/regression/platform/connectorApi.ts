@@ -6,7 +6,8 @@
  *       version taken from the connector detail. Everything here is a GET; the anonymous probes (liveness, readiness,
  *       health, info) take a context without credentials.
  * WHY: A stored status `connected` does not say the connector answers now.
- * HOW: Health is read live by interface version (v1 `ok`, v2 `UP`) from the connector detail; everything is a GET and the anonymous probes take a context without credentials.
+ * HOW: Health is read live by interface version (v1 `ok`, v2 `UP`) from the connector detail; everything is a GET and the anonymous probes
+ * take a context without credentials.
  *
  *       The core's own anonymous liveness and readiness probes share one oracle here: `healthGroupProblems` says what is
  *       wrong with an answer (status 200 and the body exactly `{"status":"UP"}`), `expectHealthGroupUp` asserts it with the

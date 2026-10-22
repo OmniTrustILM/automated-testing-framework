@@ -1,6 +1,6 @@
 /**
- * The guarded fixtures `anonymousApi` and `adminToken` / `restrictedToken` (a failed password grant is remembered for the process and every later test that takes the fixture SKIPS
- * with the named reason), proven on the wire and through a REAL Playwright run of the fixtures:
+ * The guarded fixtures `anonymousApi` and `adminToken` / `restrictedToken` (a failed password grant is remembered for the process and every
+ * later test that takes the fixture SKIPS with the named reason), proven on the wire and through a REAL Playwright run of the fixtures:
  * - anonymousApi u1: a credential-less guarded context sends no authorization / ssl-client-cert / cookie header;
  *   u2: `X-Forwarded-For: 192.0.2.1` for a loopback / private BASE_URL or a local tier, never for a public host, and a
  *   per-request `x-forwarded-for` is still refused; u3: the guard rules are unchanged for it;
@@ -29,7 +29,7 @@ import { guardApiWithSeams } from '../../utils/regression/guard/createGuard';
 import { OwnObjectViolation, RefusalKind } from '../../utils/regression/ledger/ownership';
 import { Arrived, loopbackServer, LoopbackServer } from './helpers/loopbackServer';
 import { randomBytes } from 'node:crypto';
-// Run-scoped generated test passwords (merge follow-up 2026-10-15): no password-like literal in the file.
+// Run-scoped generated test passwords: no password-like literal in the file.
 const GEN_PW_1 = `qa-${randomBytes(9).toString('base64url')}`;
 const GEN_PW_2 = `qa-${randomBytes(9).toString('base64url')}`;
 const GEN_PW_3 = `qa-${randomBytes(9).toString('base64url')}`;
@@ -536,7 +536,8 @@ test('the api fixture asks for a token that lasts at least 300 s, whatever the p
     expect(minLifetimeForTest(60_000), 'the API project timeout').toBe(300_000);
     expect(minLifetimeForTest(240_000), 'the regression project timeout').toBe(300_000);
     expect(minLifetimeForTest(900_000), 'a test that raised its own timeout').toBe(900_000);
-    // With the floor, a token that has 200 s left is NOT reused for a 60 s project (a test may raise its timeout in its body); a long-lived one is.
+    // With the floor, a token that has 200 s left is NOT reused for a 60 s project (a test may raise its timeout in its body); a long-lived
+    // one is.
     const short = jwt('admin', 200, 'f1');
     answer = () => ({ status: 200, token: short });
     const e = env();

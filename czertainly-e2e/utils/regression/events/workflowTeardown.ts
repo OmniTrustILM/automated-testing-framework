@@ -16,10 +16,10 @@
  * actions → executions. runTeardown's DELETE_ORDER step 8 follows that order (actions BEFORE executions); the other way round
  * an execution an own action still uses is refused and the run ends red.
  *
- * `eventAssociations` lines are id-named (no live read): a synthetic uuid, the (event, resource) pair in `note`, the
- * object in `parents.object` (a `platform` line has no object: the handler only proves, read-only, that none of the run's triggers is still bound platform-wide). The handler clears the scope of an OWN object only (the object's ledger line must be live,
- * and every trigger still listed there must be the run's own), by the same replace with an empty list the API offers, and
- * proves it with the association map.
+ * `eventAssociations` lines are id-named (no live read): a synthetic uuid, the (event, resource) pair in `note`, the object in
+ * `parents.object` (a `platform` line has no object: the handler only proves, read-only, that none of the run's triggers is still bound
+ * platform-wide). The handler clears the scope of an OWN object only (the object's ledger line must be live, and every trigger still listed
+ * there must be the run's own), by the same replace with an empty list the API offers, and proves it with the association map.
  */
 import type { LedgerLine } from '../ledger/ledger';
 import { checkOwnership } from '../ledger/ownership';

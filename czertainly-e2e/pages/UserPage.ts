@@ -133,7 +133,7 @@ export class UserPage {
      * ... is not provided").
      * The busy overlay is gone, the "Custom attributes" tab (when the tier has custom attributes) shows its editor, and every
      * REQUIRED list attribute shows a value (not the "Select ..." placeholder); then the tab that was active is selected again.
-     * If a required value stays empty after the wait, the form did not take it from the user: suspected defect (the error says so).
+     * If a required value stays empty after the wait, the form did not take it from the user: unexpected behaviour (the error says so).
      * A tier that defines no custom attributes for users (read from the definitions of the Users resource, a session read) has
      * no editor: the tab is always shown, but the "Show custom attribute" select exists only when there are definitions to
      * offer, so there is nothing to wait for and the method returns once the busy overlay is gone.

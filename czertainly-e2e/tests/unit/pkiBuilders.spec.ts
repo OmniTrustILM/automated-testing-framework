@@ -135,7 +135,7 @@ test('sameSans is set equality (order and DNS case ignored, no extras); sansOfDe
     expect(sansOfDetail({ dNSName: [] })).toEqual({ dns: [], ip: [] });
 });
 
-// ------------------------------------------------------------------ the issued subject as a CSR subject (moved from the lifecycle helper tests)
+// ------------------------------------------------------------ the issued subject as a CSR subject (moved from the lifecycle helper tests)
 
 test('subjectAttributesOf / csrFromKeyWithSubject: the issued subject DN (several RDNs, escaped characters) becomes the CSR subject, in order', () => {
     expect(subjectAttributesOf('CN=qa-reg-x.example.test,O=QA Org,C=CZ')).toEqual([

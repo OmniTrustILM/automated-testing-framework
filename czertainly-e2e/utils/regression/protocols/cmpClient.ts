@@ -5,7 +5,8 @@
  *       PKIStatus line OpenSSL prints. The secret reaches the child through its environment (`-secret env:…`), never the
  *       command line; every file lives under the test's output directory.
  * WHY: CMP enrolment is proven by a real client.
- * HOW: Shared-secret protection, the secret passed through the child's environment, files under the test output directory, and the PKIStatus line read from the output.
+ * HOW: Shared-secret protection, the secret passed through the child's environment, files under the test output directory, and the
+ * PKIStatus line read from the output.
  */
 import * as fs from 'fs';
 import * as path from 'path';

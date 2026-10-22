@@ -111,7 +111,9 @@ export interface Leak {
     sample: string;
 }
 
-/** The JDK types Spring's type-mismatch text names (`Failed to convert value of type 'java.lang.String' to required type 'java.util.UUID'`). */
+/**
+ * The JDK types Spring's type-mismatch text names (`Failed to convert value of type 'java.lang.String' to required type 'java.util.UUID'`).
+ */
 const JDK_TYPE = /\bjava\.(?:lang|util|time|math|net)\.[A-Z][\w$]*/g;
 
 const PATTERNS: ReadonlyArray<{ kind: LeakKind; re: RegExp }> = [

@@ -11,9 +11,10 @@
  * WHY: issuing from an external CSR is the central usage flow; the issued certificate must carry the CSR's key and SANs. What the CA
  *      accepts as a SAN is the CA's decision, so the SAN oracle is exact on EJBCA-NG and DNS-values-only on connectors whose template
  *      decides the SAN extension.
- * HOW: the RA profile is the run's own. Every certificate is recorded in the ledger right after Create (also when the page shows the
- *      "accepted with warnings" panel or the step throws), with its linked key recorded twice (idempotent) to catch a key core links
- *      late, and is deleted by the run-end teardown. The IP SAN is a documentation address (RFC 5737).
+ * HOW: the RA profile is the run's own. Every certificate is recorded in the ledger from the create answer, before the redirect is waited
+ *      for (also when the page shows the "accepted with warnings" panel or the step throws), with its linked key recorded twice
+ *      (idempotent) to catch a key core links late, and is deleted by the run-end teardown. The IP SAN is a documentation address (RFC
+ *      5737).
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { CertificateAddPage } from '../../../pages/CertificateAddPage';
@@ -23,7 +24,8 @@ import { CERTIFICATE_DETAILS_TABS } from '../../../utils/constants';
 import { csrWithSan, parseCertificate, publicKeyPemOf, sameSans, sansOfDetail } from '../../../utils/regression/pkiBuilders';
 import { getCertificate, serverCreatedAfter } from '../../../utils/regression/apiReads';
 import { authorityConnectorName } from '../../../utils/regression/config/authorities';
-import { recordDerivedKeyOf, recordingIssued } from '../../../utils/regression/issuedRecords';
+import { recordingIssued } from '../../../utils/regression/issuedRecords';
+import { submitFormCreateRecorded } from '../../../utils/regression/ui/certificateFormCreate';
 import { sanOracle, waitIssued } from '../../../utils/regression/ownCertificates';
 import { ownCommonName, runCommonName } from '../../../utils/regression/ledger/runState';
 import { testMeta, tags } from '../../../utils/regression/tags';
@@ -54,10 +56,11 @@ test.describe('Certificate issue in the web UI with an external key', { tag: tag
                 await certPage.selectKeySourceExternal();
                 await certPage.pasteCsr(csr.pem);
                 const { result } = await recordingIssued(api, cn, createdAfter, own.spec, 'issued via UI', async () => {
-                    const issued = await new CertificateAddPage(page).submitIssueFailingOnWarnings({ acceptWarnings: true });
-                    // The form answers with the redirect to the new certificate: its uuid is the create answer.
-                    own.record('certificates', { status: 200, uuid: issued.uuid, text: '' }, { name: cn, note: 'issued via UI', parents: { raProfile: ra.uuid, authority: ra.authorityUuid } });
-                    return issued;
+                    const addPage = new CertificateAddPage(page);
+                    // The create answer is recorded before the redirect is waited for; the page then opens the certificate (or the warnings
+                    // panel).
+                    await submitFormCreateRecorded(addPage, own, 'issue', { cn, note: 'issued via UI', ra });
+                    return addPage.waitForCreatedCertificate({ acceptWarnings: true });
                 });
                 if (result.warnings.length) testInfo.annotations.push({ type: 'issue-warnings', description: result.warnings.join(' | ') });
                 return result.uuid;
@@ -67,7 +70,7 @@ test.describe('Certificate issue in the web UI with an external key', { tag: tag
                 // Issued within the issue budget (the CA answers synchronously or through status polling).
                 await waitIssued(api, uuid);
                 // Second recording of the derived key (idempotent): catches a key core links only after the first recording.
-                await recordDerivedKeyOf(api, uuid, createdAfter, own.spec);
+                await own.derivedKey(uuid, createdAfter);
             });
 
             await test.step('Detail page: Details tab', async () => {
@@ -115,13 +118,35 @@ test.describe('Certificate issue in the web UI with an external key', { tag: tag
                 await certPage.selectRaProfile(ra.name);
                 await certPage.selectKeySourceExternal();
                 await certPage.pasteCsr('-----BEGIN CERTIFICATE REQUEST-----\nbm90LWEtY3Ny\n-----END CERTIFICATE REQUEST-----');
-                // Inline validation under File content, and the same message as a toast.
-                await expect(page.locator('main').getByText(/issue with certification request/i).first()).toBeVisible();
                 await dismissToasts(page);
                 await certPage.submitButton.click();
                 await expect(page.getByRole('alert').filter({ hasText: /Failed to issue certificate \(4\d\d\)/ }).first()).toBeVisible();
                 await expect(page).toHaveURL(/\/certificates\/add/);
                 await dismissToasts(page);
+            });
+        });
+
+    test('a garbage CSR in the Add Certificate form shows the inline message under File content',
+        testMeta({
+            id: 'REG-USE-04', row: 'inline-csr-message', prio: 'P1', issue: 'ilm#429', needs: 'utils-service',
+            rule: ['Add Certificate, Request now, Key Source External: a pasted garbage CSR shows the inline "issue with certification request" message under File content'],
+        }),
+        async ({ signedIn: page, live, ownRaProfile }) => {
+            const ra = ownRaProfile;
+            if (ra.kind === 'own') await live('raProfiles', ra);
+            const certPage = new CertificatePage(page);
+
+            await test.step('Open Add Certificate', async () => {
+                await certPage.goToList();
+                await certPage.openIssuePage();
+            });
+
+            await test.step('A garbage CSR shows the inline message', async () => {
+                await certPage.selectRequestTypeIssue();
+                await certPage.selectRaProfile(ra.name);
+                await certPage.selectKeySourceExternal();
+                await certPage.pasteCsr('-----BEGIN CERTIFICATE REQUEST-----\nbm90LWEtY3Ny\n-----END CERTIFICATE REQUEST-----');
+                await expect(page.locator('main').getByText(/issue with certification request/i).first()).toBeVisible();
             });
         });
 
@@ -160,10 +185,11 @@ test.describe('Certificate issue in the web UI with an external key', { tag: tag
                 await certPage.selectKeySourceExternal();
                 await certPage.pasteCsr(csr.pem);
                 const { result } = await recordingIssued(api, cn, createdAfter, own.spec, 'issued via UI with DNS + IP SANs (REG-USE-04.1)', async () => {
-                    const issued = await new CertificateAddPage(page).submitIssueFailingOnWarnings({ acceptWarnings: true });
-                    // The form answers with the redirect to the new certificate: its uuid is the create answer.
-                    own.record('certificates', { status: 200, uuid: issued.uuid, text: '' }, { name: cn, note: 'issued via UI with DNS + IP SANs (REG-USE-04.1)', parents: { raProfile: ra.uuid, authority: ra.authorityUuid } });
-                    return issued;
+                    const addPage = new CertificateAddPage(page);
+                    // The create answer is recorded before the redirect is waited for; the page then opens the certificate (or the warnings
+                    // panel).
+                    await submitFormCreateRecorded(addPage, own, 'issue', { cn, note: 'issued via UI with DNS + IP SANs (REG-USE-04.1)', ra });
+                    return addPage.waitForCreatedCertificate({ acceptWarnings: true });
                 });
                 // Lenient validation: the request-attribute set of the copied RA profile decides whether e.g. the IP SAN is a warning.
                 if (result.warnings.length) testInfo.annotations.push({ type: 'issue-warnings', description: result.warnings.join(' | ') });
@@ -173,7 +199,7 @@ test.describe('Certificate issue in the web UI with an external key', { tag: tag
             await test.step('Issuance completes (state issued, within 180 s)', async () => {
                 await waitIssued(api, uuid);
                 // Second recording of the derived key (idempotent): catches a key core links only after the first recording.
-                await recordDerivedKeyOf(api, uuid, createdAfter, own.spec);
+                await own.derivedKey(uuid, createdAfter);
             });
 
             await test.step('API: the issued certificate carries the CSR\'s SANs and key; the stored request keeps the CSR\'s SANs', async () => {

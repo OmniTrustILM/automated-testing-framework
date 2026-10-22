@@ -8,17 +8,15 @@
  * How the tables were derived (re-derive them when the interfaces change; the generator follows them):
  * - every `@GetMapping` / `@PostMapping` / `@PutMapping` / `@PatchMapping` / `@DeleteMapping` / `@RequestMapping` of a
  *   core controller interface, prefixed with the class-level `@RequestMapping`, with its `@RequestBody` type;
- * - BULK_ROUTES: the mutations without a `{…uuid}` path variable whose body is a uuid list (`List<String>` /
- *   `List<UUID>`) or a bulk DTO with one (`uuids`, `certificateUuids`), on collection routes ending in enable / disable /
- *   delete / force / forceDelete / compromise / destroy / usages / archive / unarchive / revoke, plus DELETE on the
- *   collection paths that take a uuid list. LEFT OUT on purpose (refused by the guard): the platform-level ones (global
- *   metadata, CBOMs, OIDs, time-quality configurations, connector approve / reconnect: PLATFORM_DENY), compliance
- *   re-evaluations (`/v1/certificates/compliance`, `/v1/complianceProfiles/compliance`, `/v1/raProfiles/compliance`,
- *   `/v2/compliance[/{resource}]`: no listed verb; the per-object `POST /v2/compliance/{resource}/{uuid}` stays
- *   available through ownership), `PATCH /v1/notifications` (mark as read: per-user state, not a listed verb), audit-log
- *   export / purge, and every other path-less POST that is not a create (`/v1/certificates/create`, `/v1/acmeProfiles/eabKeys`, …).
- *   Moved to guardedApi POST_CREATE: `/v1/inspections` (body-judged, creates nothing), `/v1/certificates/import`
- *   (certificate-only entries).
+ * - BULK_ROUTES: the mutations without a `{…uuid}` path variable whose body is a uuid list (`List<String>` / `List<UUID>`) or a bulk DTO
+ *   with one (`uuids`, `certificateUuids`), on collection routes ending in enable / disable / delete / force / forceDelete / compromise /
+ *   destroy / usages / archive / unarchive / revoke, plus DELETE on the collection paths that take a uuid list. LEFT OUT on purpose
+ *   (refused by the guard): the platform-level ones (global metadata, CBOMs, OIDs, time-quality configurations, connector approve /
+ *   reconnect: PLATFORM_DENY), compliance re-evaluations (`/v1/certificates/compliance`, `/v1/complianceProfiles/compliance`,
+ *   `/v1/raProfiles/compliance`, `/v2/compliance[/{resource}]`: no listed verb; the per-object `POST /v2/compliance/{resource}/{uuid}`
+ *   stays available through ownership), `PATCH /v1/notifications` (mark as read: per-user state, not a listed verb), audit-log export /
+ *   purge, and every other path-less POST that is not a create (`/v1/certificates/create`, `/v1/acmeProfiles/eabKeys`, …). Moved to
+ *   guardedApi POST_CREATE: `/v1/inspections` (body-judged, creates nothing), `/v1/certificates/import` (certificate-only entries).
  * - NO_HANDLER_PROBES / MALFORMED_UUID_PROBES: exact (method, path) pairs that
  *   reach NO handler at INTERFACES_REVISION — re-verify them (the grep in each table's comment) whenever
  *   INTERFACES_REVISION moves: a later release that adds a handler turns the allowance into a real mutation.
@@ -243,17 +241,15 @@ export const UUID_TYPED_FIELDS: ReadonlySet<string> = new Set([
 // ------------------------------------------------------------------ body reference fields
 
 /**
- * The resource a uuid-bearing request DTO field names, for the names whose meaning is the same in every DTO that has
- * them. Derived from `interfaces` at INTERFACES_REVISION by a read-only script: every field of the request DTOs (the `@RequestBody` types of the core controller
- * interfaces and every model class reachable from them) typed `UUID` / `List|Set<UUID>`, or `String` / `List|Set<String>`
- * with `uuid` in its name — 45 names (generics included, see above); the field's `@Schema` description
- * decides the resource. A canonical uuid that is
- * the whole string value of such a field (directly or in its list) must be own WITH a ledger line of exactly this type,
- * or a probe; `null` = a resource the suite has no ledger type for (signing profiles, compliance provider groups and
- * rules, comments, proxies): probes only (fail-closed, like an unresolvable path target). The
- * REFERENCE_FIELDS waiver (`connectorUuid`, `interfaceUuid`, `raProfileUuid` as a top-level string of an own create /
- * update) is applied first and unchanged. `objectUuid` is typed by its sibling `resource` (SIBLING_TYPED_FIELDS); every
- * other uuid-bearing field is in UNMAPPED_UUID_FIELDS.
+ * The resource a uuid-bearing request DTO field names, for the names whose meaning is the same in every DTO that has them. Derived from
+ * `interfaces` at INTERFACES_REVISION by a read-only script: every field of the request DTOs (the `@RequestBody` types of the core
+ * controller interfaces and every model class reachable from them) typed `UUID` / `List|Set<UUID>`, or `String` / `List|Set<String>` with
+ * `uuid` in its name — 45 names (generics included, see above); the field's `@Schema` description decides the resource. A canonical uuid
+ * that is the whole string value of such a field (directly or in its list) must be own WITH a ledger line of exactly this type, or a probe;
+ * `null` = a resource the suite has no ledger type for (signing profiles, compliance provider groups and rules, comments, proxies): probes
+ * only (fail-closed, like an unresolvable path target). The REFERENCE_FIELDS waiver (`connectorUuid`, `interfaceUuid`, `raProfileUuid` as a
+ * top-level string of an own create / update) is applied first and unchanged. `objectUuid` is typed by its sibling `resource`
+ * (SIBLING_TYPED_FIELDS); every other uuid-bearing field is in UNMAPPED_UUID_FIELDS.
  */
 export const BODY_FIELD_TYPES: Readonly<Record<string, string | null>> = {
     actionsUuids: 'actions', // TriggerRequestDto, UpdateTriggerRequestDto: existing actions of the trigger
@@ -432,13 +428,13 @@ export interface RouteFieldWaiver {
 }
 
 /**
- * The provider-rule ruleUuid waiver on an own compliance profile: `PATCH /v2/complianceProfiles/{own}/rules` (interfaces v2/ComplianceProfileController.java:194) with a
- * canonical `connectorUuid` names a PROVIDER rule (`ruleUuid`): a catalogue entry of the compliance provider
- * (`GET /v2/complianceProfiles/rules`), not an inventory object. Core `ComplianceProfileServiceImpl.patchComplianceProfileRules`
- * (service/v2/impl/ComplianceProfileServiceImpl.java:494-537) writes only the OWN profile's `compliance_profile_rule`
- * rows (delete + create of the association) after reading the rule from the connector (`ruleHandler.getProviderRule`,
- * :527-531); nothing is written on the connector or the rule. Without `connectorUuid` the rule is an INTERNAL rule
- * (:502-513): not waived (probes only, BODY_FIELD_TYPES `ruleUuid: null`). The path target (the profile) stays an own
+ * The provider-rule ruleUuid waiver on an own compliance profile: `PATCH /v2/complianceProfiles/{own}/rules` (interfaces
+ * v2/ComplianceProfileController.java:194) with a canonical `connectorUuid` names a PROVIDER rule (`ruleUuid`): a catalogue entry of the
+ * compliance provider (`GET /v2/complianceProfiles/rules`), not an inventory object. Core
+ * `ComplianceProfileServiceImpl.patchComplianceProfileRules` (service/v2/impl/ComplianceProfileServiceImpl.java:494-537) writes only the
+ * OWN profile's `compliance_profile_rule` rows (delete + create of the association) after reading the rule from the connector
+ * (`ruleHandler.getProviderRule`, :527-531); nothing is written on the connector or the rule. Without `connectorUuid` the rule is an
+ * INTERNAL rule (:502-513): not waived (probes only, BODY_FIELD_TYPES `ruleUuid: null`). The path target (the profile) stays an own
  * `complianceProfiles` line; the waiver covers the top-level string field only (a list or a nested key is scanned).
  */
 export const ROUTE_FIELD_WAIVERS: readonly RouteFieldWaiver[] = [

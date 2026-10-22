@@ -23,12 +23,11 @@ import { decideApproval, findApproval, openApprovalGate } from '../../../utils/r
 import { EVENT_CODES, historyMessages, historyOf, historyOrderProblem, HistoryStep } from '../../../utils/regression/lifecycle/certificateHistory';
 import { approvalClosedText } from '../../../utils/regression/lifecycle/certificateLabels';
 import { issueExisting, revokeOwnCertificate } from '../../../utils/regression/lifecycle/certificateOperations';
-import { newChallenge, registerOwnCertificate, registrationDefaults } from '../../../utils/regression/lifecycle/preRegistration';
+import { newChallenge, registerOwnCertificate } from '../../../utils/regression/lifecycle/preRegistration';
 import { createdAfterOfAnswer } from '../../../utils/regression/lifecycle/rawAnswers';
 import { submitOwnCertificate, waitIssued, waitRevoked } from '../../../utils/regression/ownCertificates';
 import { newKeyPair, csrFromKey } from '../../../utils/regression/pkiBuilders';
 import { getCertificate } from '../../../utils/regression/apiReads';
-import { recordDerivedKeyOf } from '../../../utils/regression/issuedRecords';
 import { testMeta, tags } from '../../../utils/regression/tags';
 import { APPROVAL_REVOKE_TEST_MS, ISSUE_MS, LIFECYCLE_MS, LONG_TEST_MS, QUICK_STATE_WAIT_MS, SLOW_LIFECYCLE_MS, STATE_CHANGE_WAIT_MS } from '../../../utils/regression/timeouts';
 import { waitForCertificateState } from '../../../utils/regression/wait/certificateState';
@@ -88,7 +87,7 @@ test.describe('Certificate state transition audit trail', { tag: tags.api }, () 
                     const approval = await findApproval(api, cert, own.spec, { status: 'Pending' });
                     expect((await decideApproval(api, approval, 'approve')).status).toBe(204);
                     await waitIssued(api, cert.uuid);
-                    await recordDerivedKeyOf(api, cert.uuid, createdAfterOfAnswer(cert.answer), own.spec);
+                    await own.derivedKey(cert.uuid, createdAfterOfAnswer(cert.answer));
                     await expectWalk(api, cert.uuid, 'issued', [['APPROVAL_REQUEST', 'SUCCESS'], ['APPROVAL_CLOSE', 'SUCCESS'], ['ISSUE', 'SUCCESS']]);
                     expect(historyMessages(await historyOf(api, cert.uuid))).toContainEqual(expect.stringContaining(approvalClosedText('issue', gate.approvalProfile.name, 'Approved')));
                 });
@@ -99,10 +98,10 @@ test.describe('Certificate state transition audit trail', { tag: tags.api }, () 
                     const approval = await findApproval(api, cert, own.spec, { status: 'Pending' });
                     expect((await decideApproval(api, approval, 'reject')).status).toBe(204);
                     await waitForCertificateState(api, cert.uuid, 'rejected', STATE_CHANGE_WAIT_MS, { failOn: ['failed', 'issued'] });
-                    // The approval close is SUCCESS, the state machine then audits the
-                    // rejection as UPDATE_STATE / FAILED "Certificate state changed from Pending approval to Rejected." (core
-                    // handleFailedOrRejectedEvent).
-                    await expectWalk(api, cert.uuid, 'rejected', [['APPROVAL_REQUEST', 'SUCCESS'], ['APPROVAL_CLOSE', 'SUCCESS'], ['UPDATE_STATE', 'FAILED']]);
+                    // The approval close is SUCCESS and the state machine audits the rejection as UPDATE_STATE / FAILED "Certificate state
+                    // changed from Pending approval to Rejected." (core handleFailedOrRejectedEvent); the two come from independent
+                    // asynchronous paths, so the rows are asserted present, not in a fixed order.
+                    await expectWalkRows(api, cert.uuid, 'rejected', [['APPROVAL_REQUEST', 'SUCCESS'], ['APPROVAL_CLOSE', 'SUCCESS'], ['UPDATE_STATE', 'FAILED']]);
                     expect(historyMessages(await historyOf(api, cert.uuid))).toContainEqual(expect.stringContaining('Certificate state changed from Pending approval to Rejected.'));
                 });
             } finally {
@@ -157,16 +156,14 @@ test.describe('Certificate state transition audit trail', { tag: tags.api }, () 
             const a = await issueExisting(api, reg.cert!, ra, { request: csrFromKey(newKeyPair(), reg.cn).derBase64, authorizationSecret: reg.secret });
             expect(a.status, a.text.slice(0, 300)).toBe(200);
             await waitIssued(api, reg.cert!.uuid);
-            await recordDerivedKeyOf(api, reg.cert!.uuid, reg.createdAfter, own.spec);
+            await own.derivedKey(reg.cert!.uuid, reg.createdAfter);
             await expectWalk(api, reg.cert!.uuid, 'issued', [['UPDATE_STATE', 'SUCCESS'], ['ISSUE', 'SUCCESS']]);
         });
 
     test('an approved or rejected completion audits its approval',
-        testMeta({ id: 'API-CERT-34', row: 'approved-and-rejected-completion', prio: 'P1', issue: 'ilm#429', needs: 'ca', rule: [...RULES, 'a rejected completion restores REGISTERED, authorization ACTIVE; ilm#284'] }),
+        testMeta({ id: 'API-CERT-34', row: 'approved-and-rejected-completion', prio: 'P1', issue: 'ilm#429', needs: ['ca', 'registration-settings'], rule: [...RULES, 'a rejected completion restores REGISTERED, authorization ACTIVE; ilm#284'] }),
         async ({ api, own }) => {
             test.setTimeout(SLOW_LIFECYCLE_MS);
-            const defaults = await registrationDefaults(api);
-            test.skip(defaults.maxFailedAttempts < 1 || defaults.defaultIssuanceWindowDays < 1, `registration settings on this tier (maxFailedAttempts ${defaults.maxFailedAttempts}, window ${defaults.defaultIssuanceWindowDays} days) cannot hold a challenge-protected registration`);
             const gate = await openApprovalGate(api, own.spec, 'g34c');
             try {
                 const reg = await registerOwnCertificate(api, gate.ra, own.spec, { suffix: 'w9', secret: newChallenge() });
@@ -190,7 +187,7 @@ test.describe('Certificate state transition audit trail', { tag: tags.api }, () 
                     const approval = await findApproval(api, reg.cert!, own.spec, { status: 'Pending' });
                     expect((await decideApproval(api, approval, 'approve')).status).toBe(204);
                     await waitIssued(api, reg.cert!.uuid);
-                    await recordDerivedKeyOf(api, reg.cert!.uuid, reg.createdAfter, own.spec);
+                    await own.derivedKey(reg.cert!.uuid, reg.createdAfter);
                     await expectWalk(api, reg.cert!.uuid, 'issued', [['APPROVAL_REQUEST', 'SUCCESS'], ['APPROVAL_CLOSE', 'SUCCESS'], ['ISSUE', 'SUCCESS']]);
                 });
             } finally {

@@ -1,12 +1,12 @@
 /**
  * teardownHandlers — how the run-end teardown removes each kind of object the regression suite can create.
  *
- * WHAT: one handler per kind of object (certificates, keys, discoveries, ACME profiles, compliance profiles, roles, users, …),
- * and the certificate-key safety net. Loaded lazily by runTeardown's registry (type → module) and wrapped by `wrapHandlerWithGuard`: before `remove` runs, the dry
- * run is checked and the live object is read through `assertOwnLive` (ledger line of this run on this tier, live
- * run-prefixed name for named types); `ctx.live` is that object and its uuid is in `ctx.seen`. Later batches add
- * their own `teardownHandlers` export in the module that creates the objects (protocolProfiles, cryptoApi,
- * workflowTeardown, …) and get the same wrapper; until such a module exists the teardown reports "no handler (type X)".
+ * WHAT: one handler per kind of object (certificates, keys, discoveries, ACME profiles, compliance profiles, roles, users, …), and the
+ * certificate-key safety net. Loaded lazily by runTeardown's registry (type → module) and wrapped by `wrapHandlerWithGuard`: before
+ * `remove` runs, the dry run is checked and the live object is read through `assertOwnLive` (ledger line of this run on this tier, live
+ * run-prefixed name for named types); `ctx.live` is that object and its uuid is in `ctx.seen`. Later batches add their own
+ * `teardownHandlers` export in the module that creates the objects (protocolProfiles, cryptoApi, workflowTeardown, …) and get the same
+ * wrapper; until such a module exists the teardown reports "no handler (type X)".
  *
  * Deletion rule: `deleteAndVerify` sends the DELETE only for an object read with 200 in this step, accepts a 404
  * answer only then, and proves absence afterwards with a detail GET (polled: some deletes finish asynchronously).
@@ -182,11 +182,11 @@ export async function certificateCreationTime(api: APIRequestContext, uuid: stri
 }
 
 /**
- * The own compliance profile teardown (seen on a live tier: a single DELETE failed with "no status" and no text). Steps: (1) read
- * the associations (`GET /v2/complianceProfiles/{uuid}/associations`) and remove those of OWN RA profiles of this run (a
- * pre-existing object's association is never touched; it makes the delete fail and is reported); (2) `DELETE /v1/complianceProfiles/{uuid}`;
- * (3) when that is refused, `DELETE /v2/complianceProfiles/force` with `[uuid]`: core answers a list of `BulkActionMessageDto`
- * (uuid, name, message) for what it could not delete, so a non-empty list is a failure carrying the messages; (4) absence by GET.
+ * The own compliance profile teardown (seen on a live tier: a single DELETE failed with "no status" and no text). Steps: (1) read the
+ * associations (`GET /v2/complianceProfiles/{uuid}/associations`) and remove those of OWN RA profiles of this run (a pre-existing object's
+ * association is never touched; it makes the delete fail and is reported); (2) `DELETE /v1/complianceProfiles/{uuid}`; (3) when that is
+ * refused, `DELETE /v2/complianceProfiles/force` with `[uuid]`: core answers a list of `BulkActionMessageDto` (uuid, name, message) for
+ * what it could not delete, so a non-empty list is a failure carrying the messages; (4) absence by GET.
  */
 export async function removeComplianceProfile(ctx: TeardownContext, uuid: string): Promise<void> {
     const associationsOf = async (): Promise<JsonObject[] | undefined> => {
@@ -212,7 +212,7 @@ export async function removeComplianceProfile(ctx: TeardownContext, uuid: string
             const first = await ctx.api.delete(`/api/v1/complianceProfiles/${uuid}`);
             if (first.ok()) return first;
             if (first.status() === 404) {
-                // suspected defect: a dangling association to a deleted RA profile makes core answer 404 although the profile exists.
+                // unexpected behaviour: a dangling association to a deleted RA profile makes core answer 404 although the profile exists.
                 // A 404 is success only when a re-read no longer finds the profile; otherwise it is reported blocked, never forced.
                 const again = await ctx.api.get(`/api/v1/complianceProfiles/${uuid}`);
                 if (again.status() === 404) return first;

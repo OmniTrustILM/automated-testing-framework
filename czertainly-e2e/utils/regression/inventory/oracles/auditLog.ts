@@ -116,7 +116,9 @@ export function activityFilters(q: ActivityQuery): Filter[] {
     ];
 }
 
-/** The entries of `rows` that are this activity and are not older than `t0` (a server-clock instant): resource, operation, module, object. */
+/**
+ * The entries of `rows` that are this activity and are not older than `t0` (a server-clock instant): resource, operation, module, object.
+ */
 export function activityMatches(rows: ListRow[], q: ActivityQuery, t0: Date): ListRow[] {
     return rows.filter((r) => {
         const at = instantMs(r.timestamp);
@@ -128,7 +130,10 @@ export function activityMatches(rows: ListRow[], q: ActivityQuery, t0: Date): Li
     });
 }
 
-/** Polls (<= timeoutMs, default 10 s) until the activity is in the audit log; the entries are published asynchronously (AuditLogAspect.java). */
+/**
+ * Polls (<= timeoutMs, default 10 s) until the activity is in the audit log; the entries are published asynchronously
+ * (AuditLogAspect.java).
+ */
 export async function waitForActivity(t: Transport, spec: ListingSpec, q: ActivityQuery, t0: Date, timeoutMs = 10_000): Promise<ListRow[]> {
     let found: ListRow[] = [];
     await expect

@@ -7,9 +7,8 @@ export interface GuardOptions {
 }
 
 /**
- * Test-only seams (tests/unit): the ledger lines, run id, tier identity and environment the guard judges against.
- * Specs never pass them (specGuards refuses `guardApiWithSeams` outside tests/unit): ownership and the tier come from
- * the process.
+ * Test-only seams (tests/unit): the ledger lines, run id, tier identity and environment the guard judges against. Specs never pass them
+ * (specGuards refuses `guardApiWithSeams` outside tests/unit): ownership and the tier come from the process.
  */
 export interface GuardTestSeams extends LiveOptions {}
 

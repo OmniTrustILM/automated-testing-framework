@@ -1,9 +1,12 @@
 /**
  * keyChain — the run's token, enabled profile and key, created once and reused.
  *
- * WHAT: Provides ensureKeyChain, which returns the run's own token, enabled token profile and key (or a named skip reason when the tier has no cryptography connector of the wanted version).
- * WHY: Many specs need a working key and must not each create a token and profile; one chain per run keeps the tier clean and the ledger short.
- * HOW: Idempotent through the run state (token, tokenProfile, key); a second call with another family or suffix adds one more key on the same token and profile.
+ * WHAT: Provides ensureKeyChain, which returns the run's own token, enabled token profile and key (or a named skip reason when the tier has
+ * no cryptography connector of the wanted version).
+ * WHY: Many specs need a working key and must not each create a token and profile; one chain per run keeps the tier clean and the ledger
+ * short.
+ * HOW: Idempotent through the run state (token, tokenProfile, key); a second call with another family or suffix adds one more key on the
+ * same token and profile.
  */
 
 import { Family, PROFILE_USAGES, Usage } from './cryptoAlgorithmCases';
@@ -23,6 +26,10 @@ export interface ChainOptions {
     enableKey?: boolean;
 }
 
+/** The named reason of a tier that has no connected software cryptography connector of the interface version. */
+export const noCryptoConnectorReason = (version: 1 | 2): string =>
+    `no connected software cryptography connector of interface v${version} is registered on this tier (REG_CRYPTO_CONNECTOR_V${version})`;
+
 /**
  * The run's token → enabled profile → key (own objects, recorded; idempotent per run through RunState `token`,
  * `tokenProfile`, `key`; a second call with another family or suffix adds one more key on the same token and profile).
@@ -31,7 +38,7 @@ export interface ChainOptions {
 export async function ensureKeyChain(api: GuardedApi, spec: string, opts: ChainOptions = {}): Promise<KeyChain | { skip: string }> {
     const version = opts.version ?? 2;
     const connector = await findCryptoConnector(api, version);
-    if (!connector) return { skip: `no connected software cryptography connector of interface v${version} is registered on this tier (REG_CRYPTO_CONNECTOR_V${version})` };
+    if (!connector) return { skip: noCryptoConnectorReason(version) };
     const state = readRunState();
     let token = state.token;
     let tokenProfile = state.tokenProfile;
@@ -51,6 +58,16 @@ export async function ensureKeyChain(api: GuardedApi, spec: string, opts: ChainO
         if (wantsDefault) updateRunState({ key });
     }
     return { connector, provider: providerOf(connector), token, tokenProfile, key };
+}
+
+/**
+ * The run's key chain for a test that declared the `crypto-v2` need (or asked for the version it needs): a tier without the connector is
+ * the need's skip, decided before anything is written, so a chain that cannot be made here is an error of the test, not a skip.
+ */
+export async function requireKeyChain(api: GuardedApi, spec: string, opts: ChainOptions = {}): Promise<KeyChain> {
+    const chain = await ensureKeyChain(api, spec, opts);
+    if (isSkip(chain)) throw new Error(`the key chain cannot be made although the test declared its need: ${chain.skip}`);
+    return chain;
 }
 
 export const isSkip = <T>(r: T | { skip: string }): r is { skip: string } => typeof (r as { skip?: unknown }).skip === 'string';

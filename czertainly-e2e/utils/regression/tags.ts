@@ -26,12 +26,19 @@ export type Prio = 'P1' | 'P2' | 'P3';
  * Runner tools: `openssl`, `sscep`, `docker`, `cluster` (kubectl and a reachable cluster). Local-stack services: `keycloak-local`,
  * `smtp-catcher`, `webhook-receiver`. Connectors and identities the tier must offer: `ca` (a healthy certificate authority
  * with an enabled RA profile to copy), `ejbca-ng`, `pkcs11`, `v1-discovery`, `v2-discovery`, `email-provider`,
- * `webhook-provider`, `second-identity`. A runner-hosted TLS listener: `scan-target`. A connector that must be online:
- * `connector-online`.
+ * `webhook-provider`, `second-identity`, `crypto-v2` (a connected software cryptography connector of interface v2). A runner-hosted
+ * TLS listener: `scan-target`. A connector that must be online: `connector-online`. Tier settings and data the rows read first:
+ * `platform-triggers-free` (no platform-level trigger on the events the row watches), `metadata-field` (the certificate filter
+ * catalogue offers a metadata field), `registration-settings` (the platform settings can hold a challenge-protected registration),
+ * `required-attributes-fillable` (every required custom attribute the suite creates objects with is one it can fill), `scep-https`
+ * (the SCEP URL is not https: classic sscep speaks plain HTTP), `bearer-token` (the admin identity signs in with a bearer token:
+ * not a header-mode stack) and `openapi-document` (REG_OPENAPI_FILE names a readable OpenAPI document).
  */
 export const NEEDS = [
     'ca', 'ejbca-ng', 'pkcs11', 'second-identity', 'keycloak-local', 'v1-discovery', 'v2-discovery', 'email-provider', 'webhook-provider',
     'smtp-catcher', 'webhook-receiver', 'scan-target', 'connector-online', 'openssl', 'sscep', 'docker', 'cluster',
+    'crypto-v2', 'platform-triggers-free', 'metadata-field', 'scep-https', 'registration-settings', 'required-attributes-fillable',
+    'bearer-token', 'openapi-document', 'utils-service',
 ] as const;
 
 /** One need of a row (a value of `NEEDS`). */

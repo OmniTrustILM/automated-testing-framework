@@ -1,7 +1,8 @@
 /**
  * keyOperations — sign, verify, encrypt, decrypt, export and import on the items of an own key.
  *
- * WHAT: Builds the item addresses and the live operation attribute lists, sends the operations through the guarded client and reads signatures, verdicts and cipher output out of the answers.
+ * WHAT: Builds the item addresses and the live operation attribute lists, sends the operations through the guarded client and reads
+ * signatures, verdicts and cipher output out of the answers.
  * WHY: Item operations have their own request shapes and answers; a change there should not touch token or key creation.
  * HOW: Every call goes through GuardedApi, so an operation on a foreign key item is refused before it is sent.
  */

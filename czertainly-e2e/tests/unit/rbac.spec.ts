@@ -1,7 +1,7 @@
 /**
- * The pure parts of the rbac/ folder, no server and no browser: jwtTools (decode, tamper, forge, the token variants),
- * identities (profile shape, second-identity and local-Keycloak preflights, the anonymous target, the 401 leak check),
- * authApi's permission body, and permissionMatrix's decision table (fixture documents, the certificate and administration tables, consistency).
+ * The pure parts of the rbac/ folder, no server and no browser: jwtTools (decode, tamper, forge, the token variants), identities (profile
+ * shape, second-identity and local-Keycloak preflights, the anonymous target, the 401 leak check), authApi's permission body, and
+ * permissionMatrix's decision table (fixture documents, the certificate and administration tables, consistency).
  */
 import { expect, test } from '@playwright/test';
 import { permissionBody } from '../../utils/regression/rbac/authApi';
@@ -10,7 +10,7 @@ import { ANONYMOUS_VARIANTS, buildVariant, claimOf, decodeJwt, echoesToken, sign
 import { base64Url } from '../../utils/regression/text';
 import { accessDeniedProblems, cellPair, cellStatus, CERT_KEYS, DENY_NUANCES, expectedResourceActions, Fixture, fixtureDocument, FIXTURES, MATRIX_A_DETAIL, MATRIX_A_LIST, MATRIX_A_PROFILE, MATRIX_B_ISSUE_P1, MATRIX_B_ISSUE_P2, MATRIX_B_RA_CREATE, MATRIX_B_RA_DETAIL_P1, MATRIX_B_RA_DETAIL_P2, MATRIX_B_RA_LIST, MATRIX_B_ROLES_LIST, NESTED_GATE_FIXTURES } from '../../utils/regression/rbac/permissionMatrix';
 import { randomBytes } from 'node:crypto';
-// Run-scoped generated test passwords (merge follow-up 2026-10-15): no password-like literal in the file.
+// Run-scoped generated test passwords: no password-like literal in the file.
 const GEN_PW_1 = `qa-${randomBytes(9).toString('base64url')}`;
 
 // ------------------------------------------------------------------ jwtTools

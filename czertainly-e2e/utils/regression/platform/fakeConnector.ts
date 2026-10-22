@@ -5,7 +5,8 @@
  *       its one attributes callback, records every request and can answer with an injected fault. It listens on loopback (or
  *       the bind host the environment names) and is registered as an own connector, removed by the run-end teardown.
  * WHY: Connector rows need a connector whose answers and faults the test controls.
- * HOW: It answers info, health and metrics, echoes its attributes callback, records requests and injects faults; it listens on loopback, is registered as an own connector and removed by the run-end teardown.
+ * HOW: It answers info, health and metrics, echoes its attributes callback, records requests and injects faults; it listens on loopback, is
+ * registered as an own connector and removed by the run-end teardown.
  */
 import * as http from 'http';
 import type { AddressInfo } from 'net';
@@ -32,7 +33,10 @@ interface StubAnswer {
 
 export const CALLBACK_ATTRIBUTE = { uuid: '7d4f1a3e-2b6c-4e8f-9a1d-3c5e7f9b1d2a', name: 'data_echo' } as const;
 
-/** The `/v2/info` document of the stub (interfaces: info, health, metrics, attributes; one functional `authority`-free stub needs a functional interface: `discovery`). */
+/**
+ * The `/v2/info` document of the stub (interfaces: info, health, metrics, attributes; one functional `authority`-free stub needs a
+ * functional interface: `discovery`).
+ */
 function infoDocument(name: string, port: number): JsonObject {
     return {
         name,

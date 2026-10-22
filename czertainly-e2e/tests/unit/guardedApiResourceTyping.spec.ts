@@ -58,7 +58,9 @@ const live: Record<string, unknown> = {
     [`/api/v1/raProfiles/${PRE_RA}`]: { name: 'Pre-existing RA profile' }, [`/api/v1/groups/${X}`]: { name: nameOf('groups') },
     [`/api/v1/users/${X}`]: { username: nameOf('users') }, [`/api/v1/roles/${X}`]: { name: nameOf('roles') },
 };
-/** The own approval's detail names its own certificate and approval profile (not in `live`: the GET is a side-effect GET the rows count). */
+/**
+ * The own approval's detail names its own certificate and approval profile (not in `live`: the GET is a side-effect GET the rows count).
+ */
 const approvalDetails: Record<string, unknown> = {
     [`/api/v1/approvals/${OWN.approvals}`]: { resource: 'certificates', objectUuid: OWN.certificates, approvalProfileUuid: OWN.approvalProfiles },
 };
@@ -202,8 +204,7 @@ test('read path rule controls: plain GETs, query strings, other escapes and own 
     expect(B.arrived).toEqual([]);
 });
 
-// read path rule: a same-origin redirect hop is held to the same rule — a non-normalised Location is not followed (the 3xx is
-// returned)
+// read path rule: a same-origin redirect hop is held to the same rule — a non-normalised Location is not followed (the 3xx is returned)
 test('read path rule: a redirect hop follows the same rule; a non-normalised Location is not followed', async () => {
     const g = looseApi(guard());
     const hops = [
@@ -402,8 +403,7 @@ test('safety list: UUID_TYPED_FIELDS holds every uuid-typed request DTO field de
     for (const f of ['name', 'reason', 'event', 'description', 'usage']) expect(isUuidField(f), f).toBe(false);
 });
 
-// base64 forms: the base64 forms under triggers / internalRules / providerRules[].groups are refused; enum values and names
-// pass
+// base64 forms: the base64 forms under triggers / internalRules / providerRules[].groups are refused; enum values and names pass
 test('base64 forms of uuid fields under triggers and rules are refused; enums and names pass', async () => {
     const g = looseApi(guard());
     const CP = OWN.complianceProfiles;
@@ -554,8 +554,7 @@ const UUID_BEARING_FIELDS = [
     'triggers', 'userUuid', 'uuid', 'uuids', 'vaultProfileUuid',
 ];
 
-// typed body fields: every uuid-bearing request DTO field is typed (BODY_FIELD_TYPES), sibling-typed or listed as unmapped —
-// exactly one
+// typed body fields: every uuid-bearing request DTO field is typed (BODY_FIELD_TYPES), sibling-typed or listed as unmapped — exactly one
 test('safety list: every uuid-bearing request DTO field is typed in BODY_FIELD_TYPES or unmapped', () => {
     const typed = Object.keys(BODY_FIELD_TYPES);
     const sibling = Object.keys(SIBLING_TYPED_FIELDS);
@@ -573,8 +572,7 @@ test('safety list: every uuid-bearing request DTO field is typed in BODY_FIELD_T
     expect(BODY_FIELD_TYPES.groupUuids).toBe('groups');
 });
 
-// typed body fields: an own uuid recorded as `approvals` under groupUuids is refused (ownership); recorded as `groups` it is
-// sent
+// typed body fields: an own uuid recorded as `approvals` under groupUuids is refused (ownership); recorded as `groups` it is sent
 test('typed body fields: an own uuid recorded as approvals under groupUuids is refused', async () => {
     const asApproval = looseApi(guardApiWithSeams(raw, { lines: linesAsApproval, runId: RUN, tier: null, env: { BASE_URL } }));
     const asGroup = looseApi(guardApiWithSeams(raw, { lines: linesAsGroup, runId: RUN, tier: null, env: { BASE_URL } }));
@@ -734,8 +732,7 @@ test('raw bodies: a uuid in a body the server does not read as JSON may not be b
     expect(B.arrived).toEqual([]);
 });
 
-// sibling-typed fields: objectUuid is typed by its sibling `resource` code; an unknown, missing or untyped code takes probes
-// only
+// sibling-typed fields: objectUuid is typed by its sibling `resource` code; an unknown, missing or untyped code takes probes only
 test('sibling-typed fields: objectUuid is typed by its sibling resource code; others take probes only', async () => {
     const g = looseApi(guard());
     const ev = (resource: unknown, objectUuid: string) => g.post('/api/v1/workflows/events',
@@ -774,8 +771,7 @@ const EXPECTED_RESOURCES: Record<string, string> = {
     triggers: 'triggers', users: 'users', vaultProfiles: 'vaultProfiles', vaults: 'vaultInstances',
 };
 
-// literal tables: BODY_FIELD_TYPES value by value — the right type sent, a wrong type refused, a no-ledger-type field probes
-// only
+// literal tables: BODY_FIELD_TYPES value by value — the right type sent, a wrong type refused, a no-ledger-type field probes only
 test('safety list: BODY_FIELD_TYPES value by value, right type sent, wrong type refused', async () => {
     const g = looseApi(guard());
     const CERT = OWN.certificates;
@@ -839,7 +835,8 @@ const EXPECTED_CREATES = [
     '/v1/vaults', '/v1/vaults/{id}/vaultProfiles', '/v1/vaults/{id}/vaultProfiles/{id}/secrets', '/v1/complianceProfiles',
     '/v1/approvalProfiles', '/v1/connectors', '/v1/certificates/upload', '/v1/certificates/upload/async',
     '/v2/operations/authorities/{id}/raProfiles/{id}/certificates', '/v1/workflows/events',
-    // Inspections, certificate import, certificate register, POST /v2/connectors as a create (tests/unit/guardedApiAllowedRequests.spec.ts has their limits).
+    // Inspections, certificate import, certificate register, POST /v2/connectors as a create (tests/unit/guardedApiAllowedRequests.spec.ts
+    // has their limits).
     '/v1/inspections', '/v1/certificates/import', '/v2/operations/authorities/{id}/raProfiles/{id}/certificates/register', '/v2/connectors', '/v2/complianceProfiles',
 ];
 
@@ -909,8 +906,7 @@ const EXPECTED_READS: Array<[string, string[]]> = [
     ['/v1/connectors/{id}/{seg}/{seg}/validate', [`/v1/connectors/${FOREIGN}/authorityProvider/ejbca/validate`]],
 ];
 
-// literal tables: POST_READ entry by entry — every example is a read POST, sent with a body naming a foreign uuid (reads are
-// not judged)
+// literal tables: POST_READ entry by entry — every example is a read POST, sent with a body naming a foreign uuid (reads are not judged)
 test('safety list: POST_READ entry by entry, each example is a read POST sent with a foreign uuid', async () => {
     expect([...POST_READ]).toEqual(EXPECTED_READS.map(([e]) => e));
     const g = looseApi(guard());

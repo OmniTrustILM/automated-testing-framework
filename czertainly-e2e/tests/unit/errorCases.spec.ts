@@ -161,7 +161,8 @@ test('the listing table: five resources, every (resource × case) pair has a req
     const ids = cases.map((c) => c.id);
     expect(new Set(ids).size, 'ids are unique').toBe(ids.length);
     for (const l of LISTING_ENDPOINTS) expect(cases.filter((c) => c.resource === l.key).length, l.key).toBeGreaterThanOrEqual(LISTING_CASES.length - 3);
-    // The gaps are the ones the code explains: the certificate has no number field, audit logs and OIDs do not sort, OIDs have no date-time.
+    // The gaps are the ones the code explains: the certificate has no number field, audit logs and OIDs do not sort, OIDs have no
+    // date-time.
     expect(na.map((x) => `${x.resource}.${x.caseId}`).sort()).toEqual([
         'auditLogs.filter.numberInvalid', 'auditLogs.sort.nonSortableField',
         'certificates.filter.numberInvalid',
@@ -171,7 +172,10 @@ test('the listing table: five resources, every (resource × case) pair has a req
 });
 
 test('the listing table: the refusal text per resource', () => {
-    expect(listingCase('certificates', 'paging.itemsPerPage0').expect).toEqual({ status: 400, message: 'The request could not be processed.' });
+    expect(listingCase('certificates', 'paging.itemsPerPage0').expect).toEqual({ status: 422, messages: ['Items per page must be at least 1, but was 0'] });
+    expect(listingCase('keys', 'paging.pageNumberNegative').expect).toEqual({ status: 422, messages: ['Page number must be at least 1, but was -1'] });
+    expect(listingCase('oids', 'paging.pageNumber0').expect).toEqual({ status: 422, messages: ['Page number must be at least 1, but was 0'] });
+    expect(listingCase('auditLogs', 'paging.itemsPerPageNegative').expect).toEqual({ status: 422, messages: ['Items per page must be at least 1, but was -1'] });
     expect(listingCase('oids', 'json.notJson').expect).toEqual({ status: 400, message: 'Unable to read HTTP message' });
     expect(listingCase('keys', 'sort.blankIdentifier').expect).toEqual({ status: 422, messages: ['sort.fieldIdentifier must not be blank'] });
     expect(listingCase('discoveries', 'sort.nullDirection').expect).toEqual({ status: 422, messages: ['sort.direction must not be null'] });
@@ -231,8 +235,9 @@ test('the battery: at least 40 refused requests, each with a status-matrix row, 
         expect(['GET', 'POST']).toContain(r.req.method);
         expect(r.req.url).toMatch(/^\/api\/v[12]\//);
     }
-    // Path uuids: a String path variable parsed with SecuredUUID answers 422 ["Invalid UUID <v> in the request"] (keys, groups, credentials); a
-    // typed `UUID` path variable answers 400 "Method parameter 'uuid': Failed to convert value …" (certificates). Keys answer 422, not 400.
+    // Path uuids: a String path variable parsed with SecuredUUID answers 422 ["Invalid UUID <v> in the request"] (keys, groups,
+    // credentials); a typed `UUID` path variable answers 400 "Method parameter 'uuid': Failed to convert value …" (certificates). Keys
+    // answer 422, not 400.
     const expectOf = (id: string) => rows.find((r) => r.id === id)!.expect;
     for (const id of ['pathAndQueryTypes.keys.badUuid', 'pathAndQueryTypes.groups.badUuid', 'pathAndQueryTypes.credentials.badUuid']) expect(expectOf(id), id).toEqual({ status: 422, messages: ['Invalid UUID not-a-uuid in the request'] });
     expect(expectOf('pathAndQueryTypes.certificates.badUuid').status).toBe(400);

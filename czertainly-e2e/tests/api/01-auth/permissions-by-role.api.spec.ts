@@ -9,10 +9,9 @@
  *       3. Per fixture: RA profile list and detail, RA profile create, v2 issue on both profiles, roles and users administration, and
  *          the nested-bean gates (upload, delete, enable, archive) that must answer 403, never a silent 2xx.
  *       4. A deny is per action: `detail`, `members` or `list` denied on one RA profile changes only what that action gates.
- * WHY: the platform authorises by role permissions on the resource and on its parent resource (certificate detail needs RA profile
- *      members; visibility = certificates:list AND RA profile members, OR group members, OR owner). A red row means a role got more or
- *      less access than its document grants, or a deny answered with the wrong body. A mismatch is a finding to confirm, never an
- *      adjusted oracle.
+ * WHY: the platform authorises by role permissions on the resource and on its parent resource (certificate detail needs RA profile members;
+ *      visibility = certificates:list AND RA profile members, OR group members, OR owner). A red row means a role got more or less access
+ *      than its document grants, or a deny answered with the wrong body. A mismatch is a finding to confirm, never an adjusted oracle.
  * HOW: the admin builds an own role from each fixture's permission document through the API, makes it the second identity's only role,
  *      waits until that user's profile reflects it, and the second identity's token walks the rows. Every test starts with the
  *      second-identity, replica and CA preflights and skips with the named reason until the account exists. Oracles: no 5xx; every
@@ -22,13 +21,11 @@
 import { BATTERY_TEST_MS, ISSUING_MATRIX_ROW_TEST_MS, LIFECYCLE_MS, LONG_TEST_MS } from '../../../utils/regression/timeouts';
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { getBuildInfo, isMigratedBuild } from '../../../utils/regression/coreBuild';
-import { callAs, isNotGrantableAction, restrictedIdentity, replicaBlocker } from '../../../utils/regression/rbac/identities';
+import { callAs, isNotGrantableAction, replicaBlocker } from '../../../utils/regression/rbac/identities';
 import { accessDeniedProblems, Cell, cellPair, cellStatus, CERT_KEYS, CertKey, DENY_NUANCES, Fixture, FIXTURES, MATRIX_A_DETAIL, MATRIX_A_LIST, MATRIX_A_PROFILE, MATRIX_B_ISSUE_P1, MATRIX_B_ISSUE_P2, MATRIX_B_RA_CREATE, MATRIX_B_RA_DETAIL_P1, MATRIX_B_RA_DETAIL_P2, MATRIX_B_RA_LIST, MATRIX_B_ROLE_CREATE, MATRIX_B_ROLES_LIST, MATRIX_B_USER_PERMISSIONS, MATRIX_B_USERS_LIST, NESTED_GATE_FIXTURES } from '../../../utils/regression/rbac/permissionMatrix';
-import { applyFixture, auditorDocument, ensureRbacObjects, ensureRestrictedUserOrSkip, raProfileCreateBody, RbacObjects, restrictedRoleSwitch, RoleSwitch } from '../../../utils/regression/rbac/permissionObjects';
+import { applyFixture, auditorDocument, ensureRbacObjects, raProfileCreateBody, RbacObjects, restrictedRoleSwitch, RoleSwitch } from '../../../utils/regression/rbac/permissionObjects';
 import { waitIssued } from '../../../utils/regression/ownCertificates';
 import { csrWithSan, selfSignedPem } from '../../../utils/regression/pkiBuilders';
-import { pickHealthyAuthority } from '../../../utils/regression/ownRaProfiles';
-import { recordIfAccepted } from '../../../utils/regression/ownCrud';
 import { runName, runId } from '../../../utils/regression/ledger/runState';
 import { testMeta, tags } from '../../../utils/regression/tags';
 import type { TestEnv } from '../../../utils/env';
@@ -41,6 +38,8 @@ interface Matrix {
     api: GuardedApi;
     /** The ledger id of the test: every object the matrix makes carries it. */
     spec: string;
+    /** The test's own-object steps (a create the second identity should not have been allowed is recorded through `own.probe`). */
+    own: OwnObjects;
     refs: RbacObjects;
     sw: RoleSwitch;
     token: string;
@@ -64,14 +63,11 @@ async function prepare(fx: Fixtures): Promise<Matrix> {
     const blocker = replicaBlocker();
     test.skip(!!blocker, blocker);
     test.skip(fx.restrictedToken === undefined, `no bearer token for the second identity on AUTH_MODE=${fx.env.authMode}`);
-    // The CA the fixture RA profiles copy from is read before anything is written: no healthy authority is a named skip.
-    const source = await pickHealthyAuthority(fx.api);
-    if ('skip' in source) test.skip(true, source.skip);
-    const dedicatedUser = restrictedIdentity()!;
-    // A dedicated user an earlier run left behind is a named skip, never an adoption.
-    const user = await ensureRestrictedUserOrSkip(fx.api, spec, dedicatedUser, (reason) => test.skip(true, reason));
+    // A dedicated user an earlier run left behind is a named skip, never an adoption. The healthy CA the fixture RA profiles copy from is
+    // the `ca` need's, resolved before anything is written.
+    const user = await fx.own.restrictedUser();
     const refs = await ensureRbacObjects(fx.api, spec);
-    return { api: fx.api, spec, refs, sw: restrictedRoleSwitch(fx.api, user, fx.restrictedToken!), token: fx.restrictedToken! };
+    return { api: fx.api, spec, own: fx.own, refs, sw: restrictedRoleSwitch(fx.api, user, fx.restrictedToken!), token: fx.restrictedToken! };
 }
 
 /** One cell against an answer: status, and the body contract + pair of a 403. */
@@ -137,7 +133,7 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
                 const body = { name: runName('rbac-create-probe'), description: 'API-AUTH-30', attributes: [], customAttributes: [] };
                 const probe = await callAs(m.api, m.token, 'POST', `/api/v1/authorities/${m.refs.authorityUuid}/raProfiles`, body);
                 // Ledger before assertion: an RA profile the second identity managed to create is this run's object.
-                recordIfAccepted('raProfiles', probe, body.name, m.spec, 'created by the second identity in the contract row', { authority: m.refs.authorityUuid });
+                m.own.probe('raProfiles', probe, { name: body.name, note: 'created by the second identity in the contract row', parents: { authority: m.refs.authorityUuid } });
                 expectCell('issuing role, create an RA profile', probe, { status: 403, pair: { action: 'Create', resource: 'RA Profile' } });
             });
 
@@ -283,7 +279,7 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
                     const body = await raProfileCreateBody(m.api, m.refs.source, name);
                     const res = await callAs(m.api, m.token, 'POST', `/api/v1/authorities/${authorityUuid}/raProfiles`, body);
                     // Ledger before assertion: an RA profile the restricted user managed to create is this run's object.
-                    recordIfAccepted('raProfiles', res, name, m.spec, 'created by the second identity in the matrix (allow-all fixture)', { authority: authorityUuid });
+                    m.own.probe('raProfiles', res, { name, note: 'created by the second identity in the matrix (allow-all fixture)', parents: { authority: authorityUuid } });
                     expectCell(`${ROLE_WORDS[fixture]} create RA profile`, res, MATRIX_B_RA_CREATE[fixture]);
                 });
 
@@ -291,7 +287,7 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
                     const csr = csrWithSan(runName(`rbac-issue-${fixture.toLowerCase()}`), [`${runId()}.example.test`]);
                     const issue = (ra: string) => callAs(m.api, m.token, 'POST', `/api/v2/operations/authorities/${authorityUuid}/raProfiles/${ra}/certificates`, { request: csr.derBase64, format: 'pkcs10', attributes: [], customAttributes: [] });
                     const onP1 = await issue(p1.uuid);
-                    const accepted = recordIfAccepted('certificates', onP1, runName(`rbac-issue-${fixture.toLowerCase()}`), m.spec, 'issued by the second identity in the matrix');
+                    const accepted = m.own.probe('certificates', onP1, { name: runName(`rbac-issue-${fixture.toLowerCase()}`), note: 'issued by the second identity in the matrix' });
                     expectCell(`${ROLE_WORDS[fixture]} issue on P1`, onP1, MATRIX_B_ISSUE_P1[fixture]);
                     if (accepted) await waitIssued(m.api, accepted.uuid);
                     expectCell(`${ROLE_WORDS[fixture]} issue on P2`, await issue(p2.uuid), MATRIX_B_ISSUE_P2[fixture]);
@@ -302,7 +298,7 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
                     expectCell(`${ROLE_WORDS[fixture]} GET /v1/users`, await callAs(m.api, m.token, 'GET', '/api/v1/users'), MATRIX_B_USERS_LIST[fixture]);
                     const roleName = runName(`rbac-role-probe-${fixture.toLowerCase()}`);
                     const created = await callAs(m.api, m.token, 'POST', '/api/v1/roles', { name: roleName, description: 'API-AUTH-32 probe', customAttributes: [] });
-                    recordIfAccepted('roles', created, roleName, m.spec, 'created by the second identity in the matrix (allow-all fixture)');
+                    m.own.probe('roles', created, { name: roleName, note: 'created by the second identity in the matrix (allow-all fixture)' });
                     expectCell(`${ROLE_WORDS[fixture]} POST /v1/roles`, created, MATRIX_B_ROLE_CREATE[fixture]);
                     const me = await m.sw.profile();
                     expectCell(`${ROLE_WORDS[fixture]} GET /v1/users/{second identity}/permissions`, await callAs(m.api, m.token, 'GET', `/api/v1/users/${me!.uuid}/permissions`), MATRIX_B_USER_PERMISSIONS[fixture]);
@@ -319,7 +315,7 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
                         ];
                         for (const p of probes) {
                             const res = await p.send();
-                            if (p.created) recordIfAccepted(p.created, res, runName(`rbac-gate-${fixture.toLowerCase()}`), m.spec, 'created by the second identity through a gate that should have refused');
+                            if (p.created) m.own.probe(p.created, res, { name: runName(`rbac-gate-${fixture.toLowerCase()}`), note: 'created by the second identity through a gate that should have refused' });
                             expect(res.status, `${ROLE_WORDS[fixture]}: ${p.what} must be refused: ${res.text.slice(0, 200)}`).toBe(403);
                         }
                     });

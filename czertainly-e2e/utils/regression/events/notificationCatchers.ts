@@ -5,8 +5,10 @@
  *       Mailpit-class SMTP catcher's HTTP read API, REG_SMTP_CATCHER_URL) and `WebhookReceiver` (an HTTP server on the runner,
  *       reached through REG_WEBHOOK_HOST, recording method, path, headers and the raw body). Local stack only: every client refuses
  *       unless `TIER_KIND=local`; a message is matched by what the test caused (a run-prefixed marker), never by position.
- * WHY: A notification is only proven by receiving it, and receiving needs an e-mail catcher and a webhook receiver that no shared tier may use.
- * HOW: `MailCatcher` reads a Mailpit-class catcher over HTTP and `WebhookReceiver` is a runner-side HTTP server; both refuse unless `TIER_KIND=local`, and a message is matched by a run-prefixed marker, never by position.
+ * WHY: A notification is only proven by receiving it, and receiving needs an e-mail catcher and a webhook receiver that no shared tier may
+ * use.
+ * HOW: `MailCatcher` reads a Mailpit-class catcher over HTTP and `WebhookReceiver` is a runner-side HTTP server; both refuse unless
+ * `TIER_KIND=local`, and a message is matched by a run-prefixed marker, never by position.
  */
 import * as http from 'http';
 import type { AddressInfo } from 'net';

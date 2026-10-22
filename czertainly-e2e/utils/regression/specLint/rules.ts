@@ -85,7 +85,7 @@ const GUARD_INTERNAL_ALLOWED = /^(utils\/regression\/guard|tests\/unit)\//;
  */
 export const CONTEXT_FIXTURES: ReadonlySet<string> = new Set([
     'api', 'anonymousApi', 'adminToken', 'restrictedToken', 'request', 'env', 'page', 'context', 'browser',
-    'own', 'live', 'needs', 'declaredNeeds', 'signedIn', 'localApi', 'regressionEnv', 'ownRaProfile',
+    'own', 'live', 'needs', 'declaredNeeds', 'signedIn', 'localApi', 'workerApi', 'regressionEnv', 'ownRaProfile',
 ]);
 /** Callees that would print a token's text (a leak into a report, a log or an assertion message). */
 const TOKEN_SINKS: Record<string, Set<string>> = { console: new Set(['log', 'info', 'warn', 'error', 'debug', 'trace']), JSON: new Set(['stringify']) };

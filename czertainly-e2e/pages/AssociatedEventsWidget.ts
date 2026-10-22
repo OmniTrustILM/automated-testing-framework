@@ -67,7 +67,8 @@ export class AssociatedEventsWidget {
     }
 
     private editButton(event: string): Locator {
-        // The icon-only Edit button has a `title` but no accessible name (suspected defect): the row's last cell holds the single button.
+        // The icon-only Edit button has a `title` but no accessible name (unexpected behaviour): the row's last cell holds the single
+        // button.
         return this.row(event).locator('td').last().getByRole('button');
     }
 

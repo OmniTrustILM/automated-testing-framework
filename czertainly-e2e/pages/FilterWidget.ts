@@ -158,8 +158,8 @@ export class FilterWidget {
     /** The list / boolean value Select trigger. */
     readonly selectValue: Locator;
     /**
-     * The date picker input: a plain `input#valueSelect` (the TextInput carries a test id, the Select's hidden native `<select>` is not
-     * an input).
+     * The date picker input: a plain `input#valueSelect` (the TextInput carries a test id, the Select's hidden native `<select>` is not an
+     * input).
      */
     readonly dateValue: Locator;
     /** `Add`, or `Update` while a badge is loaded; `#addFilter` as the fallback. */
@@ -385,8 +385,8 @@ export class FilterWidget {
     }
 
     /**
-     * The labels the Field select offers for a source (picks the source, opens and closes the select); an empty list when the source has
-     * no field.
+     * The labels the Field select offers for a source (picks the source, opens and closes the select); an empty list when the source has no
+     * field.
      */
     async fieldLabels(source: FilterChoice): Promise<string[]> {
         await chooseOption(this.page, this.select('group'), source);

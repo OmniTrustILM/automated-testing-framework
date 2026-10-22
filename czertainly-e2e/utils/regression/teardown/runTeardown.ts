@@ -15,20 +15,19 @@
  *    and stops: no request, no authentication. The dry run is ALSO checked at the top of executeTeardown,
  *    removeOwnObject and every handler entry (`wrapHandlerWithGuard`), so no path deletes under it.
  *    API_DELETE_OWN off keeps the objects and prints the ledger path.
- * 4. Walks DELETE_ORDER; every delete goes through attemptCleanup (one retry, cascade reporting) and appends a
- *    `deleted` ledger line. Every object gets a FRESH authenticated context (a long revoke wait cannot outlive the
- *    token) and its own `seen` set. The handlers of each type come from the module that creates the objects (the registry in
- *    resourceTypes.ts names it, `HANDLER_SOURCES` imports it) and are wrapped by `wrapHandlerWithGuard`: dry-run check, then `assertOwnLive` (ledger + live run-prefixed name) before the
- *    handler sees the object; a type without a registry entry is reported as "no handler (type X)", but only
- *    when such ledger lines exist. A handler that answers "kept" (a derived object provably older than the run, or
- *    adopted) is a WARNING, not a failure; the kept objects are written to `<state dir>/<run id>.kept.json`
- *    (type, uuid, reasons) and REG_KEPT_STRICT=1 fails the run on a non-empty list. A derived object whose
- *    creation time is unknown is not "kept": its handler fails (red).
- *    FINAL PASS: after the last step, every object whose delete FAILED in this teardown (attempted: not refused, not without
- *    a handler, not kept, not "route or object missing", not a guard refusal) gets exactly one more attempt through the same
- *    wrapped handler, oldest failure first: an object a later step still referenced (a revoked certificate its own SCEP profile
- *    names, step 4 before step 7) goes then. A success appends the `deleted` line (note: final pass), then drops its failure;
- *    a failure stays one failure whose message names both attempts. One summary line: "final pass: N retried, M deleted".
+ * 4. Walks DELETE_ORDER; every delete goes through attemptCleanup (one retry, cascade reporting) and appends a `deleted` ledger line. Every
+ *    object gets a FRESH authenticated context (a long revoke wait cannot outlive the token) and its own `seen` set. The handlers of each
+ *    type come from the module that creates the objects (the registry in resourceTypes.ts names it, `HANDLER_SOURCES` imports it) and are
+ *    wrapped by `wrapHandlerWithGuard`: dry-run check, then `assertOwnLive` (ledger + live run-prefixed name) before the handler sees the
+ *    object; a type without a registry entry is reported as "no handler (type X)", but only when such ledger lines exist. A handler that
+ *    answers "kept" (a derived object provably older than the run, or adopted) is a WARNING, not a failure; the kept objects are written to
+ *    `<state dir>/<run id>.kept.json` (type, uuid, reasons) and REG_KEPT_STRICT=1 fails the run on a non-empty list. A derived object whose
+ *    creation time is unknown is not "kept": its handler fails (red). FINAL PASS: after the last step, every object whose delete FAILED in
+ *    this teardown (attempted: not refused, not without a handler, not kept, not "route or object missing", not a guard refusal) gets
+ *    exactly one more attempt through the same wrapped handler, oldest failure first: an object a later step still referenced (a revoked
+ *    certificate its own SCEP profile names, step 4 before step 7) goes then. A success appends the `deleted` line (note: final pass), then
+ *    drops its failure; a failure stays one failure whose message names both attempts. One summary line: "final pass: N retried, M
+ *    deleted".
  * 5. Deletion rule: a delete counts only when a GET afterwards proves the object absent; a DELETE answering 404
  *    counts as done only if the same object was read with 200 earlier in its step; otherwise the step fails with
  *    "route or object missing".
@@ -624,7 +623,8 @@ export function recordWorkaround(note: WorkaroundNote, runId: string = currentRu
 export function formatRunSummary(runId: string, counts: { deleted: number; kept: number; failed: number } | undefined, env: NodeJS.ProcessEnv = process.env, failures: Array<{ resource: string; uuid?: string; message?: string }> = []): string {
     const report = readKeptReport(runId, env);
     const lines = [`run summary ${runId}: ${counts ? `deleted ${counts.deleted}, kept ${counts.kept}, failed ${counts.failed}` : 'nothing deleted by the teardown'}`];
-    // Every failed removal with its full error text (never just a count: on a live tier a count alone left one "no status" failure unexplained).
+    // Every failed removal with its full error text (never just a count: on a live tier a count alone left one "no status" failure
+    // unexplained).
     for (const f of failures) lines.push(`failed ${f.resource} ${f.uuid}: ${String(f.message ?? '(no error text)').replace(/\s+/g, ' ').trim().slice(0, 1500)}`);
     const bugs = report?.knownBugs ?? [];
     lines.push(bugs.length

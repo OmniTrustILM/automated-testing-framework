@@ -4,7 +4,8 @@
  * WHAT: The listings the contract specs run the oracles on (keys, discoveries, audit logs), with the property fields of each
  *       and their verified DTO member, the expected catalogue facts, and the listings that refuse a sort.
  * WHY: Each listing needs its fields with the verified DTO member and the expected catalogue facts.
- * HOW: Tables for keys, discoveries and audit logs, plus the listings that refuse a sort, each field carrying the component that proves its mapping.
+ * HOW: Tables for keys, discoveries and audit logs, plus the listings that refuse a sort, each field carrying the component that proves its
+ * mapping.
  */
 import { elementsOf, member, nested } from './values';
 import { CatalogueExpectations } from './catalogueContract';
@@ -34,7 +35,8 @@ export const KEYS: ListingSpec = {
         { id: 'CKI_FORMAT', type: 'list', kind: 'list', shape: 'code', get: member('format'), sortable: true, sort: 'structure', evidence: `${KEY_ITEM}: format; FilterField.java` },
         { id: 'CKI_STATE', type: 'list', kind: 'list', shape: 'code', get: member('state'), sortable: true, sort: 'structure', evidence: `${KEY_ITEM}: state; FilterField.java` },
         { id: 'CKI_CRYPTOGRAPHIC_ALGORITHM', type: 'list', kind: 'list', shape: 'code', get: member('keyAlgorithm'), sortable: true, sort: 'structure', evidence: `${KEY_ITEM}: keyAlgorithm; FilterField.java` },
-        // KeyUsage is a BitMaskEnum: EMPTY = bit mask 0 (FilterPredicatesBuilder.java), EQUALS = the bit is set; not sortable (SearchHelper.isBitMaskField :336-340).
+        // KeyUsage is a BitMaskEnum: EMPTY = bit mask 0 (FilterPredicatesBuilder.java), EQUALS = the bit is set; not sortable
+        // (SearchHelper.isBitMaskField :336-340).
         { id: 'CKI_USAGE', type: 'list', kind: 'list', shape: 'code', get: member('usage'), sortable: false, sort: 'none', evidence: `${KEY_ITEM}: usage (KeyUsage codes of the bit mask); FilterField.java` },
         { id: 'CKI_LENGTH', type: 'number', kind: 'number', shape: 'number', get: member('length'), sortable: true, sort: 'number', evidence: `${KEY_ITEM}: length (nullable Integer); FilterField.java` },
         { id: 'CKI_ENABLED', type: 'boolean', kind: 'boolean', shape: 'boolean', get: member('enabled'), sortable: true, sort: 'boolean', evidence: `${KEY_ITEM}: enabled (primitive; the column is primitive too, CryptographicKeyItem.java); FilterField.java` },

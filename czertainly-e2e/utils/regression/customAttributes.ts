@@ -100,16 +100,16 @@ export function toRequestAttribute(a: JsonObject): JsonObject {
 }
 
 /**
- * Values for the REQUIRED custom attributes a tier defines on a resource (`GET /v1/attributes/custom/resources/{r}`):
- * a create without them answers 422 on such a tier. Optional attributes are left out. EVERY request attribute carries the
- * definition's `version` normalised by `requestVersion` (core sends a NUMBER, 3 / 2; v3 when the definition omits it: custom attributes are v3 in core) and EVERY content item its
- * `contentType`: `RequestAttribute` is polymorphic on `version` with a v2 default whose content items have no content type,
- * and `AttributeEngine.validateExtensibleList` compares reference, data AND contentType of a list item, so a v2-shaped item
- * never matches ("not part of predefined list", 422 — seen on a live tier, 37 tests; the UI works because it sends v3). A list gets its
- * first predefined content item COPIED AS IS (completed with the contentType when the definition's item lacks it); string-like
- * types get `value`, numbers 1, booleans true, `date` today (UTC, yyyy-MM-dd), `time` HH:mm:ss, `datetime` ISO local without a
- * zone; any other required type throws (a setup the suite cannot fill). Nothing is ever created on the tier here: definitions
- * are only read. ONE helper: every creator of an own object calls it.
+ * Values for the REQUIRED custom attributes a tier defines on a resource (`GET /v1/attributes/custom/resources/{r}`): a create without them
+ * answers 422 on such a tier. Optional attributes are left out. EVERY request attribute carries the definition's `version` normalised by
+ * `requestVersion` (core sends a NUMBER, 3 / 2; v3 when the definition omits it: custom attributes are v3 in core) and EVERY content item
+ * its `contentType`: `RequestAttribute` is polymorphic on `version` with a v2 default whose content items have no content type, and
+ * `AttributeEngine.validateExtensibleList` compares reference, data AND contentType of a list item, so a v2-shaped item never matches ("not
+ * part of predefined list", 422 — seen on a live tier, 37 tests; the UI works because it sends v3). A list gets its first predefined
+ * content item COPIED AS IS (completed with the contentType when the definition's item lacks it); string-like types get `value`, numbers 1,
+ * booleans true, `date` today (UTC, yyyy-MM-dd), `time` HH:mm:ss, `datetime` ISO local without a zone; any other required type throws (a
+ * setup the suite cannot fill). Nothing is ever created on the tier here: definitions are only read. ONE helper: every creator of an own
+ * object calls it.
  */
 export type CustomAttributeResource = string;
 

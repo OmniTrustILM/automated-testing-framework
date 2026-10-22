@@ -6,7 +6,8 @@
  *       docker binary comes from `tools.requireTool('docker')` (a fake under the unit tests); compose file, project and
  *       service names come from the environment, never from code.
  * WHY: Restart, stop and database rows can only run against a stack the suite owns.
- * HOW: Each call refuses unless `TIER_KIND=local` and BASE_URL is loopback; the docker binary comes from `requireTool('docker')`; compose file, project and services come from the environment.
+ * HOW: Each call refuses unless `TIER_KIND=local` and BASE_URL is loopback; the docker binary comes from `requireTool('docker')`; compose
+ * file, project and services come from the environment.
  */
 import { execFileSync, spawnSync } from 'child_process';
 import { Logger } from '../../Logger';

@@ -9,9 +9,8 @@
  *   onboarded as new) are `derived` lines with `createdAfter`, taken from the SERVER's clock (`createdAfterMarker`: the
  *   Date header of the create response, or a server timestamp, minus a margin); they are deleted only when
  *   the platform's creation time is not earlier.
- * - Ref kinds: `recordCreated` returns an `OwnRef`; the RA profile / authority of REG_RA_PROFILE_NAME (local
- *   stack) are `CreateOnlyRef`s. Mutation helpers accept only `OwnRef` (a compile-time aid; the runtime guard
- *   `assertOwnLive` decides).
+ * - Ref kinds: `recordCreated` returns an `OwnRef`; the RA profile / authority of REG_RA_PROFILE_NAME (local stack) are `CreateOnlyRef`s.
+ *   Mutation helpers accept only `OwnRef` (a compile-time aid; the runtime guard `assertOwnLive` decides).
  */
 import * as crypto from 'crypto';
 import * as fs from 'fs';

@@ -9,11 +9,11 @@
  *       with exactly one string member `message`. An API negative asserts the status AND this shape (spec-authoring hard
  *       rule 8), never the status alone.
  * WHY: An API negative that asserts only the status hides a wrong body; the error contract is one rule and belongs in one reader.
- * HOW: `errorShape` classifies a raw body, `expect422Messages` / `expectMessageObject` / `expectRefused` assert it, and `checkRefusedMethod` tells core's answer to a refused method from an ingress answer.
- *       `expectRefused` is as strict as the strictest check the specs wrote by hand: JSON content type, the shape of the
- *       status, exactly one message and exactly the text. The looser readings are explicit options (`among`, `prefix`,
- *       `contentTypeNotChecked` with its reason). `INTERNAL_LEAK_WORDS` is the one list of what a body must never carry
- *       (a stack frame, an exception class, an SQL state, a framework package); `internalLeaks` reads it.
+ * HOW: `errorShape` classifies a raw body, `expect422Messages` / `expectMessageObject` / `expectRefused` assert it, and
+ *       `checkRefusedMethod` tells core's answer to a refused method from an ingress answer. `expectRefused` is as strict as the strictest
+ *       check the specs wrote by hand: JSON content type, the shape of the status, exactly one message and exactly the text. The looser
+ *       readings are explicit options (`among`, `prefix`, `contentTypeNotChecked` with its reason). `INTERNAL_LEAK_WORDS` is the one list
+ *       of what a body must never carry (a stack frame, an exception class, an SQL state, a framework package); `internalLeaks` reads it.
  */
 
 import { expect } from '@playwright/test';

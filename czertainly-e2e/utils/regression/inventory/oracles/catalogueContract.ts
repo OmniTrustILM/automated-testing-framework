@@ -4,8 +4,7 @@
  * WHAT: the condition kinds, the absolute condition set of every field type, the catalogue JSON schema, the `FIELD_RULES`
  *       table and `catalogueProblems` (shape, condition sets, unique identifiers, non-empty labels, sortable / displayable
  *       consistency, the known fields of the listing).
- * WHY: one new catalogue rule should be one new table entry, not an edit inside a sixty-line function whose branches share
- *      local state.
+ * WHY: one new catalogue rule should be one new table entry, not an edit inside a sixty-line function whose branches share local state.
  * HOW: three steps, all pure: the schema check, the group and field rules in table order, and the known-field diff.
  */
 import Ajv from 'ajv';

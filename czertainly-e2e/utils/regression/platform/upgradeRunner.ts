@@ -5,7 +5,8 @@
  *       again and diff. The snapshot diff and the schema-history checks are pure; the live half reads through the API and
  *       `PlatformStack.psql`. The upgrade is one way: an older target than the source image is refused.
  * WHY: An upgrade must keep every object and every migration drift must show.
- * HOW: Seed on the old image, snapshot, upgrade on the same database, snapshot again and diff; the diff and schema-history checks are pure and the upgrade is one way.
+ * HOW: Seed on the old image, snapshot, upgrade on the same database, snapshot again and diff; the diff and schema-history checks are pure
+ * and the upgrade is one way.
  */
 import type { APIRequestContext } from '@playwright/test';
 import { apiJson } from '../apiReads';

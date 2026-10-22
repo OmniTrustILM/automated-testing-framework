@@ -17,7 +17,6 @@ import { expect, test } from '../../../fixtures/areas/clusterRun';
 import { applyOwnManifest, getJsonPath, K8sRef, recordOwnK8sObject, waitReady } from '../../../utils/regression/kubernetesOwnObjects';
 import { parseCertificate, sha256Fingerprint } from '../../../utils/regression/pkiBuilders';
 import { getCertificate, searchCertificates, serverCreatedAfter } from '../../../utils/regression/apiReads';
-import { recordIssuedNamed } from '../../../utils/regression/issuedRecords';
 import { checkedCommonName, runName } from '../../../utils/regression/ledger/runState';
 import { testMeta, tags } from '../../../utils/regression/tags';
 import { CERTIFICATE_READY_SECONDS, ISSUER_READY_SECONDS, LIFECYCLE_MS } from '../../../utils/regression/timeouts';
@@ -87,7 +86,7 @@ test.describe('Certificate issue through cert-manager', { tag: tags.regression }
                 });
 
                 await test.step('The issued certificate is in the ILM inventory under the run RA profile', async () => {
-                    const uuids = await recordIssuedNamed(api, dns, createdAfter, own.spec, `cert-manager certificate ${certName}`);
+                    const uuids = await own.issuedNamed(dns, createdAfter, `cert-manager certificate ${certName}`);
                     const tlsCrt = Buffer.from(getJsonPath(secret, '{.data.tls\\.crt}'), 'base64').toString('utf8');
                     const cert = parseCertificate(tlsCrt);
                     const found = await searchCertificates(api, [{ fieldSource: 'property', fieldIdentifier: 'FINGERPRINT', condition: 'EQUALS', value: sha256Fingerprint(cert) }]);
@@ -100,7 +99,7 @@ test.describe('Certificate issue through cert-manager', { tag: tags.regression }
                 });
             } finally {
                 // Also after a failed wait (the CR may have reached core before it failed).
-                await recordIssuedNamed(api, dns, createdAfter, own.spec, `cert-manager certificate ${certName} (recorded in finally)`);
+                await own.issuedNamed(dns, createdAfter, `cert-manager certificate ${certName} (recorded in finally)`);
             }
         });
 });

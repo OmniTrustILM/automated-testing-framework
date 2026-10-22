@@ -370,8 +370,7 @@ test('known bugs of the setup and of the teardown reach the run summary through 
 
 // ------------------------------------------------------------------ delete order, pre-step hooks, kept approvals
 
-// DELETE_ORDER pins the workflow step as triggers → rules → conditions → actions → executions, then notification profiles →
-// instances
+// DELETE_ORDER pins the workflow step as triggers → rules → conditions → actions → executions, then notification profiles → instances
 test('DELETE_ORDER pins the workflow step order from triggers to executions, then notification profiles', () => {
     const workflow = DELETE_ORDER.find((s) => s.types.includes('triggers'))!;
     expect(workflow.types).toEqual(['triggers', 'rules', 'conditions', 'actions', 'executions']);
@@ -492,8 +491,8 @@ test('approvals the platform retains may be answered kept, as a warning; REG_KEP
     expect(isKeptStrict({ REG_KEPT_STRICT: '1' })).toBe(true);
 });
 
-// importing runTeardown loads no env file: utils/env.ts (which loads the dotenv file when imported) is required only when the
-// teardown authenticates
+// importing runTeardown loads no env file: utils/env.ts (which loads the dotenv file when imported) is required only when the teardown
+// authenticates
 test('importing runTeardown loads no env file; utils/env.ts is required only when authenticating', ({}, testInfo) => {
     const utilsRoot = path.resolve(__dirname, '../../utils') + path.sep;
     const ours = (k: string) => k.startsWith(utilsRoot);
@@ -548,7 +547,7 @@ test('a teardown handler module that fails to load fails the import of runTeardo
     }
 });
 
-// ------------------------------------------------------------------ the cleanup report and the run summary keep the full error text; the compliance-profile delete order
+// ----------------------------------- the cleanup report and the run summary keep the full error text; the compliance-profile delete order
 
 const PROFILE = 'bbbbbbbb-0000-4000-8000-000000000001';
 
@@ -567,14 +566,15 @@ test('failures keep the full error text in the cleanup report and the run summar
 });
 
 // dangling association: DELETE_ORDER deletes compliance profiles BEFORE RA profiles (a deleted RA profile leaves a dangling
-// association, a suspected core defect); the pair is in REFERENCED_BY; approval profiles stay valid
+// association, unexpected core behaviour); the pair is in REFERENCED_BY; approval profiles stay valid
 test('dangling association: compliance profiles are deleted before RA profiles (REFERENCED_BY pair)', () => {
     expect(isDeletedBefore('complianceProfiles', 'raProfiles')).toBe(true);
     expect(isDeletedBefore('raProfiles', 'complianceProfiles')).toBe(false);
     expect(REFERENCED_BY.some((r) => r.a === 'raProfiles' && r.b === 'complianceProfiles' && /suspected defect/.test(r.core))).toBe(true);
     const step = DELETE_ORDER.find((x) => x.types.includes('complianceProfiles'))!;
     expect(step.types.indexOf('complianceProfiles')).toBeLessThan(step.types.indexOf('raProfiles'));
-    // The other edges around it hold: certificates → RA profiles, RA profiles → authorities, approval profiles stay after their RA profiles (ungated by the pre-step).
+    // The other edges around it hold: certificates → RA profiles, RA profiles → authorities, approval profiles stay after their RA profiles
+    // (ungated by the pre-step).
     expect(isDeletedBefore('certificates', 'raProfiles')).toBe(true);
     expect(isDeletedBefore('raProfiles', 'authorities')).toBe(true);
     expect(isDeletedBefore('approvals', 'approvalProfiles')).toBe(true);

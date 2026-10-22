@@ -2,8 +2,8 @@
  * regressionFixtures — the spec-facing fixtures of fixtures/regressionFixtures.ts, run for real with only `env`, the `api` context and the
  * transport of `needs` replaced (a guarded context to a loopback fake core).
  * - own: a create followed by a throwing step still leaves its ledger line, under the test's ledger id; `own.record` writes the line from
- *   the form's answer (a refusal that carries an id is recorded before it throws; no name is an error, not a line); `own.recordNamed` adopts
- *   a run-named certificate; `own.deleted` writes the deleted line; a tier without a CA skips `own.raProfile` with the named reason;
+ *   the form's answer (a refusal that carries an id is recorded before it throws; no name is an error, not a line); `own.recordNamed`
+ *   adopts a run-named certificate; `own.deleted` writes the deleted line; a tier without a CA skips `own.raProfile` with the named reason;
  * - needs: a declared need is resolved from reads before any `own` or base-fixture create; an unmet need skips with its named reason and
  *   creates nothing; `needs.require()` and the per-need methods skip the same way; a need outside the catalogue is an error;
  * - live: refuses a foreign object, hands over a `LiveOwn` for an own one; a forged `LiveOwn` does not type-check;
@@ -21,7 +21,7 @@ import { readLedger } from '../../utils/regression/ledger/ledger';
 import { runId, updateRunState } from '../../utils/regression/ledger/runState';
 import { issueOwnCertificate } from '../../utils/regression/ownCertificates';
 import { secondIdentityBlocker } from '../../utils/regression/rbac/identities';
-import { NEEDS, testMeta } from '../../utils/regression/tags';
+import { NEEDS, testMeta, type Needs } from '../../utils/regression/tags';
 import { Answer, Arrived, loopbackServer, LoopbackServer } from './helpers/loopbackServer';
 
 const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -198,7 +198,7 @@ test('own.raProfile on a tier without a CA skips the test with the deploy gate a
 });
 
 test('own offers the creators of the own* helpers and the certificate steps', META('REG-FIX-06'), async ({ own }) => {
-    expect(Object.keys(own).sort()).toEqual(['certificate', 'customAttribute', 'deleted', 'group', 'raProfile', 'record', 'recordNamed', 'role', 'spec', 'user']);
+    expect(Object.keys(own).sort()).toEqual(['acmeAccount', 'adoptNamed', 'certificate', 'customAttribute', 'deleted', 'derivedKey', 'group', 'issuedNamed', 'probe', 'raProfile', 'record', 'recordNamed', 'restrictedUser', 'role', 'runAuthority', 'spec', 'user']);
     expect(Object.keys(own.certificate).sort()).toEqual(['issue', 'upload', 'uploadSelfSigned']);
 });
 
@@ -248,7 +248,10 @@ test('needs: every need in the catalogue has a resolver; the first unmet one dec
     // No runner tool is run here, not even a fake one: every tool name points at a file that does not exist.
     for (const key of ['REG_OPENSSL_BIN', 'REG_SSCEP_BIN', 'REG_KUBECTL_BIN', 'REG_DOCKER_BIN']) process.env[key] = testInfo.outputPath(`no-such-${key}`);
     const context = { api, env };
-    for (const need of NEEDS) expect(['string', 'undefined'], need).toContain(typeof (await resolveNeed(need, context)));
+    // A need that reads the tier fails the test when the read fails (the fake core answers 404 to a path it does not serve): not a skip.
+    const READS_THE_TIER = ['platform-triggers-free', 'metadata-field', 'registration-settings', 'utils-service'];
+    for (const need of NEEDS.filter((n) => !READS_THE_TIER.includes(n))) expect(['string', 'undefined'], need).toContain(typeof (await resolveNeed(need, context)));
+    for (const need of READS_THE_TIER) await expect(resolveNeed(need as Needs, context), `${need}: a failed read is an error`).rejects.toThrow(/→ 404|answered 404/);
     expect(await resolveNeeds(['scan-target', 'connector-online'], context)).toBeUndefined();
     expect(await resolveNeeds(['second-identity'], context), 'a second identity is set').toBeUndefined();
     expect(await resolveNeeds(['smtp-catcher', 'second-identity'], context)).toMatch(/SMTP catcher/);
@@ -286,7 +289,8 @@ test('live: a LiveOwn cannot be forged (type level) and a hand-built object is r
     expect(typeof built).toBe('function');
     // @ts-expect-error an object literal is not a LiveOwn (a private field makes the class nominal)
     const forged: LiveOwn<'groups'> = { type: 'groups', ref, proof: { line: {} as never }, uuid: ref.uuid, name: ref.name };
-    // Whatever a hand-built object (or a look-alike class) says about itself, the runtime brand check refuses it where a LiveOwn is required.
+    // Whatever a hand-built object (or a look-alike class) says about itself, the runtime brand check refuses it where a LiveOwn is
+    // required.
     const lookAlike = new (class { readonly proven = true; readonly type = 'groups'; readonly uuid = ref.uuid; readonly name = ref.name; readonly ref = ref; readonly proof = { line: {} }; })();
     for (const fake of [forged, lookAlike, { ...forged, proven: true }, null, undefined, 'groups']) {
         expect(LiveOwn.isProven(fake), `${typeof fake} is not a LiveOwn`).toBe(false);
@@ -306,7 +310,9 @@ test('regressionEnv is the settings reader', async ({ regressionEnv }) => {
     expect(regressionEnv.caConnectors).toEqual(['One-Connector', 'Two-Connector']);
 });
 
-/** The page fixture on a stand-in: every request of the context is answered by the test; header mode signs in by waiting for the app shell. */
+/**
+ * The page fixture on a stand-in: every request of the context is answered by the test; header mode signs in by waiting for the app shell.
+ */
 const standIn = test.extend<{ served: string[] }>({
     served: async ({}, use) => use([]),
     env: async ({}, use) => use({ baseUrl: 'http://127.0.0.1:9/', authMode: 'header', username: 'qa-user', password: 'unused' } as TestEnv),

@@ -1,9 +1,12 @@
 /**
  * discoveryApi — own network discoveries of both generations through the guarded API.
  *
- * WHAT: Finds the healthy v1 and v2 discovery connector of the tier (a missing one is a named deploy gate), builds the run attributes from the connector's live definitions, creates and probes discoveries, stops, resumes and cancels them, waits for their state, reads the results and records the new certificates a run found.
+ * WHAT: Finds the healthy v1 and v2 discovery connector of the tier (a missing one is a named deploy gate), builds the run attributes from
+ * the connector's live definitions, creates and probes discoveries, stops, resumes and cancels them, waits for their state, reads the
+ * results and records the new certificates a run found.
  * WHY: Both generations share one create-and-read flow, and targets must stay the run's own TLS target or RFC 5737 documentation ranges.
- * HOW: Every run is recorded before any assertion and its new certificates as derived ledger lines; the scheduled variant lives in discoveryJobs.
+ * HOW: Every run is recorded before any assertion and its new certificates as derived ledger lines; the scheduled variant lives in
+ * discoveryJobs.
  */
 
 import { waitForDiscoveryCompletion } from '../../discoveryUtils';
@@ -103,7 +106,9 @@ const def = (defs: JsonObject[], name: string): JsonObject => {
     return d;
 };
 
-/** The run-level attribute definitions of a connector: v1 `attributes/discoveryProvider/<kind>`, v2 `GET /v1/discoveries/{uuid}/attributes`. */
+/**
+ * The run-level attribute definitions of a connector: v1 `attributes/discoveryProvider/<kind>`, v2 `GET /v1/discoveries/{uuid}/attributes`.
+ */
 export async function runDefinitions(api: GuardedApi, c: DiscoveryConnector): Promise<JsonObject[]> {
     const url = c.generation === 'v1' ? `/api/v1/connectors/${c.uuid}/attributes/discoveryProvider/${c.kind ?? IP_KIND}` : `/api/v1/discoveries/${c.uuid}/attributes`;
     const res = await api.get(url);

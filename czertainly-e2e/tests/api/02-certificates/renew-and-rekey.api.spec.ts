@@ -18,7 +18,6 @@ import { rekeyOwnCertificate, renewOwnCertificate } from '../../../utils/regress
 import { csrFromKeyWithSubject, newKeyPair, parseCertificate, publicKeyPemOf, sameSans, sansOfDetail } from '../../../utils/regression/pkiBuilders';
 import { waitIssued } from '../../../utils/regression/ownCertificates';
 import { getCertificate } from '../../../utils/regression/apiReads';
-import { recordDerivedKeyOf } from '../../../utils/regression/issuedRecords';
 import { testMeta, tags } from '../../../utils/regression/tags';
 import { LIFECYCLE_MS } from '../../../utils/regression/timeouts';
 
@@ -52,7 +51,7 @@ test.describe('Certificate renew and rekey through the v2 API', { tag: tags.api 
 
             await test.step('B reaches issued; A stays issued', async () => {
                 await waitIssued(api, b.uuid);
-                await recordDerivedKeyOf(api, b.uuid, renew.createdAfter, own.spec);
+                await own.derivedKey(b.uuid, renew.createdAfter);
                 expect((await getCertificate(api, a.uuid)).state).toBe('issued');
             });
 
@@ -105,7 +104,7 @@ test.describe('Certificate renew and rekey through the v2 API', { tag: tags.api 
 
             await test.step('B reaches issued with the new key; A stays issued', async () => {
                 await waitIssued(api, b.uuid);
-                await recordDerivedKeyOf(api, b.uuid, rekey.createdAfter, own.spec);
+                await own.derivedKey(b.uuid, rekey.createdAfter);
                 const bDetail = await getCertificate(api, b.uuid);
                 expect(bDetail.fingerprint).not.toBe(aDetail.fingerprint);
                 expect(publicKeyPemOf(parseCertificate(bDetail.certificateContent)), 'B public key = the new CSR key').toBe(rekey.csr.publicKeyPem);

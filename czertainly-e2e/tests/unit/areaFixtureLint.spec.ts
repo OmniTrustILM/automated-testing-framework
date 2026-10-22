@@ -14,7 +14,7 @@ import { test, expect } from '@playwright/test';
 import { PLAYWRIGHT_FIXTURES, areaFixtureProblems, fixtureNamesOf, playwrightFixtureNamesOf } from '../../utils/regression/specLint/areaFixtures';
 import { rawMutations } from '../../utils/regression/specLint/rawMutations';
 
-const RESERVED = new Set([...PLAYWRIGHT_FIXTURES, 'api', 'anonymousApi', 'localApi', 'own', 'live', 'needs', 'declaredNeeds', 'signedIn', 'regressionEnv', 'env']);
+const RESERVED = new Set([...PLAYWRIGHT_FIXTURES, 'api', 'anonymousApi', 'localApi', 'workerApi', 'own', 'live', 'needs', 'declaredNeeds', 'signedIn', 'regressionEnv', 'env']);
 const HEAD = "import { test as base } from '../regressionFixtures';\n";
 const FILE = 'fixtures/areas/x.ts';
 /** The distinct rules found (one construct may break a rule twice, e.g. a raw input that is also a raw member name). */

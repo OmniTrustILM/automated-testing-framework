@@ -3,9 +3,8 @@
  *
  * WHAT: the smoke suite's certificate page object: the list, the import dialog, the Issue-now fields and the
  *       Details / Request / History tabs (SMK-004, SMK-007, SMK-008).
- * WHY: the three smoke specs call these names; the regression suite uses `CertificateListPage`,
- *       `CertificateAddPage`, `CertificateDetailPage` and `ImportCertificatesDialog`, to which every method here
- *       delegates.
+ * WHY: the three smoke specs call these names; the regression suite uses `CertificateListPage`, `CertificateAddPage`,
+ *       `CertificateDetailPage` and `ImportCertificatesDialog`, to which every method here delegates.
  * HOW: the list is opened through the sidebar because SMK-004 and SMK-007 navigate that way (SMK-002 uses
  *       Navigation directly); the methods that moved to the classes above delegate to them under their old names.
  */

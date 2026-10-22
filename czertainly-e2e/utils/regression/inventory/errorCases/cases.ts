@@ -15,7 +15,7 @@ import { Req } from './requests';
 
 /** The rows of the inventory API status matrix the battery exercises, plus the create / content-type / auth rows. */
 export const ERROR_STATUS_MATRIX = {
-    paging: 'status matrix: search body: itemsPerPage 0 / negative or pageNumber 0 / negative → 400 {"message":"The request could not be processed."}',
+    paging: 'status matrix: search body: itemsPerPage 0 / negative or pageNumber 0 / negative → 422 with one message (core validates paging itself)',
     unreadableBody: 'status matrix: search body: int overflow, body not JSON, enum value in the wrong case → 400 {"message":"Unable to read HTTP message"}',
     beanValidation: 'status matrix: sort.fieldIdentifier blank / sort.direction null / columns[0] null → 422 bean-validation text',
     sorting: 'status matrix: sort on an unknown field / a non-sortable field / a listing that does not sort → 422',
@@ -36,8 +36,11 @@ export type MatrixRow = keyof typeof ERROR_STATUS_MATRIX;
 
 // ------------------------------------------------------------------ messages (verbatim from core)
 
+/** The paging refusal of core's RequestValidatorHelper.validatePaging: a 422 with one message (core PR #2527). */
+export const pagingMessage = (what: 'Items per page' | 'Page number', value: number): string => `${what} must be at least 1, but was ${value}`;
+
 export const ERROR_MESSAGES = {
-    /** IllegalArgumentException (PageRequest.of): ExceptionHandlingAdvice.java. */
+    /** The generic 400 body of ExceptionHandlingAdvice.java (an IllegalArgumentException; not the paging answer any more). */
     paging: 'The request could not be processed.',
     /** HttpMessageNotReadableException: ExceptionHandlingAdvice.java. */
     unreadable: 'Unable to read HTTP message',
@@ -154,12 +157,11 @@ function conditionSetCheck(field: string, kind: keyof typeof CONDITION_SETS) {
 export const refuse = (messages: readonly Oracle[], status = 422): Expectation => ({ status, messages });
 
 export const LISTING_CASES: readonly CaseDef[] = [
-    // paging: PageRequest.of(pageNumber - 1, itemsPerPage) throws IllegalArgumentException (every listing: CertificateServiceImpl.java,
-    // CryptographicKeyServiceImpl.java, DiscoveryServiceImpl.java, AuditLogServiceImpl.java, CustomOidEntryServiceImpl.java).
-    { id: 'paging.itemsPerPage0', matrix: 'paging', rule: 'itemsPerPage 0 → 400 "The request could not be processed."', build: () => ({ data: searchBody({ itemsPerPage: 0 }), expect: { status: 400, message: ERROR_MESSAGES.paging } }) },
-    { id: 'paging.pageNumber0', matrix: 'paging', rule: 'pageNumber 0 → 400 "The request could not be processed."', build: () => ({ data: searchBody({ pageNumber: 0 }), expect: { status: 400, message: ERROR_MESSAGES.paging } }) },
-    { id: 'paging.itemsPerPageNegative', matrix: 'paging', rule: 'itemsPerPage -1 → 400 "The request could not be processed."', build: () => ({ data: searchBody({ itemsPerPage: -1 }), expect: { status: 400, message: ERROR_MESSAGES.paging } }) },
-    { id: 'paging.pageNumberNegative', matrix: 'paging', rule: 'pageNumber -1 → 400 "The request could not be processed."', build: () => ({ data: searchBody({ pageNumber: -1 }), expect: { status: 400, message: ERROR_MESSAGES.paging } }) },
+    // paging: core validates it itself (RequestValidatorHelper.validatePaging) and answers 422 with one message (core PR #2527).
+    { id: 'paging.itemsPerPage0', matrix: 'paging', rule: 'itemsPerPage 0 → 422 ["Items per page must be at least 1, but was 0"]', build: () => ({ data: searchBody({ itemsPerPage: 0 }), expect: refuse([pagingMessage('Items per page', 0)]) }) },
+    { id: 'paging.pageNumber0', matrix: 'paging', rule: 'pageNumber 0 → 422 ["Page number must be at least 1, but was 0"]', build: () => ({ data: searchBody({ pageNumber: 0 }), expect: refuse([pagingMessage('Page number', 0)]) }) },
+    { id: 'paging.itemsPerPageNegative', matrix: 'paging', rule: 'itemsPerPage -1 → 422 ["Items per page must be at least 1, but was -1"]', build: () => ({ data: searchBody({ itemsPerPage: -1 }), expect: refuse([pagingMessage('Items per page', -1)]) }) },
+    { id: 'paging.pageNumberNegative', matrix: 'paging', rule: 'pageNumber -1 → 422 ["Page number must be at least 1, but was -1"]', build: () => ({ data: searchBody({ pageNumber: -1 }), expect: refuse([pagingMessage('Page number', -1)]) }) },
     // unreadableBody: Jackson (HttpMessageNotReadableException → ExceptionHandlingAdvice.java).
     { id: 'json.itemsPerPageOverflow', matrix: 'unreadableBody', rule: 'itemsPerPage 2147483648 (int overflow) → 400 "Unable to read HTTP message"', build: () => ({ data: Buffer.from('{"filters":[],"itemsPerPage":2147483648,"pageNumber":1}'), expect: { status: 400, message: ERROR_MESSAGES.unreadable } }) },
     { id: 'json.notJson', matrix: 'unreadableBody', rule: 'body not JSON → 400 "Unable to read HTTP message"', build: () => ({ data: Buffer.from('this is not json'), expect: { status: 400, message: ERROR_MESSAGES.unreadable } }) },
@@ -169,7 +171,8 @@ export const LISTING_CASES: readonly CaseDef[] = [
     // beanValidation: bean validation runs before any service (SearchRequestDto is `@Valid @RequestBody` on every listing).
     { id: 'sort.blankIdentifier', matrix: 'beanValidation', rule: 'sort.fieldIdentifier blank → 422 ["sort.fieldIdentifier must not be blank"]', build: () => ({ data: searchBody({ sort: sortOn('', 'asc') }), expect: refuse([ERROR_MESSAGES.blankSortIdentifier]) }) },
     { id: 'sort.nullDirection', matrix: 'beanValidation', rule: 'sort.direction null → 422 ["sort.direction must not be null"]', build: (l) => ({ data: searchBody({ sort: sortOn(l.fields.sortable, null) }), expect: refuse([ERROR_MESSAGES.nullSortDirection]) }) },
-    // sorting: SortOrderBuilder.resolveField (unknown / not orderable) on the listings that sort; RequestValidatorHelper.java on the others.
+    // sorting: SortOrderBuilder.resolveField (unknown / not orderable) on the listings that sort; RequestValidatorHelper.java on the
+    // others.
     {
         id: 'sort.unknownField', matrix: 'sorting', rule: 'sort on an unknown field → 422 ["Unknown sort field identifier X."]; a listing that does not sort refuses any sort',
         build: (l) => ({

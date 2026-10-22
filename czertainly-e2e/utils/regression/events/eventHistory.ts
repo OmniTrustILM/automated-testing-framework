@@ -111,12 +111,13 @@ export const inEvaluationOrder = (rows: ObjectHistoryRow[]): ObjectHistoryRow[] 
 /**
  * Whether a PLATFORM-level trigger already listens on any of `events` (`GET /v1/settings/events`, read only). Such a trigger acts
  * on this spec's certificates too (an ignore trigger could even refuse them), so the rows that assert "nothing happened" or an
- * exact firing / history outcome skip with a named reason, as the `@local` rows do for an occupied platform list. A read that fails
- * is a skip too: the absence of a platform trigger cannot be shown.
+ * exact firing / history outcome skip with a named reason, as the `@local` rows do for an occupied platform list. Answers the reason,
+ * or undefined when none of the events is occupied. A read that fails THROWS: the absence of a platform trigger cannot be shown,
+ * and a test must not pass or skip on a settings page it could not read.
  */
-export async function getPlatformTriggerGate(api: GuardedApi, events: EventCode[]): Promise<string | undefined> {
+export async function getPlatformTriggerGate(api: GuardedApi, events: readonly EventCode[]): Promise<string | undefined> {
     const sent = await sendJson(api, 'GET', '/api/v1/settings/events');
-    if (sent.status !== 200) return `the platform event settings could not be read (answer ${sent.status}); a platform-level trigger on the events of this row cannot be ruled out`;
+    if (sent.status !== 200) throw new Error(`GET /api/v1/settings/events → ${sent.status}: the platform event settings could not be read, so a platform-level trigger on the events of this row cannot be ruled out`);
     const mapping = (sent.json?.eventsMapping ?? {}) as Record<string, string[]>;
     const occupied = events.filter((e) => (mapping[e] ?? []).length > 0);
     return occupied.length ? `platform-level trigger(s) already listen on ${occupied.map((e) => EVENT_LABEL[e]).join(', ')}; the row stays out of events it does not own` : undefined;

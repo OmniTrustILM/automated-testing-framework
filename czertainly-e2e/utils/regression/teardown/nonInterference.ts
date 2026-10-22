@@ -8,11 +8,10 @@
  *   1. every stored foreign object is still there with an unchanged name, description and marker (roles,
  *      groups, authorities, credentials, connectors and other markerless resources were blind to a rename or an edit);
  *   2. platform event associations and system jobs are identical;
- *   3. net accounting per resource: `after.total - before.total` equals what the run's ledger explains
- *      (own and derived objects created since the before snapshot minus own objects deleted since then), within
- *      NET_TOLERANCE (REG_NET_TOLERANCE, default 0: any unexplained change is a violation). Keys count key items, so
- *      their expected change is a range (an own key brings one or two items, an own certificate up to one
- *      `certKey_<CN>` item);
+ *   3. net accounting per resource: `after.total - before.total` equals what the run's ledger explains (own and derived objects created
+ *      since the before snapshot minus own objects deleted since then), within NET_TOLERANCE (REG_NET_TOLERANCE, default 0: any unexplained
+ *      change is a violation). Keys count key items, so their expected change is a range (an own key brings one or two items, an own
+ *      certificate up to one `certKey_<CN>` item);
  *   4. a REQUIRED resource (certificates, RA profiles, authorities, ACME profiles, roles, users, groups, keys, tokens)
  *      that could not be read before the run leaves the proof incomplete: that is a violation, not a note;
  *   5. both snapshots were taken on the same tier (tier identity).

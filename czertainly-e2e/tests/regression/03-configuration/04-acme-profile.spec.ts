@@ -1,8 +1,7 @@
 /**
  * REG-CFG-04 — An ACME profile created through the UI (release checklist: Configuration 4). ilm#430.
  *
- * WHAT: 1. ACME Profiles → + → the form has a default retry interval and order validity; Terms of Service and contact are
- *          switched off.
+ * WHAT: 1. ACME Profiles → + → the form has a default retry interval and order validity; Terms of Service and contact are switched off.
  *       2. One pre-authorized identifier: DNS, exact match, a name under the run's prefix.
  *       3. Create → the profile exists, disabled.
  *       4. Detail → Enable → enabled.

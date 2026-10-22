@@ -160,8 +160,7 @@ test('BASE_URL served by a different core build than REG_LOCAL_CORE_URL is refus
     expect(env.REG_LOCAL_CORE_MARKER, 'the core marker is kept for the run').toBe(JSON.stringify(['2.15.0', 'abc', 't']));
 });
 
-// the container proof: a running container must publish the core port (and carry the compose label when asked); no docker ⇒
-// refused
+// the container proof: a running container must publish the core port (and carry the compose label when asked); no docker ⇒ refused
 test('the container proof: a running container must publish the core port; no docker is refused', () => {
     const calls: Array<[number, string | undefined]> = [];
     const none: ContainerProof = (port, compose) => {
@@ -271,8 +270,7 @@ test('TIER_LOCAL_HOSTS admits a private compose host on another machine through 
     expect(() => assertLocalAllowed({ ...env, BASE_URL: 'https://qa.example.com' }, opts)).toThrow(/loopback/);
 });
 
-// TIER_LOCAL_HOSTS with a public name is refused; only RFC 1918 / link-local / loopback literals or names resolving to them
-// count
+// TIER_LOCAL_HOSTS with a public name is refused; only RFC 1918 / link-local / loopback literals or names resolving to them count
 test('TIER_LOCAL_HOSTS with a public name is refused; only private, link-local or loopback count', () => {
     const table = resolver({ 'shared.example.com': ['203.0.113.10'], 'mixed.lan': ['192.168.1.5', '198.51.100.7'], 'box.lan': ['192.168.1.5'], 'v6.lan': ['fe80::1'] });
     const listed = (h: string) => ({ TIER_LOCAL_HOSTS: h });

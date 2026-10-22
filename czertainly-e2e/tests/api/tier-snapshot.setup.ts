@@ -1,16 +1,20 @@
 /**
  * API-GEN-33 — Run setup: the guard proof, then the "before" snapshot of a shared tier. ilm#428.
  *
- * WHAT: 1. [guard] The tier assertion holds and the run uses one worker; on a local stack a run-prefixed role created through BASE_URL is read back through the core's own URL
- *          (instance proof); an own role is created with its ledger line first and the guard accepts it, while a run-prefixed name without a ledger line, a pre-existing role and
- *          a pre-existing RA profile are refused for ownership (the helper and the guarded API, behind a spy that forwards reads only); the teardown registry deletes the own role
- *          and writes a deleted line.
- *       2. [before] The total and the pre-existing objects of every resource (about 30) are stored as the snapshot that the non-interference spec compares against; old snapshot
- *          files (14 days) are purged and a stale snapshot with the same run id is deleted first.
- * WHY: every later spec relies on the guard to refuse a change to anything the run did not create, so that is proven live on the target tier before the first spec; the snapshot
- *      is the "before" half of the non-interference proof. A required resource that cannot be read makes the proof incomplete and fails the setup.
- * HOW: the `snapshot` project of both configs, serial. The only spec allowed a raw context (tests/unit/specGuards.spec.ts); the rules it proves are in tests/regression/README.md.
- *      It needs BASE_URL (a run without a tier fails); the [before] test is skipped on a local stack; under the dry run the own role is kept and listed by the run-end dry run.
+ * WHAT: 1. [guard] The tier assertion holds and the run uses one worker; on a local stack a run-prefixed role created through BASE_URL is
+ *          read back through the core's own URL (instance proof); an own role is created with its ledger line first and the guard accepts
+ *          it, while a run-prefixed name without a ledger line, a pre-existing role and a pre-existing RA profile are refused for ownership
+ *          (the helper and the guarded API, behind a spy that forwards reads only); the teardown registry deletes the own role and writes a
+ *          deleted line.
+ *       2. [before] The total and the pre-existing objects of every resource (about 30) are stored as the snapshot that the
+ *          non-interference spec compares against; old snapshot files (14 days) are purged and a stale snapshot with the same run id is
+ *          deleted first.
+ * WHY: every later spec relies on the guard to refuse a change to anything the run did not create, so that is proven live on the target
+ *      tier before the first spec; the snapshot is the "before" half of the non-interference proof. A required resource that cannot be read
+ *      makes the proof incomplete and fails the setup.
+ * HOW: the `snapshot` project of both configs, serial. The only spec allowed a raw context (tests/unit/specGuards.spec.ts); the rules it
+ *      proves are in tests/regression/README.md. It needs BASE_URL (a run without a tier fails); the [before] test is skipped on a local
+ *      stack; under the dry run the own role is kept and listed by the run-end dry run.
  */
 import { randomUUID } from 'crypto';
 import { expect, getAuthenticatedApiContext, test } from '../../fixtures/testFixtures';

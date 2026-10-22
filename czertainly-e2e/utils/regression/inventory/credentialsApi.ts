@@ -118,10 +118,9 @@ export async function findRowByUuid(api: APIRequestContext, listUrl: '/api/v1/cr
 }
 
 /**
- * Ledger for an object a REFUSED create left behind (core#2512: the credential row is saved before the attribute lookup
- * fails): every row of the list whose name is exactly `name` (a unique run-prefixed name only this request used) that is not
- * in the ledger yet is recorded as this run's, so the run-end teardown removes it. Returns the rows found (recorded now or
- * before).
+ * Ledger for an object a REFUSED create left behind (core#2512: the credential row is saved before the attribute lookup fails): every row
+ * of the list whose name is exactly `name` (a unique run-prefixed name only this request used) that is not in the ledger yet is recorded as
+ * this run's, so the run-end teardown removes it. Returns the rows found (recorded now or before).
  */
 export async function adoptByName(
     api: APIRequestContext, listUrl: '/api/v1/credentials' | '/api/v1/groups' | '/api/v1/raProfiles', type: 'credentials' | 'groups' | 'raProfiles',
@@ -137,7 +136,10 @@ export async function adoptByName(
 /** The own object kinds the pack deletes as the behaviour under test. */
 export type DeletableKind = 'credentials' | 'groups';
 
-/** `DELETE /v1/credentials|groups/{uuid}` through the guard (an own uuid is deleted, a foreign one refused, a probe uuid sent): status and body never throw. A delete the test needs goes through `deleteOwn`. */
+/**
+ * `DELETE /v1/credentials|groups/{uuid}` through the guard (an own uuid is deleted, a foreign one refused, a probe uuid sent): status and
+ * body never throw. A delete the test needs goes through `deleteOwn`.
+ */
 export async function deleteConfigObject(api: GuardedApi, kind: DeletableKind, uuid: string): Promise<ApiAnswer> {
     return send(assertGuarded(api, 'deleteConfigObject'), 'DELETE', `/api/v1/${kind}/${uuid}`);
 }
@@ -205,7 +207,9 @@ export const attributeOf = (detail: JsonObject | undefined, name: string): JsonO
 export const contentWithData = (attribute: JsonObject | undefined): JsonObject[] =>
     (Array.isArray(attribute?.content) ? (attribute!.content as JsonObject[]) : []).filter((item) => item && item.data !== undefined && item.data !== null);
 
-/** `PUT /v1/credentials/{own}` with attributes (and the custom attributes the tier requires); `over` adds members (e.g. an ignored `name`). */
+/**
+ * `PUT /v1/credentials/{own}` with attributes (and the custom attributes the tier requires); `over` adds members (e.g. an ignored `name`).
+ */
 export async function putCredential(api: GuardedApi, uuid: string, attributes: JsonObject[], customAttributes: JsonObject[], over: JsonObject = {}): Promise<ApiAnswer> {
     return send(assertGuarded(api, 'putCredential'), 'PUT', `/api/v1/credentials/${uuid}`, { data: { attributes, customAttributes, ...over } });
 }

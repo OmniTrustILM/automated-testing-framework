@@ -30,9 +30,8 @@ export interface CertificateSpec {
     notAfter: Date;
     keyBits?: KeyBits;
     /**
-     * The signature hash of a SELF-SIGNED certificate (default SHA-256). An issued certificate is signed with the issuer's
-     * key, whose hash is fixed when the key is generated: asking for another hash throws instead of silently signing with
-     * the issuer's.
+     * The signature hash of a SELF-SIGNED certificate (default SHA-256). An issued certificate is signed with the issuer's key, whose hash
+     * is fixed when the key is generated: asking for another hash throws instead of silently signing with the issuer's.
      */
     hash?: SignatureHash;
     /** Signed by this issuer; default: self-signed. */

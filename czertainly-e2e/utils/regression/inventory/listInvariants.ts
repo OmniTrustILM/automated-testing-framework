@@ -5,7 +5,8 @@
  *       the total, a filter returns only matching rows, AND narrows, the order holds with empty values last, pages add up.
  *       A violation throws InvariantViolation naming the field, the condition and the sets or the neighbouring rows.
  * WHY: Whatever data a tier holds, a filter, a sort and a pager obey rules that need no exact counts.
- * HOW: Pure checks over rows or a page function; a violation throws `InvariantViolation` naming the field, the condition and the sets or neighbouring rows; `matchesCondition` delegates to the one filter evaluator.
+ * HOW: Pure checks over rows or a page function; a violation throws `InvariantViolation` naming the field, the condition and the sets or
+ * neighbouring rows; `matchesCondition` delegates to the one filter evaluator.
  */
 
 import { satisfiesFilter } from './oracles/values';

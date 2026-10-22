@@ -1,9 +1,9 @@
 /**
  * wait — the one polling helper of the regression suite.
  *
- * Firings, issuance, deletes and stack starts are asynchronous, so a spec waits on API state, never on a fixed time.
- * `pollUntil` reads the state, tests it, and sleeps only between two reads (the last sleep is cut to the deadline). Its sleep is private: no other module
- * needs a bare delay.
+ * Firings, issuance, deletes and stack starts are asynchronous, so a spec waits on API state, never on a fixed time. `pollUntil` reads the
+ * state, tests it, and sleeps only between two reads (the last sleep is cut to the deadline). Its sleep is private: no other module needs a
+ * bare delay.
  */
 
 export interface WaitOptions {

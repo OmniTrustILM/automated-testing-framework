@@ -5,7 +5,8 @@
  *       the filter, the exact conditions return the set the baseline implies, the complementary conditions partition the
  *       total, and AND is the intersection. String conditions use the weak case rule; datetimes use partitions only.
  * WHY: The tier's data is unknown, so a field is checked by properties that hold for any data.
- * HOW: Every returned row satisfies the filter, exact conditions return the set the baseline implies, complementary conditions partition the total and AND is the intersection; string conditions use the weak case rule and datetimes use partitions only.
+ * HOW: Every returned row satisfies the filter, exact conditions return the set the baseline implies, complementary conditions partition
+ * the total and AND is the intersection; string conditions use the weak case rule and datetimes use partitions only.
  */
 import { propertyFilter } from '../searchApi';
 import type { CatalogueField, Filter } from '../searchApi';
@@ -207,8 +208,7 @@ export async function runGenericFieldOracles(run: ListingRun, source: string, li
 }
 
 // ====================================================================================================================
-// 7. AND, paging
-// ====================================================================================================================
+// 7. AND, paging ====================================================================================================================
 
 export interface AndPair {
     a: Filter;

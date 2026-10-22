@@ -6,7 +6,8 @@
  *       authoritative LIST, never from a detail GET (the detail of a deleted role or user answers 500, core#2511). Users: enable /
  *       disable, roles replace / add / remove; roles: description and e-mail only (the name is immutable), members, permissions.
  * WHY: Authorisation rows change identities and roles, which only an own object may suffer.
- * HOW: Every change takes an `OwnRef` and proves it with `assertOwnLive`; absence is read from the authoritative list, never from a detail GET.
+ * HOW: Every change takes an `OwnRef` and proves it with `assertOwnLive`; absence is read from the authoritative list, never from a detail
+ * GET.
  */
 import { APIRequestContext, APIResponse, expect } from '@playwright/test';
 import { GuardedApi, assertGuarded } from '../guard/types';

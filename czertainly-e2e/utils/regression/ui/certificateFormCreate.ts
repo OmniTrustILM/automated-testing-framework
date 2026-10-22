@@ -1,9 +1,8 @@
 /**
  * certificateFormCreate — the ledger line of a certificate the Add Certificate form created.
  *
- * WHAT: `submitFormCreateRecorded(form, own, kind, { cn, note, ra })` clicks Create on the form (Issue now or Pre-register) and
- *       writes the `created` ledger line from the answer's uuid, or by run-prefixed common name when the answer names no object or
- *       never arrives.
+ * WHAT: `submitFormCreateRecorded(form, own, kind, { cn, note, ra })` clicks Create on the form (Issue now or Pre-register) and writes the
+ *       `created` ledger line from the answer's uuid, or by run-prefixed common name when the answer names no object or never arrives.
  * WHY: the certificate is on the tier from the moment the platform accepts the request, so its line must exist before the spec waits
  *      for the redirect or asserts anything; a timeout after a successful create must not leave a certificate the teardown cannot
  *      name. A page object never writes a ledger line, so the step lives here, next to the other ledger helpers.

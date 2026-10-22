@@ -7,6 +7,10 @@
  * writes the ledger line of an object a UI form created, from the form's answer, before the page waits for a redirect;
  * `own.recordNamed(name, note)` is the by-name record of a create whose answer carries no uuid (a protocol or a UI flow that
  * made a certificate); `own.deleted(type, ref)` writes the `deleted` line of an own object the test itself removed.
+ * `own.probe(type, answer, …)` records a create that was expected to be refused but was accepted; `own.adoptNamed(type, name)`
+ * records and live-proves the row a refused create left behind (a run-prefixed name only); `own.restrictedUser()` makes the
+ * dedicated second-identity user (a left-behind one skips the test); `own.derivedKey`, `own.issuedNamed` and `own.acmeAccount`
+ * record what a certificate issue or an ACME client made besides the certificate; `own.runAuthority()` is the run's own authority.
  * WHY: the ledger `spec` of a line is the record of who made what, and it used to be a `const SPEC` that a spec could
  * let drift from its `testMeta` id; the record steps were typed by hand after every submit (a forgotten `if (answer.uuid)` is an
  * object on a shared tier that the teardown cannot name). Here the spec id is bound once and the record step is one call.
@@ -15,9 +19,15 @@
  * has no CA skips the test with the helper's named reason. A new creator is one entry of `creators`.
  */
 import type { GuardedApi } from './guard/types';
-import { recordCertificatesNamed } from './issuedRecords';
-import { OwnRef, recordDeleted, LedgerLine } from './ledger/ledger';
-import { recordIfCreated, recordUiCreate, type UiCreateAnswer } from './ledger/uiCreates';
+import { recordAcmeAccount, recordCertificatesNamed, recordDerivedKeyOf, recordIssuedNamed } from './issuedRecords';
+import { OwnRef, recordCreated, recordDeleted, LedgerLine } from './ledger/ledger';
+import { LiveOwn } from './ledger/liveOwn';
+import { checkOwnership } from './ledger/ownership';
+import { readRunState, runId } from './ledger/runState';
+import { lookupInList, recordIfCreated, recordUiCreate, type UiCreateAnswer } from './ledger/uiCreates';
+import { createdUuid } from './ownCrud';
+import { restrictedIdentity } from './rbac/identities';
+import { ensureRestrictedUser, RestrictedUserNotOwn } from './rbac/permissionObjects';
 import { createOwnCustomAttribute } from './customAttributes';
 import { issueOwnCertificate, uploadOwnCertificate, uploadOwnSelfSigned } from './ownCertificates';
 import { createOwnGroup } from './ownGroups';
@@ -26,7 +36,10 @@ import { createOwnRole } from './ownRoles';
 import { createOwnUser } from './ownUsers';
 import type { RegisteredType } from './resourceTypes';
 
-/** What `own.record` reads of a UI create: the answer of `submit…` (a page object's `CreateAnswer` fits), with the request body that carries the name. */
+/**
+ * What `own.record` reads of a UI create: the answer of `submit…` (a page object's `CreateAnswer` fits), with the request body that carries
+ * the name.
+ */
 export interface RecordableAnswer extends UiCreateAnswer {
     /** The JSON body of the create request; its `name` (a user's `username`) is the object's name unless `name` is given. */
     body?: Record<string, unknown>;
@@ -42,11 +55,44 @@ export interface RecordOptions {
 }
 
 /** The name a create request gave its object: `name`, or `username` for a user. */
-function nameOfRequest(answer: RecordableAnswer): string | undefined {
+function nameOfRequest(answer: { body?: Record<string, unknown> }): string | undefined {
     const body = answer.body ?? {};
     const name = typeof body.name === 'string' ? body.name : body.username;
     return typeof name === 'string' && name ? name : undefined;
 }
+
+/**
+ * What `own.probe` reads of an answer that was expected to be a refusal: an API answer (`json.uuid` of a 2xx) or a form answer (`uuid`).
+ */
+export interface ProbeAnswer {
+    status: number;
+    /** A form answer's uuid (recorded whatever the status says). */
+    uuid?: string;
+    /** An API answer's body: a 2xx with a canonical `uuid` is an accepted create. */
+    json?: unknown;
+    text?: string;
+    /** The server clock of the answer (the Date header), kept on the ledger line. */
+    serverAt?: Date;
+    /** The JSON body of the request; its `name` (a user's `username`) is the object's name unless `name` is given. */
+    body?: Record<string, unknown>;
+}
+
+export interface ProbeOptions extends RecordOptions {}
+
+/** The ledger types `own.adoptNamed` can look a name up in, with the list URL and the member that carries the name. */
+const ADOPTABLE: Readonly<Record<string, { list: string; key?: string }>> = {
+    groups: { list: '/api/v1/groups' },
+    roles: { list: '/api/v1/roles' },
+    users: { list: '/api/v1/users', key: 'username' },
+    credentials: { list: '/api/v1/credentials' },
+    authorities: { list: '/api/v1/authorities' },
+    raProfiles: { list: '/api/v1/raProfiles' },
+    acmeProfiles: { list: '/api/v1/acmeProfiles' },
+    scepProfiles: { list: '/api/v1/scepProfiles' },
+    cmpProfiles: { list: '/api/v1/cmpProfiles' },
+    tokens: { list: '/api/v1/tokens' },
+    tokenProfiles: { list: '/api/v1/tokenProfiles' },
+};
 
 type Skip = (reason: string) => void;
 
@@ -79,10 +125,43 @@ export type OwnObjects = ReturnType<typeof creators> & {
      * duplicate is recorded first) or answered without an id.
      */
     record(type: RegisteredType, answer: RecordableAnswer, options?: RecordOptions): OwnRef;
-    /** Records every certificate of this run-prefixed common name that is not on the ledger yet (a protocol or UI create whose answer has no uuid). */
+    /**
+     * Records every certificate of this run-prefixed common name that is not on the ledger yet (a protocol or UI create whose answer has no
+     * uuid).
+     */
     recordNamed(name: string, note: string): Promise<string[]>;
     /** The `deleted` line of an own object the test removed itself (the platform accepted the delete). */
     deleted(type: RegisteredType, ref: OwnRef, note?: string): void;
+    /**
+     * The record step of a create that was expected to be REFUSED: an accepted one (a 2xx with a uuid, or a form answer that names one) is
+     * an object this run made, so it goes on the ledger before the test asserts the refusal. Returns the reference, or undefined when the
+     * platform refused as expected. Never throws on a status; an object already on the ledger is not recorded twice. The name is
+     * `options.name`, else the request body's, else a placeholder without the run prefix (the teardown reports it and never deletes it).
+     */
+    probe(type: RegisteredType, answer: ProbeAnswer, options?: ProbeOptions): OwnRef | undefined;
+    /**
+     * The rows a refused create left behind: every object of `type` whose exact name is `name` is recorded and then proven live
+     * (`LiveOwn.prove`: a ledger line of this run and a live name with the run prefix). Only a name that starts with this run's id is
+     * adopted; any other name is refused before a read. A name already on the ledger is returned as it is. Reads, then records: nothing is
+     * created. A type without a list URL here is an error.
+     */
+    adoptNamed(type: RegisteredType, name: string, options?: { note?: string; parents?: LedgerLine['parents'] }): Promise<OwnRef[]>;
+    /**
+     * The dedicated second-identity user (REG_RESTRICTED_USERNAME), own and recorded; a left-behind user that is not this run's skips
+     * the test with the named reason. The login of that identity is still read with `restrictedIdentity()`.
+     */
+    restrictedUser(): Promise<OwnRef>;
+    /** Records the key the platform linked to a certificate this run made (a derived line with the server-clock bound `createdAfter`). */
+    derivedKey(certificate: string | { uuid: string; createdAfter?: string }, createdAfter?: string): Promise<void>;
+    /**
+     * Records every certificate of this run-prefixed common name made after `createdAfter`, and their keys (a protocol or a UI flow made
+     * them).
+     */
+    issuedNamed(commonName: string, createdAfter: string | undefined, note: string): Promise<string[]>;
+    /** Records the ACME account an ACME client registered (`accountUrl` from the new-account answer) under its ACME profile. */
+    acmeAccount(accountUrl: string, acmeProfile: OwnRef): Promise<OwnRef>;
+    /** The uuid of the run's own authority (the run state's, when the run made it), or undefined: an issue-only authority is not own. */
+    runAuthority(): string | undefined;
 };
 
 /** The own-object creators and ledger steps of one test (see the module header). */
@@ -102,5 +181,47 @@ export function ownObjects(api: GuardedApi, spec: string, skip: Skip): OwnObject
         },
         recordNamed: (name, note) => recordCertificatesNamed(api, name, spec, note),
         deleted: (type, ref, note) => recordDeleted(type, ref, spec, note),
+        probe(type, answer, options = {}) {
+            const uuid = answer.uuid ?? createdUuid({ status: answer.status, json: answer.json } as Parameters<typeof createdUuid>[0]);
+            if (!uuid) return undefined;
+            const name = options.name ?? nameOfRequest(answer) ?? NO_NAME;
+            if (checkOwnership({ uuid }).own) return { uuid, name, kind: 'own' };
+            const note = options.note ?? `a create that was expected to be refused was accepted (${answer.status})`;
+            return recordCreated(type, { uuid, name }, { spec, note, ...(options.parents ? { parents: options.parents } : {}), ...(answer.serverAt ? { serverAt: answer.serverAt } : {}) });
+        },
+        async adoptNamed(type, name, options = {}) {
+            if (!name.startsWith(`${runId()}-`) && !name.startsWith(`${runId()}.`)) throw new Error(`own.adoptNamed(${type}): the name does not start with this run's id, so it is never adopted`);
+            const where = ADOPTABLE[type];
+            if (!where) throw new Error(`own.adoptNamed: no list URL is known for the type ${type}`);
+            const { rows } = await lookupInList(api, where.list, where.key ?? 'name')(name);
+            const refs: OwnRef[] = [];
+            for (const row of rows) {
+                const ref = checkOwnership({ uuid: row.uuid }).own
+                    ? ({ uuid: row.uuid, name, kind: 'own' } as OwnRef)
+                    : recordCreated(type, { uuid: row.uuid, name }, { spec, note: options.note ?? `${type} a refused create left behind (found by name)`, ...(options.parents ? { parents: options.parents } : {}) });
+                // Recorded first (it is on the tier), then proven: the live name must carry the run prefix too.
+                await LiveOwn.prove(api, type, ref, 'own.adoptNamed');
+                refs.push(ref);
+            }
+            return refs;
+        },
+        async restrictedUser() {
+            const identity = restrictedIdentity();
+            if (!identity) throw new Error('own.restrictedUser: no second identity is configured (REG_RESTRICTED_USERNAME / REG_RESTRICTED_PASSWORD); declare the second-identity need');
+            try {
+                return await ensureRestrictedUser(api, spec, identity);
+            } catch (e) {
+                if (e instanceof RestrictedUserNotOwn) skip(e.message);
+                throw e;
+            }
+        },
+        derivedKey: (certificate, createdAfter) =>
+            typeof certificate === 'string' ? recordDerivedKeyOf(api, certificate, createdAfter, spec) : recordDerivedKeyOf(api, certificate.uuid, createdAfter ?? certificate.createdAfter, spec),
+        issuedNamed: (commonName, createdAfter, note) => recordIssuedNamed(api, commonName, createdAfter, spec, note),
+        acmeAccount: (accountUrl, acmeProfile) => recordAcmeAccount(api, accountUrl, acmeProfile, spec),
+        runAuthority() {
+            const authority = readRunState().authority;
+            return authority?.kind === 'own' ? authority.uuid : undefined;
+        },
     };
 }

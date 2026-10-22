@@ -26,12 +26,10 @@ import { sanOracleFor, submitOwnCertificate } from '../../../utils/regression/ow
 import { parseCertificate, publicKeyPemOf, sameSans, sansOfDetail } from '../../../utils/regression/pkiBuilders';
 import { getCertificate, answerOf } from '../../../utils/regression/apiReads';
 import { authorityConnectorName } from '../../../utils/regression/config/authorities';
-import { recordDerivedKeyOf } from '../../../utils/regression/issuedRecords';
 import { runCommonName } from '../../../utils/regression/ledger/runState';
 import { testMeta, tags } from '../../../utils/regression/tags';
 import { ISSUED_WAIT_MS, ISSUE_MS, MANY_STEPS_TEST_MS } from '../../../utils/regression/timeouts';
 import { isLocalTier } from '../../../utils/regression/tier/kind';
-import { recordIfAccepted } from '../../../utils/regression/ownCrud';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const ISSUE_WALK = ['requested', 'pending_issue', 'issued'] as const;
@@ -99,7 +97,7 @@ test.describe('Certificate issue through the v2 API', { tag: tags.api }, () => {
                 // Expected: issued within SYNCHRONOUS_ISSUE_MS on a synchronous CA (a polling CA may take longer; the issued wait is the
                 // hard limit).
                 if (walk.elapsedMs > SYNCHRONOUS_ISSUE_MS) testInfo.annotations.push({ type: 'slow-issuance', description: `issued after ${Math.round(walk.elapsedMs / 1000)} s (> 120 s: not a synchronous CA?)` });
-                await recordDerivedKeyOf(api, cert.uuid, createdAfterOfAnswer(cert.answer), own.spec);
+                await own.derivedKey(cert.uuid, createdAfterOfAnswer(cert.answer));
             });
 
             const detail = await test.step('Detail: CN, the run RA profile, the CSR\'s SAN set, certificateContent and the CSR key', async () => {
@@ -146,7 +144,7 @@ test.describe('Certificate issue through the v2 API', { tag: tags.api }, () => {
 
             await test.step('Neither CSR nor key → 400 {message} "Failed to submit certificate request: Cannot submit certificate request without specifying key or uploaded request content"', async () => {
                 const a = await sendRaw(api, 'POST', create, { format: 'pkcs10', attributes: [], customAttributes: [] });
-                recordIfAccepted('certificates', a, runCommonName('api-neg'), own.spec, 'issue without CSR accepted (API-CERT-02 negative)', parents);
+                own.probe('certificates', a, { name: runCommonName('api-neg'), note: 'issue without CSR accepted (API-CERT-02 negative)', parents });
                 expect(a.status, a.text.slice(0, 300)).toBe(400);
                 expect(messageOf(a)).toMatch(/^Failed to submit certificate request: Cannot submit certificate request without specifying key or uploaded request content/);
                 clean(a.text, 'no CSR');
@@ -154,7 +152,7 @@ test.describe('Certificate issue through the v2 API', { tag: tags.api }, () => {
 
             await test.step('Base64 that is not a CSR → 400 {message} starting "Failed to submit certificate request"', async () => {
                 const a = await sendRaw(api, 'POST', create, { request: 'bm90LWEtY3Ny', format: 'pkcs10', attributes: [], customAttributes: [] });
-                recordIfAccepted('certificates', a, runCommonName('api-neg'), own.spec, 'garbage CSR accepted (API-CERT-02 negative)', parents);
+                own.probe('certificates', a, { name: runCommonName('api-neg'), note: 'garbage CSR accepted (API-CERT-02 negative)', parents });
                 expect(a.status, a.text.slice(0, 300)).toBe(400);
                 expect(messageOf(a)).toMatch(/^Failed to submit certificate request/);
                 clean(a.text, 'garbage CSR');
@@ -163,7 +161,7 @@ test.describe('Certificate issue through the v2 API', { tag: tags.api }, () => {
             await test.step('Unknown RA profile uuid → 404 {message} "Object of type \'RaProfile\' identified by <uuid> is not found."', async () => {
                 const probe = api.probeUuid();
                 const a = await sendRaw(api, 'POST', `/api/v2/operations/authorities/${ra.authorityUuid}/raProfiles/${probe}/certificates`, { request: 'bm90LWEtY3Ny', format: 'pkcs10', attributes: [], customAttributes: [] });
-                recordIfAccepted('certificates', a, runCommonName('api-neg'), own.spec, 'issue on a probe RA profile accepted (API-CERT-02 negative)', parents);
+                own.probe('certificates', a, { name: runCommonName('api-neg'), note: 'issue on a probe RA profile accepted (API-CERT-02 negative)', parents });
                 expect(a.status, a.text.slice(0, 300)).toBe(404);
                 expect(messageOf(a)).toBe(`Object of type 'RaProfile' identified by ${probe} is not found.`);
                 clean(a.text, 'unknown RA profile');
@@ -180,14 +178,14 @@ test.describe('Certificate issue through the v2 API', { tag: tags.api }, () => {
 
             await test.step('Malformed JSON → 400, never 5xx', async () => {
                 const a = await sendRaw(api, 'POST', create, Buffer.from('{"request": "bm90LWEtY3Ny", "format": '));
-                recordIfAccepted('certificates', a, runCommonName('api-neg'), own.spec, 'malformed JSON accepted (API-CERT-02 negative)', parents);
+                own.probe('certificates', a, { name: runCommonName('api-neg'), note: 'malformed JSON accepted (API-CERT-02 negative)', parents });
                 expect(a.status, a.text.slice(0, 300)).toBe(400);
                 clean(a.text, 'malformed JSON');
             });
 
             await test.step('Wrong content type (text/plain) → the status the OpenAPI declares, else a 4xx (spec gap), never 5xx', async () => {
                 const a = await sendRaw(api, 'POST', create, '{"request": "bm90LWEtY3Ny", "format": "pkcs10", "attributes": []}', { headers: { 'Content-Type': 'text/plain' } });
-                recordIfAccepted('certificates', a, runCommonName('api-neg'), own.spec, 'text/plain issue accepted (API-CERT-02 negative)', parents);
+                own.probe('certificates', a, { name: runCommonName('api-neg'), note: 'text/plain issue accepted (API-CERT-02 negative)', parents });
                 expect(a.status, a.text.slice(0, 300)).toBeGreaterThanOrEqual(400);
                 // Robustness only: the operation declares no status for a wrong content type, so the oracle is "a 4xx, never 5xx".
                 expect(a.status).toBeLessThan(500);
@@ -198,7 +196,7 @@ test.describe('Certificate issue through the v2 API', { tag: tags.api }, () => {
 
             await test.step('`attributes` omitted (the spec marks it required) → the status pinned by this probe, never 5xx', async () => {
                 const a = await sendRaw(api, 'POST', create, { request: 'bm90LWEtY3Ny', format: 'pkcs10', customAttributes: [] });
-                recordIfAccepted('certificates', a, runCommonName('api-neg'), own.spec, 'issue without attributes accepted (API-CERT-02 probe)', parents);
+                own.probe('certificates', a, { name: runCommonName('api-neg'), note: 'issue without attributes accepted (API-CERT-02 probe)', parents });
                 // Robustness only: the status is pinned by the annotation below (no documented contract), the oracle is "never 5xx".
                 expect(a.status, a.text.slice(0, 300)).toBeLessThan(500);
                 testInfo.annotations.push({ type: 'pinned-status', description: `attributes omitted → ${a.status}` });
@@ -240,7 +238,7 @@ test.describe('Certificate issue through the v2 API', { tag: tags.api }, () => {
                 // registration spec.
                 for (const [name, method, url, data] of calls) {
                     const a = await sendRaw(api, method, url, data, anon);
-                    if (name === 'issue') recordIfAccepted('certificates', a, runCommonName('api-neg'), own.spec, 'issue with an invalid bearer accepted (API-CERT-02 negative)', parents);
+                    if (name === 'issue') own.probe('certificates', a, { name: runCommonName('api-neg'), note: 'issue with an invalid bearer accepted (API-CERT-02 negative)', parents });
                     expect(a.status, `${name}: ${a.text.slice(0, 200)}`).toBe(401);
                     clean(a.text, `${name} 401`);
                 }

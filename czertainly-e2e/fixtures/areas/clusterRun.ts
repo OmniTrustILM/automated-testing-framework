@@ -37,9 +37,8 @@ export const test = base.extend<{ clusterRun: ClusterRun }>({
         } catch (e) {
             removalError = e;
         }
-        // Safety net: after the cluster objects are gone (or the removal failed), record every ILM certificate (and its key) issued for
-        // the run's DNS names, after a short API-state poll (`recordIssuedSettled`: two equal reads, none requested / pending; no fixed
-        // sleep).
+        // Safety net: after the cluster objects are gone (or the removal failed), record every ILM certificate (and its key) issued for the
+        // run's DNS names, after a short API-state poll (`recordIssuedSettled`: two equal reads, none requested / pending; no fixed sleep).
         for (const { dns, createdAfter } of run.issued) await recordIssuedSettled(api, dns, createdAfter, own.spec, 'cert-manager certificate (cleanup safety net)');
         if (removalError !== undefined) throw removalError;
     }, { timeout: CLUSTER_CLEANUP_MS }],

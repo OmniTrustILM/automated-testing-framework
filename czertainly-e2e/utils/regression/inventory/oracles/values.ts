@@ -5,7 +5,8 @@
  *       datetime literals copied from the server's own text, `satisfiesFilter` (only for fields whose DTO mapping is known),
  *       the expected row set of an exact condition, and the sampled values a field oracle probes with.
  * WHY: Every oracle must read a field's values and evaluate a filter the same way.
- * HOW: Scalar extraction, instants and datetime literals copied from the server's text, `satisfiesFilter` (the one home of the filter semantics), the expected row set of an exact condition and the sampled probe values.
+ * HOW: Scalar extraction, instants and datetime literals copied from the server's text, `satisfiesFilter` (the one home of the filter
+ * semantics), the expected row set of an exact condition and the sampled probe values.
  *
  *       Ordering (GREATER, GREATER_OR_EQUAL, LESSER, LESSER_OR_EQUAL) and the COUNT_* conditions read both sides as NUMBERS,
  *       also when a value is a numeric-looking string: "999" is less than "1000". Core publishes the ordering conditions only
@@ -99,10 +100,10 @@ const lower = (v: Scalar): string => String(v).toLowerCase();
 export const regexLiteral = (text: string): string => text.replace(/[^A-Za-z0-9]/g, (c) => `\\${c}`);
 
 /**
- * Does a row with these `values` satisfy the filter? Reference rules (FilterPredicatesBuilder): EQUALS = any of the listed values equals a value; NOT_EQUALS / NOT_CONTAINS include rows without a value;
- * NOT_MATCHES excludes them; EMPTY = no value; number comparisons and the positive string conditions need a value.
- * STRING conditions are the WEAK forms (see the module header): CONTAINS / STARTS_WITH / ENDS_WITH / MATCHES match
- * case-insensitively, NOT_CONTAINS / NOT_MATCHES require no match case-sensitively. COUNT_* compare the number of values.
+ * Does a row with these `values` satisfy the filter? Reference rules (FilterPredicatesBuilder): EQUALS = any of the listed values equals a
+ * value; NOT_EQUALS / NOT_CONTAINS include rows without a value; NOT_MATCHES excludes them; EMPTY = no value; number comparisons and the
+ * positive string conditions need a value. STRING conditions are the WEAK forms (see the module header): CONTAINS / STARTS_WITH / ENDS_WITH
+ * / MATCHES match case-insensitively, NOT_CONTAINS / NOT_MATCHES require no match case-sensitively. COUNT_* compare the number of values.
  * `caseSensitive` turns CONTAINS / STARTS_WITH / ENDS_WITH into exact-case tests (the strict reading `matchesCondition` offers).
  */
 export function satisfiesFilter(values: Values, condition: string, value?: unknown, options: { caseSensitive?: boolean } = {}): boolean {

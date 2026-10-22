@@ -19,7 +19,9 @@ import { ADD_FORM_OUTCOME_MS } from '../utils/regression/timeouts';
 
 const logger = new Logger('CertificateAddPage');
 
-/** One step of the poll that waits for the redirect or the warnings panel: the poll's own 15 seconds are the budget, this is only its look. */
+/**
+ * One step of the poll that waits for the redirect or the warnings panel: the poll's own 15 seconds are the budget, this is only its look.
+ */
 const POLL_STEP_MS = 100;
 
 /** The two creates of the form: Issue now and Pre-register. */
@@ -41,8 +43,8 @@ export class CertificateAddPage {
     readonly submitButton: Locator;
     readonly challengeInput: Locator;
     /**
-     * A type=date TextInput renders a DatePicker that drops data-testid: the input has only id="expiresAt" (disabled until a challenge
-     * is typed).
+     * A type=date TextInput renders a DatePicker that drops data-testid: the input has only id="expiresAt" (disabled until a challenge is
+     * typed).
      */
     readonly issuanceWindowInput: Locator;
     /** The Request Attributes tab's Common Name field (`__attributes__csrAttributes__.commonName`). */

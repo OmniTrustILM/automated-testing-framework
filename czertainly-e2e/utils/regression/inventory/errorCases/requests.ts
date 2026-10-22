@@ -5,7 +5,8 @@
  *       the error-contract spec (at least 40 refused requests, each naming the status-matrix row it exercises, and the
  *       anonymous-access rows). Requests go through the guarded `api` fixture; reads and refused creates only.
  * WHY: The battery needs unique markers and names per execution so repeated runs and the guard's free-text scan stay quiet.
- * HOW: A per-execution context, the request shape, and the batteries of at least 40 refused requests and the anonymous-access rows, sent through the guarded `api`; reads and refused creates only.
+ * HOW: A per-execution context, the request shape, and the batteries of at least 40 refused requests and the anonymous-access rows, sent
+ * through the guarded `api`; reads and refused creates only.
  */
 import { uniqueSuffix } from '../../text';
 import { ApiAnswer, answerOf } from '../../apiReads';
@@ -65,7 +66,10 @@ let counter = 0;
 /** A 22-character run of base64 characters is a uuid-like token to the guard's free-text scan: names and markers avoid that length. */
 const notUuidLike = (s: string): string => (/^[A-Za-z0-9+/_-]{22}(?:==)?$/.test(s) ? `${s}x` : s);
 
-/** A fresh context per test execution (`--repeat-each` safe: the stamp is the one unique suffix; a test that injects a clock gets the clock plus a counter instead). */
+/**
+ * A fresh context per test execution (`--repeat-each` safe: the stamp is the one unique suffix; a test that injects a clock gets the clock
+ * plus a counter instead).
+ */
 export function createBatteryContext(tag: string, seams: CtxSeams): Ctx {
     const stamp = seams.now ? `${seams.now().toString(36)}${(counter++).toString(36)}` : uniqueSuffix();
     return {
@@ -164,7 +168,8 @@ export function buildErrorContractCases(ctx: Ctx): BatteryRow[] {
     rows.push({ id: 'unknownObject.nope.unmatchedPath', matrix: 'unknownObject', resource: 'none', req: { method: 'GET', url: '/api/v1/nope' }, expect: { status: 404, message: 'No endpoint GET /api/v1/nope.' }, rule: 'an unmatched path → 404 "No endpoint GET /api/v1/nope."' });
     // wrongMethod: a defined path with a method it does not define (a GET on a POST-only path).
     rows.push({ id: 'wrongMethod.authorities.wrongMethod', matrix: 'wrongMethod', resource: 'authorities', req: { method: 'GET', url: '/api/v1/authorities/not-a-uuid/raProfiles' }, expect: { status: [400, 405], message: /^Request method 'GET' is not supported$/ }, rule: 'a GET on a POST-only path → 4xx {"message":"Request method \'GET\' is not supported"}' });
-    // create name and create body: refused creates (nothing is created: the core refuses before any write; an accidental 2xx is recorded by the spec).
+    // create name and create body: refused creates (nothing is created: the core refuses before any write; an accidental 2xx is recorded by
+    // the spec).
     const group = (data: unknown): Req => ({ method: 'POST', url: '/api/v1/groups', data });
     rows.push({ id: 'createName.groups.emptyObject', matrix: 'createName', resource: 'groups', req: group({}), expect: refuse([ERROR_MESSAGES.nameEmpty]), rule: 'a group without a name → 422 ["Name must not be empty"]', creates: 'groups' });
     rows.push({ id: 'createName.groups.emptyName', matrix: 'createName', resource: 'groups', req: group({ name: '' }), expect: refuse([ERROR_MESSAGES.nameEmpty]), rule: 'a group with name "" → 422 ["Name must not be empty"]', creates: 'groups' });

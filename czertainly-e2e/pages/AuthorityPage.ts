@@ -3,9 +3,8 @@
  *
  * WHAT: the Authorities list, the add page (name, provider connector, the connector's CA-selection method, CA host and CA name,
  *       required custom attributes) and the authority detail.
- * WHY: REG-CFG-02 creates a Microsoft ADCS authority with a manually entered CA host and name; the connector checks its
- *      connectivity before it answers, which takes up to 90 s, so the answer goes back to the spec before the redirect is
- *      waited for.
+ * WHY: REG-CFG-02 creates a Microsoft ADCS authority with a manually entered CA host and name; the connector checks its connectivity before
+ *      it answers, which takes up to 90 s, so the answer goes back to the spec before the redirect is waited for.
  * HOW: the form is a page, not a dialog, so its scope is `main`; the selects go through their trigger buttons; the CA host and
  *      name inputs by their attribute test id or their label; the CA values come from the caller and are never stored here.
  */
@@ -59,8 +58,7 @@ export class AuthorityPage {
     }
 
     /**
-     * Clicks Create and returns the answer of `POST /api/v1/authorities` (status, new uuid, request body); waits for the connector's
-     * check.
+     * Clicks Create and returns the answer of `POST /api/v1/authorities` (status, new uuid, request body); waits for the connector's check.
      */
     async submitCreateForm(): Promise<CreateAnswer> {
         return submitCreate(this.page, this.main, { endpoint: '/api/v1/authorities', timeout: AUTHORITY_CREATE_MS });

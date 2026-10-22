@@ -3,8 +3,8 @@
  *
  * WHAT: 1. GET the issue attributes of the run RA profile; POST the v2 issue of an external CSR → 200 with a uuid and empty
  *          certificateData.
- *       2. Poll until issued; the detail (subject, RA profile, public key), the history (issue events) and the raw PEM download match
- *          the CSR.
+ *       2. Poll until issued; the detail (subject, RA profile, public key), the history (issue events) and the raw PEM download match the
+ *          CSR.
  *       3. (REG-USE-07.1) A CSR with DNS and IP SANs → 200 with exactly certificateData "", uuid and requestAttributeWarnings (a list);
  *          issued with the CSR's SANs and key; the history says "Issued using RA Profile <name>".
  *       4. (REG-USE-07.1) A garbage CSR → 400 with a {message} starting "Failed to submit certificate request" (a test of its own).
@@ -22,7 +22,7 @@ import { expectRefused } from '../../../utils/regression/errorContract';
 import { csrWithSan, parseCertificate, publicKeyPemOf } from '../../../utils/regression/pkiBuilders';
 import { apiJson, createdAfterOf, getCertificate, answerOf } from '../../../utils/regression/apiReads';
 import { authorityConnectorName } from '../../../utils/regression/config/authorities';
-import { recordDerivedKeyOf, recordDerivedKeyOrNamed } from '../../../utils/regression/issuedRecords';
+import { recordDerivedKeyOrNamed } from '../../../utils/regression/issuedRecords';
 import { historyMessages, historyOf } from '../../../utils/regression/lifecycle/certificateHistory';
 import { sendRaw } from '../../../utils/regression/lifecycle/rawAnswers';
 import { sanOracle, submitOwnCertificate, waitIssued } from '../../../utils/regression/ownCertificates';
@@ -49,8 +49,8 @@ test.describe('Certificate issue through the API', { tag: tags.regression }, () 
             // The CSR carries the run-prefixed common name as its one DNS name and no IP address.
             const cert = await test.step('POST v2 issue → 200, uuid, empty certificateData', async () => {
                 const issued = await submitOwnCertificate(api, ra, own.spec, { suffix: 'api', sans: { ip: [] }, fillRequiredAttributes: true, note: 'issued via API' });
-                // Core links certKey_<CN> at REQUEST time (CertificateServiceImpl.uploadCertificateKey): recorded now, not only
-                // after 'issued'.
+                // Core links certKey_<CN> at REQUEST time (CertificateServiceImpl.uploadCertificateKey): recorded now, not only after
+                // 'issued'.
                 await recordDerivedKeyOrNamed(api, issued.uuid, issued.cn, issued.createdAfter, own.spec, 'issued via API');
                 expect(issued.answer.status, issued.answer.text.slice(0, 300)).toBe(200);
                 expect(issued.uuid).toMatch(/^[0-9a-f-]{36}$/);
@@ -60,7 +60,7 @@ test.describe('Certificate issue through the API', { tag: tags.regression }, () 
 
             await test.step('Poll until issued', async () => {
                 await waitIssued(api, cert.uuid);
-                await recordDerivedKeyOf(api, cert.uuid, cert.createdAfter, own.spec);
+                await own.derivedKey(cert.uuid, cert.createdAfter);
             });
 
             await test.step('Detail: subject, RA profile and public key match the CSR', async () => {
@@ -135,7 +135,7 @@ test.describe('Certificate issue through the API', { tag: tags.regression }, () 
 
             await test.step('Poll until issued (within 180 s)', async () => {
                 await waitIssued(api, issued.uuid);
-                await recordDerivedKeyOf(api, issued.uuid, issued.createdAfter, own.spec);
+                await own.derivedKey(issued.uuid, issued.createdAfter);
             });
 
             await test.step('Detail: the certificate carries the CSR\'s SANs and key', async () => {

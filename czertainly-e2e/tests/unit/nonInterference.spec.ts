@@ -265,7 +265,7 @@ test('the recheck by detail reads the live name, so a rename outside the windows
     expect(violations).toEqual(['certificates: pre-existing moved was renamed (name withheld)']);
 });
 
-// ------------------------------------------------------------------ keys (incident fix after a live run): wrapper identity, straddle recheck
+// --------------------------------------------------------------- keys (incident fix after a live run): wrapper identity, straddle recheck
 
 /** A key pair: two search rows (item names, states) of one wrapper, newest-first; its detail names the WRAPPER. */
 interface FakeKey {
@@ -341,7 +341,8 @@ test('keys: a 2-item key on the newest-100 cut is marked from its detail in both
     const grown = [pair(999), ...keys];
     const { api: afterApi, requests } = fakeKeyApi(grown);
     const after = await snapshotTier(afterApi, { only: ['keys'], recheck: before, runId: RUN, env: {} });
-    // Details read, one GET each: the key now on the sample cut (k49), the one on the oldest-window cut (row 203 = k101) and the key that left the sample (k50).
+    // Details read, one GET each: the key now on the sample cut (k49), the one on the oldest-window cut (row 203 = k101) and the key that
+    // left the sample (k50).
     expect(requests.filter((r) => r.startsWith('GET /api/v1/keys/')).sort()).toEqual(['GET /api/v1/keys/k101', 'GET /api/v1/keys/k49', `GET /api/v1/keys/${cutPair.uuid}`]);
     expect(compareSnapshots(before, { ...after, platformEvents: '{}', systemJobs: '[]' }, { tolerance: 0 }).violations).toEqual(['keys: total 401 -> 403 (+2), the ledger explains +0']);
 
@@ -442,8 +443,7 @@ test('keys: a certKey_ item with the run CN makes the key own, also for a stradd
     expect(s.resources.keys.foreign.k49).toBeDefined();
 });
 
-// keys: a straddler whose detail answers 404 is dropped from the snapshot with a note naming it, and the compare carries the
-// note
+// keys: a straddler whose detail answers 404 is dropped from the snapshot with a note naming it, and the compare carries the note
 test('keys: a straddler whose detail answers 404 is dropped with a note the compare carries', async () => {
     const { keys, cutPair } = keysWithCutInside(200);
     const before = await snapshotTier(fakeKeyApi(keys, { detail404: [cutPair.uuid] }).api, { only: ['keys'], runId: RUN, env: {} });

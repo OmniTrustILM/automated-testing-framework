@@ -16,7 +16,7 @@ import { CredentialPage } from '../../../pages/CredentialPage';
 import { readCredential } from '../../../utils/regression/inventory/credentialsApi';
 import { findByName, rowsNamed } from '../../../utils/regression/listReads';
 import { ownName } from '../../../utils/regression/ledger/runState';
-import { lookupInList, recordIfCreated, submitRecordingByNameOnFailure } from '../../../utils/regression/ledger/uiCreates';
+import { lookupInList, submitRecordingByNameOnFailure } from '../../../utils/regression/ledger/uiCreates';
 import { testMeta, tags } from '../../../utils/regression/tags';
 
 test.describe('Credential configuration', { tag: tags.regression }, () => {
@@ -67,8 +67,10 @@ test.describe('Credential configuration', { tag: tags.regression }, () => {
                 await credentials.openCreateDialog();
                 await credentials.fillBasicForm(form);
                 const again = await submitRecordingByNameOnFailure({ type: 'credentials', name, spec: own.spec, note, lookup }, () => credentials.submitCreateForm());
-                // A duplicate the platform accepted is this run's object too; the assertions below then fail.
-                recordIfCreated('credentials', again, name, own.spec, note);
+                // A duplicate the platform accepted is this run's object too; the assertions below then fail. The answer may carry no id:
+                // the rows of the name are adopted from the list as well.
+                own.probe('credentials', again, { name, note });
+                await own.adoptNamed('credentials', name, { note });
                 await credentials.assertDuplicateNameRefused();
                 expect(await rowsNamed(api, '/api/v1/credentials', name), 'exactly one credential has that name').toHaveLength(1);
                 await credentials.closeCreateDialog();

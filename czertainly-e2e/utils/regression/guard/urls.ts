@@ -5,7 +5,10 @@ import { OwnObjectViolation } from '../ledger/ownership';
 
 /** The base a relative URL is resolved against when BASE_URL is unset (unit tests; a real context would not send it). */
 export const NO_BASE = 'http://base-url-unset.invalid/';
-/** Printable ASCII only: the control characters U+0000–U+001F, space, DEL, U+0080–U+009F and every non-ASCII character are stripped or re-encoded by the parser. */
+/**
+ * Printable ASCII only: the control characters U+0000–U+001F, space, DEL, U+0080–U+009F and every non-ASCII character are stripped or
+ * re-encoded by the parser.
+ */
 const NOT_PRINTABLE = /[^\x21-\x7e]/;
 const NOT_PRINTABLE_REASON = 'a control character, space, DEL or non-ASCII character in the URL (the URL parser strips, trims or ' +
     're-encodes it: the server would see another URL than the guard checked)';

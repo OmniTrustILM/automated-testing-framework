@@ -1,9 +1,11 @@
 /**
  * keys — the run's own keys on the software cryptography provider and their lifecycle.
  *
- * WHAT: Builds the create-key request from the live definitions, creates own keys and records their items, reads key detail and item history, and enables, disables, compromises, destroys, changes usages of and deletes own keys.
+ * WHAT: Builds the create-key request from the live definitions, creates own keys and records their items, reads key detail and item
+ * history, and enables, disables, compromises, destroys, changes usages of and deletes own keys.
  * WHY: Key creation and lifecycle change for key reasons only, apart from the token form and the item operations.
- * HOW: Creates and key items are recorded right after the create; every change first passes the live own-object check; the run-end teardown removes keys before profiles and tokens.
+ * HOW: Creates and key items are recorded right after the create; every change first passes the live own-object check; the run-end teardown
+ * removes keys before profiles and tokens.
  */
 
 import type { APIRequestContext, APIResponse } from '@playwright/test';
@@ -232,9 +234,9 @@ export function updateOwnKeyItemUsages(api: GuardedApi, itemUuid: string, usages
 }
 
 /**
- * Hard delete of an OWN key inside a test (`DELETE /v1/keys/{uuid}`: remote destroy first, no state guard) and its
- * `deleted` ledger line: the software provider and core slow down and refuse past ~14 keys on one token (software-cryptography-provider#137), so a spec
- * that makes several keys deletes them at the end of each test. Absence is proven by the detail 404 (polled).
+ * Hard delete of an OWN key inside a test (`DELETE /v1/keys/{uuid}`: remote destroy first, no state guard) and its `deleted` ledger line:
+ * the software provider and core slow down and refuse past ~14 keys on one token (software-cryptography-provider#137), so a spec that makes
+ * several keys deletes them at the end of each test. Absence is proven by the detail 404 (polled).
  */
 export async function deleteOwnKey(api: GuardedApi, key: OwnRef, spec: string): Promise<void> {
     const answer = await deleteOwn(api, 'keys', key, spec, {

@@ -4,7 +4,8 @@
  * WHAT: The request-parsing rows of the error-contract spec: the JSON parsing battery, the content-type and Accept rows,
  *       TRACE, and the wrong-method rows (with the ones the guard refuses before sending).
  * WHY: Malformed bodies, content types and methods are where a framework migration changes behaviour first.
- * HOW: Data rows for the JSON parsing battery, content-type and Accept, TRACE and wrong-method cases, marking the ones the guard refuses before sending.
+ * HOW: Data rows for the JSON parsing battery, content-type and Accept, TRACE and wrong-method cases, marking the ones the guard refuses
+ * before sending.
  */
 import { ERROR_MESSAGES, searchBody } from './cases';
 import { Answer, Expectation, JSON_TYPE, findLeaks, parsed, preview, shapeProblems } from './checks';
@@ -46,12 +47,11 @@ function searchPageProblems(p: { status: number; json: unknown }): string[] {
 const unreadable: Expectation = { status: 400, message: ERROR_MESSAGES.unreadable };
 
 /**
- * The parsing battery of API-GEN-05 on `POST /api/v1/certificates` (a read) and `POST /api/v1/groups` (refused, creates
- * nothing). Oracles: the 400 text of the inventory API status matrix, observed on both builds by the ilm#442 `js.*` probes
- * (trailing comma, comment, NaN, filters as an object / string, nesting); derived from Jackson for the rest. Two rows
- * contradict the written error-shape rule and are pins: a duplicate key is NOT refused (Jackson keeps the last value: the
- * `js.dup-key` probe answered 200 on both builds), and a leading BOM is skipped by Jackson (status pinned from the first
- * probe).
+ * The parsing battery of API-GEN-05 on `POST /api/v1/certificates` (a read) and `POST /api/v1/groups` (refused, creates nothing). Oracles:
+ * the 400 text of the inventory API status matrix, observed on both builds by the ilm#442 `js.*` probes (trailing comma, comment, NaN,
+ * filters as an object / string, nesting); derived from Jackson for the rest. Two rows contradict the written error-shape rule and are
+ * pins: a duplicate key is NOT refused (Jackson keeps the last value: the `js.dup-key` probe answered 200 on both builds), and a leading
+ * BOM is skipped by Jackson (status pinned from the first probe).
  */
 export function jsonBattery(ctx: Ctx): JsonRow[] {
     const m = ctx.marker;
@@ -176,7 +176,10 @@ export interface GuardRefusedMethodRow {
     why: string;
 }
 
-/** Requests the guard sends since the guard learned the sentinels: the unknown-method sentinel QAPROBE and the two no-handler pairs (every one is answered by the handler mapping, no handler runs). */
+/**
+ * Requests the guard sends since the guard learned the sentinels: the unknown-method sentinel QAPROBE and the two no-handler pairs (every
+ * one is answered by the handler mapping, no handler runs).
+ */
 export const METHOD_FIXME_ROWS: readonly GuardRefusedMethodRow[] = [
     { id: 'unknown-method.groups', method: 'QAPROBE', url: '/api/v1/groups', why: 'an unknown method: the guard sends only the sentinels TRACE and QAPROBE; PROPFIND / FOO / lower-case stay refused, so the row uses QAPROBE' },
     { id: 'wrong-method.POST-statistics', method: 'POST', url: '/api/v1/statistics', why: 'a mutation without a uuid in the path that is neither an allow-listed create nor a bulk route' },

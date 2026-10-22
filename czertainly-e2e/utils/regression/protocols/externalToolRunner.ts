@@ -46,7 +46,10 @@ export interface RunToolOptions {
 /** The process variables a child tool gets (plus `opts.env`): where to find binaries and temp files, the locale, OpenSSL's own. */
 const CHILD_ENV_KEYS: readonly string[] = ['PATH', 'HOME', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LC_ALL', 'SYSTEMROOT', 'OPENSSL_CONF', 'OPENSSL_MODULES', 'SSL_CERT_FILE', 'SSL_CERT_DIR'];
 
-/** The environment of a child tool: the listed keys of `base` that are set, then `extra` (the run's credentials and run id never reach a tool). */
+/**
+ * The environment of a child tool: the listed keys of `base` that are set, then `extra` (the run's credentials and run id never reach a
+ * tool).
+ */
 export function childEnv(extra: NodeJS.ProcessEnv = {}, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
     const out: NodeJS.ProcessEnv = {};
     for (const k of CHILD_ENV_KEYS) if (base[k] !== undefined) out[k] = base[k];

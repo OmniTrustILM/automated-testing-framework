@@ -124,7 +124,8 @@ class LifecycleCore extends BaseCore {
                 return { status: 200, body: { certificateData: '', uuid, requestAttributeWarnings: [] } };
             };
             if (!certUuid && !op) return create(cnOf(body), gated ? 'pending_approval' : 'issued');
-            // core reads a v3 content item by its own contentType (BaseAttributeContentV3, no default subtype): without it the body is unreadable
+            // core reads a v3 content item by its own contentType (BaseAttributeContentV3, no default subtype): without it the body is
+            // unreadable
             if (!certUuid && op === 'register' && (body?.csrAttributes ?? []).some((a: any) => a?.version === 'v3' && (a.content ?? []).some((c: any) => !c?.contentType))) return { status: 400, body: { message: 'Unable to read HTTP message' } };
             if (!certUuid && op === 'register') return create(String(body?.csrAttributes?.[0]?.content?.[0]?.data ?? ''), 'registered');
             const cert = this.store.get(`/api/v1/certificates/${certUuid}`);

@@ -59,7 +59,7 @@ export interface UuidLikeOptions {
 }
 
 /**
- * True when a server could read `v` as a uuid (over-approximation, N3): after trimming, a canonical uuid, Java's
+ * True when a server could read `v` as a uuid (over-approximation): after trimming, a canonical uuid, Java's
  * lenient groups, a `urn:uuid:` prefix, and (unless `base64: false`) a 22-character (unpadded) or 24-character (`==`)
  * base64 / base64url value.
  */

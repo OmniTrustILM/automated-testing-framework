@@ -30,9 +30,10 @@ import { objectOf } from './json';
 const logger = new Logger('issuedRecords');
 
 /**
- * Records the key the platform linked to a run certificate (`certKey_<CN>`) as a DERIVED ledger object with the
- * server-clock `createdAfter`, so the run-end teardown removes it when the platform made it during the run and nothing
- * uses it any more (teardownHandlers `keys`). No key: nothing to record. No server time: the key is still recorded, with `keepingBound()`, so the teardown keeps it (logged).
+ * Records the key the platform linked to a run certificate (`certKey_<CN>`) as a DERIVED ledger object with the server-clock
+ * `createdAfter`, so the run-end teardown removes it when the platform made it during the run and nothing uses it any more
+ * (teardownHandlers `keys`). No key: nothing to record. No server time: the key is still recorded, with `keepingBound()`, so the teardown
+ * keeps it (logged).
  */
 export async function recordDerivedKeyOf(api: APIRequestContext, certificateUuid: string, createdAfter: string | undefined, spec: string): Promise<void> {
     const cert = await getCertificate(api, certificateUuid);

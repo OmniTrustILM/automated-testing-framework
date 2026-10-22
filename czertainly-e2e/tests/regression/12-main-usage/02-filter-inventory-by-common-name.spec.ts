@@ -68,9 +68,14 @@ test.describe('Certificate inventory filter', { tag: tags.regression }, () => {
             await test.step('Back to the list, remove the badge → the filter is gone', async () => {
                 await certPage.goToList();
                 const badge = `Property 'Common Name' contains '${runId()}'`;
-                // The filter may or may not survive the navigation: remove the badge when it is still shown.
-                if ((await filterBadges(page)).includes(badge)) await list.filter.removeBadge(badge);
-                await expect.poll(() => filterBadges(page)).not.toContain(badge);
+                // The filter may or may not survive the navigation, and the persisted badge can render a moment after the list: each poll
+                // round removes the badge when it is shown, then reads again; the step ends only once a read finds it gone after the list
+                // settled.
+                await waitForListRows(page);
+                await expect.poll(async () => {
+                    if ((await filterBadges(page)).includes(badge)) await list.filter.removeBadge(badge);
+                    return filterBadges(page);
+                }, { message: 'the common-name badge is gone', timeout: 30_000 }).not.toContain(badge);
                 await waitForListRows(page);
             });
         });

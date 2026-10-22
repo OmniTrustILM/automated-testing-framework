@@ -19,7 +19,6 @@ import { newChallenge, registerOwnCertificate } from '../../../utils/regression/
 import { csrFromKeyWithSubject, newKeyPair, csrFromKey, sansOfDetail } from '../../../utils/regression/pkiBuilders';
 import { waitIssued } from '../../../utils/regression/ownCertificates';
 import { getCertificate } from '../../../utils/regression/apiReads';
-import { recordDerivedKeyOf } from '../../../utils/regression/issuedRecords';
 import { testMeta, tags } from '../../../utils/regression/tags';
 import { LONG_TEST_MS, QUICK_STATE_WAIT_MS, SLOW_LIFECYCLE_MS } from '../../../utils/regression/timeouts';
 import { waitForCertificateState } from '../../../utils/regression/wait/certificateState';
@@ -56,7 +55,7 @@ test.describe('Concurrent certificate operations', { tag: tags.api }, () => {
 
             await test.step('Both successors reach issued with different serials; both relations are renewal; exactly two successors; A stays issued', async () => {
                 await Promise.all([r1, r2].map((r) => waitIssued(api, r.successor!.uuid)));
-                for (const r of [r1, r2]) await recordDerivedKeyOf(api, r.successor!.uuid, r.createdAfter, own.spec);
+                for (const r of [r1, r2]) await own.derivedKey(r.successor!.uuid, r.createdAfter);
                 const [d1, d2] = await Promise.all([getCertificate(api, r1.successor!.uuid), getCertificate(api, r2.successor!.uuid)]);
                 expect(d1.serialNumber).not.toBe(d2.serialNumber);
                 const rel = await relationsOf(api, a.uuid);
@@ -95,7 +94,7 @@ test.describe('Concurrent certificate operations', { tag: tags.api }, () => {
             });
             await test.step('The certificate ends issued with one serial and exactly one issue event', async () => {
                 await waitIssued(api, reg.cert!.uuid);
-                await recordDerivedKeyOf(api, reg.cert!.uuid, reg.createdAfter, own.spec);
+                await own.derivedKey(reg.cert!.uuid, reg.createdAfter);
                 const detail = await getCertificate(api, reg.cert!.uuid);
                 expect(String(detail.serialNumber ?? ''), 'one serial (hex)').toMatch(/^[0-9a-f]+$/i);
                 const history = sortedHistory(await historyOf(api, reg.cert!.uuid));

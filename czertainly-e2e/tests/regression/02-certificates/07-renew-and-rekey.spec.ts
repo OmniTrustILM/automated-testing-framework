@@ -28,7 +28,6 @@ import { issueExisting } from '../../../utils/regression/lifecycle/certificateOp
 import { newChallenge } from '../../../utils/regression/lifecycle/preRegistration';
 import { csrFromKeyWithSubject, newKeyPair, csrFromKey, parseCertificate, publicKeyPemOf, sameSans, sansOfDetail } from '../../../utils/regression/pkiBuilders';
 import { getCertificate, serverCreatedAfter } from '../../../utils/regression/apiReads';
-import { recordDerivedKeyOf } from '../../../utils/regression/issuedRecords';
 import { ownCommonName } from '../../../utils/regression/ledger/runState';
 import { waitIssued } from '../../../utils/regression/ownCertificates';
 import { testMeta, tags } from '../../../utils/regression/tags';
@@ -77,7 +76,7 @@ test.describe('Renew and rekey in the web UI', { tag: tags.regression }, () => {
 
             await test.step('The successor reaches Issued with the same public key; A stays Issued', async () => {
                 await waitIssued(api, b);
-                await recordDerivedKeyOf(api, b, createdAfter, own.spec);
+                await own.derivedKey(b, createdAfter);
                 const bDetail = await getCertificate(api, b);
                 expect(publicKeyPemOf(parseCertificate(bDetail.certificateContent))).toBe(a.csr.publicKeyPem);
                 expect((await getCertificate(api, a.uuid)).state).toBe('issued');
@@ -136,7 +135,7 @@ test.describe('Renew and rekey in the web UI', { tag: tags.regression }, () => {
                 const a = await issueExisting(api, pending, ra, { request: csrFromKey(newKeyPair(), cn).derBase64, authorizationSecret: secret });
                 expect(a.status, a.text.slice(0, 300)).toBe(200);
                 await waitIssued(api, uuid);
-                await recordDerivedKeyOf(api, uuid, createdAfter, own.spec);
+                await own.derivedKey(uuid, createdAfter);
                 expect((await getCertificate(api, uuid)).registration?.state).toBe('active');
             });
 
@@ -174,8 +173,8 @@ test.describe('Renew and rekey in the web UI', { tag: tags.regression }, () => {
                 // The ISSUED subject on the SAME key: only the key rule can fire (core compares the normalized X500 names).
                 await rekey.fillExternal(csrFromKeyWithSubject(a.keys, String(aDetail.subjectDn), sansOfDetail(aDetail.subjectAlternativeNames)).pem);
                 const answer = await rekey.submit();
-                // A refusal is expected: an accepted same-key rekey is recorded first (own.record throws after the line is written).
-                if (answer.uuid) own.record('certificates', answer, { name: a.cn, note: 'same-key rekey accepted (negative probe)', parents: { raProfile: ra.uuid, authority: ra.authorityUuid, predecessor: a.uuid } });
+                // A refusal is expected: an accepted same-key rekey is recorded first, and it fails the test.
+                expect(own.probe('certificates', answer, { name: a.cn, note: 'same-key rekey accepted (negative probe)', parents: { raProfile: ra.uuid, authority: ra.authorityUuid, predecessor: a.uuid } }), 'a refused rekey creates nothing').toBeUndefined();
                 expect(answer.status, answer.text.slice(0, 300)).toBe(422);
                 await expect(rekey.error).toBeVisible();
                 await expect(rekey.error).toContainText('Public key of certificate and CSR are same');
@@ -198,7 +197,7 @@ test.describe('Renew and rekey in the web UI', { tag: tags.regression }, () => {
 
             await test.step('The successor is Issued (Rekey): a different key fingerprint, the same SAN set; A stays Issued', async () => {
                 await waitIssued(api, successor.uuid);
-                await recordDerivedKeyOf(api, successor.uuid, createdAfter, own.spec);
+                await own.derivedKey(successor.uuid, createdAfter);
                 const bDetail = await getCertificate(api, successor.uuid);
                 expect(bDetail.fingerprint).not.toBe(aDetail.fingerprint);
                 expect(publicKeyPemOf(parseCertificate(bDetail.certificateContent))).toBe(successor.csr.publicKeyPem);

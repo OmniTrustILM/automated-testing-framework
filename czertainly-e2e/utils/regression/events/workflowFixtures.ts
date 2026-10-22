@@ -9,8 +9,10 @@
  *       RA profile per row: an event association on the RUN RA profile would fire for every certificate other specs issue on it, so
  *       each association row gets its OWN RA profile (`createOwnRaProfile`). Every helper takes a `GuardedApi`, records what it
  *       creates in the ledger before the caller asserts, and calls `assertOwnLive` before it changes an object.
- * WHY: A trigger test needs a certificate in a known state and group, and an event association on the run RA profile would fire for every other spec.
- * HOW: Every helper takes a `GuardedApi`, records what it creates before the caller asserts, and runs `assertOwnLive` before it changes an object; each association row gets its own RA profile.
+ * WHY: A trigger test needs a certificate in a known state and group, and an event association on the run RA profile would fire for every
+ * other spec.
+ * HOW: Every helper takes a `GuardedApi`, records what it creates before the caller asserts, and runs `assertOwnLive` before it changes an
+ * object; each association row gets its own RA profile.
  */
 import { waitForCertificateState } from '../wait/certificateState';
 import { GuardedApi } from '../guard/types';

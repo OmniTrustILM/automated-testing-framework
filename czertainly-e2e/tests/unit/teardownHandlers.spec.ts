@@ -452,7 +452,7 @@ test('a derived certificate attached only to own groups, owner and RA profile is
     expect(adoptionOf({ groups: [{ uuid: group.uuid }] }, { groups: new Set([group.uuid]), users: new Set(), raProfiles: new Set() })).toEqual([]);
 });
 
-// ------------------------------------------------------------------ certificate lifecycle: ungate own RA profiles before the certificate step
+// -------------------------------------------------------------- certificate lifecycle: ungate own RA profiles before the certificate step
 
 // ungateOwnRaProfiles dissociates every own approval profile from every own RA profile (both read live), proven by re-reading;
 // foreign RA profiles are left and reported
@@ -868,7 +868,7 @@ test('a key item is gone with its key only through a deleted keys line of this r
     expect((await run(new FakeCore(), item, [key, item, thisRun])).error).toBeUndefined();
 });
 
-// ------------------------------------------------------------------ the certificate-key safety net and the compliance-profile removal (own fake API, so a block scope)
+// ------------------------------------- the certificate-key safety net and the compliance-profile removal (own fake API, so a block scope)
 
 {
     // The fake API of these rows (calls recorded; get / post / delete only).
@@ -923,8 +923,7 @@ test('a key item is gone with its key only through a deleted keys line of this r
         expect(calls.some((c) => c.method === 'DELETE'), 'the net only records; the keys step deletes').toBe(false);
     });
 
-    // safety net: a key in a token, a key used by another object, a foreign name and a certificate without a run-prefixed CN record
-    // nothing
+    // safety net: a key in a token, a key used by another object, a foreign name and a certificate without a run-prefixed CN record nothing
     test('safety net: keys in a token, used elsewhere, foreign names or non-run CN certificates record nothing', async () => {
         const cn = runName('net-2');
         const created = new Date().toISOString();
@@ -1052,8 +1051,7 @@ test('a key item is gone with its key only through a deleted keys line of this r
         expect(warns.some((w) => /key search by name answered 400/.test(w))).toBe(true);
     });
 
-    // the CN must carry THIS run's prefix (a key named certKey_<unprefixed CN> is never recorded; another run family is not this
-    // run)
+    // the CN must carry THIS run's prefix (a key named certKey_<unprefixed CN> is never recorded; another run family is not this run)
     test('the CN must carry this run prefix: an unprefixed certKey_ key is never recorded', async () => {
         const created = new Date().toISOString();
         const keyFor = (cn: string): Json => ({ name: `certKey_${cn}`, creationTime: created, associations: [{ uuid: CERT }] });
@@ -1095,7 +1093,8 @@ test('a key item is gone with its key only through a deleted keys line of this r
         expect(Date.parse(recorded[0].createdAfter!), 'a bound no key can reach').toBeGreaterThan(before + KEEPING_BOUND_AHEAD_MS - 60_000);
     });
 
-    // no server time does not loosen the other conditions: a key in a token, used by another object or named otherwise is still not recorded
+    // no server time does not loosen the other conditions: a key in a token, used by another object or named otherwise is still not
+    // recorded
     test('safety net: with no server time a key that fails the other conditions is still not recorded', async () => {
         const cn = runName('net-f6');
         const run = async (key: Json): Promise<string[]> => {

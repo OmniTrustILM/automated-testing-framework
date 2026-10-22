@@ -11,7 +11,7 @@ import { TestEnv } from '../../utils/env';
 import { expectRolesAfterSignIn } from '../../utils/regression/rbac/identities';
 import { loopbackServer } from './helpers/loopbackServer';
 import { randomBytes } from 'node:crypto';
-// Run-scoped generated test passwords (merge follow-up 2026-10-15): no password-like literal in the file.
+// Run-scoped generated test passwords: no password-like literal in the file.
 const GEN_PW_1 = `qa-${randomBytes(9).toString('base64url')}`;
 
 const failsFast = async (call: Promise<unknown>): Promise<boolean> => call.then(() => false, () => true);
@@ -100,6 +100,30 @@ test('AppShell.watchApi: counts /api answers, separates refusals and non-public 
         watch.stop();
         await page.evaluate(() => fetch('/api/v1/roles'));
         expect(watch.answers()).toHaveLength(5);
+    });
+});
+
+test('AppShell.goTo on the hash the page is already on reloads it, so loadingData sees the new data answer; a page that loads nothing still fails', async ({ browser }) => {
+    const LOADING = SHELL.replace('</body>', "<script>fetch('/api/v1/certificates');</script></body>");
+    await served(browser, (path) => (path === '/api/v1/certificates' ? { body: '[]', type: 'application/json' } : { body: LOADING }), async (page) => {
+        const shell = new AppShell(page);
+        await page.goto('/administrator/#/dashboard');
+        const watch = shell.watchApi();
+        await page.waitForLoadState('load');
+        await expect.poll(() => watch.dataAnswers().length).toBeGreaterThanOrEqual(0);
+        const before = watch.dataAnswers().length;
+        await shell.loadingData(watch, () => shell.goTo('dashboard')); // same hash: a reload, so the page loads its data again
+        expect(watch.dataAnswers().length).toBeGreaterThan(before);
+        watch.stop();
+    });
+    await served(browser, (path) => (path === '/api/v1/certificates' ? { body: '[]', type: 'application/json' } : { body: SHELL }), async (page) => {
+        const shell = new AppShell(page);
+        await page.goto('/administrator/#/dashboard');
+        const watch = shell.watchApi();
+        const quick = shell.loadingData(watch, () => shell.goTo('dashboard'));
+        // a page that loads no data: the strict wait must fail (its own long timeout is cut by the race below)
+        expect(await Promise.race([failsFast(quick), new Promise<boolean>((r) => setTimeout(() => r(true), 3_000))])).toBe(true);
+        watch.stop();
     });
 });
 

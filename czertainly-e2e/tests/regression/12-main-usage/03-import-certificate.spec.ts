@@ -17,7 +17,7 @@ import { CertificatePage } from '../../../pages/CertificatePage';
 import { findCertificateByFingerprint, generateSelfSignedCert } from '../../../utils/certificateUtils';
 import { csrWithSan, selfSignedPkcs12 } from '../../../utils/regression/pkiBuilders';
 import { serverCreatedAfter } from '../../../utils/regression/apiReads';
-import { recordDerivedKeyOf, recordingIssued } from '../../../utils/regression/issuedRecords';
+import { recordingIssued } from '../../../utils/regression/issuedRecords';
 import { runName } from '../../../utils/regression/ledger/runState';
 import { testMeta, tags } from '../../../utils/regression/tags';
 import { INVENTORY_APPEAR_MS } from '../../../utils/regression/timeouts';
@@ -57,7 +57,7 @@ test.describe('Certificate import', { tag: tags.regression }, () => {
                     const created = (parsed.results ?? []).find((r) => r.certificateUuid && r.certificateOutcome === 'created');
                     if (created) {
                         own.record('certificates', { status: answer.status(), uuid: created.certificateUuid, text }, { name: cn, note: 'imported (self-signed)' });
-                        await recordDerivedKeyOf(api, created.certificateUuid!, createdAfter, own.spec);
+                        await own.derivedKey(created.certificateUuid!, createdAfter);
                     }
                     return { answer, created };
                 });

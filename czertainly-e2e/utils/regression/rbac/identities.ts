@@ -6,7 +6,8 @@
  *       with `secondIdentityBlocker`, and no wrong-password attempt is ever made). `callAs` sends one request with another identity's
  *       token through the GUARDED context; `parseProfile` reads `GET /v1/auth/profile` (user fields top level, permissions below).
  * WHY: Permission rows need the admin, a throwaway user and a dedicated second identity, and must never guess a password.
- * HOW: `callAs` sends one request with another identity's token through the guarded context, `parseProfile` reads the profile, and a missing second identity is a named skip.
+ * HOW: `callAs` sends one request with another identity's token through the guarded context, `parseProfile` reads the profile, and a
+ * missing second identity is a named skip.
  */
 import { APIRequestContext, expect, Page } from '@playwright/test';
 import { ApiAnswer, answerOf } from '../apiReads';
@@ -21,7 +22,7 @@ export interface Credentials {
     password: string;
 }
 
-/** The DevOps request that provides DED (assets/devops-requests.md item 2, with the follow-ups of item 4). */
+/** The tier setup that provides DED (assets/devops-requests.md item 2, with the follow-ups of item 4). */
 export const SECOND_IDENTITY_REQUEST =
     'DevOps request 2 (a dedicated test account per tier: REG_RESTRICTED_USERNAME / REG_RESTRICTED_PASSWORD, plus the SYNC_POLICY / createUnknownUsers answers of request 4)';
 
@@ -157,7 +158,7 @@ export interface AnonymousTarget {
 /**
  * Where an anonymous (no credentials) read goes. Shared tier: BASE_URL, no extra header (the ingress sets the real
  * client address). Local stack: a request with no credentials from a LOOPBACK address is the `localhost` system user
- * (auth-rbac A10, `PlatformAuthenticationFilter`), and in header mode the dev proxy adds the admin certificate to every
+ * (`PlatformAuthenticationFilter`), and in header mode the dev proxy adds the admin certificate to every
  * /api call, so the call goes to the core's own port (REG_LOCAL_CORE_URL) with an `X-Forwarded-For` from the
  * documentation range (core reads that header first: `AuthHelper.java`), which makes the caller not loopback.
  */
@@ -199,7 +200,7 @@ export function replicaBlocker(env: NodeJS.ProcessEnv = process.env): string | u
 
 /**
  * Why a UI-signed-in DED does not hold the role the API barrier set — the sync policy, not RBAC. Under `SYNC_POLICY=sync-data`
- * the auth service replaces a user's roles with the token's `roles` at every sign-in (auth-rbac A7; core#2226: "an assigned
+ * the auth service replaces a user's roles with the token's `roles` at every sign-in (core#2226: "an assigned
  * role is removed after the user logs in"), so a fixture that was in force through the API is gone once DED signs in through the
  * browser. The row must fail with THIS message, never as a permission failure of the fixture. `undefined`: the roles agree.
  */

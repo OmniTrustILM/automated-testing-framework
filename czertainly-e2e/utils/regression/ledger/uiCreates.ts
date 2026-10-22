@@ -4,11 +4,11 @@
  * WHAT: `recordUiCreate` takes what a page object's `submit…` method returned (`status`, `uuid`, `text`), appends the
  * `created` line when the answer carries a uuid, and only then fails when the platform refused (or answered without an id).
  * `recordIfCreated` is the same line for a probe that EXPECTS a refusal: it records an accepted duplicate and never throws.
- * WHY: the object is on a shared tier from the moment the platform answered. The line is therefore written before the spec
- * waits for the form's redirect, reads a list or asserts anything: a timeout after a successful create must not leave an
- * object the teardown cannot name. A refusal that still carries a uuid (an accepted duplicate) is recorded too.
- * `submitRecordingByNameOnFailure` is the safety net around the submit: when no answer arrives in time (the create may still land
- * later) or a 2xx answer carries no uuid, every object of the exact name this run may own is looked up and recorded before the error continues.
+ * WHY: the object is on a shared tier from the moment the platform answered. The line is therefore written before the spec waits for the
+ * form's redirect, reads a list or asserts anything: a timeout after a successful create must not leave an object the teardown cannot name.
+ * A refusal that still carries a uuid (an accepted duplicate) is recorded too. `submitRecordingByNameOnFailure` is the safety net around
+ * the submit: when no answer arrives in time (the create may still land later) or a 2xx answer carries no uuid, every object of the exact
+ * name this run may own is looked up and recorded before the error continues.
  * HOW: a spec calls it right after `submit…`, with the answer and the object's name; it returns the `OwnRef`
  * (`recordCreated`'s result) for the steps after it. An object already in the ledger (this run) is not recorded twice.
  */
@@ -61,7 +61,10 @@ export interface NamedRow {
 export interface NamedLookupResult {
     rows: NamedRow[];
     serverNow?: Date;
-    /** The runner's clock (ms) right when the response carrying `serverNow` arrived: the skew between the two clocks is `serverNow - readAt`. */
+    /**
+     * The runner's clock (ms) right when the response carrying `serverNow` arrived: the skew between the two clocks is `serverNow -
+     * readAt`.
+     */
     readAt?: number;
 }
 
@@ -78,7 +81,10 @@ const rowOf = (r: Record<string, unknown>, createdKey?: string): NamedRow => ({
     ...(createdKey && typeof r[createdKey] === 'string' ? { createdAt: r[createdKey] as string } : {}),
 });
 
-/** A lookup in a full GET list endpoint (`key` is the name field of its rows, `name` by default; `createdKey` the creation-time field when the rows have one). */
+/**
+ * A lookup in a full GET list endpoint (`key` is the name field of its rows, `name` by default; `createdKey` the creation-time field when
+ * the rows have one).
+ */
 export const lookupInList = (api: APIRequestContext, listUrl: string, key = 'name', createdKey?: string): NamedLookup => async (name) => {
     const res = await api.get(listUrl);
     const readAt = Date.now();
@@ -115,7 +121,10 @@ async function everyPage(
     return { rows, serverNow, readAt };
 }
 
-/** Lookups in the two listings that are searched with a POST (the guard admits these literal read paths): keys and discoveries; every page is read. */
+/**
+ * Lookups in the two listings that are searched with a POST (the guard admits these literal read paths): keys and discoveries; every page
+ * is read.
+ */
 export const lookupKey = (api: APIRequestContext): NamedLookup => (name) =>
     everyPage(async (pageNumber) => {
         const res = await api.post('/api/v1/keys', { data: { itemsPerPage: PAGE_SIZE, pageNumber, filters: [] } });
@@ -149,9 +158,9 @@ export interface NamedRecording {
 const CLOCK_MARGIN_MS = 2_000;
 
 /**
- * The rows of a lookup that this run may adopt: the name starts with the run's own id (checked by the caller), and where the listing shows a
- * creation time it is not before the submit started (the server clock from the `Date` header when it came; else that check is skipped and the
- * log says so, because a runner clock must not be compared with a server time).
+ * The rows of a lookup that this run may adopt: the name starts with the run's own id (checked by the caller), and where the listing shows
+ * a creation time it is not before the submit started (the server clock from the `Date` header when it came; else that check is skipped and
+ * the log says so, because a runner clock must not be compared with a server time).
  */
 function adoptable(result: NamedLookupResult, submitStartedAt: number, label: string): NamedRow[] {
     const skew = result.serverNow && result.readAt !== undefined ? result.serverNow.getTime() - result.readAt : undefined;
@@ -172,11 +181,11 @@ function adoptable(result: NamedLookupResult, submitStartedAt: number, label: st
 }
 
 /**
- * Runs `submit` (the click on Create and the wait for its answer). If it throws (no answer arrived, so the create may still land) or
- * the answer is a 2xx without a uuid, EVERY object of the exact name this run may own (the name starts with the run's id, and a listed
- * creation time is not before the submit) is recorded in a `finally`, before the error continues. A 4xx or 5xx answer without a uuid created
- * nothing and costs no lookup; a failing lookup never masks the original error. When the answer was a 2xx without a uuid and an object
- * was recorded by name, the returned answer carries that uuid (and `recordedByName`), so the spec goes on instead of failing "without an id".
+ * Runs `submit` (the click on Create and the wait for its answer). If it throws (no answer arrived, so the create may still land) or the
+ * answer is a 2xx without a uuid, EVERY object of the exact name this run may own (the name starts with the run's id, and a listed creation
+ * time is not before the submit) is recorded in a `finally`, before the error continues. A 4xx or 5xx answer without a uuid created nothing
+ * and costs no lookup; a failing lookup never masks the original error. When the answer was a 2xx without a uuid and an object was recorded
+ * by name, the returned answer carries that uuid (and `recordedByName`), so the spec goes on instead of failing "without an id".
  */
 export async function submitRecordingByNameOnFailure<T extends UiCreateAnswer>(o: NamedRecording, submit: () => Promise<T>): Promise<T & { recordedByName?: string[] }> {
     const startedAt = Date.now();

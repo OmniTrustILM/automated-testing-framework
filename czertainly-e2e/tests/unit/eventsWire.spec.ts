@@ -305,7 +305,7 @@ test('setOwnCustomAttribute PATCHes the attribute endpoint with the content list
     expect(server.mutations()).toEqual([]);
 });
 
-test('getPlatformTriggerGate: names the occupied events, passes an empty list, and skips when the settings cannot be read', async () => {
+test('getPlatformTriggerGate: names the occupied events, passes an empty list, and fails when the settings cannot be read', async () => {
     expect(await getPlatformTriggerGate(api, [EVENT.actionPerformed, EVENT.statusChanged])).toBeUndefined();
     core.settings = { eventsMapping: { [EVENT.actionPerformed]: [U(1)], [EVENT.uploaded]: [U(2)] } };
     const gate = await getPlatformTriggerGate(api, [EVENT.actionPerformed, EVENT.statusChanged]);
@@ -314,7 +314,7 @@ test('getPlatformTriggerGate: names the occupied events, passes an empty list, a
     expect(await getPlatformTriggerGate(api, [EVENT.statusChanged]), 'the occupied event is not one of the row\'s').toBeUndefined();
     core.settings = undefined as unknown as Json;
     core.settingsStatus = 403;
-    expect(await getPlatformTriggerGate(api, [EVENT.actionPerformed])).toMatch(/could not be read \(answer 403\)/);
+    await expect(getPlatformTriggerGate(api, [EVENT.actionPerformed]), 'a read error is a failure, never a skip').rejects.toThrow(/→ 403.*could not be read/);
     expect(server.mutations(), 'only reads').toEqual([]);
 });
 

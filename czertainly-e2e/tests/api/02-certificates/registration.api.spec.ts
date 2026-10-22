@@ -30,16 +30,14 @@ import { msBetween, newChallenge, registerOwnCertificate, registrationDefaults, 
 import { sendRaw } from '../../../utils/regression/lifecycle/rawAnswers';
 import { newKeyPair, csrFromKey, parseCertificate, publicKeyPemOf, sansOfDetail } from '../../../utils/regression/pkiBuilders';
 import { getCertificate, ApiAnswer } from '../../../utils/regression/apiReads';
-import { recordDerivedKeyOf } from '../../../utils/regression/issuedRecords';
 import { expectRefused } from '../../../utils/regression/errorContract';
 import { checkedCommonName, ownCommonName, ownName } from '../../../utils/regression/ledger/runState';
-import { recordIfAccepted } from '../../../utils/regression/ownCrud';
 import type { OwnObjects } from '../../../utils/regression/ownObjects';
 import { testMeta, tags } from '../../../utils/regression/tags';
 import { EVENT_FIRING_WAIT_MS, LIFECYCLE_MS, MANY_STEPS_TEST_MS, QUICK_STATE_WAIT_MS, SLOW_LIFECYCLE_MS } from '../../../utils/regression/timeouts';
 import { isLocalTier } from '../../../utils/regression/tier/kind';
 import { waitForCertificateState } from '../../../utils/regression/wait/certificateState';
-import { assertHeldFor, firingsOfObject, getFirings, getPlatformTriggerGate, waitForFinishedFirings } from '../../../utils/regression/events/eventHistory';
+import { assertHeldFor, firingsOfObject, getFirings, waitForFinishedFirings } from '../../../utils/regression/events/eventHistory';
 import { EVENT } from '../../../utils/regression/events/eventVocabulary';
 import { associateTriggers } from '../../../utils/regression/events/eventAssociations';
 import { createOwnChain, setCustomAttributeAction } from '../../../utils/regression/events/workflowObjects';
@@ -53,7 +51,7 @@ const FIRING_WAIT = { timeoutMs: EVENT_FIRING_WAIT_MS };
 test.describe('Certificate pre-registration through the v2 API', { tag: tags.api }, () => {
     test('registering with a CN and a challenge gives a registered certificate and never echoes the secret',
         testMeta({
-            id: 'API-CERT-21', prio: 'P1', issue: 'ilm#429',
+            id: 'API-CERT-21', prio: 'P1', issue: 'ilm#429', needs: 'registration-settings',
             rule: [
                 'REGISTERED placeholder; the secret is stored encrypted and never returned; expiresAt defaults to defaultIssuanceWindowDays; core#1820 (platform-level on EJBCA-NG and MS ADCS NG)',
                 'requested → pending_registration → registered; the "Certificate Registered" event fires only with a challenge; requestAttributeWarnings always empty; expiresAt only with a secret',
@@ -64,7 +62,6 @@ test.describe('Certificate pre-registration through the v2 API', { tag: tags.api
             const ra = ownRaProfile;
             const defaults = await registrationDefaults(api);
             testInfo.annotations.push({ type: 'registration-settings', description: `defaultIssuanceWindowDays ${defaults.defaultIssuanceWindowDays}, maxFailedAttempts ${defaults.maxFailedAttempts}` });
-            test.skip(defaults.maxFailedAttempts < 1 || defaults.defaultIssuanceWindowDays < 1, `registration settings on this tier (maxFailedAttempts ${defaults.maxFailedAttempts}, window ${defaults.defaultIssuanceWindowDays} days) cannot hold a challenge-protected registration`);
 
             const reg = await test.step('POST …/certificates/register {csrAttributes: [CN], authorizationSecret} → 200 {uuid, certificateData: ""}', async () => {
                 const r = await registerOwnCertificate(api, ra, own.spec, { suffix: 'c21', secret: newChallenge(), note: 'Certificate pre-registration through the v2 API' });
@@ -119,10 +116,9 @@ test.describe('Certificate pre-registration through the v2 API', { tag: tags.api
             id: 'API-CERT-21', row: 'event-fires', prio: 'P1', issue: 'ilm#429',
             rule: ['the "Certificate Registered" event fires with a challenge; observed through an own trigger on an own clone of the run RA profile; skipped while a platform-level trigger on the event would act on these certificates too'],
         }),
-        async ({ api, own }) => {
+        async ({ api, own, needs }) => {
             test.setTimeout(SLOW_LIFECYCLE_MS);
-            const gate = await getPlatformTriggerGate(api, [EVENT.registered]);
-            test.skip(gate !== undefined, gate ?? '');
+            await needs.platformTriggersFree(EVENT.registered);
             const observer = await ownRegisteredObserver(api, own, 'c21ev');
             const withSecret = await registerOwnCertificate(api, observer.ra, own.spec, { suffix: 'c21ev', secret: newChallenge(), note: 'API-CERT-21 event arm: challenge-protected registration' });
             expect(withSecret.answer.status, withSecret.answer.text.slice(0, 300)).toBe(200);
@@ -135,10 +131,9 @@ test.describe('Certificate pre-registration through the v2 API', { tag: tags.api
             id: 'API-CERT-21', row: 'no-event-without-secret', prio: 'P1', issue: 'ilm#429',
             rule: ['the "Certificate Registered" event fires only with a challenge; a registration without one fires nothing (checked after the observer has shown it fires for a challenge-protected one)'],
         }),
-        async ({ api, own }) => {
+        async ({ api, own, needs }) => {
             test.setTimeout(SLOW_LIFECYCLE_MS);
-            const gate = await getPlatformTriggerGate(api, [EVENT.registered]);
-            test.skip(gate !== undefined, gate ?? '');
+            await needs.platformTriggersFree(EVENT.registered);
             const observer = await ownRegisteredObserver(api, own, 'c21nev');
             const scope = observer.scope;
             await test.step('A challenge-protected registration fires once: the observer works', async () => {
@@ -180,7 +175,7 @@ test.describe('Certificate pre-registration through the v2 API', { tag: tags.api
             const name = ownCommonName('c21-anon');
             const a = await sendRaw(api, 'POST', `${opsBase(ownRaProfile)}/certificates/register`, { csrAttributes: [], attributes: [] }, { headers: { authorization: 'Bearer invalid' }, identityOverride: true });
             // Ledger first: a register accepted without credentials made a certificate of this run.
-            recordIfAccepted('certificates', a, name, own.spec, 'register accepted with an invalid bearer', { raProfile: ownRaProfile.uuid, authority: ownRaProfile.authorityUuid });
+            own.probe('certificates', a, { name, note: 'register accepted with an invalid bearer', parents: { raProfile: ownRaProfile.uuid, authority: ownRaProfile.authorityUuid } });
             expect(a.status, a.text.slice(0, 200)).toBe(401);
         });
 
@@ -226,7 +221,7 @@ test.describe('Certificate pre-registration through the v2 API', { tag: tags.api
                 const a = await issueExisting(api, reg.cert!, ra, { request: csr.derBase64, authorizationSecret: reg.secret });
                 expect(a.status, a.text.slice(0, 300)).toBe(200);
                 await waitIssued(api, reg.cert!.uuid);
-                await recordDerivedKeyOf(api, reg.cert!.uuid, reg.createdAfter, own.spec);
+                await own.derivedKey(reg.cert!.uuid, reg.createdAfter);
                 const issued = await getCertificate(api, reg.cert!.uuid);
                 expect(issued.subjectDn).toBe(registered.subjectDn);
                 expect(sansOfDetail(issued.subjectAlternativeNames)).toEqual(sansOfDetail(registered.subjectAlternativeNames));
@@ -244,7 +239,7 @@ test.describe('Certificate pre-registration through the v2 API', { tag: tags.api
                 const a = await issueExisting(api, reg.cert!, ra, { request: csr.derBase64 });
                 expect(a.status, a.text.slice(0, 300)).toBe(200);
                 await waitIssued(api, reg.cert!.uuid);
-                await recordDerivedKeyOf(api, reg.cert!.uuid, reg.createdAfter, own.spec);
+                await own.derivedKey(reg.cert!.uuid, reg.createdAfter);
                 expect((await getCertificate(api, reg.cert!.uuid)).registration ?? null).toBeNull();
             });
         });
@@ -258,13 +253,12 @@ test.describe('Certificate pre-registration through the v2 API', { tag: tags.api
                 'ilm#279 (wrong secret → 422, failedAttempts++, still REGISTERED)',
             ],
         }),
-        async ({ api, own, ownRaProfile }) => {
+        async ({ api, own, ownRaProfile, needs }) => {
             test.setTimeout(LIFECYCLE_MS);
             const ra = ownRaProfile;
             // Two wrong secrets are sent before the right one: a tier whose maxFailedAttempts is 2 or less would LOCK the
             // authorization and the table could not be judged (settings are read, never set).
-            const defaults = await registrationDefaults(api);
-            test.skip(defaults.maxFailedAttempts <= 2, `maxFailedAttempts is ${defaults.maxFailedAttempts} on this tier: two wrong secrets would lock the registration (the table needs > 2)`);
+            await needs.registrationSettings({ minFailedAttempts: 3 });
             // 422, exactly one message that contains the text (the rest of the message names the certificate).
             const refused = (a: ApiAnswer, text: string) => {
                 expectRefused(a, { status: 422, text: new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) });
@@ -306,7 +300,7 @@ test.describe('Certificate pre-registration through the v2 API', { tag: tags.api
                 const a = await issueExisting(api, cert, ra, { request: csr.derBase64, authorizationSecret: reg.secret });
                 expect(a.status, a.text.slice(0, 300)).toBe(200);
                 await waitIssued(api, cert.uuid);
-                await recordDerivedKeyOf(api, cert.uuid, reg.createdAfter, own.spec);
+                await own.derivedKey(cert.uuid, reg.createdAfter);
                 expect(await attempts()).toBe(0);
             });
 
