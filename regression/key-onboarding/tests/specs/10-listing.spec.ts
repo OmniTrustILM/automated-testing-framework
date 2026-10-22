@@ -1,5 +1,5 @@
 import { MAX_TOKEN_KEYS_PER_PAGE } from '../utils/adminApi';
-import { expect, labelled, test } from '../utils/fixtures';
+import { expect, identityOf, labelled, test } from '../utils/fixtures';
 
 test.describe('Listing the key pairs on a token', () => {
   test('the token profile offers key listing', async ({ admin, provisioned }) => {
@@ -25,18 +25,18 @@ test.describe('Listing the key pairs on a token', () => {
     expect(labelled(keys, provisioned.planted.orphan).reason).toContain('no public key');
   });
 
-  test('lists a key pair without a unique ID as not onboardable and without a handle', async ({ admin, provisioned }) => {
+  test('lists a key pair without a usable ID as not onboardable and without metadata', async ({ admin, provisioned }) => {
     const keys = await admin.allTokenKeys(provisioned.token.uuid, provisioned.tokenProfile.uuid);
 
     for (const label of [provisioned.planted.noIdEc, ...provisioned.planted.idSharingEc]) {
       const key = labelled(keys, label);
-      expect(key).toMatchObject({ status: 'noUniqueId', keyAlgorithm: 'ECDSA', length: 256 });
-      expect(key.keyHandle).toBeUndefined();
-      expect(key.reason).toContain('without an ID unique to it');
+      expect(key).toMatchObject({ status: 'noUsableId', keyAlgorithm: 'ECDSA', length: 256 });
+      expect(key.keyPairMeta).toBeUndefined();
+      expect(key.reason).toContain('without an ID the platform can address it by');
     }
   });
 
-  test('pages through the token without repeating a key pair', async ({ admin, provisioned }) => {
+  test('pages through the token in full pages without repeating a key pair', async ({ admin, provisioned }) => {
     const all = await admin.allTokenKeys(provisioned.token.uuid, provisioned.tokenProfile.uuid);
     const pageSize = Math.min(MAX_TOKEN_KEYS_PER_PAGE, Math.max(1, Math.ceil(all.length / 3)));
 
@@ -53,19 +53,20 @@ test.describe('Listing the key pairs on a token', () => {
         totalItems: first.totalItems,
         totalPages: Math.ceil(first.totalItems / pageSize),
       });
-      expect(page.items.length).toBeLessThanOrEqual(pageSize);
+      expect(page.items).toHaveLength(Math.min(pageSize, first.totalItems - index * pageSize));
     });
-    const handles = pages.flatMap((page) => page.items.flatMap((key) => key.keyHandle ?? []));
-    expect(new Set(handles).size).toBe(handles.length);
-    expect([...handles].sort()).toEqual(all.flatMap((key) => key.keyHandle ?? []).sort());
+    const identities = pages.flatMap((page) => page.items.flatMap((key) => identityOf(key) ?? []));
+    expect(new Set(identities).size).toBe(identities.length);
+    expect([...identities].sort()).toEqual(all.flatMap((key) => identityOf(key) ?? []).sort());
   });
 
-  test('refuses a page the connector cannot serve', async ({ admin, provisioned }) => {
+  test('refuses a page larger than the listing limit', async ({ admin, provisioned }) => {
     const response = await admin.raw(
       'GET',
       `/v1/tokens/${provisioned.token.uuid}/tokenProfiles/${provisioned.tokenProfile.uuid}/tokenKeys?pageNumber=1&itemsPerPage=${MAX_TOKEN_KEYS_PER_PAGE + 1}`,
     );
 
-    expect(response.status()).toBe(422);
+    expect(response.status()).toBe(400);
+    expect(await response.text()).toContain(`itemsPerPage must be at most ${MAX_TOKEN_KEYS_PER_PAGE}`);
   });
 });
