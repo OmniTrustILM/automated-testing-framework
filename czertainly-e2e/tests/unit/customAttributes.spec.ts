@@ -3,11 +3,15 @@
  * request copy (`toRequestAttribute`), the one filler of required custom attributes and its version / contentType
  * rules. Pure, no environment.
  */
+import type { APIRequestContext } from '@playwright/test';
+import { fakeResponse } from './helpers/fakeResponse';
+import { partialOf } from './helpers/guardRig';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { expect, test } from '@playwright/test';
 import { attributeRequest } from '../../utils/regression/inventory/seedOwnedObjects';
-import { requiredAttributeItems, requiredCustomAttributes, toRequestAttribute } from '../../utils/regression/customAttributes';
+import { requiredAttributeItems, requiredCustomAttributes, toRequestAttribute, UnfillableAttributeError } from '../../utils/regression/customAttributes';
+import { contentOf } from './helpers/contentOf';
 
 type Json = Record<string, any>;
 
@@ -32,7 +36,7 @@ test('requiredAttributeItems defaults to v3 and sets the contentType on attribut
 
 // requiredAttributeItems: one value per content type (string, text, codeblock, integer, float, boolean, date, time, datetime)
 test('requiredAttributeItems fills one value per content type, from string to datetime', () => {
-    const data = (contentType: string): unknown => requiredAttributeItems([def({ contentType })], 'groups', 'val', NOW)[0].content[0].data;
+    const data = (contentType: string): unknown => contentOf(requiredAttributeItems([def({ contentType })], 'groups', 'val', NOW)[0])[0].data;
     expect(['string', 'text', 'codeblock'].map(data)).toEqual(['val', 'val', 'val']);
     expect(['integer', 'float'].map(data)).toEqual([1, 1]);
     expect(data('boolean')).toBe(true);
@@ -40,7 +44,7 @@ test('requiredAttributeItems fills one value per content type, from string to da
     expect(data('time'), 'HH:mm:ss (core TimeAttributeContentV3)').toMatch(/^\d{2}:\d{2}:\d{2}$/);
     expect(data('time')).toBe('13:45:56');
     expect(data('datetime')).toBe('2026-10-15T13:45:56');
-    for (const t of ['time', 'datetime', 'date']) expect(requiredAttributeItems([def({ contentType: t })], 'groups', 'val', NOW)[0].content[0].contentType).toBe(t);
+    for (const t of ['time', 'datetime', 'date']) expect(contentOf(requiredAttributeItems([def({ contentType: t })], 'groups', 'val', NOW)[0])[0].contentType).toBe(t);
 });
 
 // requiredAttributeItems: a list copies its first predefined item as is and completes the contentType; optional attributes are
@@ -52,6 +56,7 @@ test('requiredAttributeItems copies the first predefined list item, skips option
     expect(requiredAttributeItems([noType], 'users', 'val', NOW)[0].content).toEqual([{ reference: 'r2', data: 'd2', contentType: 'string' }]);
     expect(requiredAttributeItems([def({ contentType: 'string', properties: { required: false } })], 'users', 'val', NOW)).toEqual([]);
     expect(() => requiredAttributeItems([def({ contentType: 'secret' })], 'users', 'val', NOW)).toThrow(/cannot fill/);
+    expect(() => requiredAttributeItems([def({ contentType: 'secret' })], 'users', 'val', NOW), 'a typed error, so a spec skips on it and on nothing else').toThrow(UnfillableAttributeError);
 });
 
 // ------------------------------------------------------------------ every caller of the one filler sends v3 items with the contentType
@@ -61,9 +66,9 @@ function fakeApi(handler: (url: string) => { status: number; body?: unknown }) {
     const get = async (url: string) => {
         calls.push(url);
         const r = handler(url);
-        return { status: () => r.status, headers: () => ({}), ok: () => r.status >= 200 && r.status < 300, json: async () => r.body, text: async () => JSON.stringify(r.body ?? '') };
+        return fakeResponse(r);
     };
-    return { api: { get } as any, calls };
+    return { api: partialOf<APIRequestContext>({ get }), calls };
 }
 
 const U = (n: number): string => `aaaaaaaa-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -83,8 +88,8 @@ for (const [label, fill] of [
         const { api } = definitions();
         const out = await fill(api);
         expect(out.map((a: Json) => [a.name, a.version, a.contentType, a.content[0].contentType])).toEqual([['t', 'v3', 'time', 'time'], ['dt', 'v3', 'datetime', 'datetime'], ['s', 'v3', 'string', 'string']]);
-        expect(out[0].content[0].data).toMatch(/^\d\d:\d\d:\d\d$/);
-        expect(out[1].content[0].data).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d$/);
+        expect(contentOf(out[0])[0].data).toMatch(/^\d\d:\d\d:\d\d$/);
+        expect(contentOf(out[1])[0].data).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d$/);
     });
 }
 
@@ -100,7 +105,6 @@ test('attributeRequest: a predefined-list value carries reference, data and cont
     ]);
     expect(attributeRequest({ uuid: U(9), name: 'txt', contentType: 'string', data: ['red'] }).content, 'a free value has no reference').toEqual([{ data: 'red', contentType: 'string' }]);
 });
-
 
 // ------------------------------------------------------------------ a fifth copy fails the suite
 

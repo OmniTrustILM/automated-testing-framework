@@ -1,12 +1,22 @@
 /**
- * errorContract — the shape of an ILM core error body, as one pure reader (REG-USE-07.1, REG-DEP-01.c, the
- * API-GEN-32 error sentinel; the full battery is API-GEN-01).
+ * errorContract — the shape of an ILM core error body and the one refusal check.
  *
- * The rule (the error contract of the inventory API, ExceptionHandlingAdvice + ErrorMessageDto, unchanged by the Spring 7
- * migration): a 422 is a JSON ARRAY of non-empty strings; every other core error (400, 404, 409, 500) is an OBJECT
- * with exactly one string member `message`. An API negative asserts the status AND this shape (spec-authoring hard
- * rule 8), never the status alone.
+ * WHAT: the shape of an ILM core error body, as one pure reader (REG-USE-07.1, REG-DEP-01.c, the
+ *       API-GEN-32 error sentinel; the full battery is API-GEN-01).
+ *
+ *       The rule (the error contract of the inventory API, ExceptionHandlingAdvice + ErrorMessageDto, unchanged by the Spring 7
+ *       migration): a 422 is a JSON ARRAY of non-empty strings; every other core error (400, 404, 409, 500) is an OBJECT
+ *       with exactly one string member `message`. An API negative asserts the status AND this shape (spec-authoring hard
+ *       rule 8), never the status alone.
+ * WHY: An API negative that asserts only the status hides a wrong body; the error contract is one rule and belongs in one reader.
+ * HOW: `errorShape` classifies a raw body, `expect422Messages` / `expectMessageObject` / `expectRefused` assert it, and `checkRefusedMethod` tells core's answer to a refused method from an ingress answer.
+ *       `expectRefused` is as strict as the strictest check the specs wrote by hand: JSON content type, the shape of the
+ *       status, exactly one message and exactly the text. The looser readings are explicit options (`among`, `prefix`,
+ *       `contentTypeNotChecked` with its reason). `INTERNAL_LEAK_WORDS` is the one list of what a body must never carry
+ *       (a stack frame, an exception class, an SQL state, a framework package); `internalLeaks` reads it.
  */
+
+import { expect } from '@playwright/test';
 
 export type ErrorShape =
     | { kind: 'messages'; messages: string[] }
@@ -48,6 +58,85 @@ export function expectMessageObject(text: string): string {
     const s = errorShape(text);
     if (s.kind !== 'message') throw new Error(`an error body must be {"message": "<text>"} and nothing else; got ${s.kind === 'other' ? s.why : s.kind}`);
     return s.message;
+}
+
+// ------------------------------------------------------------------ one refusal, asserted in one place
+
+/** What `expectRefused` needs of an answer: the status, the raw text and the `content-type` header (an `ApiAnswer` has all three). */
+export interface RefusedAnswer {
+    status: number;
+    text: string;
+    /** The `content-type` header as sent (empty when absent). */
+    contentType: string;
+}
+
+/**
+ * Words an error body must never carry: a stack frame, an exception class name, a database state or a framework
+ * package. The one list of the suite; `internalLeaks` reads it for every caller.
+ *
+ * A body is raw JSON text, so a stack trace in it has its line breaks and tabs written as `\n`, `\r` and `\t`: the
+ * letter of the escape sits right against the next word (`\torg.hibernate`, `\nat com.x`), where a plain word boundary
+ * finds none. The start of a word is therefore `(?:\b|(?<=\\[nrt]))`, a word boundary or that escape, so a joined form is
+ * caught while a word that merely ends in the same letters (`Georg.springer`) is not.
+ */
+export const INTERNAL_LEAK_WORDS: readonly RegExp[] = [
+    /(?:\b|(?<=\\[nrt]))at [a-z]+\.[A-Za-z.]+\(/,
+    /(?:\b|(?<=\\[nrt]))at com\.\w+/,
+    /Exception\b/,
+    /SQLState/i,
+    /(?:\b|(?<=\\[nrt]))org\.(spring|hibernate|postgresql)/,
+];
+
+/** The leak words found in an error body, as text (empty = clean). */
+export const internalLeaks = (text: string): string[] => INTERNAL_LEAK_WORDS.filter((re) => re.test(text)).map(String);
+
+/** How `expectRefused` reads the messages of the answer. */
+export interface RefusedRule {
+    status: number;
+    /**
+     * What the message says. A string: the messages are exactly `[text]` (one message, equal). A regular expression: exactly
+     * one message, and it matches as the expression is written (anchor it if the whole message is meant). Left out: the
+     * shape only. `among` and `prefix` are the explicit looser readings.
+     */
+    text?: string | RegExp;
+    /** The looser reading: SOME message equals (string) or matches (regular expression); other messages are allowed. */
+    among?: boolean;
+    /** A string `text` is the START of the message (the rest, such as an object id, varies); with `among`, of some message. */
+    prefix?: boolean;
+    /** Prefixed to every failure text. */
+    what?: string;
+    /**
+     * Opt out of the `application/json` content type check, with the reason (a non-empty string). Left out, the content
+     * type is checked: core answers its refusals as JSON.
+     */
+    contentTypeNotChecked?: string;
+}
+
+/**
+ * The refusal rule of the suite: the answer has this `status`, its `content-type` is `application/json`, its body has the
+ * error shape of that status (a 422 is a JSON array of messages, any other status is `{ "message": … }`), the messages
+ * say what `text` and the flags ask (by default exactly the one message, exactly as written; see `RefusedRule`) and the
+ * body leaks no stack trace, class name or SQL state. Returns the messages for a further check.
+ */
+export function expectRefused(answer: RefusedAnswer, rule: RefusedRule): string[] {
+    const label = rule.what ? `${rule.what}: ` : '';
+    if (rule.contentTypeNotChecked !== undefined && rule.contentTypeNotChecked.trim() === '') throw new Error('expectRefused: contentTypeNotChecked needs the reason as text');
+    if (rule.prefix && typeof rule.text !== 'string') throw new Error('expectRefused: prefix needs a string text');
+    expect(answer.status, `${label}answered ${rule.status}: ${answer.text.slice(0, 300)}`).toBe(rule.status);
+    if (rule.contentTypeNotChecked === undefined) expect(answer.contentType, `${label}content type`).toMatch(/application\/json/);
+    const messages = rule.status === 422 ? expect422Messages(answer.text) : [expectMessageObject(answer.text)];
+    if (rule.text !== undefined) {
+        const wanted = rule.text;
+        const says = (m: string): boolean => (typeof wanted === 'string' ? (rule.prefix ? m.startsWith(wanted) : m === wanted) : wanted.test(m));
+        if (rule.among) {
+            expect(messages.some(says), `${label}a message ${rule.prefix ? 'starts with' : typeof wanted === 'string' ? 'equals' : 'matches'} ${String(wanted)} among ${JSON.stringify(messages)}`).toBe(true);
+        } else {
+            expect(messages, `${label}exactly one message`).toHaveLength(1);
+            expect(says(messages[0]), `${label}the message ${rule.prefix ? 'starts with' : typeof wanted === 'string' ? 'equals' : 'matches'} ${String(wanted)}: ${JSON.stringify(messages[0])}`).toBe(true);
+        }
+    }
+    expect(internalLeaks(answer.text), `${label}the refusal leaks no stack trace, class name or SQL state`).toEqual([]);
+    return messages;
 }
 
 // ------------------------------------------------------------------ the refused-method answer (API-GEN-32[method])

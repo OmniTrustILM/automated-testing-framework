@@ -1,27 +1,30 @@
 /**
- * The three-certificate seed of the migration checks: two with the run's owner and one without, two with a custom
- * attribute value and one without, so a sort by owner or by the attribute puts the empty one last in both directions.
- * Own objects only, recorded in the ledger before any assertion; the manifest is reused within a run.
+ * seedMinimal — the three-certificate seed of the migration checks.
+ *
+ * WHAT: The three-certificate seed of the migration checks: two with the run's owner and one without, two with a custom
+ *       attribute value and one without, so a sort by owner or by the attribute puts the empty one last in both directions.
+ *       Own objects only, recorded in the ledger before any assertion; the manifest is reused within a run.
+ * WHY: A sort by owner or by an attribute needs one row without a value to prove empty values come last.
+ * HOW: Two certificates with the run's owner and one without, two with a custom attribute value and one without; own objects only, recorded before any assertion, manifest reused within a run.
  */
 import { Logger } from '../../Logger';
 import { GuardedApi } from '../guard/types';
 import { checkOwnership } from '../ledger/ownership';
 import { selfSignedPem } from '../pkiBuilders';
 import { uploadOwnCertificate } from '../ownCertificates';
-import { createUser } from '../ownUsers';
+import { createOwnUser } from '../ownUsers';
 import { apiJson } from '../apiReads';
-import { requiredCustomAttributes } from '../customAttributes';
+import { requiredCustomAttributes, createOwnCustomAttribute } from '../customAttributes';
 import { readRunState, runName, runId, updateRunState } from '../ledger/runState';
-import { recordCreated } from '../ledger/ledger';
+import { uniqueSuffix } from '../text';
+import type { JsonObject } from '../json';
 
 const logger = new Logger('InventorySeed');
 
-type Json = Record<string, any>;
-
-export type SeedKey = 'a' | 'b' | 'c';
+type SeedKey = 'a' | 'b' | 'c';
 export type SeedField = 'owner' | 'rank';
 
-export interface SeedCertificatePlan {
+interface SeedCertificatePlan {
     key: SeedKey;
     commonName: string;
     /** Owned by the seed user. */
@@ -50,7 +53,7 @@ export interface SeedSubsetManifest extends SeedSubsetPlan {
  * The subset's names and values (pure). `stamp` makes the prefix unique per build, so a second build in the same run
  * (state lost) never mixes with the first under the isolation filter.
  */
-export function planSeedSubset(name: (suffix: string) => string = runName, stamp: string = Date.now().toString(36)): SeedSubsetPlan {
+export function planSeedSubset(name: (suffix: string) => string = runName, stamp: string = uniqueSuffix()): SeedSubsetPlan {
     const prefix = name(`seed-${stamp}-`);
     return {
         kind: 'b1-null-last-subset',
@@ -78,7 +81,7 @@ export function nullRows(m: SeedSubsetManifest, field: SeedField): string[] {
 }
 
 /** The isolation filter of the subset: certificates whose common name starts with the subset prefix. */
-export function seedFilter(m: Pick<SeedSubsetPlan, 'prefix'>): Json[] {
+export function seedFilter(m: Pick<SeedSubsetPlan, 'prefix'>): JsonObject[] {
     return [{ fieldSource: 'property', fieldIdentifier: 'COMMON_NAME', condition: 'STARTS_WITH', value: m.prefix }];
 }
 
@@ -111,21 +114,15 @@ export async function buildSeedSubset(api: GuardedApi, spec: string, plan: SeedS
     const earlier = readRunState().inventorySeed?.b1Subset as SeedSubsetManifest | undefined;
     if (earlier && earlier.runId === runId() && !manifestProblems(earlier).length && stillOwn(earlier)) return earlier;
 
-    const attr = await apiJson<Json>(api, 'POST', '/api/v1/attributes/custom', {
+    const attr = await createOwnCustomAttribute(api, spec, 'seed', {
         name: plan.attribute.name,
         label: plan.attribute.label,
         description: `REG run ${runId()}: API-GEN-32 null-last seed`,
         contentType: plan.attribute.contentType,
-        required: false,
-        visible: true,
-        readOnly: false,
-        list: false,
-        multiSelect: false,
-        resources: ['certificates'],
+        note: 'seed custom attribute (not required)',
     });
-    recordCreated('customAttributes', { uuid: attr.uuid, name: plan.attribute.name }, spec, 'seed custom attribute (not required)');
 
-    const owner = recordCreated('users', await createUser(api, plan.owner.username, { enabled: false }), spec, 'seed owner (disabled)');
+    const owner = await createOwnUser(api, spec, 'seed-owner', { name: plan.owner.username, enabled: false, note: 'seed owner (disabled)' });
 
     const required = await requiredCustomAttributes(api, 'certificates', runName('ca'));
     const certificates: SeedSubsetManifest['certificates'] = [];

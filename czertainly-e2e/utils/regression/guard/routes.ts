@@ -18,7 +18,7 @@
  *   available through ownership), `PATCH /v1/notifications` (mark as read: per-user state, not a listed verb), audit-log
  *   export / purge, and every other path-less POST that is not a create (`/v1/certificates/create`, `/v1/acmeProfiles/eabKeys`, …).
  *   Moved to guardedApi POST_CREATE: `/v1/inspections` (body-judged, creates nothing), `/v1/certificates/import`
- *   (certificate-only entries) and `/v1/listViews` (a saved view, shape-checked).
+ *   (certificate-only entries).
  * - NO_HANDLER_PROBES / MALFORMED_UUID_PROBES: exact (method, path) pairs that
  *   reach NO handler at INTERFACES_REVISION — re-verify them (the grep in each table's comment) whenever
  *   INTERFACES_REVISION moves: a later release that adds a handler turns the allowance into a real mutation.
@@ -164,7 +164,7 @@ export const TARGET_TYPES: Readonly<Record<string, string>> = {
     acmeAccounts: 'acmeAccounts', acmeProfiles: 'acmeProfiles', approvalProfiles: 'approvalProfiles', approvals: 'approvals',
     authorities: 'authorities', certificates: 'certificates', cmpProfiles: 'cmpProfiles', complianceProfiles: 'complianceProfiles',
     connectors: 'connectors', credentials: 'credentials', discoveries: 'discoveries',
-    entities: 'entities', groups: 'groups', items: 'keyItems', keys: 'keys', listViews: 'savedViews', locations: 'locations',
+    entities: 'entities', groups: 'groups', items: 'keyItems', keys: 'keys', locations: 'locations',
     notificationInstances: 'notificationInstances', notificationProfiles: 'notificationProfiles', raProfiles: 'raProfiles',
     roles: 'roles', scepProfiles: 'scepProfiles', secrets: 'secrets', tokenProfiles: 'tokenProfiles', tokens: 'tokens',
     users: 'users', vaultProfiles: 'vaultProfiles', vaults: 'vaultInstances',
@@ -188,7 +188,7 @@ export const RESOURCE_TYPES: Readonly<Record<string, string>> = {
     approvals: 'approvals', authorities: 'authorities', certificates: 'certificates', cmpProfiles: 'cmpProfiles',
     complianceProfiles: 'complianceProfiles', conditions: 'conditions', connectors: 'connectors', credentials: 'credentials',
     customAttributes: 'customAttributes', discoveries: 'discoveries', entities: 'entities', executions: 'executions',
-    groups: 'groups', jobs: 'scheduledJobs', keys: 'keys', listViews: 'savedViews', locations: 'locations',
+    groups: 'groups', jobs: 'scheduledJobs', keys: 'keys', locations: 'locations',
     notificationInstances: 'notificationInstances', notificationProfiles: 'notificationProfiles', raProfiles: 'raProfiles',
     roles: 'roles', rules: 'rules', scepProfiles: 'scepProfiles', secrets: 'secrets', tokenProfiles: 'tokenProfiles',
     tokens: 'tokens', triggers: 'triggers', users: 'users', vaultProfiles: 'vaultProfiles', vaults: 'vaultInstances',
@@ -492,7 +492,7 @@ export function listBodyRoute(method: string, apiPath: string): ListBodyRoute | 
  * `…/attributes` schema reads keyed by a connector, an authority or a token, and the authority / entity / notification
  * instance detail of an object created before its attributes were stored locally). They change no setting, state or
  * relation of an object, every UI form of the platform triggers them, and they are the read side of creating an own
- * object on a referenced connector (REFERENCE_FIELDS `connectorUuid`), e.g. `createAdcsAuthority`.
+ * object on a referenced connector (REFERENCE_FIELDS `connectorUuid`), e.g. `createOwnAdcsAuthority`.
  */
 export const SIDE_EFFECT_GETS: readonly string[] = [
     '/v1/certificates/{id}/validate', '/v1/certificates/{id}/chain', '/v1/certificates/{id}/chain/{seg}',

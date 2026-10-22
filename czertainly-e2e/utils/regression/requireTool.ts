@@ -10,6 +10,7 @@ import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { settings } from './run/settings';
 
 export type Tool = 'openssl' | 'sscep' | 'docker' | 'kubectl';
 
@@ -66,10 +67,10 @@ export function unitDockerBinProblem(bin: string): string | undefined {
  * REG_UNIT_NO_DOCKER for the code that runs docker (the local proof, restartCore, requireTool).
  */
 export function dockerBin(env: NodeJS.ProcessEnv): string | { error: string } {
-    const unit = process.env.REG_UNIT_NO_DOCKER === '1';
-    if (env.REG_DOCKER_BIN) {
-        const problem = unit ? unitDockerBinProblem(env.REG_DOCKER_BIN) : undefined;
-        return problem ? { error: problem } : env.REG_DOCKER_BIN;
+    const { unitNoDocker: unit, dockerBinOverride: override } = settings(env);
+    if (override) {
+        const problem = unit ? unitDockerBinProblem(override) : undefined;
+        return problem ? { error: problem } : override;
     }
     if (unit) return { error: 'the real docker CLI is disabled under the unit tests (inject the seam or a fake REG_DOCKER_BIN)' };
     return 'docker';
@@ -81,7 +82,7 @@ function run(cmd: string, args: string[]): { ok: boolean; out: string } {
 }
 
 /** undefined when the tool can be used, else why not (the skip reason). */
-export function requireTool(tool: Tool, cmd: string = process.env[`REG_${tool.toUpperCase()}_BIN`] ?? tool): string | undefined {
+export function requireTool(tool: Tool, cmd: string = settings().toolBin(tool)): string | undefined {
     // Under the unit tests `requireTool('docker')` never runs the real docker either.
     if (tool === 'docker') {
         const bin = dockerBin({ ...process.env, REG_DOCKER_BIN: cmd });

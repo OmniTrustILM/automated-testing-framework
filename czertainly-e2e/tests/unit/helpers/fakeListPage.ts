@@ -1,7 +1,12 @@
 /**
- * fakeListPage — a stand-in of a searchable list page of the admin UI (a titled widget, a client-side `Search` box and
- * detail links per row) and a browser context that serves it on a loopback base URL, so a test can change what "the
- * server" answers between two calls of a page object. Shared by the role and user page tests; nothing leaves the browser.
+ * fakeListPage — a stand-in of a searchable list page of the admin UI and a browser context that serves it.
+ *
+ * WHAT: `listPage(title, kind, rows, loaded?)` is a list page (a titled widget, a client-side `Search` box and detail links
+ * per row); `withServedPage` serves a page on a loopback base URL in a browser context and lets the test swap the HTML.
+ * WHY: the role and user page tests need to change what "the server" answers between two calls of a page object, which a
+ * static `setContent` page cannot do.
+ * HOW: the page filters its rows in the browser like CustomTable; the context answers from a table of routes the test
+ * changes; nothing leaves the browser.
  */
 import type { Browser, Page } from '@playwright/test';
 

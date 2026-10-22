@@ -6,9 +6,9 @@
 import { GuardedApi } from '../guard/types';
 import { pollUntil, WaitOptions } from '../wait';
 import { AssociationScope, EVENT_LABEL, EventCode } from './eventVocabulary';
-import { Sent, sendJson } from './workflowRequests';
-
-type Json = Record<string, any>;
+import { sendJson } from './workflowRequests';
+import { ApiAnswer } from '../apiReads';
+import type { JsonObject } from '../json';
 
 export interface FiringsOptions {
     event: EventCode;
@@ -28,7 +28,7 @@ export interface Firing {
     objectsEvaluated: number;
     objectsMatched: number;
     objectsIgnored: number;
-    objectHistories: { items: Json[]; itemsPerPage: number; pageNumber: number; totalPages: number; totalItems: number };
+    objectHistories: { items: JsonObject[]; itemsPerPage: number; pageNumber: number; totalPages: number; totalItems: number };
 }
 
 export interface FiringPage {
@@ -43,7 +43,7 @@ export interface FiringPage {
  * `POST /v1/workflows/events/{event}[/{resource}/{uuid}]/history`: the firings of an event in one scope, newest first, with
  * `pagination` (firings) and `objectsPagination` (objects inside a firing). A read: the guard's POST allow-list.
  */
-export async function getFirings(api: GuardedApi, o: FiringsOptions): Promise<Sent & { page?: FiringPage }> {
+export async function getFirings(api: GuardedApi, o: FiringsOptions): Promise<ApiAnswer & { page?: FiringPage }> {
     const path = o.scope ? `/api/v1/workflows/events/${o.event}/${o.scope.resource}/${o.scope.objectUuid}/history` : `/api/v1/workflows/events/${o.event}/history`;
     const sent = await sendJson(api, 'POST', path, {
         pagination: { itemsPerPage: o.pageSize ?? 10, pageNumber: o.page ?? 1 },
@@ -56,17 +56,17 @@ export async function getFirings(api: GuardedApi, o: FiringsOptions): Promise<Se
 export interface ObjectHistoryRow {
     event: string;
     trigger: { uuid: string; name: string };
-    origin?: Json;
+    origin?: JsonObject;
     conditionsMatched: boolean;
     actionsPerformed: boolean;
     triggeredAt: string;
     message?: string | null;
     notificationsSent?: boolean | null;
-    records: Array<{ message?: string; condition?: Json; execution?: Json }>;
+    records: Array<{ message?: string; condition?: JsonObject; execution?: JsonObject }>;
 }
 
 /** `GET /v1/workflows/events/{resource}/{uuid}/history`: the triggers evaluated on one object, newest first. */
-export async function getObjectHistory(api: GuardedApi, resource: string, uuid: string, opts: { page?: number; pageSize?: number } = {}): Promise<Sent & { rows: ObjectHistoryRow[]; totalItems: number }> {
+export async function getObjectHistory(api: GuardedApi, resource: string, uuid: string, opts: { page?: number; pageSize?: number } = {}): Promise<ApiAnswer & { rows: ObjectHistoryRow[]; totalItems: number }> {
     const q = `itemsPerPage=${opts.pageSize ?? 100}&pageNumber=${opts.page ?? 1}`;
     const sent = await sendJson(api, 'GET', `/api/v1/workflows/events/${resource}/${uuid}/history?${q}`);
     const rows = (sent.json?.items ?? []) as ObjectHistoryRow[];

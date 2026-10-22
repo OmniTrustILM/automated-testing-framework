@@ -4,11 +4,12 @@
  * REG_RA_PROFILE_NAME after loading the env file) and `tierIdentity()` (a hash of BASE_URL's host, never the host).
  */
 import * as crypto from 'crypto';
+import { settings } from '../run/settings';
 
 export type TierKind = 'local' | 'shared';
 
 export function tierKind(env: NodeJS.ProcessEnv = process.env): TierKind {
-    return env.TIER_KIND === 'local' ? 'local' : 'shared';
+    return settings(env).tierKind === 'local' ? 'local' : 'shared';
 }
 
 export function isLocalTier(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -23,15 +24,16 @@ export function isLocalTier(env: NodeJS.ProcessEnv = process.env): boolean {
  */
 export function freezeTierEnv(env: NodeJS.ProcessEnv = process.env): void {
     env.TIER_KIND = tierKind(env);
-    env.AUTH_MODE = env.AUTH_MODE ?? 'local';
+    env.AUTH_MODE = settings(env).authMode;
     env.REG_RA_PROFILE_NAME = env.REG_RA_PROFILE_NAME ?? '';
 }
 
 /** sha256 of BASE_URL's host (with port), first 12 hex characters; undefined without a valid BASE_URL. */
 export function tierIdentity(env: NodeJS.ProcessEnv = process.env): string | undefined {
-    if (!env.BASE_URL) return undefined;
+    const baseUrl = settings(env).baseUrl;
+    if (!baseUrl) return undefined;
     try {
-        const host = new URL(env.BASE_URL).host.toLowerCase();
+        const host = new URL(baseUrl).host.toLowerCase();
         return crypto.createHash('sha256').update(host).digest('hex').slice(0, 12);
     } catch {
         return undefined;

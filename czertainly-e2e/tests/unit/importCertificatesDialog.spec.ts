@@ -121,7 +121,7 @@ test('ImportCertificatesDialog: open, choose a refused file, read the alert / di
         await wizard.openDialog();
         await expect(wizard.dialog).toBeVisible();
         const answer = await wizard.chooseFile({ name: 'two-keys.pem', mimeType: 'application/x-pem-file', buffer: Buffer.from('hello') });
-        expect(answer.status()).toBe(422);
+        expect(answer.status).toBe(422);
         expect(served.inspections[0]).toEqual({ file: Buffer.from('hello').toString('base64') });
         await wizard.assertRefused('Failed to read the uploaded file (422): A PEM file can hold at most one private key.');
         await wizard.assertNoEntries();
@@ -140,7 +140,7 @@ test('ImportCertificatesDialog: open, choose a refused file, read the alert / di
         ).toEqual([true, true, true, true, true]);
         // Enter in the password field reads the file again WITH the passphrase and never submits.
         const again = await wizard.enterPassword(GEN_PW_1);
-        expect(again.status()).toBe(422);
+        expect(again.status).toBe(422);
         expect(served.inspections[1]).toEqual({ file: Buffer.from('hello').toString('base64'), passphrase: GEN_PW_1 });
         await wizard.assertRefused('Failed to read the uploaded file (422): A PEM file can hold at most one private key.');
         await wizard.cancel();
@@ -172,7 +172,7 @@ test('ImportCertificatesDialog: a 200 lists the entries; a signing request is di
         served.inspection = { status: 200, body: { containerDigest: 'y', entries: [CERT_ENTRY] } };
         await context.route('**/api/v1/certificates/import', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ results: [{ badge: 'Imported' }] }) }));
         const imported = await wizard.submit();
-        expect(imported.status()).toBe(200);
+        expect(imported.status).toBe(200);
         await wizard.assertResults(['Imported']);
         expect(await failsFast(wizard.assertResults(['Already in inventory']))).toBe(true);
         await wizard.done();

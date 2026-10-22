@@ -1,9 +1,14 @@
 /**
- * fakeRequestContext — a fake APIRequestContext for the fail-fast waits (waitForCertificateState,
- * waitForDiscoveryCompletion): GET answers come from a script, in order, and the history read has one entry.
- * Shared by certificateUtils.spec.ts and discoveryUtils.spec.ts. No network.
+ * fakeRequestContext — a fake APIRequestContext for the fail-fast waits (waitForCertificateState, waitForDiscoveryCompletion).
+ *
+ * WHAT: `fakeRequestContext(script)` answers GET from a script, in order (the last answer repeats), answers the history read
+ * with one failed entry and records every URL it was asked.
+ * WHY: the waits poll an object until it reaches a state or fails; their unit tests need a controlled sequence of answers.
+ * HOW: no network; the responses are built by `fakeResponse` from the scripted answers.
  */
 import { APIRequestContext } from '@playwright/test';
+import { fakeResponse } from './fakeResponse';
+import { partialOf } from './guardRig';
 
 export type Answer = { status: number; body?: unknown };
 
@@ -11,13 +16,8 @@ export type Answer = { status: number; body?: unknown };
 export function fakeRequestContext(script: Answer[]): { api: APIRequestContext; calls: string[] } {
     const calls: string[] = [];
     let i = 0;
-    const respond = (a: Answer) => ({
-        status: () => a.status,
-        ok: () => a.status >= 200 && a.status < 300,
-        json: async () => a.body,
-        text: async () => JSON.stringify(a.body ?? ''),
-    });
-    const api = {
+    const respond = (a: Answer) => fakeResponse(a);
+    const api = partialOf<APIRequestContext>({
         get: async (url: string) => {
             calls.push(url);
             if (url.endsWith('/history')) return respond({ status: 200, body: [{ created: 't1', event: 'Issue', status: 'FAILED', message: 'CA refused' }] });
@@ -25,6 +25,6 @@ export function fakeRequestContext(script: Answer[]): { api: APIRequestContext; 
             i++;
             return respond(a);
         },
-    } as unknown as APIRequestContext;
+    });
     return { api, calls };
 }

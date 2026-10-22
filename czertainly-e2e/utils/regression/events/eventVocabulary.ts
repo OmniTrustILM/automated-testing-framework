@@ -1,6 +1,10 @@
 /**
- * eventVocabulary — the event and resource codes of the workflow API (interfaces `ResourceEvent`, `Resource`) and the event
- * labels the platform prints in its messages. Pure data, no I/O; every events helper and spec reads its codes from here.
+ * eventVocabulary — the event and resource codes of the workflow API.
+ *
+ * WHAT: the event and resource codes of the workflow API (interfaces `ResourceEvent`, `Resource`) and the event
+ *       labels the platform prints in its messages. Pure data, no I/O; every events helper and spec reads its codes from here.
+ * WHY: The workflow and notification specs must name events by the platform's own codes and print the same labels the platform prints.
+ * HOW: Pure data with no I/O; every events helper and spec reads its codes from here.
  */
 
 /** Event codes (`ResourceEvent.Codes`). */
@@ -37,9 +41,6 @@ export const EVENT_LABEL: Record<EventCode, string> = {
     comment_resolved: 'Comment resolved',
     scheduled_job_finished: 'Scheduled job finished',
 };
-
-/** Resource codes (`Resource.Codes`) of the objects the workflow rows touch. */
-export type ResourceCode = 'certificates' | 'raProfiles' | 'groups' | 'discoveries' | 'approvals' | 'comments' | 'jobs';
 
 /** The objects that can carry an object-level association (`ResourceEvent.overridingResources`). */
 export type AssociationScope = 'raProfiles' | 'groups' | 'discoveries';

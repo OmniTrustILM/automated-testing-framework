@@ -3,32 +3,32 @@
  * (double entry), row ids are unique, and the sort comparators order empty values last. No environment.
  */
 import { expect, test } from '@playwright/test';
-import { planSeedA } from '../../utils/regression/inventory/seedFull';
+import { planCertificateSeed } from '../../utils/regression/inventory/seedFull';
 import { ALL_ROW_TABLES, ATTRIBUTE_EDGES, COLLECTION_ROWS, DATE_ROWS, expectedOrderGroups, LIST_ROWS, notAfterOf, orderProblem, sortKey, TEXT_ROWS } from '../../utils/regression/inventory/searchTables';
 
 const CLOCK = new Date('2026-10-14T10:00:00.000Z');
 const planName = (suffix: string) => `qa-reg-20261014-100000-abcd-${suffix}`;
 
-const certById0 = (m: ReturnType<typeof planSeedA>, id: string) => m.certificates.find((c) => c.id === id)!;
+const certById0 = (m: ReturnType<typeof planCertificateSeed>, id: string) => m.certificates.find((c) => c.id === id)!;
 
 function tableRows(): Array<{ table: string; row: (typeof TEXT_ROWS)[number] }> {
     return Object.entries(ALL_ROW_TABLES).flatMap(([table, rows]) => rows.map((row) => ({ table, row })));
 }
 
 test('double entry: the expected set of every row equals the seed predicate (a mistake in the table or the predicate shows here)', () => {
-    const m = planSeedA(CLOCK, planName, 'x1');
+    const m = planCertificateSeed(CLOCK, planName, 'x1');
     const problems: string[] = [];
     for (const { table, row } of tableRows()) {
         const got = row.expect(m);
-        const ok = typeof row.plan === 'number' ? got.length === row.plan : [...got].sort().join(',') === [...row.plan].sort().join(',');
-        if (!ok) problems.push(`${table} ${row.row} (${row.title}): predicate gives {${got.join(', ')}} (${got.length}), plan says ${typeof row.plan === 'number' ? row.plan : `{${row.plan.join(', ')}}`}`);
+        const ok = typeof row.expectedIds === 'number' ? got.length === row.expectedIds : [...got].sort().join(',') === [...row.expectedIds].sort().join(',');
+        if (!ok) problems.push(`${table} ${row.row} (${row.title}): predicate gives {${got.join(', ')}} (${got.length}), expectedIds say ${typeof row.expectedIds === 'number' ? row.expectedIds : `{${row.expectedIds.join(', ')}}`}`);
     }
     expect(problems).toEqual([]);
     expect(tableRows().length).toBeGreaterThan(100);
 });
 
 test('row ids are unique, filters build, and the bug / pin markers are where the plan puts them', () => {
-    const m = planSeedA(CLOCK, planName, 'x1');
+    const m = planCertificateSeed(CLOCK, planName, 'x1');
     const rows = tableRows().map((r) => r.row);
     expect(new Set(rows.map((r) => r.row)).size).toBe(rows.length);
     for (const r of rows) {
@@ -45,7 +45,7 @@ test('row ids are unique, filters build, and the bug / pin markers are where the
 });
 
 test('sort comparators: nulls last in both directions, min asc / max desc for multi-valued fields, ties as groups', () => {
-    const m = planSeedA(CLOCK, planName, 'x1');
+    const m = planCertificateSeed(CLOCK, planName, 'x1');
     const flat = (g: string[][]) => g.map((x) => x.join('+'));
     // num: -5, 0, 10, 20 … 100, 1000 then the 14 without a value.
     const asc = expectedOrderGroups(m, 'num', 'asc');

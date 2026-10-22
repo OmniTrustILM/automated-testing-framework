@@ -17,9 +17,9 @@
  *    API_DELETE_OWN off keeps the objects and prints the ledger path.
  * 4. Walks DELETE_ORDER; every delete goes through attemptCleanup (one retry, cascade reporting) and appends a
  *    `deleted` ledger line. Every object gets a FRESH authenticated context (a long revoke wait cannot outlive the
- *    token) and its own `seen` set. The handlers are loaded per type from the module that creates the objects and
- *    wrapped by `wrapHandlerWithGuard`: dry-run check, then `assertOwnLive` (ledger + live run-prefixed name) before the
- *    handler sees the object; a type whose module does not exist yet is reported as "no handler (type X)", but only
+ *    token) and its own `seen` set. The handlers of each type come from the module that creates the objects (the registry in
+ *    resourceTypes.ts names it, `HANDLER_SOURCES` imports it) and are wrapped by `wrapHandlerWithGuard`: dry-run check, then `assertOwnLive` (ledger + live run-prefixed name) before the
+ *    handler sees the object; a type without a registry entry is reported as "no handler (type X)", but only
  *    when such ledger lines exist. A handler that answers "kept" (a derived object provably older than the run, or
  *    adopted) is a WARNING, not a failure; the kept objects are written to `<state dir>/<run id>.kept.json`
  *    (type, uuid, reasons) and REG_KEPT_STRICT=1 fails the run on a non-empty list. A derived object whose
@@ -44,11 +44,16 @@
  *    before executions, the notification steps after the workflow step); step hooks (PRE_STEPS:
  *    own RA profiles are dissociated from own approval profiles before the certificate step, so a crashed spec cannot
  *    leave the revoke gated); `keyItems` go with their key (`goneWith`); own token keys are removed by
- *    teardownHandlers' own `keys` handler — exactly ONE handler for every own token key (protocols/protocolCa and platform/keyApi have none);
+ *    teardownHandlers' own `keys` handler — exactly ONE handler for every own token key (protocols/protocolCa and platform/keys have none);
  *    approvals / approval profiles the platform
  *    retains (core never deletes an approval; an approval profile with approvals cannot be deleted,
  *    ApprovalProfileServiceImpl.java:119-127) may be answered `kept` by their handlers (a warning
  *    and a kept-report line, REG_KEPT_STRICT=1 turns it red — the documented residue of a lifecycle run).
+ *
+ * Structure: `teardownRun` = `assertPreconditions` → `dryRunReport` | `keepReport` | `deleteAndProve` (delete through
+ * `TeardownRun`, report the kept objects, `proveNonInterference`). `TeardownRun` holds the state its phases share (the result,
+ * the warnings of the object being removed, the failures the final pass retries): `prepSteps` → `deleteStep` / `deleteItem` per
+ * step → `finalPass`. The tables (DELETE_ORDER, HANDLER_MODULES) are derived from the registry.
  *
  * Kubernetes objects (`k8s:<kind>` ledger lines, REG-USE-06 / REG-PROT-19…21) are never deleted here. Contract: the
  * spec removes them in its own `afterAll` (attemptCleanup) and appends `recordDeleted('k8s:<kind>', ref, spec)` for each
@@ -61,90 +66,37 @@ import * as path from 'path';
 import { Logger } from '../../Logger';
 import { attemptCleanup, clearCleanupFailures, cleanupLedgerFile, CleanupFailure, formatCleanupReport, readCleanupFailures, recordCleanupFailure, rewriteCleanupFailures, statusOf } from '../../cleanupLedger';
 import { assertNotDryRun, isDryRun, parseFlag } from '../run/flags';
-import { compareSnapshots, confirmForeignCreates, readSnapshot, snapshotTier } from './nonInterference';
+import { compareSnapshots, confirmForeignCreates, readSnapshot, SnapshotReader, snapshotTier } from './nonInterference';
+import { teardownHandlers as coreHandlers, hasLiveOwn, ungateOwnRaProfiles } from './teardownHandlers';
+import { teardownHandlers as lifecycleHandlers } from '../lifecycle/lifecycleTeardown';
+import { teardownHandlers as workflowHandlers } from '../events/workflowTeardown';
+import { teardownHandlers as notificationHandlers } from '../events/notificationTeardown';
+import { teardownHandlers as protocolHandlers } from '../protocols/protocolProfiles';
+import { teardownHandlers as platformHandlers } from '../platform/platformTeardown';
+import { teardownHandlers as inventoryHandlers } from '../inventory/inventoryTeardown';
+import { teardownHandlers as schedulerHandlers } from '../platform/schedulerApi';
+import { deleteOrderOf, handlerModulesOf, type HandlerModule } from '../resourceTypes';
 import { assertOwn, assertOwnLive, WorkaroundNote, LiveObjectMissing, mayDeleteOwn, checkOwnership } from '../ledger/ownership';
 import { LedgerLine, ledgerFile, readLedger, recordDeleted } from '../ledger/ledger';
 import { DEFAULT_RUN_IDS, currentRunId, isDefaultRunId, regressionStateDir, beforeSnapshotFile } from '../run/runId';
+import { settings } from '../run/settings';
 import { assertLocalBackend, assertRunTier, removeLocalProof } from '../tier/localProof';
 import { isLocalTier, tierIdentity } from '../tier/kind';
+import type { RemoveResult, TeardownContext, TeardownHandler, TeardownPrepStep } from './teardownTypes';
 
 const logger = new Logger('RunTeardown');
 
-type Json = Record<string, any>;
-
-export interface TeardownContext {
-    api: APIRequestContext;
-    runId: string;
-    /** The ledger as of the start of the current step. */
-    ledger: LedgerLine[];
-    /** Uuids read with 200 during this object's step: only those may count a 404 as "gone". */
-    seen: Set<string>;
-    /** Tier identity the ledger lines must carry; null = not checked (no BASE_URL, unit tests). */
-    tier: string | null;
-    /** The live object read by `wrapHandlerWithGuard` right before `remove` (absent for an id-named type). */
-    live?: Json;
-    /** Report a kept object or another non-fatal finding (printed at the end of the teardown). */
-    warn: (message: string) => void;
-    /** Poll interval of the absence check (tests shorten it). */
-    pollMs?: number;
-    /** A known product bug was worked around (core#2511: absence confirmed through the full list); logged and reported. */
-    knownBug?: (note: WorkaroundNote) => void;
-}
-
-export type RemoveResult = void | 'kept';
-
-export interface TeardownHandler {
-    /** One line for the dry-run plan: what remove() does. */
-    action: string;
-    remove(ctx: TeardownContext, line: LedgerLine): Promise<RemoveResult>;
-    /**
-     * An object that goes WITH its parent (a key item with its key). When the live read finds it gone and
-     * this answers true (the parent's `deleted` ledger line of this run exists), the removal is done — the parent's
-     * handler proved the absence. Any other missing object stays "route or object missing".
-     */
-    goneWith?(ctx: TeardownContext, line: LedgerLine): boolean;
-}
+export type { TeardownContext, TeardownHandler, RemoveResult, TeardownPrepStep };
 
 /**
- * A step hook: runs BEFORE the deletes of its step, once, with a fresh context, independent of
- * ledger lines. A failure is recorded as a cleanup failure (the run ends red) and the step still runs.
- */
-export interface TeardownPrepStep {
-    /** The DELETE_ORDER step the hook precedes. */
-    before: number;
-    name: string;
-    /** Whether the hook has anything to do for this ledger (no context is opened otherwise). */
-    when(lines: LedgerLine[], runId: string): boolean;
-    run(ctx: TeardownContext): Promise<void>;
-}
-
-/**
- * Delete order: dependants before what they depend on. Within a step, types run in the listed order. Every pair of
- * REFERENCED_BY below is satisfied by this table (tests/unit/runTeardown.spec.ts asserts it mechanically).
+ * Delete order: dependants before what they depend on. Within a step, types run in the listed order. The steps and their
+ * types come from the resource-type registry (resourceTypes.ts: the array order is the delete order), and every pair of
+ * REFERENCED_BY below is satisfied by it (tests/unit/runTeardown.spec.ts asserts it mechanically).
  * Step 8 runs actions BEFORE executions (core refuses
  * to delete an execution while an action references it) and the notification steps come after the workflow step.
  * `keyItems` go with their key (step 6, after keys) — a remaining item is reported.
  */
-export const DELETE_ORDER: Array<{ step: number; label: string; types: string[] }> = [
-    { step: 1, label: 'pending approvals of own certificates (reject through the override path)', types: ['approvals'] },
-    { step: 2, label: 'object-level event associations on own objects', types: ['eventAssociations'] },
-    { step: 3, label: 'discoveries (their new certificates become derived lines first)', types: ['discoveries'] },
-    { step: 4, label: 'certificates, own and derived (own RA profiles ungated from own approval profiles first: PRE_STEPS)', types: ['certificates'] },
-    { step: 5, label: 'keys', types: ['keys'] },
-    { step: 6, label: 'key items (gone with their key; a remaining item is reported)', types: ['keyItems'] },
-    { step: 7, label: 'protocol profiles (deactivate, disable, delete); ACME accounts go with their profile', types: ['acmeProfiles', 'acmeAccounts', 'scepProfiles', 'cmpProfiles'] },
-    { step: 8, label: 'triggers → rules → conditions → actions → executions', types: ['triggers', 'rules', 'conditions', 'actions', 'executions'] },
-    { step: 9, label: 'notification profiles → instances', types: ['notificationProfiles', 'notificationInstances'] },
-    { step: 10, label: 'compliance profiles (own RA associations removed first) → RA profiles → authorities → credentials → connectors this run registered', types: ['complianceProfiles', 'raProfiles', 'authorities', 'credentials', 'connectors'] },
-    { step: 11, label: 'token profiles → tokens', types: ['tokenProfiles', 'tokens'] },
-    { step: 12, label: 'users (removed from their roles first) → roles → groups → custom attributes → saved views → OID entries', types: ['users', 'roles', 'groups', 'customAttributes', 'savedViews', 'oidEntries'] },
-    {
-        step: 13,
-        label: 'entities, locations, vault secrets → profiles → vaults, approval profiles (compliance profiles go in step 10, before the RA profiles)',
-        types: ['entities', 'locations', 'secrets', 'vaultProfiles', 'vaultInstances', 'approvalProfiles'],
-    },
-    { step: 14, label: 'scheduled jobs (@local only)', types: ['scheduledJobs'] },
-];
+export const DELETE_ORDER: Array<{ step: number; label: string; types: string[] }> = deleteOrderOf();
 
 /**
  * The reference graph core enforces on deletes: type A cannot be deleted while an object of type B still
@@ -178,35 +130,23 @@ export function isDeletedBefore(b: string, a: string): boolean {
     return deleteStepOf(b) < deleteStepOf(a) || (deleteStepOf(b) === deleteStepOf(a) && typeRank(b) < typeRank(a));
 }
 
-/** Module (relative to utils/regression) whose `teardownHandlers` export removes a type. Missing module = no handler yet. */
-export const HANDLER_MODULES: Record<string, string> = {
-    approvals: 'lifecycle/lifecycleTeardown',
-    approvalProfiles: 'lifecycle/lifecycleTeardown',
-    eventAssociations: '../workflowUtils',
-    triggers: '../workflowUtils',
-    rules: '../workflowUtils',
-    conditions: '../workflowUtils',
-    executions: '../workflowUtils',
-    actions: '../workflowUtils',
-    notificationProfiles: '../notificationUtils',
-    notificationInstances: '../notificationUtils',
-    scepProfiles: 'protocols/protocolProfiles',
-    cmpProfiles: 'protocols/protocolProfiles',
-    entities: 'platform/platformTeardown',
-    locations: 'platform/platformTeardown',
-    secrets: 'platform/platformTeardown',
-    vaultProfiles: 'platform/platformTeardown',
-    vaultInstances: 'platform/platformTeardown',
-    complianceProfiles: 'platform/platformTeardown',
-    // The inventory area's id-named types; each handler proves the live object own (run-prefixed name) and
-    // its absence itself (inventory/inventoryTeardown.ts). OID entries are removed on a proven local stack only.
-    savedViews: 'inventory/inventoryTeardown',
-    oidEntries: 'inventory/inventoryTeardown',
-    scheduledJobs: 'platform/schedulerApi',
-    ...Object.fromEntries(
-        ['certificates', 'keys', 'keyItems', 'discoveries', 'acmeProfiles', 'acmeAccounts', 'raProfiles', 'authorities', 'credentials', 'connectors',
-            'tokenProfiles', 'tokens', 'users', 'roles', 'groups', 'customAttributes'].map((t) => [t, 'teardown/teardownHandlers']),
-    ),
+/** The handler module of every ledger type (resourceTypes.ts). A type without an entry has no handler. */
+export const HANDLER_MODULES: Record<string, HandlerModule> = handlerModulesOf();
+
+/**
+ * The `teardownHandlers` of each handler module, imported statically: a module that is missing or fails to load stops the
+ * run at its start, never half-way through a teardown. The record is typed by `HandlerModule`, so a registry entry that names
+ * a module without an import here does not compile.
+ */
+export const HANDLER_SOURCES: Record<HandlerModule, Record<string, TeardownHandler>> = {
+    core: coreHandlers,
+    lifecycle: lifecycleHandlers,
+    workflow: workflowHandlers,
+    notification: notificationHandlers,
+    protocols: protocolHandlers,
+    platform: platformHandlers,
+    inventory: inventoryHandlers,
+    scheduler: schedulerHandlers,
 };
 
 /**
@@ -236,39 +176,34 @@ export function wrapHandlerWithGuard(type: string, handler: TeardownHandler): Te
     };
 }
 
-const guardedModules = new Map<string, Record<string, TeardownHandler> | undefined>();
+const guardedModules = new Map<string, Record<string, TeardownHandler>>();
 
-/** Forget the loaded handler modules (unit tests that replace a module between tests). */
+/** Forget the wrapped handler modules (unit tests that replace a module's handlers between tests). */
 export function resetHandlerModulesForTests(): void {
     guardedModules.clear();
 }
 
 /**
- * The `teardownHandlers` export of a module (each wrapped by wrapHandlerWithGuard), or undefined when the module file itself is
- * absent (a stacked branch without that area). Only a "Cannot find module" for exactly that path counts as absent: a
- * module that exists but fails to load (a missing dependency included) throws.
+ * The `teardownHandlers` of a handler module, each wrapped by wrapHandlerWithGuard, or undefined when `sources` has no such
+ * module. The default sources are the static imports of HANDLER_SOURCES; tests may pass their own.
  */
-export function loadHandlers(module: string): Record<string, TeardownHandler> | undefined {
-    if (guardedModules.has(module)) return guardedModules.get(module);
-    const target = path.join(__dirname, '..', module);
-    let loaded: { teardownHandlers?: Record<string, TeardownHandler> };
-    try {
-        loaded = require(target);
-    } catch (e) {
-        const err = e as NodeJS.ErrnoException;
-        if (err?.code === 'MODULE_NOT_FOUND' && String(err.message).split('\n')[0] === `Cannot find module '${target}'`) return undefined;
-        throw e;
-    }
-    const raw = loaded.teardownHandlers;
-    const wrapped = raw && Object.fromEntries(Object.entries(raw).map(([t, h]) => [t, wrapHandlerWithGuard(t, h)]));
-    guardedModules.set(module, wrapped);
+export function loadHandlers(module: string, sources: Record<string, Record<string, TeardownHandler>> = HANDLER_SOURCES): Record<string, TeardownHandler> | undefined {
+    const cached = sources === HANDLER_SOURCES ? guardedModules.get(module) : undefined;
+    if (cached) return cached;
+    if (!Object.hasOwn(sources, module)) return undefined;
+    const wrapped = Object.fromEntries(Object.entries(sources[module]).map(([t, h]) => [t, wrapHandlerWithGuard(t, h)]));
+    if (sources === HANDLER_SOURCES) guardedModules.set(module, wrapped);
     return wrapped;
 }
 
-export function handlerOf(type: string, modules: Record<string, string> = HANDLER_MODULES): TeardownHandler | undefined {
+export function handlerOf(
+    type: string,
+    modules: Record<string, string> = HANDLER_MODULES,
+    sources: Record<string, Record<string, TeardownHandler>> = HANDLER_SOURCES,
+): TeardownHandler | undefined {
     // Own properties only: a ledger type `constructor` / `__proto__` is not a handler module.
     const module = Object.hasOwn(modules, type) ? modules[type] : undefined;
-    const handlers = typeof module === 'string' ? loadHandlers(module) : undefined;
+    const handlers = typeof module === 'string' ? loadHandlers(module, sources) : undefined;
     return handlers && Object.hasOwn(handlers, type) ? handlers[type] : undefined;
 }
 
@@ -380,9 +315,8 @@ export const FINAL_PASS_NOTE = 'deleted in the final pass (the first attempt fai
 export const isRetryableFailure = (message: string | undefined): boolean =>
     !/route or object missing|: refusing to touch |API_TEARDOWN_DRY_RUN is on/.test(String(message ?? ''));
 
-/** The step hooks of the run-end teardown (lazy: teardownHandlers imports this module). */
+/** The step hooks of the run-end teardown. */
 export function defaultPrepSteps(): readonly TeardownPrepStep[] {
-    const { ungateOwnRaProfiles, hasLiveOwn } = require('./teardownHandlers') as typeof import('./teardownHandlers');
     return [{
         before: deleteStepOf('certificates'), name: 'ungate own RA profiles',
         when: (lines, runId) => hasLiveOwn(lines, runId, 'approvalProfiles') && hasLiveOwn(lines, runId, 'raProfiles'),
@@ -403,152 +337,208 @@ export interface ExecuteResult {
     finalPass: { retried: number; deleted: number };
 }
 
-/** Deletes the plan step by step (the ledger is re-read before each step: a step can add derived lines). */
-export async function executeTeardown(opts: ExecuteOptions): Promise<ExecuteResult> {
-    assertNotDryRun('executeTeardown');
-    const readLines = opts.readLines ?? (() => readLedger());
-    const handler = opts.handler ?? handlerOf;
-    const tier = opts.tier === undefined ? (tierIdentity() ?? null) : opts.tier;
-    const onDeleted = opts.onDeleted ?? ((p: PlanItem, note?: string) => recordDeleted(p.type, { uuid: p.uuid, name: p.name }, 'runTeardown', note));
-    const result: ExecuteResult = { deleted: [], kept: [], failed: [], warnings: [], keptReasons: {}, knownBugs: [], finalPass: { retried: 0, deleted: 0 } };
-    /** Attempted deletes that failed, in failure order (the final pass retries them in reverse). */
-    const retryable: PlanItem[] = [];
-    const lastFailureOf = (item: PlanItem): CleanupFailure | undefined =>
-        readCleanupFailures().filter((f) => f.resource === item.type && f.uuid === item.uuid).pop();
-    const knownBug = (n: WorkaroundNote) => {
+/**
+ * One run of the delete steps. The state the phases share lives in the fields: the result, the failures a final pass may
+ * retry (`retryable`, in failure order) and the warnings of the object being removed (`current`, read for a kept
+ * object's reasons). The phases are `prepSteps` (the hooks of a step), `deleteStep` (the objects of a step, one by one
+ * through `deleteItem`) and `finalPass` (one more attempt per failed delete, oldest failure first).
+ */
+class TeardownRun {
+    readonly result: ExecuteResult = { deleted: [], kept: [], failed: [], warnings: [], keptReasons: {}, knownBugs: [], finalPass: { retried: 0, deleted: 0 } };
+    private readonly retryable: PlanItem[] = [];
+    private current: string[] = [];
+    private readonly readLines: () => LedgerLine[];
+    private readonly handler: (type: string) => TeardownHandler | undefined;
+    private readonly tier: string | null;
+    private readonly onDeleted: (item: PlanItem, note?: string) => void;
+    private readonly preSteps: readonly TeardownPrepStep[];
+
+    constructor(private readonly opts: ExecuteOptions) {
+        this.readLines = opts.readLines ?? (() => readLedger());
+        this.handler = opts.handler ?? handlerOf;
+        this.tier = opts.tier === undefined ? (tierIdentity() ?? null) : opts.tier;
+        this.onDeleted = opts.onDeleted ?? ((p: PlanItem, note?: string) => recordDeleted(p.type, { uuid: p.uuid, name: p.name }, 'runTeardown', note));
+        this.preSteps = opts.preSteps ?? defaultPrepSteps();
+    }
+
+    /** Attempted deletes that failed: the last failure record of an object (the final pass retries them in reverse order of failure). */
+    private lastFailureOf(item: PlanItem): CleanupFailure | undefined {
+        return readCleanupFailures().filter((f) => f.resource === item.type && f.uuid === item.uuid).pop();
+    }
+
+    private readonly knownBug = (n: WorkaroundNote): void => {
         logger.warn(`known bug ${n.bug}: ${n.type} ${n.uuid}: ${n.note}`);
-        if (!result.knownBugs.some((k) => k.bug === n.bug && k.uuid === n.uuid && k.note === n.note)) result.knownBugs.push(n);
+        if (!this.result.knownBugs.some((k) => k.bug === n.bug && k.uuid === n.uuid && k.note === n.note)) this.result.knownBugs.push(n);
     };
-    let current: string[] = [];
-    const warn = (m: string) => {
+
+    private readonly warn = (m: string): void => {
         logger.warn(m);
-        result.warnings.push(m);
-        current.push(m);
+        this.result.warnings.push(m);
+        this.current.push(m);
     };
-    const steps = [0, ...DELETE_ORDER.map((s) => s.step), 99];
-    const preSteps = opts.preSteps ?? defaultPrepSteps();
-    for (const step of steps) {
-        // The hooks of this step run first (once, a fresh context), whatever the ledger holds.
-        for (const hook of preSteps.filter((h) => h.before === step && h.when(readLines(), opts.runId))) {
-            const api = await opts.newApi();
+
+    /** A fresh per-object context: its own seen set, the tier identity, the run's warning and known-bug sinks. */
+    private contextFor(api: APIRequestContext, lines: LedgerLine[], withKnownBug: boolean): TeardownContext {
+        return {
+            ...contextOf(api, this.opts.runId, lines, this.tier, this.warn),
+            ...(withKnownBug ? { knownBug: this.knownBug } : {}),
+            ...(this.opts.pollMs !== undefined ? { pollMs: this.opts.pollMs } : {}),
+        };
+    }
+
+    async execute(): Promise<ExecuteResult> {
+        for (const step of [0, ...DELETE_ORDER.map((s) => s.step), 99]) {
+            await this.prepSteps(step);
+            await this.deleteStep(step);
+        }
+        await this.finalPass();
+        logger.info(`final pass: ${this.result.finalPass.retried} retried, ${this.result.finalPass.deleted} deleted`);
+        return this.result;
+    }
+
+    /** The hooks of this step run first (once, a fresh context), whatever the ledger holds. */
+    private async prepSteps(step: number): Promise<void> {
+        for (const hook of this.preSteps.filter((h) => h.before === step && h.when(this.readLines(), this.opts.runId))) {
+            const api = await this.opts.newApi();
             try {
-                await hook.run({ ...contextOf(api, opts.runId, readLines(), tier, warn), ...(opts.pollMs !== undefined ? { pollMs: opts.pollMs } : {}) });
+                await hook.run({ ...contextOf(api, this.opts.runId, this.readLines(), this.tier, this.warn), ...(this.opts.pollMs !== undefined ? { pollMs: this.opts.pollMs } : {}) });
             } catch (e) {
                 const message = `pre-step "${hook.name}" failed: ${String((e as Error)?.message ?? e).slice(0, 300)}`;
                 logger.error(message);
                 recordCleanupFailure({ resource: `pre-step:${hook.name}`, uuid: '-', message });
-                result.warnings.push(message);
-            } finally {
-                await api.dispose().catch(() => undefined);
-            }
-        }
-        const lines = readLines();
-        const items = planTeardown(lines, opts.runId, handler, { tier }).filter((p) => p.step === step);
-        if (!items.length) continue;
-        logger.info(`step ${step}: ${items.length} object(s)`);
-        for (const item of items) {
-            const describe = { resource: item.type, uuid: item.uuid, ...(item.refused ? {} : { name: item.name }) };
-            const h = handler(item.type);
-            if (item.refused || !h) {
-                recordCleanupFailure({ ...describe, message: item.refused ? `refused: ${item.refused}` : `no handler (type ${item.type})` });
-                result.failed.push(item);
-                continue;
-            }
-            const upstream = result.failed.find((f) => f.step < step && !f.refused);
-            current = [];
-            const api = await opts.newApi();
-            const ctx: TeardownContext = { ...contextOf(api, opts.runId, lines, tier, warn), knownBug, ...(opts.pollMs !== undefined ? { pollMs: opts.pollMs } : {}) };
-            let kept = false;
-            try {
-                const ok = await attemptCleanup(
-                    describe,
-                    async () => {
-                        // The ledger guard once more right before the handler (which adds the live check).
-                        assertOwn(item.line, `runTeardown.${item.type}`, { lines, runId: opts.runId, ...(tier ? { tier } : {}) });
-                        kept = (await h.remove(ctx, item.line)) === 'kept';
-                    },
-                    { blockedBy: upstream ? `${upstream.type} ${upstream.uuid}` : undefined, ...(opts.retryDelayMs !== undefined ? { retryDelayMs: opts.retryDelayMs } : {}) },
-                );
-                if (!ok) {
-                    result.failed.push(item);
-                    if (isRetryableFailure(lastFailureOf(item)?.message)) retryable.push(item);
-                } else if (kept) {
-                    const reasons = [...current];
-                    warn(`kept ${item.type} ${item.uuid}: provably older than the run, or adopted (see the handler's reason above)`);
-                    result.kept.push(item);
-                    result.keptReasons[item.uuid] = reasons;
-                } else {
-                    onDeleted(item);
-                    result.deleted.push({ type: item.type, uuid: item.uuid });
-                }
+                this.result.warnings.push(message);
             } finally {
                 await api.dispose().catch(() => undefined);
             }
         }
     }
-    await finalPass();
-    logger.info(`final pass: ${result.finalPass.retried} retried, ${result.finalPass.deleted} deleted`);
-    return result;
+
+    private async deleteStep(step: number): Promise<void> {
+        const lines = this.readLines();
+        const items = planTeardown(lines, this.opts.runId, this.handler, { tier: this.tier }).filter((p) => p.step === step);
+        if (!items.length) return;
+        logger.info(`step ${step}: ${items.length} object(s)`);
+        for (const item of items) await this.deleteItem(item, lines, step);
+    }
+
+    /** One object: refused or without a handler is a recorded failure; otherwise one guarded attempt (attemptCleanup retries once). */
+    private async deleteItem(item: PlanItem, lines: LedgerLine[], step: number): Promise<void> {
+        const describe = { resource: item.type, uuid: item.uuid, ...(item.refused ? {} : { name: item.name }) };
+        const h = this.handler(item.type);
+        if (item.refused || !h) {
+            recordCleanupFailure({ ...describe, message: item.refused ? `refused: ${item.refused}` : `no handler (type ${item.type})` });
+            this.result.failed.push(item);
+            return;
+        }
+        const upstream = this.result.failed.find((f) => f.step < step && !f.refused);
+        this.current = [];
+        const api = await this.opts.newApi();
+        const ctx = this.contextFor(api, lines, true);
+        let kept = false;
+        try {
+            const ok = await attemptCleanup(
+                describe,
+                async () => {
+                    // The ledger guard once more right before the handler (which adds the live check).
+                    assertOwn(item.line, `runTeardown.${item.type}`, { lines, runId: this.opts.runId, ...(this.tier ? { tier: this.tier } : {}) });
+                    kept = (await h.remove(ctx, item.line)) === 'kept';
+                },
+                { blockedBy: upstream ? `${upstream.type} ${upstream.uuid}` : undefined, ...(this.opts.retryDelayMs !== undefined ? { retryDelayMs: this.opts.retryDelayMs } : {}) },
+            );
+            if (!ok) {
+                this.result.failed.push(item);
+                if (isRetryableFailure(this.lastFailureOf(item)?.message)) this.retryable.push(item);
+            } else if (kept) {
+                this.keep(item, `kept ${item.type} ${item.uuid}: provably older than the run, or adopted (see the handler's reason above)`);
+            } else {
+                this.onDeleted(item);
+                this.result.deleted.push({ type: item.type, uuid: item.uuid });
+            }
+        } finally {
+            await api.dispose().catch(() => undefined);
+        }
+    }
+
+    /** A kept object: a warning, and the reasons the handler raised for it are the kept report's. */
+    private keep(item: PlanItem, warning: string): void {
+        const reasons = [...this.current];
+        this.warn(warning);
+        this.result.kept.push(item);
+        this.result.keptReasons[item.uuid] = reasons;
+    }
 
     /**
      * One more attempt for each failed delete, OLDEST failure first (in a cascade the root cause failed first: a certificate in
      * step 4, then its RA profile in step 10 because of it), through the same guarded handler path.
      */
-    async function finalPass(): Promise<void> {
-        if (!retryable.length) return;
+    private async finalPass(): Promise<void> {
+        if (!this.retryable.length) return;
         if (isDryRun()) {
             // The dry run never deletes (checked again by every wrapped handler); the failures stay as they are.
-            warn(`final pass skipped under the dry run: ${retryable.length} failure(s) stay`);
+            this.warn(`final pass skipped under the dry run: ${this.retryable.length} failure(s) stay`);
             return;
         }
-        for (const item of retryable) {
-            const h = handler(item.type);
-            if (!h) continue;
-            result.finalPass.retried += 1;
-            const lines = readLines();
-            current = [];
-            const api = await opts.newApi();
-            const ctx: TeardownContext = { ...contextOf(api, opts.runId, lines, tier, warn), knownBug, ...(opts.pollMs !== undefined ? { pollMs: opts.pollMs } : {}) };
-            const first = lastFailureOf(item);
-            const same = (f: CleanupFailure) => f.resource === item.type && f.uuid === item.uuid;
-            try {
-                assertOwn(item.line, `runTeardown.finalPass.${item.type}`, { lines, runId: opts.runId, ...(tier ? { tier } : {}) });
-                const kept = (await h.remove(ctx, item.line)) === 'kept';
-                if (kept) {
-                    const reasons = [...current];
-                    warn(`kept ${item.type} ${item.uuid} in the final pass: provably older than the run, or adopted (see the handler's reason above)`);
-                    result.kept.push(item);
-                    result.keptReasons[item.uuid] = reasons;
-                } else {
-                    // The `deleted` ledger line FIRST: if it cannot be written, the failure record and `failed` stay as they
-                    // were, so the counts and the ledger never disagree.
-                    try {
-                        onDeleted(item, FINAL_PASS_NOTE);
-                    } catch (e) {
-                        warn(`final pass: ${item.type} ${item.uuid} was removed but its deleted ledger line could not be written (${String((e as Error)?.message ?? e).slice(0, 200)}); the failure stays`);
-                        continue;
-                    }
-                    result.deleted.push({ type: item.type, uuid: item.uuid });
-                    result.finalPass.deleted += 1;
-                }
-                rewriteCleanupFailures((all) => all.filter((f) => !same(f)));
-                result.failed = result.failed.filter((f) => f !== item);
-            } catch (e) {
-                // Still a failure: one record, naming both attempts.
-                const again = String((e as Error)?.message ?? e);
-                rewriteCleanupFailures((all) => [
-                    ...all.filter((f) => !same(f)),
-                    {
-                        ...(first ?? { resource: item.type, uuid: item.uuid, ...(item.refused ? {} : { name: item.name }) }),
-                        status: statusOf(e) ?? first?.status,
-                        message: `first attempt: ${first?.message ?? '(no error text)'} | final pass: ${again}`,
-                    },
-                ]);
-            } finally {
-                await api.dispose().catch(() => undefined);
-            }
+        for (const item of this.retryable) {
+            if (this.handler(item.type)) await this.retryItem(item);
         }
     }
+
+    private async retryItem(item: PlanItem): Promise<void> {
+        const h = this.handler(item.type)!;
+        this.result.finalPass.retried += 1;
+        const lines = this.readLines();
+        this.current = [];
+        const api = await this.opts.newApi();
+        const ctx = this.contextFor(api, lines, true);
+        const first = this.lastFailureOf(item);
+        const same = (f: CleanupFailure) => f.resource === item.type && f.uuid === item.uuid;
+        try {
+            assertOwn(item.line, `runTeardown.finalPass.${item.type}`, { lines, runId: this.opts.runId, ...(this.tier ? { tier: this.tier } : {}) });
+            const kept = (await h.remove(ctx, item.line)) === 'kept';
+            if (kept) {
+                this.keep(item, `kept ${item.type} ${item.uuid} in the final pass: provably older than the run, or adopted (see the handler's reason above)`);
+            } else if (!this.recordFinalPassDeletion(item)) {
+                return;
+            }
+            rewriteCleanupFailures((all) => all.filter((f) => !same(f)));
+            this.result.failed = this.result.failed.filter((f) => f !== item);
+        } catch (e) {
+            // Still a failure: one record, naming both attempts.
+            const again = String((e as Error)?.message ?? e);
+            rewriteCleanupFailures((all) => [
+                ...all.filter((f) => !same(f)),
+                {
+                    ...(first ?? { resource: item.type, uuid: item.uuid, ...(item.refused ? {} : { name: item.name }) }),
+                    status: statusOf(e) ?? first?.status,
+                    message: `first attempt: ${first?.message ?? '(no error text)'} | final pass: ${again}`,
+                },
+            ]);
+        } finally {
+            await api.dispose().catch(() => undefined);
+        }
+    }
+
+    /**
+     * The `deleted` ledger line FIRST: if it cannot be written, the failure record and `failed` stay as they were, so the
+     * counts and the ledger never disagree. False when the line could not be written.
+     */
+    private recordFinalPassDeletion(item: PlanItem): boolean {
+        try {
+            this.onDeleted(item, FINAL_PASS_NOTE);
+        } catch (e) {
+            this.warn(`final pass: ${item.type} ${item.uuid} was removed but its deleted ledger line could not be written (${String((e as Error)?.message ?? e).slice(0, 200)}); the failure stays`);
+            return false;
+        }
+        this.result.deleted.push({ type: item.type, uuid: item.uuid });
+        this.result.finalPass.deleted += 1;
+        return true;
+    }
+}
+
+/** Deletes the plan step by step (the ledger is re-read before each step: a step can add derived lines). */
+export async function executeTeardown(opts: ExecuteOptions): Promise<ExecuteResult> {
+    assertNotDryRun('executeTeardown');
+    return new TeardownRun(opts).execute();
 }
 
 export interface Authenticated {
@@ -568,22 +558,22 @@ export async function authenticatedApi(): Promise<Authenticated> {
 }
 
 /**
- * A context that re-authenticates once and retries a request that answered 401 (a token that expired during a long
+ * A reader that re-authenticates once and retries a request that answered 401 (a token that expired during a long
  * snapshot). Used for the post-delete snapshot; the delete steps get a fresh context per object.
  */
-export async function reauthenticating(newApi: () => Promise<APIRequestContext>): Promise<APIRequestContext> {
+export async function reauthenticating(newApi: () => Promise<APIRequestContext>): Promise<SnapshotReader> {
     let current = await newApi();
-    const retry = (method: 'get' | 'post' | 'fetch' | 'head') => async (...args: unknown[]) => {
-        const call = () => (current as unknown as Record<string, (...a: unknown[]) => Promise<import('@playwright/test').APIResponse>>)[method](...args);
-        let res = await call();
-        if (res.status() === 401) {
-            logger.info('401 during the teardown: authenticating again and retrying once');
-            current = await newApi();
-            res = await call();
-        }
-        return res;
+    return {
+        async fetch(urlOrRequest, options) {
+            let res = await current.fetch(urlOrRequest, options);
+            if (res.status() === 401) {
+                logger.info('401 during the teardown: authenticating again and retrying once');
+                current = await newApi();
+                res = await current.fetch(urlOrRequest, options);
+            }
+            return res;
+        },
     };
-    return { get: retry('get'), post: retry('post'), fetch: retry('fetch'), head: retry('head'), dispose: async () => undefined } as unknown as APIRequestContext;
 }
 
 /**
@@ -661,7 +651,7 @@ export function writeKeptReport(runId: string, result: Pick<ExecuteResult, 'kept
 }
 
 /** REG_KEPT_STRICT: a non-empty kept list fails the run (default off: kept objects are warnings). */
-export const isKeptStrict = (env: NodeJS.ProcessEnv = process.env): boolean => parseFlag(env.REG_KEPT_STRICT, 'REG_KEPT_STRICT', false);
+export const isKeptStrict = (env: NodeJS.ProcessEnv = process.env): boolean => parseFlag(settings(env).keptStrict, 'REG_KEPT_STRICT', false);
 
 /** The cleanup failures of the run as one report (the ledger is cleared), or undefined when nothing was left. */
 function leftoverReport(): string | undefined {
@@ -681,7 +671,7 @@ export interface TeardownDeps {
 /** Throws unless the run has one real id: not adhoc, and API_RUN_ID equal to REG_RUN_ID when set. */
 function assertRealRunId(env: NodeJS.ProcessEnv = process.env): string {
     const runId = currentRunId(env);
-    if (isDefaultRunId(runId) || (env.API_RUN_ID !== undefined && (DEFAULT_RUN_IDS.includes(env.API_RUN_ID) || env.API_RUN_ID !== runId))) {
+    if (isDefaultRunId(runId) || (settings(env).apiRunId !== undefined && (DEFAULT_RUN_IDS.includes(settings(env).apiRunId!) || settings(env).apiRunId !== runId))) {
         throw new Error(`runTeardown: the run id is an adhoc default (${DEFAULT_RUN_IDS.join(' / ')}) or API_RUN_ID differs from REG_RUN_ID; ` +
             'refusing to delete anything. Run through playwright.regression.config.ts / playwright.api.config.ts, or set REG_RUN_ID.');
     }
@@ -700,7 +690,8 @@ export default async function runTeardown(config?: FullConfig, deps: TeardownDep
     }
 }
 
-async function teardownRun(_config: FullConfig | undefined, deps: TeardownDeps): Promise<void> {
+/** Preconditions: the run has one real id and a tier, and the flags parse. Throws before anything is read or sent. */
+function assertPreconditions(): { runId: string; dryRun: boolean; strictKept: boolean; tier: string | null } {
     const runId = assertRealRunId();
     assertRunTier();
     const dryRun = isDryRun();
@@ -711,35 +702,80 @@ async function teardownRun(_config: FullConfig | undefined, deps: TeardownDeps):
         throw new Error(['BASE_URL is unset: the run had no tier, so it tested nothing and could not clean up; failing the run ' +
             '(set BASE_URL through REG_ENV_FILE / the config folder\'s .env).', ...(leftovers ? [leftovers] : [])].join('\n\n'));
     }
-    const tier = tierIdentity() ?? null;
-    const plan = planTeardown(readLedger(), runId, handlerOf, { tier });
+    return { runId, dryRun, strictKept, tier: tierIdentity() ?? null };
+}
 
-    if (dryRun) {
-        logger.info(`API_TEARDOWN_DRY_RUN — plan for run ${runId} (nothing is deleted):\n${formatPlan(plan)}`);
-        const refused = plan.filter((p) => p.refused);
-        if (refused.length) logger.warn(`${refused.length} ledger line(s) refused by the own-object guard`);
-        logger.info(formatRunSummary(runId, undefined));
-        return;
-    }
-    if (!mayDeleteOwn()) {
-        logger.info(`API_DELETE_OWN off — keeping the run's objects. Ledger: ${ledgerFile()} (run ${runId}), ${plan.length} live object(s)`);
-        logger.info(formatRunSummary(runId, undefined));
-        const leftovers = leftoverReport();
-        if (leftovers) throw new Error(leftovers);
-        return;
-    }
+/** Dry run: API_TEARDOWN_DRY_RUN prints the plan and stops: no request, no authentication. */
+function dryRunReport(plan: PlanItem[], runId: string): void {
+    logger.info(`API_TEARDOWN_DRY_RUN — plan for run ${runId} (nothing is deleted):\n${formatPlan(plan)}`);
+    const refused = plan.filter((p) => p.refused);
+    if (refused.length) logger.warn(`${refused.length} ledger line(s) refused by the own-object guard`);
+    logger.info(formatRunSummary(runId, undefined));
+}
 
+/** Keep: API_DELETE_OWN off keeps the objects and prints the ledger path; what specs failed to clean still fails the run. */
+function keepReport(plan: PlanItem[], runId: string): void {
+    logger.info(`API_DELETE_OWN off — keeping the run's objects. Ledger: ${ledgerFile()} (run ${runId}), ${plan.length} live object(s)`);
+    logger.info(formatRunSummary(runId, undefined));
+    const leftovers = leftoverReport();
+    if (leftovers) throw new Error(leftovers);
+}
+
+/** The authenticated half of the local-backend proof, before anything is deleted on a "local" stack. */
+async function assertLocalBackendBeforeDeleting(authenticate: () => Promise<Authenticated>): Promise<void> {
+    const check = await authenticate();
+    try {
+        await assertLocalBackend(check.api);
+    } finally {
+        await check.dispose().catch(() => undefined);
+    }
+}
+
+/** The kept report and the run summary; returns the REG_KEPT_STRICT problem, if any. */
+function reportKept(runId: string, result: ExecuteResult, strictKept: boolean): string[] {
+    const keptFile = writeKeptReport(runId, result);
+    // The run summary lists every known bug of <run id>.kept.json: the teardown's and the setup's.
+    const summary = formatRunSummary(runId, { deleted: result.deleted.length, kept: result.kept.length, failed: result.failed.length }, process.env, readCleanupFailures());
+    if (readKeptReport(runId)?.knownBugs.length) logger.warn(summary);
+    else logger.info(summary);
+    if (!keptFile || !result.kept.length) return [];
+    logger.warn(`${result.kept.length} object(s) of the run were kept (not deleted): ${keptFile}`);
+    return strictKept
+        ? [`REG_KEPT_STRICT: ${result.kept.length} object(s) of the run were kept, not deleted (${keptFile}): ` + result.kept.map((k) => `${k.type} ${k.uuid}`).join(', ')]
+        : [];
+}
+
+/**
+ * Non-interference proof: on a shared tier, a second snapshot after the deletes judged against the "before" snapshot the `snapshot` project
+ * stored; returns the problems (a missing before snapshot, a violation). A wrong delete would otherwise pass the API-GEN-33 proof,
+ * which runs before this teardown.
+ */
+async function proveNonInterference(runId: string, result: ExecuteResult, newApi: () => Promise<APIRequestContext>): Promise<string[]> {
+    if (isLocalTier()) {
+        logger.info('TIER_KIND=local: no non-interference snapshot');
+        return [];
+    }
+    const before = readSnapshot(beforeSnapshotFile(runId));
+    if (!before) {
+        return ['No before snapshot of this run on a shared tier: the non-interference proof (API-GEN-33) is missing ' +
+            '(the snapshot project failed or was skipped, e.g. --no-deps). The run cannot show that it left the tier untouched.'];
+    }
+    const reader = await reauthenticating(newApi);
+    const after = await snapshotTier(reader, { recheck: before, runId });
+    const ledger = readLedger();
+    const confirmedCreated = await confirmForeignCreates(reader, before, after, { ledger, runId, ownDeleted: result.deleted });
+    const compared = compareSnapshots(before, after, { ledger, runId, ownDeleted: result.deleted, confirmedCreated });
+    compared.notes.forEach((n) => logger.info(`non-interference note: ${n}`));
+    if (!compared.violations.length) return [];
+    logger.error(`non-interference after the deletes:\n  ${compared.violations.join('\n  ')}`);
+    return [`Non-interference violated after the run-end deletes (API-GEN-33 re-check):\n  ${compared.violations.join('\n  ')}`];
+}
+
+/** Delete and prove: delete the plan with a fresh authenticated context per object, then prove nothing foreign changed. */
+async function deleteAndProve(runId: string, tier: string | null, plan: PlanItem[], strictKept: boolean, deps: TeardownDeps): Promise<void> {
     logger.info(`deleting ${plan.length} own object(s) of run ${runId}; cleanup ledger ${cleanupLedgerFile()}`);
     const authenticate = deps.authenticate ?? authenticatedApi;
-    if (isLocalTier()) {
-        // The authenticated half of the local-backend proof, before anything is deleted on a "local" stack.
-        const check = await authenticate();
-        try {
-            await assertLocalBackend(check.api);
-        } finally {
-            await check.dispose().catch(() => undefined);
-        }
-    }
+    if (isLocalTier()) await assertLocalBackendBeforeDeleting(authenticate);
     const disposers: Array<() => Promise<void>> = [];
     const newApi = async () => {
         const { api, dispose } = await authenticate();
@@ -751,37 +787,7 @@ async function teardownRun(_config: FullConfig | undefined, deps: TeardownDeps):
     try {
         const result = await executeTeardown({ runId, newApi, tier });
         warnings = result.warnings;
-        const keptFile = writeKeptReport(runId, result);
-        // The run summary lists every known bug of <run id>.kept.json: the teardown's and the setup's.
-        const summary = formatRunSummary(runId, { deleted: result.deleted.length, kept: result.kept.length, failed: result.failed.length }, process.env, readCleanupFailures());
-        if (readKeptReport(runId)?.knownBugs.length) logger.warn(summary);
-        else logger.info(summary);
-        if (keptFile && result.kept.length) {
-            logger.warn(`${result.kept.length} object(s) of the run were kept (not deleted): ${keptFile}`);
-            if (strictKept) problems.push(`REG_KEPT_STRICT: ${result.kept.length} object(s) of the run were kept, not deleted (${keptFile}): ` +
-                result.kept.map((k) => `${k.type} ${k.uuid}`).join(', '));
-        }
-
-        if (isLocalTier()) {
-            logger.info('TIER_KIND=local: no non-interference snapshot');
-        } else {
-            const before = readSnapshot(beforeSnapshotFile(runId));
-            if (!before) {
-                problems.push('No before snapshot of this run on a shared tier: the non-interference proof (API-GEN-33) is missing ' +
-                    '(the snapshot project failed or was skipped, e.g. --no-deps). The run cannot show that it left the tier untouched.');
-            } else {
-                const reader = await reauthenticating(newApi);
-                const after = await snapshotTier(reader, { recheck: before, runId });
-                const ledger = readLedger();
-                const confirmedCreated = await confirmForeignCreates(reader, before, after, { ledger, runId, ownDeleted: result.deleted });
-                const compared = compareSnapshots(before, after, { ledger, runId, ownDeleted: result.deleted, confirmedCreated });
-                compared.notes.forEach((n) => logger.info(`non-interference note: ${n}`));
-                if (compared.violations.length) {
-                    logger.error(`non-interference after the deletes:\n  ${compared.violations.join('\n  ')}`);
-                    problems.push(`Non-interference violated after the run-end deletes (API-GEN-33 re-check):\n  ${compared.violations.join('\n  ')}`);
-                }
-            }
-        }
+        problems.push(...reportKept(runId, result, strictKept), ...(await proveNonInterference(runId, result, newApi)));
     } finally {
         for (const dispose of disposers) await dispose().catch(() => undefined);
     }
@@ -789,4 +795,13 @@ async function teardownRun(_config: FullConfig | undefined, deps: TeardownDeps):
     const leftovers = leftoverReport();
     if (leftovers) problems.push(leftovers);
     if (problems.length) throw new Error(problems.join('\n\n'));
+}
+
+/** The teardown: preconditions, then the dry-run report, the keep report, or delete and prove. */
+async function teardownRun(_config: FullConfig | undefined, deps: TeardownDeps): Promise<void> {
+    const { runId, dryRun, strictKept, tier } = assertPreconditions();
+    const plan = planTeardown(readLedger(), runId, handlerOf, { tier });
+    if (dryRun) return dryRunReport(plan, runId);
+    if (!mayDeleteOwn()) return keepReport(plan, runId);
+    await deleteAndProve(runId, tier, plan, strictKept, deps);
 }

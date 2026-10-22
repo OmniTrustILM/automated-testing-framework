@@ -1,14 +1,14 @@
 /**
  * The pure parts of the rbac/ folder, no server and no browser: jwtTools (decode, tamper, forge, the token variants),
  * identities (profile shape, second-identity and local-Keycloak preflights, the anonymous target, the 401 leak check),
- * authApi's permission body, and permissionFixtures' decision table (fixture documents, matrices A and B, consistency).
+ * authApi's permission body, and permissionMatrix's decision table (fixture documents, the certificate and administration tables, consistency).
  */
 import { expect, test } from '@playwright/test';
 import { permissionBody } from '../../utils/regression/rbac/authApi';
 import { anonymousTarget, coreReplicas, rolesAfterSignInProblem, DOCUMENTATION_ADDRESS, isNotGrantableAction, keycloakLocalBlocker, leaksInternals, parseProfile, replicaBlocker, restrictedIdentity, SECOND_IDENTITY_REQUEST, secondIdentityBlocker } from '../../utils/regression/rbac/identities';
 import { ANONYMOUS_VARIANTS, buildVariant, claimOf, decodeJwt, echoesToken, signWithThrowawayKey, syntheticClaims, tamperPayload, tamperSignature, TOKEN_VARIANTS, TOKENLESS_VARIANTS, TokenVariant, UNKNOWN_ISSUER, unsignedToken } from '../../utils/regression/rbac/jwtTools';
 import { base64Url } from '../../utils/regression/text';
-import { accessDeniedProblems, cellPair, cellStatus, CERT_KEYS, DENY_NUANCES, expectedResourceActions, Fixture, fixtureDocument, FIXTURES, MATRIX_A_DETAIL, MATRIX_A_LIST, MATRIX_A_PROFILE, MATRIX_B_ISSUE_P1, MATRIX_B_ISSUE_P2, MATRIX_B_RA_CREATE, MATRIX_B_RA_DETAIL_P1, MATRIX_B_RA_DETAIL_P2, MATRIX_B_RA_LIST, MATRIX_B_ROLES_LIST, NESTED_GATE_FIXTURES } from '../../utils/regression/rbac/permissionFixtures';
+import { accessDeniedProblems, cellPair, cellStatus, CERT_KEYS, DENY_NUANCES, expectedResourceActions, Fixture, fixtureDocument, FIXTURES, MATRIX_A_DETAIL, MATRIX_A_LIST, MATRIX_A_PROFILE, MATRIX_B_ISSUE_P1, MATRIX_B_ISSUE_P2, MATRIX_B_RA_CREATE, MATRIX_B_RA_DETAIL_P1, MATRIX_B_RA_DETAIL_P2, MATRIX_B_RA_LIST, MATRIX_B_ROLES_LIST, NESTED_GATE_FIXTURES } from '../../utils/regression/rbac/permissionMatrix';
 import { randomBytes } from 'node:crypto';
 // Run-scoped generated test passwords (merge follow-up 2026-10-15): no password-like literal in the file.
 const GEN_PW_1 = `qa-${randomBytes(9).toString('base64url')}`;
@@ -166,7 +166,7 @@ test('leaksInternals: stack traces, exception classes, source references and the
     expect(leaksInternals('see Foo.java:42')).toBe('a source file reference');
 });
 
-// ------------------------------------------------------------------ permissionFixtures
+// ------------------------------------------------------------------ permissionMatrix
 
 const REFS = {
     p1: { uuid: '00000000-0000-4000-8000-0000000000a1', name: 'p1' }, p2: { uuid: '00000000-0000-4000-8000-0000000000a2', name: 'p2' },

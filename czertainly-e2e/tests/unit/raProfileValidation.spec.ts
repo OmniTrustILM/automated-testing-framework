@@ -3,7 +3,7 @@
  * and empty attribute arms, and the texts core answers for them. No environment, no network.
  */
 import { expect, test } from '@playwright/test';
-import { emptyAttributeCase, labelOf, missingAttributeCase, requestVersion, requiredAttributeNotFoundText, requiredAttributeNotSetText } from '../../utils/regression/inventory/raProfileValidation';
+import { authorityInterfaceOf, emptyAttributeCase, labelOf, missingAttributeCase, requestVersion, requiredAttributeNotFoundText, requiredAttributeNotSetText, requiredAttributeOracle } from '../../utils/regression/inventory/raProfileValidation';
 
 const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
@@ -35,4 +35,20 @@ test('requestVersion / missingArm / emptyArm: the required attribute is left out
 test('the connector texts the rows expect (AttributeDefinitionUtils:388 and :397)', () => {
     expect(requiredAttributeNotFoundText('Username')).toBe('Required attribute Username not found.');
     expect(requiredAttributeNotSetText('Password')).toBe('Value of required attribute Password not set.');
+});
+
+test('authorityInterfaceOf: v3 only for a v3 connector interface; a legacy connector (null interface) relays like v2', () => {
+    expect(authorityInterfaceOf({ connectorInterface: { version: 'v3' } })).toBe('v3');
+    expect(authorityInterfaceOf({ connectorInterface: { version: 'V3' } })).toBe('v3');
+    expect(authorityInterfaceOf({ connectorInterface: { version: 'v2' } })).toBe('v2');
+    expect(authorityInterfaceOf({ connectorInterface: null })).toBe('v2');
+    expect(authorityInterfaceOf({})).toBe('v2');
+});
+
+test('requiredAttributeOracle: the connector text and label for v2, core\'s attribute-engine text and name for v3', () => {
+    const def = { name: 'data_certificateTemplate', properties: { label: 'Certificate template', required: true } };
+    expect(requiredAttributeOracle('v2', def, 'missing')).toEqual({ text: 'Required attribute Certificate template not found.', names: 'Certificate template' });
+    expect(requiredAttributeOracle('v2', def, 'empty')).toEqual({ text: 'Value of required attribute Certificate template not set.', names: 'Certificate template' });
+    expect(requiredAttributeOracle('v3', def, 'missing')).toEqual({ text: 'Content for required Data attribute data_certificateTemplate is not provided.', names: 'data_certificateTemplate' });
+    expect(requiredAttributeOracle('v3', def, 'empty')).toEqual({ text: 'Attribute is required and no content is sent', names: 'data_certificateTemplate' });
 });

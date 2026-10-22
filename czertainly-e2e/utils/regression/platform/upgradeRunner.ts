@@ -1,7 +1,11 @@
 /**
- * upgradeRunner — the local upgrade test: seed on the old core image, snapshot, upgrade on the same database, snapshot
- * again and diff. The snapshot diff and the schema-history checks are pure; the live half reads through the API and
- * `PlatformStack.psql`. The upgrade is one way: an older target than the source image is refused.
+ * upgradeRunner — the local upgrade test.
+ *
+ * WHAT: the local upgrade test: seed on the old core image, snapshot, upgrade on the same database, snapshot
+ *       again and diff. The snapshot diff and the schema-history checks are pure; the live half reads through the API and
+ *       `PlatformStack.psql`. The upgrade is one way: an older target than the source image is refused.
+ * WHY: An upgrade must keep every object and every migration drift must show.
+ * HOW: Seed on the old image, snapshot, upgrade on the same database, snapshot again and diff; the diff and schema-history checks are pure and the upgrade is one way.
  */
 import type { APIRequestContext } from '@playwright/test';
 import { apiJson } from '../apiReads';
@@ -9,9 +13,9 @@ import { PlatformStack } from './localStack';
 import type { JsonObject } from '../json';
 
 /** The listed types whose uuid sets must survive an upgrade (DEP-02-4). */
-export const SNAPSHOT_TYPES: readonly string[] = ['raProfiles', 'acmeProfiles', 'roles', 'users', 'groups', 'credentials', 'authorities', 'tokens', 'tokenProfiles', 'connectors'];
+const SNAPSHOT_TYPES: readonly string[] = ['raProfiles', 'acmeProfiles', 'roles', 'users', 'groups', 'credentials', 'authorities', 'tokens', 'tokenProfiles', 'connectors'];
 
-export interface TypeSnapshot {
+interface TypeSnapshot {
     count: number;
     /** uuid → name (or the key attribute that identifies the object). */
     objects: Record<string, string>;
@@ -38,7 +42,7 @@ export interface Snapshot {
 // ------------------------------------------------------------------ pure: the diff rules
 
 /** Users and roles may grow by the SYSTEM objects that migrations create: any extra must match these patterns. */
-export const SYSTEM_IDENTITY = /^(localhost|superadmin|acme|scep|cmp|attribute-content-resolver|cert-manager|protocol-)/i;
+const SYSTEM_IDENTITY = /^(localhost|superadmin|acme|scep|cmp|attribute-content-resolver|cert-manager|protocol-)/i;
 
 export interface DiffReport {
     problems: string[];
@@ -128,7 +132,7 @@ export function parseSchemaHistory(rows: string[]): SchemaHistoryRow[] {
     });
 }
 
-export const SCHEMA_HISTORY_SQL = 'select installed_rank, version, description, checksum, success from core.core_schema_history order by installed_rank';
+const SCHEMA_HISTORY_SQL = 'select installed_rank, version, description, checksum, success from core.core_schema_history order by installed_rank';
 
 // ------------------------------------------------------------------ live: snapshots
 

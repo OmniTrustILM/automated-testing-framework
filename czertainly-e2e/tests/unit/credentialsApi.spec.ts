@@ -4,9 +4,11 @@
  * No environment, no network; the requests on the wire are in credentialsAndGroupsWire.spec.ts.
  */
 import { expect, test } from '@playwright/test';
-import { attributeOf, basicAttributes, basicDefinitions, containsSecret, contentWithData, createdUuid, credentialBody, credentialConnectorName, randomSecret, valuesOf } from '../../utils/regression/inventory/credentialsApi';
-import type { Probe } from '../../utils/regression/inventory/searchApi';
+import { attributeOf, basicAttributes, basicDefinitions, containsSecret, contentWithData, credentialBody, credentialConnectorName, randomSecret, valuesOf } from '../../utils/regression/inventory/credentialsApi';
 import { randomBytes } from 'node:crypto';
+import { ApiAnswer } from '../../utils/regression/apiReads';
+import { fakeAnswer } from './helpers/fakeAnswer';
+import { createdUuid } from '../../utils/regression/ownCrud';
 
 // Run-scoped generated test passwords (merge follow-up 2026-10-15): no password-like literal in the file.
 const GEN_PW_1 = `qa-${randomBytes(9).toString('base64url')}`;
@@ -16,7 +18,7 @@ const USERNAME_DEF = { uuid: U(1), name: 'username', type: 'data', contentType: 
 const PASSWORD_DEF = { uuid: U(2), name: 'password', type: 'data', contentType: 'secret', properties: { label: 'Password', required: true } };
 const defs = { usernameDef: USERNAME_DEF, passwordDef: PASSWORD_DEF };
 
-const probe = (status: number, json: unknown): Probe => ({ status, contentType: 'application/json', headers: {}, text: JSON.stringify(json ?? ''), json, ms: 0 });
+const probe = (status: number, json: unknown): ApiAnswer => fakeAnswer(status, JSON.stringify(json ?? ''), { json });
 
 // ------------------------------------------------------------------ secrets and names
 

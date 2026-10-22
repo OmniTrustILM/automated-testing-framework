@@ -4,25 +4,27 @@
  * sending; an accepted create is in the ledger before the call returns. Covers credentialsApi, groupProbes and
  * raProfileValidation on one fake core.
  */
-import { APIRequestContext, expect, request, test } from '@playwright/test';
+import { APIRequestContext, expect, test } from '@playwright/test';
 import * as forge from 'node-forge';
-import { guardApi } from '../../utils/regression/guard/createGuard';
 import { GuardedApi } from '../../utils/regression/guard/types';
-import { readProbe } from '../../utils/regression/inventory/searchApi';
-import { adoptByName, basicAttributes, bulkDeleteObjects, connectorWithoutCredentialGroup, createCredentialProbe, credentialBody, credentialSetup, ownCredential, putCredential, findRowByUuid, setCredentialEnabled, deleteOwnConfigObject } from '../../utils/regression/inventory/credentialsApi';
-import { archiveOwnCertificate, certificateDetail, certificateHistory, changeKey, createGroupProbe, groupBody, groupChanges, ownGroup, ownGroupAttribute, patchCertificate, putGroup } from '../../utils/regression/inventory/groupProbes';
-import { authorityWithRequiredAttribute, createRaProfileProbe, emptyAttributeCase, missingAttributeCase, raProfileBody, requiredAttributeNotFoundText, requiredAttributeNotSetText, validateRaAttributes, validRaAttributes } from '../../utils/regression/inventory/raProfileValidation';
-import { customAttributeRequest, requiredCustomAttributes } from '../../utils/regression/customAttributes';
-import { groupUuidsOf, setCertificateGroups } from '../../utils/regression/ownGroups';
+import { adoptByName, basicAttributes, bulkDeleteObjects, connectorWithoutCredentialGroup, probeCredential, credentialBody, credentialSetup, createOwnBasicCredential, putCredential, findRowByUuid, setCredentialEnabled, deleteConfigObject } from '../../utils/regression/inventory/credentialsApi';
+import { archiveOwnCertificate, certificateDetail, certificateHistory, changeKey, probeGroup, groupChanges, patchCertificate, putGroup } from '../../utils/regression/inventory/groupProbes';
+import { authorityWithRequiredAttribute, probeRaProfile, emptyAttributeCase, missingAttributeCase, raProfileBody, requiredAttributeNotFoundText, requiredAttributeNotSetText, validateRaAttributes, validRaAttributes } from '../../utils/regression/inventory/raProfileValidation';
+import { customAttributeRequest, requiredCustomAttributes, createOwnCustomAttribute } from '../../utils/regression/customAttributes';
+import { groupUuidsOf, setCertificateGroups, groupBody, createOwnGroup } from '../../utils/regression/ownGroups';
 import { uploadOwnSelfSigned } from '../../utils/regression/ownCertificates';
 import { rowsNamed } from '../../utils/regression/listReads';
-import { uniqueStamp } from '../../utils/regression/text';
 import { OwnObjectViolation } from '../../utils/regression/ledger/ownership';
 import { createOwnUser } from '../../utils/regression/ownUsers';
 import { readLedger, recordCreated } from '../../utils/regression/ledger/ledger';
-import { runName, runId } from '../../utils/regression/ledger/runState';
-import { Answer, Arrived, loopbackServer, LoopbackServer } from './helpers/loopbackServer';
+import { runName, runId, ownName } from '../../utils/regression/ledger/runState';
+import { Answer, Arrived, LoopbackServer } from './helpers/loopbackServer';
+import { FakeCore as BaseCore } from './helpers/fakeCore';
+import { registerFakeCore, rawAsGuarded } from './helpers/guardRig';
 import { randomBytes } from 'node:crypto';
+import { readAnswer } from '../../utils/regression/inventory/searchApi';
+import { createdUuid } from '../../utils/regression/ownCrud';
+import { contentOf } from './helpers/contentOf';
 // Run-scoped generated test passwords (merge follow-up 2026-10-15): no password-like literal in the file.
 const GEN_PW_1 = `qa-${randomBytes(9).toString('base64url')}`;
 const GEN_PW_2 = `qa-${randomBytes(9).toString('base64url')}`;
@@ -49,8 +51,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const notFound = (type: string, id: string): Answer => ({ status: 404, body: { message: `Object of type '${type}' identified by ${id} is not found.` } });
 
 /** A fake core: a small stateful model of credentials, groups, certificates, users, custom attributes and RA profiles. */
-class FakeCore {
-    seq = 5000;
+class CredentialsCore extends BaseCore {
     credentials = new Map<string, Json>();
     groups = new Map<string, Json>();
     certs = new Map<string, Json>();
@@ -71,12 +72,7 @@ class FakeCore {
     ];
     raAttrStatus: Record<string, number> = {};
 
-    next(): string {
-        this.seq += 1;
-        return `aaaaaaaa-0000-4000-8000-${String(this.seq).padStart(12, '0')}`;
-    }
-
-    answer = (a: Arrived): Answer | undefined => {
+    protected respond(a: Arrived): Answer | undefined {
         const path = a.url.split('?')[0];
         const body = a.body ? (JSON.parse(a.body) as Json) : undefined;
         switch (a.method) {
@@ -87,7 +83,7 @@ class FakeCore {
             case 'DELETE': return this.del(path, body);
             default: return { status: 405, body: { message: 'no' } };
         }
-    };
+    }
 
     private credentialDto(c: Json): Json {
         return {
@@ -319,42 +315,17 @@ class FakeCore {
 }
 
 let server: LoopbackServer;
-let core: FakeCore;
+let core: CredentialsCore;
 let raw: APIRequestContext;
 let api: GuardedApi;
 
-const ENV_KEYS = ['REG_STATE_DIR', 'BASE_URL', 'TIER_KIND', 'REG_RUN_ID', 'REG_CREDENTIAL_CONNECTOR', 'REG_REQUIRED_CONNECTORS', 'API_TEARDOWN_DRY_RUN'];
-let saved: Record<string, string | undefined> = {};
-
-test.beforeAll(async () => {
-    server = await loopbackServer((a) => core.answer(a));
+registerFakeCore(() => core, (rig) => ({ server, raw, api } = rig), { clear: ['REG_CREDENTIAL_CONNECTOR', 'REG_REQUIRED_CONNECTORS'] });
+test.beforeEach(() => {
+    core = new CredentialsCore();
 });
 
-test.afterAll(async () => {
-    await server.close();
-});
-
-test.beforeEach(async ({}, testInfo) => {
-    saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
-    for (const k of ENV_KEYS) delete process.env[k];
-    process.env.REG_STATE_DIR = testInfo.outputPath('state');
-    process.env.BASE_URL = `${server.origin}/administrator/`;
-    process.env.TIER_KIND = 'shared';
-    process.env.REG_RUN_ID = runId();
-    core = new FakeCore();
-    server.reset();
-    raw = await request.newContext({ baseURL: process.env.BASE_URL, extraHTTPHeaders: { Authorization: 'Bearer SECRET-TOKEN' } });
-    api = guardApi(raw);
-});
-
-test.afterEach(async () => {
-    await api.dispose();
-    for (const [k, v] of Object.entries(saved)) {
-        if (v === undefined) delete process.env[k];
-        else process.env[k] = v;
-    }
-});
-
+/** The uuids on the ledger as created, in order: what the run would have to remove. */
+const createdLines = (): string[] => readLedger().filter((l) => l.event === 'created').map((l) => l.uuid);
 const wire = () => server.mutations().map((a) => `${a.method} ${a.url}`);
 const lastBody = (method: string, url: string): Json => JSON.parse([...server.arrived].reverse().find((a) => a.method === method && a.url === url)!.body);
 
@@ -406,47 +377,47 @@ test('connectorWithoutCredentialGroup: the first pre-existing connector with fun
 
 test('credentials: an own Basic credential is created, changed, toggled and deleted through the guard; the connector is a waived reference; the secret is in no body the helpers read', async () => {
     const c = await connector();
-    const own = await ownCredential(api, c, 'T', { suffix: 'mask' });
+    const own = await createOwnBasicCredential(api, 'T', 'mask', { connector: c });
     expect(wire()).toEqual(['POST /api/v1/credentials']);
     const sent = lastBody('POST', '/api/v1/credentials');
-    expect(sent).toMatchObject({ name: own.ref.name, connectorUuid: C_CRED, kind: 'Basic', customAttributes: [] });
+    expect(sent).toMatchObject({ name: own.name, connectorUuid: C_CRED, kind: 'Basic', customAttributes: [] });
     expect(sent.name.startsWith(`${runId()}-`)).toBe(true);
     expect(sent.attributes).toEqual([
         { version: 'v2', uuid: DEF_USER, name: 'username', contentType: 'string', content: [{ data: own.username }] },
         { version: 'v2', uuid: DEF_PASS, name: 'password', contentType: 'secret', content: [{ data: { secret: own.password } }] },
     ]);
-    expect(readLedger().find((l) => l.uuid === own.ref.uuid)).toMatchObject({ type: 'credentials', name: own.ref.name, event: 'created' });
+    expect(readLedger().find((l) => l.uuid === own.uuid)).toMatchObject({ type: 'credentials', name: own.name, event: 'created' });
 
     // Reads (GET detail, list) are plain reads; the helpers parse the masked answer.
-    const detail = await readProbe(api, `/api/v1/credentials/${own.ref.uuid}`);
+    const detail = await readAnswer(api, `/api/v1/credentials/${own.uuid}`);
     expect(detail.text.includes(own.password), 'the fake masks the secret like core').toBe(false);
-    expect((await findRowByUuid(api, '/api/v1/credentials', own.ref.uuid))?.name).toBe(own.ref.name);
+    expect((await findRowByUuid(api, '/api/v1/credentials', own.uuid))?.name).toBe(own.name);
 
     server.reset();
-    expect((await putCredential(api, own.ref.uuid, basicAttributes(c, { username: 'u2', password: GEN_PW_1 }), [], { name: 'ignored' })).status).toBe(200);
-    expect((await setCredentialEnabled(api, own.ref.uuid, false)).status).toBe(204);
-    expect((await setCredentialEnabled(api, own.ref.uuid, true)).status).toBe(204);
-    expect(wire()).toEqual([`PUT /api/v1/credentials/${own.ref.uuid}`, `PATCH /api/v1/credentials/${own.ref.uuid}/disable`, `PATCH /api/v1/credentials/${own.ref.uuid}/enable`]);
-    expect(lastBody('PUT', `/api/v1/credentials/${own.ref.uuid}`).name, 'the ignored name is sent as the test sends it').toBe('ignored');
+    expect((await putCredential(api, own.uuid, basicAttributes(c, { username: 'u2', password: GEN_PW_1 }), [], { name: 'ignored' })).status).toBe(200);
+    expect((await setCredentialEnabled(api, own.uuid, false)).status).toBe(204);
+    expect((await setCredentialEnabled(api, own.uuid, true)).status).toBe(204);
+    expect(wire()).toEqual([`PUT /api/v1/credentials/${own.uuid}`, `PATCH /api/v1/credentials/${own.uuid}/disable`, `PATCH /api/v1/credentials/${own.uuid}/enable`]);
+    expect(lastBody('PUT', `/api/v1/credentials/${own.uuid}`).name, 'the ignored name is sent as the test sends it').toBe('ignored');
     // PUT without the password: the connector's 422, nothing changed.
-    expect((await putCredential(api, own.ref.uuid, basicAttributes(c, { username: 'u3' }), [])).status).toBe(422);
+    expect((await putCredential(api, own.uuid, basicAttributes(c, { username: 'u3' }), [])).status).toBe(422);
 });
 
 test('credentials: delete own, bulk delete [own, probe] and unknown-uuid arms are sent; a foreign credential, a foreign bulk list and an empty list are refused', async () => {
     const c = await connector();
-    const a = await ownCredential(api, c, 'T', { suffix: 'del' });
-    const b = await ownCredential(api, c, 'T', { suffix: 'bulk' });
+    const a = await createOwnBasicCredential(api, 'T', 'del', { connector: c });
+    const b = await createOwnBasicCredential(api, 'T', 'bulk', { connector: c });
     server.reset();
     const probe = api.probeUuid();
 
-    expect((await deleteOwnConfigObject(api, 'credentials', a.ref.uuid)).status).toBe(204);
-    expect((await bulkDeleteObjects(api, 'credentials', [b.ref.uuid, probe])).status).toBe(204);
-    expect(wire()).toEqual([`DELETE /api/v1/credentials/${a.ref.uuid}`, 'DELETE /api/v1/credentials']);
-    expect(lastBody('DELETE', '/api/v1/credentials')).toEqual([b.ref.uuid, probe]);
-    expect((await readProbe(api, `/api/v1/credentials/${a.ref.uuid}`)).status).toBe(404);
+    expect((await deleteConfigObject(api, 'credentials', a.uuid)).status).toBe(204);
+    expect((await bulkDeleteObjects(api, 'credentials', [b.uuid, probe])).status).toBe(204);
+    expect(wire()).toEqual([`DELETE /api/v1/credentials/${a.uuid}`, 'DELETE /api/v1/credentials']);
+    expect(lastBody('DELETE', '/api/v1/credentials')).toEqual([b.uuid, probe]);
+    expect((await readAnswer(api, `/api/v1/credentials/${a.uuid}`)).status).toBe(404);
 
     server.reset();
-    expect(await outcome(deleteOwnConfigObject(api, 'credentials', FOREIGN_CRED))).toBe('ownership');
+    expect(await outcome(deleteConfigObject(api, 'credentials', FOREIGN_CRED))).toBe('ownership');
     expect(await outcome(putCredential(api, FOREIGN_CRED, [], []))).toBe('ownership');
     expect(await outcome(setCredentialEnabled(api, FOREIGN_CRED, false))).toBe('ownership');
     expect(await outcome(bulkDeleteObjects(api, 'credentials', [FOREIGN_CRED, probe]))).toBe('ownership');
@@ -458,7 +429,7 @@ test('credentials: a probe uuid is a legal target of PUT / PATCH / DELETE (the u
     const probe = api.probeUuid();
     expect(await outcome(putCredential(api, probe, [], []))).toBe('sent');
     expect(await outcome(setCredentialEnabled(api, probe, true))).toBe('sent');
-    expect(await outcome(deleteOwnConfigObject(api, 'credentials', probe))).toBe('sent');
+    expect(await outcome(deleteConfigObject(api, 'credentials', probe))).toBe('sent');
     expect(wire()).toEqual([`PUT /api/v1/credentials/${probe}`, `PATCH /api/v1/credentials/${probe}/enable`, `DELETE /api/v1/credentials/${probe}`]);
 });
 
@@ -480,9 +451,9 @@ test('credential matrix: every probe body is sent (blank / null / whitespace nam
         ['no username', credentialBody(c, runName('h'), basicAttributes(c, { password: GEN_PW_2 }), []), 422],
     ];
     for (const [what, body, status] of rows) {
-        const { probe, own } = await createCredentialProbe(api, body, 'T', what);
+        const probe = await probeCredential(api, 'T', body, what);
         expect(probe.status, what).toBe(status);
-        expect(own, `${what}: nothing created`).toBeUndefined();
+        expect(createdLines(), `${what}: a refused create leaves nothing on the ledger`).toEqual([]);
     }
     expect(wire()).toHaveLength(rows.length);
     expect(readLedger().filter((l) => l.event === 'created'), 'a refused create writes no ledger line').toEqual([]);
@@ -492,11 +463,10 @@ test('credential matrix: every probe body is sent (blank / null / whitespace nam
 
 test('credential matrix: a duplicate name answers 409 with the one credential in the list; the second create is never a ledger line', async () => {
     const c = await connector();
-    const first = await ownCredential(api, c, 'T', { suffix: 'dup' });
-    const { probe, own } = await createCredentialProbe(api, credentialBody(c, first.ref.name, basicAttributes(c, { username: 'u', password: GEN_PW_2 }), []), 'T', 'duplicate');
+    const first = await createOwnBasicCredential(api, 'T', 'dup', { connector: c });
+    const probe = await probeCredential(api, 'T', credentialBody(c, first.name, basicAttributes(c, { username: 'u', password: GEN_PW_2 }), []), 'duplicate');
     expect(probe.status).toBe(409);
-    expect(own).toBeUndefined();
-    expect((await rowsNamed(api, '/api/v1/credentials', first.ref.name)).map((r) => r.uuid)).toEqual([first.ref.uuid]);
+    expect((await rowsNamed(api, '/api/v1/credentials', first.name)).map((r) => r.uuid)).toEqual([first.uuid]);
     expect(readLedger().filter((l) => l.event === 'created')).toHaveLength(1);
 });
 
@@ -504,26 +474,26 @@ test('credential matrix: an ACCIDENTAL 2xx is in the ledger before the helper re
     const c = await connector();
     core.acceptBlank = true;
     const attrs = basicAttributes(c, { username: 'u', password: GEN_PW_2 });
-    const blank = await createCredentialProbe(api, credentialBody(c, '', attrs, []), 'T', 'blank');
-    const nulled = await createCredentialProbe(api, credentialBody(c, null, attrs, []), 'T', 'null');
-    expect(blank.probe.status).toBe(201);
-    expect(nulled.probe.status).toBe(201);
+    const blank = await probeCredential(api, 'T', credentialBody(c, '', attrs, []), 'blank');
+    const nulled = await probeCredential(api, 'T', credentialBody(c, null, attrs, []), 'null');
+    expect(blank.status).toBe(201);
+    expect(nulled.status).toBe(201);
     const lines = readLedger().filter((l) => l.event === 'created' && l.type === 'credentials');
-    expect(lines.map((l) => l.uuid).sort()).toEqual([blank.own!.uuid, nulled.own!.uuid].sort());
+    expect(lines.map((l) => l.uuid).sort()).toEqual([createdUuid(blank)!, createdUuid(nulled)!].sort());
     expect(lines.map((l) => l.name).sort(), 'no run prefix: the teardown reports such a line instead of deleting it').toEqual(['', '(no name)']);
 
-    const pin = await createCredentialProbe(api, credentialBody(c, runName(`pin-${uniqueStamp()}`), basicAttributes(c, { username: 'u', password: '' }), []), 'T', 'empty password');
-    expect(pin.probe.status).toBe(201);
-    expect(readLedger().some((l) => l.uuid === pin.own!.uuid && l.type === 'credentials')).toBe(true);
+    const pin = await probeCredential(api, 'T', credentialBody(c, ownName('pin'), basicAttributes(c, { username: 'u', password: '' }), []), 'empty password');
+    expect(pin.status).toBe(201);
+    expect(readLedger().some((l) => l.uuid === createdUuid(pin)! && l.type === 'credentials')).toBe(true);
     expect(lastBody('POST', '/api/v1/credentials').attributes[1].content).toEqual([{ data: { secret: '' } }]);
 });
 
 test('credential matrix: the by-name shape is sent without uuids; the orphan the refused create left is adopted by its unique name (once)', async () => {
     const c = await connector();
-    const name = runName(`byname-${uniqueStamp()}`);
-    const { probe, own } = await createCredentialProbe(api, credentialBody(c, name, basicAttributes(c, { username: 'u', password: GEN_PW_2 }, { withUuid: false }), []), 'T', 'by name');
+    const name = ownName('byname');
+    const probe = await probeCredential(api, 'T', credentialBody(c, name, basicAttributes(c, { username: 'u', password: GEN_PW_2 }, { withUuid: false }), []), 'by name');
     expect(probe.status).toBe(404);
-    expect(own, 'the refused answer carries no uuid').toBeUndefined();
+    expect(createdLines(), 'the refused create leaves nothing on the ledger').toEqual([]);
     expect(lastBody('POST', '/api/v1/credentials').attributes.every((x: Json) => !('uuid' in x))).toBe(true);
     const orphans = await adoptByName(api, '/api/v1/credentials', 'credentials', name, 'T', 'orphan (core#2512)');
     expect(orphans).toHaveLength(1);
@@ -531,74 +501,75 @@ test('credential matrix: the by-name shape is sent without uuids; the orphan the
     await adoptByName(api, '/api/v1/credentials', 'credentials', name, 'T', 'orphan (core#2512)');
     expect(readLedger().filter((l) => l.uuid === orphans[0].uuid), 'adopting twice records once').toHaveLength(1);
     // The adopted orphan is an own credential: the guard accepts a delete of it.
-    expect(await outcome(deleteOwnConfigObject(api, 'credentials', orphans[0].uuid))).toBe('sent');
+    expect(await outcome(deleteConfigObject(api, 'credentials', String(orphans[0].uuid)))).toBe('sent');
 });
 
 // ------------------------------------------------------------------ API-GEN-19: groups
 
 test('groups: own groups are created (required custom attributes filled), put, deleted and bulk-deleted through the guard; probe uuids are legal targets', async () => {
     core.required.groups = [{ uuid: REQUIRED_GROUP_ATTR, name: 'team', contentType: 'string', properties: { required: true } }];
-    const g = await ownGroup(api, 'T', { description: 'd', email: 'e@example.test' }, { suffix: 'grp' });
+    const g = await createOwnGroup(api, 'T', 'grp', { description: 'd', email: 'e@example.test' });
     const sent = lastBody('POST', '/api/v1/groups');
     expect(sent).toMatchObject({ name: g.name, description: 'd', email: 'e@example.test' });
     expect(sent.customAttributes, 'the tier\'s required custom attribute is filled').toEqual([{ version: 'v3', uuid: REQUIRED_GROUP_ATTR, name: 'team', contentType: 'string', content: [{ data: runName('ca'), contentType: 'string' }] }]);
     expect(readLedger().find((l) => l.uuid === g.uuid)).toMatchObject({ type: 'groups', event: 'created' });
 
     server.reset();
-    const other = await ownGroup(api, 'T', {}, { suffix: 'grp2' });
+    const other = await createOwnGroup(api, 'T', 'grp2');
     const probe = api.probeUuid();
     expect((await putGroup(api, g.uuid, { name: 'ignored', description: 'x' })).status).toBe(200);
     expect(await outcome(putGroup(api, probe, { description: 'x' }))).toBe('sent');
-    expect(await outcome(deleteOwnConfigObject(api, 'groups', probe))).toBe('sent');
+    expect(await outcome(deleteConfigObject(api, 'groups', probe))).toBe('sent');
     expect((await bulkDeleteObjects(api, 'groups', [other.uuid, probe])).status).toBe(204);
-    expect((await deleteOwnConfigObject(api, 'groups', g.uuid)).status).toBe(204);
+    expect((await deleteConfigObject(api, 'groups', g.uuid)).status).toBe(204);
     expect(lastBody('DELETE', '/api/v1/groups')).toEqual([other.uuid, probe]);
 
     expect(await outcome(putGroup(api, FOREIGN_GROUP, {}))).toBe('ownership');
-    expect(await outcome(deleteOwnConfigObject(api, 'groups', FOREIGN_GROUP))).toBe('ownership');
+    expect(await outcome(deleteConfigObject(api, 'groups', FOREIGN_GROUP))).toBe('ownership');
     expect(await outcome(bulkDeleteObjects(api, 'groups', [FOREIGN_GROUP]))).toBe('ownership');
 });
 
 test('groups: blank / null / whitespace names and a duplicate are sent and refused; an accepted trailing-space name, a 301-character description and a bad e-mail are own groups', async () => {
     for (const name of ['', null, '   ']) {
-        const { probe, own } = await createGroupProbe(api, groupBody(name, { description: 'x' }), 'T', 'blank');
+        const probe = await probeGroup(api, 'T', groupBody(name, { description: 'x' }), 'blank');
         expect(probe.status).toBe(422);
-        expect(own).toBeUndefined();
+        expect(createdLines(), 'a refused create leaves nothing on the ledger').toEqual([]);
     }
-    const first = await ownGroup(api, 'T', {}, { suffix: 'dup' });
-    const second = await createGroupProbe(api, groupBody(first.name, {}), 'T', 'dup');
-    expect(second.probe.status).toBe(409);
+    const first = await createOwnGroup(api, 'T', 'dup');
+    const second = await probeGroup(api, 'T', groupBody(first.name, {}), 'dup');
+    expect(second.status).toBe(409);
+    expect(createdLines(), 'the refused duplicate is not a ledger line').toEqual([first.uuid]);
     expect((await rowsNamed(api, '/api/v1/groups', first.name)).map((r) => r.uuid)).toEqual([first.uuid]);
 
-    const trailing = `${runName(`space-${uniqueStamp()}`)} `;
-    const t = await createGroupProbe(api, groupBody(trailing, { description: 'd'.repeat(301), email: 'notanemail' }), 'T', 'Q8');
-    expect(t.probe.status).toBe(201);
-    expect(readLedger().find((l) => l.uuid === t.own!.uuid)).toMatchObject({ type: 'groups', name: trailing });
-    expect(await outcome(deleteOwnConfigObject(api, 'groups', t.own!.uuid)), 'a trailing-space name still carries the run prefix: own').toBe('sent');
+    const trailing = `${ownName('space')} `;
+    const t = await probeGroup(api, 'T', groupBody(trailing, { description: 'd'.repeat(301), email: 'notanemail' }), 'Q8');
+    expect(t.status).toBe(201);
+    expect(readLedger().find((l) => l.uuid === createdUuid(t)!)).toMatchObject({ type: 'groups', name: trailing });
+    expect(await outcome(deleteConfigObject(api, 'groups', createdUuid(t)!)), 'a trailing-space name still carries the run prefix: own').toBe('sent');
 });
 
 test('PUT / DELETE /v1/groups/not-a-uuid are the two exact malformed-uuid probes the guard sends (rule 6a skipped, body rules stay); any other literal or a body with a foreign uuid is still refused; the GET is a plain read', async () => {
     // Before the guard pass these were refused as a name-keyed path (kind request): the old pin of this test.
     expect(await outcome(putGroup(api, 'not-a-uuid', { description: 'x' }))).toBe('sent');
-    expect(await outcome(deleteOwnConfigObject(api, 'groups', 'not-a-uuid'))).toBe('sent');
+    expect(await outcome(deleteConfigObject(api, 'groups', 'not-a-uuid'))).toBe('sent');
     expect(wire()).toEqual(['PUT /api/v1/groups/not-a-uuid', 'DELETE /api/v1/groups/not-a-uuid']);
     server.reset();
     // Not an exact probe literal: refused as before, nothing sent.
     expect(await outcome(putGroup(api, 'some-name', { description: 'x' }))).toBe('request');
-    expect(await outcome(deleteOwnConfigObject(api, 'groups', 'some-name'))).toBe('request');
+    expect(await outcome(deleteConfigObject(api, 'groups', 'some-name'))).toBe('request');
     expect(wire()).toEqual([]);
-    const read = await readProbe(api, '/api/v1/groups/not-a-uuid');
+    const read = await readAnswer(api, '/api/v1/groups/not-a-uuid');
     expect(read.status).toBe(422);
     expect(read.json).toEqual(['Invalid UUID not-a-uuid in the request']);
 });
 
 test('groups: the own custom attribute on groups is a create the ledger records; its value request attribute is {uuid, name, contentType, content}', async () => {
-    const attribute = await ownGroupAttribute(api, 'T');
+    const attribute = await createOwnCustomAttribute(api, 'T', 'grp-attr', { resources: ['groups'], description: 'own, not required (API-GEN-19)', note: 'own custom attribute on groups, not required' });
     expect(lastBody('POST', '/api/v1/attributes/custom')).toMatchObject({ name: attribute.name, contentType: 'string', required: false, resources: ['groups'] });
     expect(readLedger().find((l) => l.uuid === attribute.uuid)).toMatchObject({ type: 'customAttributes', event: 'created' });
     expect(customAttributeRequest(attribute, 'v1')).toEqual({ uuid: attribute.uuid, name: attribute.name, contentType: 'string', content: [{ data: 'v1' }] });
     // The attribute subtree of a group create is not scanned for uuids: the own attribute travels in customAttributes.
-    const g = await ownGroup(api, 'T', { customAttributes: [customAttributeRequest(attribute, 'v1')] });
+    const g = await createOwnGroup(api, 'T', 'grp', { customAttributes: [customAttributeRequest(attribute, 'v1')] });
     expect(lastBody('POST', '/api/v1/groups').customAttributes).toEqual([customAttributeRequest(attribute, 'v1')]);
     expect(g.uuid).toMatch(UUID_RE);
 });
@@ -619,7 +590,7 @@ test('uploadOwnSelfSigned: the self-signed upload is a create; the certificate a
 
 test('group assignment: PATCH with groupUuids -> own groups (duplicates, [], null, key omitted, a malformed string, a probe) and ownerUuid -> an own user is sent; the history and the sets read back', async () => {
     const cert = await uploadOwnSelfSigned(api, 'T');
-    const [g1, g2, g3] = [await ownGroup(api, 'T'), await ownGroup(api, 'T'), await ownGroup(api, 'T')];
+    const [g1, g2, g3] = [await createOwnGroup(api, 'T', 'grp'), await createOwnGroup(api, 'T', 'grp'), await createOwnGroup(api, 'T', 'grp')];
     const owner = await createOwnUser(api, 'T', 'cfg-owner');
     server.reset();
 
@@ -651,7 +622,7 @@ test('group assignment: PATCH with groupUuids -> own groups (duplicates, [], nul
 
 test('group assignment: a foreign group, a foreign owner, a group uuid in ownerUuid and a foreign certificate are refused by the guard; nothing is sent', async () => {
     const cert = await uploadOwnSelfSigned(api, 'T');
-    const g = await ownGroup(api, 'T');
+    const g = await createOwnGroup(api, 'T', 'grp');
     const owner = await createOwnUser(api, 'T', 'cfg-owner');
     server.reset();
     expect(await outcome(patchCertificate(api, cert.uuid, { groupUuids: [g.uuid, FOREIGN_GROUP] }))).toBe('ownership');
@@ -665,7 +636,7 @@ test('group assignment: a foreign group, a foreign owner, a group uuid in ownerU
 
 test('archiveOwnCertificate: an own certificate is archived (204); the group change of the archived certificate is a plain own-certificate PATCH the core refuses with 422', async () => {
     const cert = await uploadOwnSelfSigned(api, 'T');
-    const [g1, g2] = [await ownGroup(api, 'T'), await ownGroup(api, 'T')];
+    const [g1, g2] = [await createOwnGroup(api, 'T', 'grp'), await createOwnGroup(api, 'T', 'grp')];
     await setCertificateGroups(api, cert.uuid, [g1.uuid]);
     server.reset();
     await archiveOwnCertificate(api, cert.uuid);
@@ -710,24 +681,23 @@ test('validRaAttributes copies the data attributes of an enabled pre-existing RA
 test('RA profile create probe: a pre-existing authority is only a scope parent; a refused create writes no ledger line, an accidental 2xx is recorded with its authority before any assertion', async () => {
     const base = (await validRaAttributes(api, A_EJBCA))!;
     const def = (await authorityWithRequiredAttribute(api)).ok!.required[0];
-    const name = runName(`ra-neg-${uniqueStamp()}`);
+    const name = ownName('ra-neg');
     server.reset();
 
-    const refused = await createRaProfileProbe(api, A_EJBCA, await raProfileBody(api, name, missingAttributeCase(base, def)), 'T', 'missing');
-    expect([refused.probe.status, refused.probe.json]).toEqual([422, [requiredAttributeNotFoundText('End Entity Profile')]]);
-    expect(refused.own).toBeUndefined();
+    const refused = await probeRaProfile(api, 'T', A_EJBCA, await raProfileBody(api, name, missingAttributeCase(base, def)), 'missing');
+    expect([refused.status, refused.json]).toEqual([422, [requiredAttributeNotFoundText('End Entity Profile')]]);
     expect(wire()).toEqual([`POST /api/v1/authorities/${A_EJBCA}/raProfiles`]);
     expect(lastBody('POST', `/api/v1/authorities/${A_EJBCA}/raProfiles`)).toMatchObject({ name, customAttributes: [] });
     expect(readLedger().filter((l) => l.event === 'created')).toEqual([]);
     expect(await rowsNamed(api, '/api/v1/raProfiles', name)).toEqual([]);
 
     core.acceptRa = true;
-    const leaked = await createRaProfileProbe(api, A_EJBCA, await raProfileBody(api, name, missingAttributeCase(base, def)), 'T', 'leak');
-    expect(leaked.probe.status).toBe(200);
-    expect(readLedger().find((l) => l.uuid === leaked.own!.uuid)).toMatchObject({ type: 'raProfiles', name, parents: { authority: A_EJBCA } });
+    const leaked = await probeRaProfile(api, 'T', A_EJBCA, await raProfileBody(api, name, missingAttributeCase(base, def)), 'leak');
+    expect(leaked.status).toBe(200);
+    expect(readLedger().find((l) => l.uuid === createdUuid(leaked)!)).toMatchObject({ type: 'raProfiles', name, parents: { authority: A_EJBCA } });
     const rows = await adoptByName(api, '/api/v1/raProfiles', 'raProfiles', name, 'T', 'adopt', { authority: A_EJBCA });
-    expect(rows.map((r) => r.uuid), 'found by name; already in the ledger').toEqual([leaked.own!.uuid]);
-    expect(readLedger().filter((l) => l.uuid === leaked.own!.uuid)).toHaveLength(1);
+    expect(rows.map((r) => r.uuid), 'found by name; already in the ledger').toEqual([createdUuid(leaked)!]);
+    expect(readLedger().filter((l) => l.uuid === createdUuid(leaked)!)).toHaveLength(1);
 });
 
 test('the required custom attributes of credentials and groups are read from the tier and filled with the same rules as regressionApi', async () => {
@@ -739,7 +709,7 @@ test('the required custom attributes of credentials and groups are read from the
         { uuid: U(64), name: 'o', contentType: 'string', properties: { required: false } },
     ];
     const filled = await requiredCustomAttributes(api, 'groups', 'value');
-    expect(filled.map((a) => [a.name, a.content[0].data])).toEqual([['s', 'value'], ['n', 1], ['b', true], ['l', 'first']]);
+    expect(filled.map((a) => [a.name, contentOf(a)[0].data])).toEqual([['s', 'value'], ['n', 1], ['b', true], ['l', 'first']]);
     expect(await requiredCustomAttributes(api, 'credentials', 'value')).toEqual([]);
     core.required.groups = [{ uuid: U(65), name: 'x', contentType: 'file', properties: { required: true } }];
     await expect(requiredCustomAttributes(api, 'groups', 'v')).rejects.toThrow(/which the suite cannot fill/);
@@ -749,15 +719,15 @@ test('the required custom attributes of credentials and groups are read from the
 
 test('a raw context handed to a mutating helper is refused (not-guarded); nothing is sent', async () => {
     const c = await connector();
-    const rawApi = raw as unknown as GuardedApi;
+    const rawApi = rawAsGuarded(raw);
     const some = U(70);
     // Thunks, awaited one by one: a promise created up front and rejected before it is awaited would be an unhandled rejection.
     const calls: Array<() => Promise<unknown>> = [
-        () => createCredentialProbe(rawApi, { name: runName('x') }, 'T'), () => createGroupProbe(rawApi, { name: runName('x') }, 'T'),
-        () => createRaProfileProbe(rawApi, A_EJBCA, { name: runName('x') }, 'T'), () => ownCredential(rawApi, c, 'T'), () => ownGroup(rawApi, 'T'),
-        () => uploadOwnSelfSigned(rawApi, 'T'), () => ownGroupAttribute(rawApi, 'T'), () => putCredential(rawApi, some, [], []),
+        () => probeCredential(rawApi, 'T', { name: runName('x') }), () => probeGroup(rawApi, 'T', { name: runName('x') }),
+        () => probeRaProfile(rawApi, 'T', A_EJBCA, { name: runName('x') }), () => createOwnBasicCredential(rawApi, 'T', 'cred', { connector: c }), () => createOwnGroup(rawApi, 'T', 'grp'),
+        () => uploadOwnSelfSigned(rawApi, 'T'), () => createOwnCustomAttribute(rawApi, 'T', 'grp-attr', { resources: ['groups'], description: 'own, not required (API-GEN-19)', note: 'own custom attribute on groups, not required' }), () => putCredential(rawApi, some, [], []),
         () => setCredentialEnabled(rawApi, some, true), () => putGroup(rawApi, some, {}), () => patchCertificate(rawApi, some, {}), () => setCertificateGroups(rawApi, some, []),
-        () => archiveOwnCertificate(rawApi, some), () => deleteOwnConfigObject(rawApi, 'groups', some), () => bulkDeleteObjects(rawApi, 'credentials', [some]),
+        () => archiveOwnCertificate(rawApi, some), () => deleteConfigObject(rawApi, 'groups', some), () => bulkDeleteObjects(rawApi, 'credentials', [some]),
         () => validateRaAttributes(rawApi, A_EJBCA, []),
     ];
     for (const call of calls) expect(await outcome(call()), call.toString().slice(6, 60)).toBe('not-guarded');
@@ -766,9 +736,9 @@ test('a raw context handed to a mutating helper is refused (not-guarded); nothin
 
 test('ledger before assertion: a foreign object that is not recorded stays untouchable (the helpers never record what they did not create)', async () => {
     const c = await connector();
-    await ownCredential(api, c, 'T');
-    const unrecorded = recordCreated('credentials', { uuid: U(77), name: 'Production credential' }, 'T');
+    await createOwnBasicCredential(api, 'T', 'cred', { connector: c });
+    const unrecorded = recordCreated('credentials', { uuid: U(77), name: 'Production credential' }, { spec: 'T' });
     server.reset();
-    expect(await outcome(deleteOwnConfigObject(api, 'credentials', unrecorded.uuid)), 'a ledger line without the run prefix proves nothing').toBe('ownership');
+    expect(await outcome(deleteConfigObject(api, 'credentials', unrecorded.uuid)), 'a ledger line without the run prefix proves nothing').toBe('ownership');
     expect(wire()).toEqual([]);
 });

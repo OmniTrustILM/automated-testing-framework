@@ -2,12 +2,10 @@
 import { GuardedApi } from './guard/types';
 import { assertOwnLive } from './ledger/ownership';
 import { apiJson } from './apiReads';
+import { createOwn } from './ownCrud';
 import { requiredCustomAttributes } from './customAttributes';
-import { OwnRef, recordCreated, Ref } from './ledger/ledger';
-import { runName, runId } from './ledger/runState';
-import { timestampSuffix } from './text';
-
-type Json = Record<string, any>;
+import { OwnRef } from './ledger/ledger';
+import { runName, runId, ownName } from './ledger/runState';
 
 export interface UserFields {
     firstName?: string;
@@ -15,27 +13,40 @@ export interface UserFields {
     email?: string;
     /** Default false: a user the suite creates cannot sign in (it has no identity-provider account anyway). */
     enabled?: boolean;
+    description?: string;
 }
 
-/** `POST /v1/users` for a run-prefixed username (any required custom attribute filled); returns the Ref (not recorded). */
-export async function createUser(api: GuardedApi, username: string, fields: UserFields = {}): Promise<Ref> {
-    const created = await apiJson<Json>(api, 'POST', '/api/v1/users', {
-        username,
+/** The request body of a user create without its username (every required custom attribute of users filled). */
+export async function userBody(api: GuardedApi, username: string, fields: UserFields = {}): Promise<Record<string, unknown>> {
+    return {
         firstName: fields.firstName ?? 'QA',
         lastName: fields.lastName ?? 'Regression',
         email: fields.email ?? `${username}@example.test`,
         enabled: fields.enabled ?? false,
-        description: `REG run ${runId()}`,
+        description: fields.description ?? `REG run ${runId()}`,
         groupUuids: [],
         customAttributes: await requiredCustomAttributes(api, 'users', runName('ca')),
-    });
-    return { uuid: created.uuid, name: username };
+    };
 }
 
-/** A NEW run user, `<run>-<suffix>-<time>`, recorded in the ledger right after the create call. */
-export async function createOwnUser(api: GuardedApi, spec: string, suffix: string, fields: UserFields = {}, note = 'API prerequisite'): Promise<OwnRef> {
-    const ref = await createUser(api, runName(`${suffix}-${timestampSuffix()}`), fields);
-    return recordCreated('users', ref, spec, note);
+export interface UserOptions extends UserFields {
+    note?: string;
+    /** A planned username (the seed owner, the dedicated second identity); default `ownName(suffix)`. */
+    name?: string;
+}
+
+/** A NEW run user, `<run>-<suffix>-<unique>`, recorded in the ledger right after the create call. */
+export async function createOwnUser(api: GuardedApi, spec: string, suffix: string, o: UserOptions = {}): Promise<OwnRef> {
+    const username = o.name ?? ownName(suffix);
+    const { answer: _answer, ...ref } = await createOwn(api, spec, {
+        type: 'users',
+        path: '/api/v1/users',
+        name: username,
+        nameField: 'username',
+        note: o.note ?? 'API prerequisite',
+        body: await userBody(api, username, o),
+    });
+    return ref;
 }
 
 /** Replaces the roles of an OWN user with OWN roles (`PATCH /v1/users/{user}/roles`); every object is checked live. */

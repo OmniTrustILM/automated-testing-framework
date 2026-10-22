@@ -1,8 +1,13 @@
 /**
- * CertificatePage — the Certificates list, the import dialog, the Issue-now fields of the Add Certificate form and the
- * Details / Request / History tabs of a certificate (smoke SMK-004 / SMK-007 and the main regression flows). The
- * Pre-register fields and Create live on CertificateAddPage, the lifecycle toolbar and widgets on CertificateDetailPage;
- * the former names the smoke specs call stay here as thin aliases.
+ * CertificatePage — the smoke suite's certificate page object.
+ *
+ * WHAT: the smoke suite's certificate page object: the list, the import dialog, the Issue-now fields and the
+ *       Details / Request / History tabs (SMK-004, SMK-007, SMK-008).
+ * WHY: the three smoke specs call these names; the regression suite uses `CertificateListPage`,
+ *       `CertificateAddPage`, `CertificateDetailPage` and `ImportCertificatesDialog`, to which every method here
+ *       delegates.
+ * HOW: the list is opened through the sidebar because SMK-004 and SMK-007 navigate that way (SMK-002 uses
+ *       Navigation directly); the methods that moved to the classes above delegate to them under their old names.
  */
 
 import { Page, Locator, Response, expect } from '@playwright/test';
@@ -133,7 +138,7 @@ export class CertificatePage {
      */
     async submitImport(): Promise<Response> {
         logger.info('Submitting the import');
-        return this.importDialog.submit();
+        return this.importDialog.submitForResponse();
     }
 
     /** The import results region shows the given outcome badge (`Imported`, `Already in inventory`, …). */
@@ -196,9 +201,13 @@ export class CertificatePage {
         await this.csrTextarea.fill(csrPem);
     }
 
-    /** Create on the Add Certificate form (the smoke spec's entry point); the outcomes are CertificateAddPage's. */
-    async submitIssue(): Promise<string> {
-        return (await new CertificateAddPage(this.page).submitIssueWithWarnings()).uuid;
+    /**
+     * Create on the Add Certificate form (the smoke spec's entry point). As the smoke suite expects, it waits for the
+     * new certificate's detail page and FAILS when the "accepted with warnings" panel shows instead; a regression row that
+     * accepts the panel passes `{ acceptWarnings: true }`.
+     */
+    async submitIssue(options: { acceptWarnings?: boolean } = {}): Promise<string> {
+        return (await new CertificateAddPage(this.page).submitIssueFailingOnWarnings(options)).uuid;
     }
 
     async openTab(tabName: string): Promise<void> {

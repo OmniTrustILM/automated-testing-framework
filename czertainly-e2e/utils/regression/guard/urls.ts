@@ -86,7 +86,7 @@ export function pathCharProblem(path: string): string | undefined {
 }
 
 /**
- * The structural path rule SHARED by every request the guard lets through: GET / HEAD, each
+ * The structural path rule SHARED by every request the guard lets through: GET, each
  * followed redirect hop, `assertSameOrigin` and — as the first part of `structuralPathProblem` — every mutation and raw
  * POST. Refused: `pathCharProblem` on the path as written and as sent, a path the URL parser would change, and a path
  * whose lower-case form starts with `/api` but that does not start with exactly `/api/` (`/API/v1/…`, `/Api/…`, `/apix`:

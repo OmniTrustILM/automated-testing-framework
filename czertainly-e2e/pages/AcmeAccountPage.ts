@@ -1,8 +1,12 @@
 /**
- * AcmeAccountPage — the ACME accounts list (REG-USE-05, "the account is listed in the UI"): widget
- * `List of ACME Accounts`, a SearchableListWidget sorted by ACME Profile Name with 10 rows a page. Columns: Account Id
- * (link to the detail), ACME Profile Name, RA Profile Name, Internal State, Account Status, Total Orders. The run's
- * account can sort onto page 2, so the list is searched by the server-assigned account id instead of read page one.
+ * AcmeAccountPage — the ACME accounts list.
+ *
+ * WHAT: the ACME accounts list of the admin UI: open it, search it by account id, clear the search and assert that an account is
+ *       listed under an ACME profile.
+ * WHY: an account an ACME client registered must be visible to the operator under its ACME profile. The list pages by ten rows, sorted
+ *      by ACME profile name, so the account is searched by its server-assigned id: it may sort onto page two.
+ * HOW: a `SearchableListWidget` titled like the list; `searchById` and `clearSearch` act, `assertListed` only reads the rows the search
+ *      left (exact link text, so an id that merely contains the searched id does not count).
  */
 import { expect, Page } from '@playwright/test';
 import { Logger } from '../utils/Logger';
@@ -11,26 +15,34 @@ import { SearchableListWidget } from './SearchableListWidget';
 const logger = new Logger('AcmeAccountPage');
 
 export class AcmeAccountPage {
-    readonly page: Page;
     readonly list: SearchableListWidget;
 
-    constructor(page: Page) {
-        this.page = page;
+    constructor(private readonly page: Page) {
         this.list = new SearchableListWidget(page, 'List of ACME Accounts');
     }
 
+    /** Opens the ACME accounts list by its route. */
     async goToList(): Promise<void> {
         logger.info('Opening the ACME accounts list');
         await this.page.goto('administrator/#/acmeaccounts');
         await expect(this.list.root).toBeVisible();
     }
 
-    /** The list, searched by the account id, shows exactly that account under the given ACME profile name. */
+    /** Searches the list by an account id (the run's account may sort onto page two, so the list is never read unsearched). */
+    async searchById(accountId: string): Promise<void> {
+        logger.info(`Searching the ACME accounts list for ${accountId}`);
+        await this.list.search(accountId);
+    }
+
+    /** Clears the search box: every row is shown again. */
+    async clearSearch(): Promise<void> {
+        await this.list.search('');
+    }
+
+    /** The list, as searched now, shows exactly one row with that account id, under the given ACME profile name. */
     async assertListed(accountId: string, acmeProfileName: string): Promise<void> {
         logger.info(`Asserting ACME account ${accountId} is listed under ${acmeProfileName}`);
-        await this.list.search(accountId);
         await expect(this.list.rowWithLink(accountId)).toHaveCount(1);
         await expect(this.list.rowWithLink(accountId)).toContainText(acmeProfileName);
-        await this.list.search('');
     }
 }

@@ -23,6 +23,7 @@ import { OwnObjectViolation } from '../../utils/regression/ledger/ownership';
 import { LedgerLine } from '../../utils/regression/ledger/ledger';
 import { localProofFile } from '../../utils/regression/tier/localProof';
 import { tierIdentity } from '../../utils/regression/tier/kind';
+import { fakeContext } from './helpers/guardRig';
 
 const RUN = 'qa-reg-20261013-120000-ab12';
 const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -70,7 +71,7 @@ const live: Record<string, Record<string, unknown>> = {
 function raw(): { api: APIRequestContext; sent: string[] } {
     const sent: string[] = [];
     const reply = (status: number, body?: unknown) => ({ status: () => status, ok: () => status < 300, json: async () => body, text: async () => '' });
-    const api = {
+    const api = fakeContext({
         get: async (url: string) => (live[url] ? reply(200, live[url]) : reply(404)),
         head: async () => reply(200),
         fetch: async (url: string, opts: { method?: string } = {}) => {
@@ -79,7 +80,7 @@ function raw(): { api: APIRequestContext; sent: string[] } {
         },
         dispose: async () => undefined,
         storageState: async () => ({ cookies: [], origins: [] }),
-    } as unknown as APIRequestContext;
+    });
     return { api, sent };
 }
 
@@ -207,7 +208,7 @@ test('ownership is judged before the dry run: a foreign DELETE is a violation, a
     const probe = free.probeUuid();
     await free.delete(`/api/v1/roles/${probe}`);
     expect(r.sent).toEqual([`DELETE /api/v1/roles/${probe}`]);
-    await expect(free.check('DELETE', `/api/v1/roles/${FOREIGN_RA}`)).rejects.toThrow(OwnObjectViolation);
+    await expect(free.delete(`/api/v1/roles/${FOREIGN_RA}`)).rejects.toThrow(OwnObjectViolation);
 });
 
 test('encoded, dotted and empty path segments are refused for every mutating method', async () => {
@@ -360,14 +361,15 @@ test('the query string and the params option name uuids too: own or probe', asyn
     expect(queryUuids(`/x?a=${OWN_USER}`, { b: `${OWN_ROLE},${OWN_CERT}` })).toEqual([OWN_USER, OWN_ROLE, OWN_CERT]);
 });
 
-test('a Request object is judged on its own method, headers and body', async () => {
+test('a Request object is refused: the guard takes the URL as a string only', async () => {
     const r = raw();
     const g = guardApiWithSeams(r.api, seams);
     const request = (method: string, body: unknown) => ({
         url: () => `/api/v1/roles/${OWN_ROLE}/users`, method: () => method, headers: () => ({ 'content-type': 'application/json' }),
         postDataBuffer: () => Buffer.from(JSON.stringify(body)),
     });
-    await expect(g.fetch(request('PATCH', [FOREIGN_USER]) as unknown as string)).rejects.toThrow(OwnObjectViolation);
+    await expect(g.fetch(request('PATCH', [FOREIGN_USER]) as unknown as string)).rejects.toThrow(/a URL that is not a string/);
+    await expect(g.fetch(request('GET', []) as unknown as string), 'a harmless one too').rejects.toThrow(/a URL that is not a string/);
     expect(r.sent).toEqual([]);
 });
 
@@ -452,5 +454,5 @@ test('the runtime brand: assertGuarded refuses a raw context, accepts a guarded 
     expect(isGuardedApi(r.api)).toBe(false);
     expect(assertGuarded(g, 'test')).toBe(g);
     expect(() => assertGuarded(r.api, 'test')).toThrow(/needs the guarded API context/);
-    expect(() => assertGuarded({ ...g } as unknown as APIRequestContext, 'test'), 'a copy is not the guard').toThrow(OwnObjectViolation);
+    expect(() => assertGuarded(fakeContext({ ...g }), 'test'), 'a copy is not the guard').toThrow(OwnObjectViolation);
 });

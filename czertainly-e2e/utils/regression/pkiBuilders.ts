@@ -1,14 +1,18 @@
 /**
- * pkiBuilders — the one module for keys, CSRs, certificates and the encodings around them (PEM / DER, SHA-256), for every
- * regression flow: issuance, protocols, the inventory seeds and the TLS scan target build on it, and no other module
- * carries its own copy of these primitives.
+ * pkiBuilders — keys, CSRs, certificates and their encodings.
  *
- * node-forge (RSA) builds the CSRs the flows have always used; this module adds DNS + IP SANs, the private key, CSRs from a
- * given key (same-key renew / rekey CSRs later) and an EC P-256 CSR through `@peculiar/x509` (WebCrypto: forge has no
- * EC). Certificates whose key may be EC (the ACME leaf) and chains are read with `@peculiar/x509` as well: SANs, the
- * public key (SPKI, compared byte for byte with the CSR's) and the signature of each chain link. `@peculiar/x509`
- * needs `reflect-metadata` and is loaded lazily, on the first call that needs it.
- * No openssl, no network: everything runs in-process.
+ * WHAT: the one module for keys, CSRs, certificates and the encodings around them (PEM / DER, SHA-256), for every
+ *       regression flow: issuance, protocols, the inventory seeds and the TLS scan target build on it, and no other module
+ *       carries its own copy of these primitives.
+ *
+ *       node-forge (RSA) builds the CSRs the flows have always used; this module adds DNS + IP SANs, the private key, CSRs from a
+ *       given key (same-key renew / rekey CSRs later) and an EC P-256 CSR through `@peculiar/x509` (WebCrypto: forge has no
+ *       EC). Certificates whose key may be EC (the ACME leaf) and chains are read with `@peculiar/x509` as well: SANs, the
+ *       public key (SPKI, compared byte for byte with the CSR's) and the signature of each chain link. `@peculiar/x509`
+ *       needs `reflect-metadata` and is loaded lazily, on the first call that needs it.
+ *       No openssl, no network: everything runs in-process.
+ * WHY: No module should carry its own copy of these primitives.
+ * HOW: node-forge builds the RSA CSRs, `@peculiar/x509` (lazy, with reflect-metadata) adds EC CSRs and reads certificates and chains; everything runs in process, no openssl, no network.
  */
 import * as crypto from 'crypto';
 import * as forge from 'node-forge';
@@ -44,7 +48,7 @@ export interface CsrOptions {
 }
 
 /** The PEM body of a block as base64 (no armour, no whitespace). */
-export const pemBody = (pem: string): string => pem.replace(/-----(BEGIN|END)[^-]+-----/g, '').replace(/\s+/g, '');
+const pemBody = (pem: string): string => pem.replace(/-----(BEGIN|END)[^-]+-----/g, '').replace(/\s+/g, '');
 
 /** The DER of a PEM block (its base64 body; the first block when the text holds several, any type). */
 export const pemToDer = (pem: string): Buffer => Buffer.from(pemBody(pem), 'base64');
@@ -179,7 +183,7 @@ export function csrFromKeyWithSubject(keys: forge.pki.rsa.KeyPair, subjectDn: st
 
 /**
  * An RSA CSR whose SAN carries an rfc822Name (e-mail) next to the CN as DNS name: the EJBCA-NG end-entity profile of the
- * tiers refuses it (ilm#429 step 1, rule API-12), which is the only shared-tier producer of a `failed` certificate
+ * tiers refuses it (ilm#429), which is the only shared-tier producer of a `failed` certificate
  * (API-CERT-08 failed row, API-CERT-35). A fresh key pair per call.
  */
 export function csrWithEmailSan(commonName: string, email: string): GeneratedCsr {

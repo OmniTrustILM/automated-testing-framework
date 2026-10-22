@@ -169,12 +169,18 @@ for (const file of CONFIGS) {
     test(`${file}: REG_PHASE=B narrows rows to @phaseB, infrastructure keeps running`, ({}, testInfo) => {
         const resolved = resolveProjectFilters(loadConfig(file, { REG_PHASE: 'B' }, testInfo.outputDir));
         const byName = (n: string) => resolved.find((f) => f.name === n) as ResolvedFilter;
-        const rows = resolved.filter((f) => !['snapshot', 'non-interference'].includes(f.name));
+        const rows = resolved.filter((f) => !['snapshot', 'non-interference', 'run-setup'].includes(f.name));
         expect(rows.some((f) => selectsTest(f, title('@p1'))), 'no plain row in Phase B').toBe(false);
         expect(rows.some((f) => selectsTest(f, title('@phaseB @p1')))).toBe(true);
         expect(selectsTest(byName('snapshot'), title('@p1'))).toBe(true);
         expect(selectsTest(byName('non-interference'), title('@p1'))).toBe(true);
         expect(selectsTest(byName('snapshot'), title('@p1 @local')), '@local stays out of infrastructure too').toBe(false);
+        // The regression config's run-setup project makes the run objects in Phase B too; the API config has none.
+        expect(resolved.some((f) => f.name === 'run-setup'), 'only the regression config has a run-setup project').toBe(file === 'playwright.regression.config.ts');
+        if (file === 'playwright.regression.config.ts') {
+            expect(selectsTest(byName('run-setup'), title('@p1'))).toBe(true);
+            expect(selectsTest(byName('run-setup'), title('@p1 @local'))).toBe(false);
+        }
     });
 
     test(`${file}: the run-end teardown is the globalTeardown`, ({}, testInfo) => {

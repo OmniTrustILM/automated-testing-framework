@@ -58,6 +58,7 @@ import { currentRunId, regressionStateDir } from '../run/runId';
 import { bareHost, dnsResolveSync, hostOf, isLocalHost, isLoopbackAddress, isLoopbackHost, LocalHostOptions, Resolver } from './dns';
 import { bindRule, ContainerProof, DaemonIdReader, DEFAULT_SOCKET, dockerHostName, DockerContextReader, dockerContainerProof, dockerContextEndpoint, dockerDaemonId, dockerExecProbe, InContainerProbe, InterfaceAddresses, machineAddresses } from './docker';
 import { isLocalTier, tierIdentity } from './kind';
+import { settings } from '../run/settings';
 
 // ------------------------------------------------------------------ positive proof of a local backend
 
@@ -206,7 +207,7 @@ function bindRuleOf(coreUrl: string, opts: LocalProofOptions): (address: string)
  */
 export function assertLocalAllowed(env: NodeJS.ProcessEnv = process.env, opts: LocalProofOptions = {}): string | undefined {
     if (!isLocalTier(env)) return undefined;
-    const baseUrl = env.BASE_URL;
+    const baseUrl = settings(env).baseUrl;
     if (!baseUrl) throw new Error('TIER_KIND=local needs BASE_URL (the local stack); refusing to guess.');
     if (!isLocalHost(hostOf(baseUrl, 'BASE_URL'), env, opts)) {
         throw new Error(
@@ -214,7 +215,7 @@ export function assertLocalAllowed(env: NodeJS.ProcessEnv = process.env, opts: L
                 'TIER_LOCAL_HOSTS. @local rows are destructive (docker control, platform settings, schedules); unset TIER_KIND for a shared tier.',
         );
     }
-    const coreUrl = env.REG_LOCAL_CORE_URL;
+    const coreUrl = settings(env).localCoreUrl;
     if (!coreUrl) {
         throw new Error(
             'TIER_KIND=local needs REG_LOCAL_CORE_URL (the local core, e.g. http://localhost:<core port>): a loopback BASE_URL ' +
@@ -226,7 +227,7 @@ export function assertLocalAllowed(env: NodeJS.ProcessEnv = process.env, opts: L
     }
     const coreBuild = coreMarker(env, opts.probe);
     assertDaemonOfCoreHost(hostOf(coreUrl, 'REG_LOCAL_CORE_URL'), env, opts);
-    const proof = (opts.containers ?? dockerContainerProof)(portOf(coreUrl), env.REG_LOCAL_COMPOSE_PROJECT || undefined, env, { bindOk: bindRuleOf(coreUrl, opts) });
+    const proof = (opts.containers ?? dockerContainerProof)(portOf(coreUrl), settings(env).composeProject, env, { bindOk: bindRuleOf(coreUrl, opts) });
     if (!proof.ok) {
         throw new Error(`TIER_KIND=local: no container proof for the local core (${proof.error ?? 'unknown'}); refusing @local rows.`);
     }
@@ -239,11 +240,11 @@ export function assertLocalAllowed(env: NodeJS.ProcessEnv = process.env, opts: L
     return coreBuild;
 }
 
-const authHeaders = (env: NodeJS.ProcessEnv): Record<string, string> => (env.AUTH_CLIENT_CERT ? { 'ssl-client-cert': env.AUTH_CLIENT_CERT } : {});
+const authHeaders = (env: NodeJS.ProcessEnv): Record<string, string> => (settings(env).authClientCert ? { 'ssl-client-cert': settings(env).authClientCert! } : {});
 
 /** The core's build marker from `<REG_LOCAL_CORE_URL>/api/v1/info`; throws when there is none (no liveness-only pass). */
 function coreMarker(env: NodeJS.ProcessEnv, probe: HttpProbe = probeHttpSync): string {
-    const info = probe(joinUrl(env.REG_LOCAL_CORE_URL!, 'api/v1/info'), authHeaders(env));
+    const info = probe(joinUrl(settings(env).localCoreUrl!, 'api/v1/info'), authHeaders(env));
     const marker = info.ok ? buildMarker(info.body) : undefined;
     if (!marker) {
         throw new Error(
@@ -322,7 +323,7 @@ export async function proveLocalInstance(api: InfoReader, env: NodeJS.ProcessEnv
     if (!isLocalTier(env)) return;
     removeLocalProof(env);
     const marker = await assertLocalBackend(api, env, opts);
-    const cert = env.AUTH_CLIENT_CERT;
+    const cert = settings(env).authClientCert;
     if (!cert) {
         throw new Error('TIER_KIND=local: the instance proof reads REG_LOCAL_CORE_URL with the header-mode admin certificate, but ' +
             'AUTH_CLIENT_CERT is unset; refusing @local rows.');
@@ -332,15 +333,15 @@ export async function proveLocalInstance(api: InfoReader, env: NodeJS.ProcessEnv
         const body = r.body as { uuid?: string; name?: string } | undefined;
         return r.ok && String(body?.uuid ?? '').toLowerCase() === role.uuid.toLowerCase() && body?.name === role.name;
     };
-    const read = (opts.probe ?? probeHttpSync)(joinUrl(env.REG_LOCAL_CORE_URL!, `api/v1/roles/${role.uuid}`), { 'ssl-client-cert': cert });
+    const read = (opts.probe ?? probeHttpSync)(joinUrl(settings(env).localCoreUrl!, `api/v1/roles/${role.uuid}`), { 'ssl-client-cert': cert });
     if (!isRole(read)) {
         throw new Error(`TIER_KIND=local: the role created through BASE_URL was not found through REG_LOCAL_CORE_URL ` +
             `(${read.status ?? read.error ?? 'no answer'}); BASE_URL and the local core are not the same instance. Refusing @local rows.`);
     }
     // Last step: the container that publishes the core port must itself serve the role through ITS OWN port,
     // read from inside it (`docker exec`): a port that only forwards to another instance cannot pass.
-    const coreUrl = env.REG_LOCAL_CORE_URL!;
-    const container = (opts.containers ?? dockerContainerProof)(portOf(coreUrl), env.REG_LOCAL_COMPOSE_PROJECT || undefined, env, { bindOk: bindRuleOf(coreUrl, opts) });
+    const coreUrl = settings(env).localCoreUrl!;
+    const container = (opts.containers ?? dockerContainerProof)(portOf(coreUrl), settings(env).composeProject, env, { bindOk: bindRuleOf(coreUrl, opts) });
     if (!container.ok || !container.container || !container.containerPort) {
         throw new Error(`TIER_KIND=local: the container publishing the core port could not be named for the in-container check ` +
             `(${container.error ?? 'no container id or port'}); refusing @local rows.`);
@@ -361,8 +362,8 @@ export async function proveLocalInstance(api: InfoReader, env: NodeJS.ProcessEnv
 
 /** AUTH_MODE=header only against a local BASE_URL (loopback, or a private TIER_LOCAL_HOSTS host). */
 export function assertAuthModeAllowed(env: NodeJS.ProcessEnv = process.env, opts: LocalHostOptions = {}): void {
-    if ((env.AUTH_MODE ?? 'local') !== 'header') return;
-    const baseUrl = env.BASE_URL;
+    if (settings(env).authMode !== 'header') return;
+    const baseUrl = settings(env).baseUrl;
     let local = false;
     if (baseUrl) {
         try {
@@ -382,13 +383,13 @@ export function assertAuthModeAllowed(env: NodeJS.ProcessEnv = process.env, opts
  * auth mode, and BASE_URL unchanged since the config loaded (REG_TIER_ID).
  */
 export function assertRunTier(env: NodeJS.ProcessEnv = process.env, opts: LocalProofOptions = {}): void {
-    if (env.TIER_KIND !== 'local' && env.TIER_KIND !== 'shared') {
+    if (settings(env).tierKind !== 'local' && settings(env).tierKind !== 'shared') {
         throw new Error('TIER_KIND is not frozen (the REG / API configs set it to local or shared at load); ' +
             'run through playwright.regression.config.ts or playwright.api.config.ts.');
     }
     assertLocalAllowed(env, opts);
     assertAuthModeAllowed(env, opts);
-    const frozen = env.REG_TIER_ID;
+    const frozen = settings(env).tierId;
     const now = tierIdentity(env);
     if (frozen && now && frozen !== now) throw new Error('BASE_URL changed since the config was loaded (tier identity differs); refusing.');
 }

@@ -4,14 +4,15 @@
  * path-less mutations (only allow-listed creates and bulk routes with their DTO body), name-keyed routes, redirects
  * and the base64 uuid form under uuid-shaped keys only.
  */
-import { APIRequestContext, expect, request, test } from '@playwright/test';
+import { APIRequestContext, expect, test } from '@playwright/test';
 import { allowedRawPost } from '../../utils/regression/guard/rawPost';
 import { guardApiWithSeams } from '../../utils/regression/guard/createGuard';
+import { DEFAULT_MAX_REDIRECTS } from '../../utils/regression/guard/headers';
 import { OwnObjectViolation, RefusalKind } from '../../utils/regression/ledger/ownership';
 import { apiJson } from '../../utils/regression/apiReads';
 import { LedgerLine } from '../../utils/regression/ledger/ledger';
-import { Arrived, loopbackServer, LoopbackServer } from './helpers/loopbackServer';
-import { registerGuardRig, withProcessEnv } from './helpers/guardRig';
+import { Arrived, LoopbackServer } from './helpers/loopbackServer';
+import { registerGuardRig, withProcessEnv, looseApi } from './helpers/guardRig';
 
 const RUN = 'qa-reg-20261014-120000-ab12';
 const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -101,7 +102,7 @@ const sentTo = (s: LoopbackServer) => s.arrived.filter((a) => !(a.method === 'GE
 // input snapshot: options the guard does not forward are refused; neither server sees anything (no url / request /
 // encodedParams smuggling)
 test('input snapshot: options the guard does not forward are refused and neither server sees anything', async () => {
-    const g = guard() as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const g = looseApi(guard());
     const foreignUrl = `/api/v1/roles/${FOREIGN_ROLE}`;
     const caseObject = { url: foreignUrl, method: 'DELETE', data: [OWN_ROLE] };
     const rows: Array<[string, () => Promise<unknown>]> = [
@@ -136,6 +137,10 @@ test('input snapshot: options the guard does not forward are refused and neither
         ['params as a Map', () => g.patch(own('/users'), { data: [OWN_USER], params: new Map([['x', FOREIGN_USER]]) })],
         ['timeout as a string', () => g.patch(own('/users'), { data: [OWN_USER], timeout: '5' })],
         ['maxRedirects on a mutation', () => g.delete(own(), { maxRedirects: 3 })],
+        ['the option maxRedirects on a GET', () => g.get('/api/v1/roles', { maxRedirects: 1 })],
+        ['the option maxRetries', () => g.get('/api/v1/roles', { maxRetries: 0 })],
+        ['head(url): the method HEAD', () => g.head('/api/v1/roles')],
+        ['fetch(Request-like object) (a non-string target)', () => g.fetch({ url: () => own(), method: () => 'DELETE', headers: () => ({}), postDataBuffer: () => null })],
         ['identityOverride not a boolean', () => g.get('/api/v1/roles', { identityOverride: 'yes' })],
         ['options not an object', () => g.get('/api/v1/roles', 'x')],
     ];
@@ -148,7 +153,7 @@ test('input snapshot: options the guard does not forward are refused and neither
     expect(A.arrived, 'refused before any request, not even a live read').toEqual([]);
     expect(B.arrived, 'the other origin saw nothing: no request, no token, no client certificate').toEqual([]);
     // Controls: the forwarded options still work (failOnStatusCode: false keeps a 404 an answer).
-    const res = await g.get(`/api/v1/roles/${U(99)}`, { failOnStatusCode: false, timeout: 5_000, maxRetries: 0, ignoreHTTPSErrors: true });
+    const res = await g.get(`/api/v1/roles/${U(99)}`, { failOnStatusCode: false, timeout: 5_000, ignoreHTTPSErrors: true });
     expect(res.status()).toBe(404);
     await g.patch(own('/users'), { data: [OWN_USER], params: { page: 1, all: false }, timeout: 5_000 });
     expect(wire()).toEqual([`PATCH ${own('/users')}?page=1&all=false ${JSON.stringify([OWN_USER])}`]);
@@ -156,7 +161,7 @@ test('input snapshot: options the guard does not forward are refused and neither
 
 // input snapshot: headers — content-type application/json, accept and if-* only; identity headers only with identityOverride
 test('input snapshot headers: only content-type, accept and if-*; identity headers need an override', async () => {
-    const g = guard() as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const g = looseApi(guard());
     const refused: Array<[string, Record<string, string>, unknown?]> = [
         ['X-HTTP-Method-Override', { 'X-HTTP-Method-Override': 'DELETE' }],
         ['X-HTTP-Verb', { 'X-HTTP-Verb': 'DELETE' }],
@@ -205,10 +210,9 @@ test('input snapshot headers: only content-type, accept and if-*; identity heade
     ]);
 });
 
-// input snapshot: every input is read once — what was judged is what arrives (toJSON, getters, Proxies, params, Request
-// objects, Buffers)
+// input snapshot: every input is read once — what was judged is what arrives (toJSON, getters, Proxies, params, Buffers)
 test('input snapshot: every input is read once, so what was judged is what arrives', async () => {
-    const g = guard() as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const g = looseApi(guard());
     let n = 0;
     await g.patch(own('/users'), { data: { toJSON: () => (n++ === 0 ? [OWN_USER] : [FOREIGN_USER]) } });
     let m = 0;
@@ -217,15 +221,6 @@ test('input snapshot: every input is read once, so what was judged is what arriv
     await g.delete('/api/v1/keys', { data: new Proxy([OWN_KEY], { get: (t, k) => (k === '0' ? (p++ === 0 ? OWN_KEY : FOREIGN_KEY) : Reflect.get(t, k)) }) });
     let q = 0;
     await g.delete(own(), { params: { get x() { return q++ === 0 ? OWN_USER : FOREIGN_USER; } } });
-    let r = 0;
-    const requestLike = {
-        url: () => (r++ === 0 ? own() : `/api/v1/roles/${FOREIGN_ROLE}`),
-        method: () => 'DELETE', headers: () => ({}), postDataBuffer: () => null,
-    };
-    await g.fetch(requestLike);
-    let b = 0;
-    const bodyRequest = { url: () => '/api/v1/keys', method: () => 'DELETE', headers: () => ({}), postDataBuffer: () => Buffer.from(JSON.stringify([b++ === 0 ? OWN_KEY : FOREIGN_KEY])) };
-    await g.fetch(bodyRequest);
     let h = 0;
     const headers = new Proxy({}, {
         ownKeys: () => (h++ === 0 ? [] : ['X-HTTP-Method-Override']),
@@ -238,14 +233,12 @@ test('input snapshot: every input is read once, so what was judged is what arriv
     const pending = g.delete('/api/v1/keys', { data: buf });
     buf.write(JSON.stringify([FOREIGN_KEY]));
     await pending;
-    expect([n, m, q, r, b, h], 'each stateful input was read once').toEqual([1, 1, 1, 1, 1, 1]);
+    expect([n, m, q, h], 'each stateful input was read once').toEqual([1, 1, 1, 1]);
     expect(wire()).toEqual([
         `PATCH ${own('/users')} ${JSON.stringify([OWN_USER])}`,
         `PUT ${own()} ${JSON.stringify({ name: `${RUN}-r`, userUuids: [OWN_USER] })}`,
         `DELETE /api/v1/keys ${JSON.stringify([OWN_KEY])}`,
         `DELETE ${own()}?x=${OWN_USER} `,
-        `DELETE ${own()} `,
-        `DELETE /api/v1/keys ${JSON.stringify([OWN_KEY])}`,
         `PATCH ${own('/users')} ${JSON.stringify([OWN_USER])}`,
         `DELETE /api/v1/keys ${JSON.stringify([OWN_KEY])}`,
     ]);
@@ -261,7 +254,7 @@ test('input snapshot: every input is read once, so what was judged is what arriv
 
 // input snapshot: string and Buffer bodies are judged as sent — re-quoted strings, duplicate keys, raw-text uuids, nesting
 test('input snapshot: string and Buffer bodies are judged as sent, quirks included', async () => {
-    const g = guard() as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const g = looseApi(guard());
     const J = { 'content-type': 'application/json' };
     // Duplicate keys: refused in a string and in a Buffer, at any depth.
     for (const [name, body] of [
@@ -314,7 +307,7 @@ test('input snapshot: string and Buffer bodies are judged as sent, quirks includ
 // path-less mutations: path-less mutations need an allow-listed create or bulk route with its DTO body; names and deny
 // spellings are refused
 test('path-less mutations need an allow-listed create or bulk route with its DTO body', async () => {
-    const g = guard() as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const g = looseApi(guard());
     const refused: Array<[string, string, string, unknown?]> = [
         // The legacy name-keyed client API, whatever own list the body carries
         ['DELETE', '/api/v1/operations/Some-RA/endentity/some-user', 'name-keyed end entity', [OWN_CERT]],
@@ -360,7 +353,7 @@ test('path-less mutations need an allow-listed create or bulk route with its DTO
 });
 
 test('base64 forms: real enum values pass; base64 forms count only under a uuid-shaped key', async () => {
-    const g = guard() as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const g = looseApi(guard());
     const b64url22 = Buffer.from(FOREIGN_KEY.replace(/-/g, ''), 'hex').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     for (const event of ['CERTIFICATE_DISCOVERED', 'CERTIFICATE_REGISTERED', 'SCHEDULED_JOB_FINISHED']) {
         await g.post('/api/v1/workflows/triggers', { data: { name: `${RUN}-t`, type: 'EVENT', event, resource: 'CERTIFICATE', actionsUuids: [], rulesUuids: [] } });
@@ -388,7 +381,7 @@ test('base64 forms: real enum values pass; base64 forms count only under a uuid-
 
 // minor cases: GETs that persist something run on own objects only; encoded spellings and raw contexts are the same endpoint
 test('minor cases: persisting GETs run on own objects only; encoded spellings are the same endpoint', async () => {
-    const g = guard() as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const g = looseApi(guard());
     const probe = g.probeUuid();
     const refused: Array<[string, RefusalKind]> = [
         [`/api/v1/certificates/${FOREIGN_CERT}/validate`, 'ownership'],
@@ -408,8 +401,8 @@ test('minor cases: persisting GETs run on own objects only; encoded spellings ar
     ];
     for (const [url, kind] of refused) {
         expect(await outcome(g.get(url)), url).toBe(kind);
-        expect(await outcome(g.head(url)), `HEAD ${url}`).toBe(kind);
     }
+    expect(await outcome(g.head(`/api/v1/certificates/${FOREIGN_CERT}/validate`)), 'the method HEAD').toBe('request');
     expect(sentTo(A)).toEqual([]);
     // A raw authenticated GET (regressionApi apiJson) is refused too: it cannot prove ownership.
     await withProcessEnv({ BASE_URL }, async () => {
@@ -433,19 +426,19 @@ test('minor cases: persisting GETs run on own objects only; encoded spellings ar
 // input snapshot: redirects never carry the token elsewhere — a mutation follows none, a GET only same-origin ones the guard
 // re-judges
 test('input snapshot: redirects never carry the token elsewhere; a mutation follows none', async () => {
-    const g = guard() as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const g = looseApi(guard());
     // GET 307 to another origin: not followed, the 3xx is the answer.
     expect((await g.get('/api/v1/redirect/elsewhere')).status()).toBe(307);
     // GET 302 to a side-effect GET of a foreign object: not followed.
     expect((await g.get('/api/v1/redirect/effect')).status()).toBe(302);
-    // A redirect loop ends after maxRedirects hops (here 2).
-    expect((await g.get('/api/v1/redirect/loop', { maxRedirects: 2 })).status()).toBe(302);
+    // A redirect loop ends after the guard's limit of hops (DEFAULT_MAX_REDIRECTS: one request more than hops).
+    expect((await g.get('/api/v1/redirect/loop')).status()).toBe(302);
     // GET 302 on the same origin: followed by the guard, which judged the target like any GET.
     const same = await g.get('/api/v1/redirect/same');
     expect([same.status(), (await same.json()).name]).toEqual([200, `${RUN}-role`]);
     expect(A.arrived.map((a) => `${a.method} ${a.url}`)).toEqual([
         'GET /api/v1/redirect/elsewhere', 'GET /api/v1/redirect/effect',
-        'GET /api/v1/redirect/loop', 'GET /api/v1/redirect/loop', 'GET /api/v1/redirect/loop',
+        ...Array(DEFAULT_MAX_REDIRECTS + 1).fill('GET /api/v1/redirect/loop'),
         'GET /api/v1/redirect/same', `GET /api/v1/roles/${OWN_ROLE}`,
     ]);
     expect(A.arrived.at(-1)?.headers.authorization).toBe('Bearer SECRET-TOKEN');
@@ -456,7 +449,7 @@ test('input snapshot: redirects never carry the token elsewhere; a mutation foll
 });
 
 test('edge cases: URL forms, the string-only reference waiver, `_method` on a raw read POST', async () => {
-    const g = guard() as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const g = looseApi(guard());
     for (const u of ['http:api/v1/roles', `http:/api/v1/roles/${OWN_ROLE}`, `//127.0.0.1:${A.port}/api/v1/roles`, `//127.0.0.1:${B.port}/api/v1/roles`, 'api/v1/roles', '?x=1', '#/api/v1/roles', './api/v1/roles']) {
         expect(await outcome(g.get(u)), `GET ${u}`).toBe('request');
         expect(await outcome(g.delete(u)), `DELETE ${u}`).toBe('request');

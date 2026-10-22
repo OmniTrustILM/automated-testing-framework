@@ -8,10 +8,11 @@ import { APIRequestContext, test, expect } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
-    canonicalJson, compareSnapshots, isRunNamed, keyMarksFromDetail, keyMarksFromRows, allowedNetChange, NEWEST_ROWS_SAMPLED, OLDEST_ROWS_CHECKED, purgeOldSnapshots, RESOURCES, SNAPSHOT_GAPS,
+    canonicalJson, compareSnapshots, isRunNamed, keyMarksFromDetail, keyMarksFromRows, allowedNetChange, NEWEST_ROWS_SAMPLED, OLDEST_ROWS_CHECKED, purgeOldSnapshots, SNAPSHOT_RESOURCES, SNAPSHOT_GAPS,
     snapshotTier, keysChangedDuringRun, TierSnapshot, unreadableRequired,
 } from '../../utils/regression/teardown/nonInterference';
 import { LedgerLine } from '../../utils/regression/ledger/ledger';
+import { fakeContext } from './helpers/guardRig';
 
 const RUN = 'qa-reg-20261013-120000-ab12';
 const T0 = '2026-10-13T12:00:00.000Z';
@@ -145,16 +146,16 @@ test('snapshots of different tiers are never compared as equal', () => {
 });
 
 test('the snapshot covers the tracked resource types, and names its gaps', () => {
-    const types = RESOURCES.map((r) => r.type);
+    const types = SNAPSHOT_RESOURCES.map((r) => r.type);
     for (const t of ['credentials', 'connectors', 'customAttributes', 'rules', 'conditions', 'actions', 'executions', 'triggers',
         'notificationProfiles', 'notificationInstances', 'entities', 'locations', 'secrets', 'vaultProfiles', 'vaultInstances']) {
         expect(types, t).toContain(t);
     }
-    expect(Object.keys(SNAPSHOT_GAPS)).toEqual(expect.arrayContaining(['acmeAccounts', 'approvals', 'savedViews', 'oidEntries']));
+    expect(Object.keys(SNAPSHOT_GAPS)).toEqual(expect.arrayContaining(['acmeAccounts', 'approvals', 'oidEntries']));
 });
 
 test('transient discovery statuses are not compared, terminal ones are', () => {
-    const disc = RESOURCES.find((r) => r.type === 'discoveries')!;
+    const disc = SNAPSHOT_RESOURCES.find((r) => r.type === 'discoveries')!;
     expect(disc.marker!({ status: 'inProgress' })).toBeUndefined();
     expect(disc.marker!({ status: 'processing' })).toBeUndefined();
     expect(disc.marker!({ status: 'completed' })).toBe('completed');
@@ -189,7 +190,7 @@ test('canonical JSON ignores key order and the order of string lists', () => {
 function fakeApi(certs: Array<{ uuid: string; commonName: string; state: string }>, details: Record<string, number>): { api: APIRequestContext; requests: string[] } {
     const requests: string[] = [];
     const reply = (status: number, body: unknown) => ({ status: () => status, text: async () => JSON.stringify(body) });
-    const api = {
+    const api = fakeContext({
         fetch: async (url: string, opts: { method: string; data?: { itemsPerPage: number; pageNumber: number } }) => {
             requests.push(`${opts.method} ${url}${opts.data ? ` p${opts.data.pageNumber}x${opts.data.itemsPerPage}` : ''}`);
             if (opts.method === 'POST' && url === '/api/v1/certificates') {
@@ -200,7 +201,7 @@ function fakeApi(certs: Array<{ uuid: string; commonName: string; state: string 
             if (m) return reply(details[m[1]] ?? 404, { uuid: m[1], state: 'issued' });
             return reply(404, {});
         },
-    } as unknown as APIRequestContext;
+    });
     return { api, requests };
 }
 
@@ -254,10 +255,10 @@ test('a renamed or re-described pre-existing object is a violation, without the 
 test('the recheck by detail reads the live name, so a rename outside the windows is seen too', async () => {
     const recheck = snap({ certificates: { total: 1, foreign: { moved: { name: 'cn-moved', marker: 'issued' } }, window: 200 } });
     const reply = (status: number, body: unknown) => ({ status: () => status, text: async () => JSON.stringify(body) });
-    const api = {
+    const api = fakeContext({
         fetch: async (url: string, opts: { method: string }) =>
             opts.method === 'POST' ? reply(200, { certificates: [], totalItems: 1 }) : reply(200, { uuid: 'moved', commonName: 'cn-renamed', state: 'issued' }),
-    } as unknown as APIRequestContext;
+    });
     const after = await snapshotTier(api, { only: ['certificates'], recheck, runId: RUN, env: {} });
     expect(after.resources.certificates.foreign.moved.name).toBe('cn-renamed');
     const { violations } = compareSnapshots(recheck, { ...after, platformEvents: '{}', systemJobs: '[]' }, { tolerance: 0 });
@@ -281,7 +282,7 @@ function fakeKeyApi(keys: FakeKey[], cfg: { detail404?: string[] } = {}): { api:
     const requests: string[] = [];
     const rows = keys.flatMap((k) => k.items.map((it, i) => ({ uuid: `${k.uuid}-i${i}`, keyWrapperUuid: k.uuid, name: it.name, state: it.state, enabled: it.enabled })));
     const reply = (status: number, body: unknown) => ({ status: () => status, text: async () => JSON.stringify(body) });
-    const api = {
+    const api = fakeContext({
         fetch: async (url: string, opts: { method: string; data?: { itemsPerPage: number; pageNumber: number } }) => {
             requests.push(`${opts.method} ${url}`);
             if (opts.method === 'POST' && url === '/api/v1/keys') {
@@ -293,7 +294,7 @@ function fakeKeyApi(keys: FakeKey[], cfg: { detail404?: string[] } = {}): { api:
             if (m) return k ? reply(200, { uuid: k.uuid, name: k.wrapper, items: k.items.map((it, i) => ({ uuid: `${k.uuid}-i${i}`, ...it })) }) : reply(404, {});
             return reply(404, {});
         },
-    } as unknown as APIRequestContext;
+    });
     return { api, requests };
 }
 

@@ -1,7 +1,11 @@
 /**
- * Widgets: the `<section>` of the admin UI that carries a title heading, and the icon-only buttons inside one. Icon
- * buttons carry `data-testid="<icon|id>-button"` and usually no accessible name, and the same icon repeats on one page
- * (`plus-button` / `pencil-button` on the RA profile detail), so a button is always looked up inside its widget.
+ * widget — widgets and their icon-only buttons.
+ *
+ * WHAT: the widget (a section with a title heading) and the icon-only buttons inside one.
+ * WHY: icon buttons repeat on one page and have no accessible name, so a button is always looked up inside its
+ *       widget, never page-wide.
+ * HOW: the heading by its name, then the closest enclosing section (the one structural lookup of the suite; a
+ *       widget test id would remove it, FE test-id request).
  */
 import { Locator, Page } from '@playwright/test';
 import { escapeRegExp } from '../../utils/regression/text';

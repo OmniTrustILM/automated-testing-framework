@@ -5,6 +5,7 @@
  */
 import { spawnSync } from 'child_process';
 import * as net from 'net';
+import { settings } from '../run/settings';
 
 export const bareHost = (host: string): string => host.toLowerCase().replace(/^\[|\]$/g, '');
 
@@ -47,7 +48,7 @@ export function isPrivateAddress(address: string): boolean {
 
 /** Extra hosts a local stack may use (TIER_LOCAL_HOSTS, comma-separated); each must still prove it is private. */
 export function extraLocalHosts(env: NodeJS.ProcessEnv = process.env): string[] {
-    return (env.TIER_LOCAL_HOSTS ?? '')
+    return settings(env).tierLocalHosts
         .split(',')
         .map((h) => h.trim().toLowerCase())
         .filter(Boolean);

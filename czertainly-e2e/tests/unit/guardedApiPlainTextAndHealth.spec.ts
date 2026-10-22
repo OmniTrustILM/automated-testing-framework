@@ -3,13 +3,13 @@
  * written, judged as raw text, every uuid own or a probe) and the connector health GET as a plain read, so the
  * post-install check can read pre-existing connectors. A foreign certificate's `validate` stays refused.
  */
-import { APIRequestContext, expect, request, test } from '@playwright/test';
+import { APIRequestContext, expect, test } from '@playwright/test';
 import { guardApiWithSeams } from '../../utils/regression/guard/createGuard';
 import { OwnObjectViolation, RefusalKind } from '../../utils/regression/ledger/ownership';
 import { apiJson } from '../../utils/regression/apiReads';
 import { LedgerLine } from '../../utils/regression/ledger/ledger';
-import { Arrived, loopbackServer, LoopbackServer } from './helpers/loopbackServer';
-import { registerGuardRig, withProcessEnv } from './helpers/guardRig';
+import { Arrived, LoopbackServer } from './helpers/loopbackServer';
+import { registerGuardRig, withProcessEnv, looseApi } from './helpers/guardRig';
 
 const RUN = 'qa-reg-20261014-130000-cd34';
 const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -88,7 +88,7 @@ const b64url22 = (u: string) => b64(u).replace(/\+/g, '-').replace(/\//g, '_').r
 
 // first decision: a text/plain body on an own target is sent exactly as written (no JSON re-quoting), with the run's identity
 test('a text/plain body on an own target is sent exactly as written, without JSON re-quoting', async () => {
-    const g = guard() as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const g = looseApi(guard());
     const probe = g.probeUuid();
     const garbage = 'this is { not JSON "at all" \\ and never re-quoted';
     const junk = `{"name":"${RUN}-x"} trailing junk`;
@@ -122,7 +122,7 @@ test('a text/plain body on an own target is sent exactly as written, without JSO
 // first decision: text/plain is judged as raw text — foreign uuids (ownership), non-canonical uuid-like tokens (request), other
 // types and misuse (request)
 test('text/plain is judged as raw text: foreign uuids and odd uuid-like tokens are refused', async () => {
-    const g = guard() as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const g = looseApi(guard());
     // The first dash escaped: the raw text holds no uuid-shaped run, only its JSON-decoded form names the foreign user.
     const escaped = FOREIGN_USER.replace('-', '\\u002d');
     const rows: Array<[string, () => Promise<unknown>, RefusalKind, RegExp]> = [
@@ -149,15 +149,14 @@ test('text/plain is judged as raw text: foreign uuids and odd uuid-like tokens a
         ['an identity header with identityOverride', () => g.put(own(), { data: 'garbage', headers: { ...TP, Authorization: 'Bearer OTHER' }, identityOverride: true }), 'request', /an identity header on a text\/plain request/],
         ['a client certificate with identityOverride', () => g.put(own(), { data: 'garbage', headers: { ...TP, 'ssl-client-cert': 'OTHER' }, identityOverride: true }), 'request', /an identity header on a text\/plain request/],
         // a string or Buffer body on a non-GET request only
-        ['text/plain on a GET', () => g.get('/api/v1/roles', { headers: TP }), 'request', /text\/plain on a GET \/ HEAD/],
-        ['text/plain on a HEAD', () => g.head('/api/v1/roles', { headers: TP }), 'request', /text\/plain on a GET \/ HEAD/],
+        ['text/plain on a GET', () => g.get('/api/v1/roles', { headers: TP }), 'request', /text\/plain on a GET \/ TRACE/],
         ['text/plain with an object body', () => g.put(own(), { data: { name: `${RUN}-o` }, headers: TP }), 'request', /text\/plain with a body that is not a string or Buffer/],
         ['text/plain without a body', () => g.delete(own(), { headers: TP }), 'request', /text\/plain with a body that is not a string or Buffer/],
         ['a Buffer that is not UTF-8', () => g.put(own(), { data: Buffer.from([0xff, 0xfe, 0x41]), headers: TP }), 'request', /a text\/plain Buffer body that is not UTF-8/],
         ['NUL characters', () => g.put(own(), { data: 'a\u0000b', headers: TP }), 'request', /a text\/plain body with NUL characters/],
         // every other rule unchanged: bulk routes, path-less mutations, the deny-list, the path, the origin
         ['a bulk route (its DTO is JSON)', () => g.patch('/api/v1/raProfiles/disable', { data: JSON.stringify([OWN_RA]), headers: TP }), 'request', /a text\/plain body on the bulk route \/v1\/raProfiles\/disable/],
-        // `/v1/inspections` and `/v1/listViews` are allow-listed creates, so the path-less
+        // `/v1/inspections` is an allow-listed create, so the path-less
         // mutation off the allow-lists is `/v1/certificates/create`.
         ['a path-less mutation off the allow-lists', () => g.post('/api/v1/certificates/create', { data: 'garbage', headers: TP }), 'request', /neither an allow-listed create \(POST_CREATE\) nor an allow-listed bulk route/],
         ['a platform endpoint', () => g.put('/api/v1/settings/platform', { data: 'garbage', headers: TP }), 'request', /platform settings is platform-level/],
@@ -180,12 +179,11 @@ test('text/plain is judged as raw text: foreign uuids and odd uuid-like tokens a
 
 // second decision: a pre-existing connector's health is a plain read (sent); a foreign certificate's validate stays refused
 test('a pre-existing connector health check is a plain read and sent; a foreign validate is refused', async () => {
-    const g = guard() as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const g = looseApi(guard());
     for (const v of ['v1', 'v2']) {
         const res = await g.get(`/api/${v}/connectors/${PRE_CONNECTOR}/health`);
         expect([res.status(), (await res.json()).status]).toEqual([200, 'ok']);
     }
-    expect((await g.head(`/api/v1/connectors/${PRE_CONNECTOR}/health`)).status()).toBe(200);
     // The helper REG-DEP-01 uses (apiJson) through the guarded and through a raw context.
     await withProcessEnv({ BASE_URL }, async () => {
         expect((await apiJson<{ status: string }>(g, 'GET', `/api/v1/connectors/${PRE_CONNECTOR}/health`)).status).toBe('ok');
@@ -193,11 +191,9 @@ test('a pre-existing connector health check is a plain read and sent; a foreign 
         await expect(apiJson(raw, 'GET', `/api/v1/certificates/${FOREIGN_CERT}/validate`)).rejects.toThrow(/persists something/);
     });
     expect(await outcome(g.get(`/api/v1/certificates/${FOREIGN_CERT}/validate`))).toBe('ownership');
-    expect(await outcome(g.head(`/api/v1/certificates/${FOREIGN_CERT}/validate`))).toBe('ownership');
     expect(A.arrived.map((a) => `${a.method} ${a.url}`)).toEqual([
         `GET /api/v1/connectors/${PRE_CONNECTOR}/health`,
         `GET /api/v2/connectors/${PRE_CONNECTOR}/health`,
-        `HEAD /api/v1/connectors/${PRE_CONNECTOR}/health`,
         `GET /api/v1/connectors/${PRE_CONNECTOR}/health`,
         `GET /api/v2/connectors/${PRE_CONNECTOR}/health`,
     ]);

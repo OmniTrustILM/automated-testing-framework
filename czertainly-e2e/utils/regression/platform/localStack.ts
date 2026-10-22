@@ -1,8 +1,12 @@
 /**
- * localStack — docker compose control of the local stack (stop, start, restart, down -v, logs, psql inside the
- * database container) for the local-only rows. Every call refuses unless TIER_KIND=local and BASE_URL is loopback; the
- * docker binary comes from `tools.requireTool('docker')` (a fake under the unit tests); compose file, project and
- * service names come from the environment, never from code.
+ * localStack — docker compose control of the local stack.
+ *
+ * WHAT: docker compose control of the local stack (stop, start, restart, down -v, logs, psql inside the
+ *       database container) for the local-only rows. Every call refuses unless TIER_KIND=local and BASE_URL is loopback; the
+ *       docker binary comes from `tools.requireTool('docker')` (a fake under the unit tests); compose file, project and
+ *       service names come from the environment, never from code.
+ * WHY: Restart, stop and database rows can only run against a stack the suite owns.
+ * HOW: Each call refuses unless `TIER_KIND=local` and BASE_URL is loopback; the docker binary comes from `requireTool('docker')`; compose file, project and services come from the environment.
  */
 import { execFileSync, spawnSync } from 'child_process';
 import { Logger } from '../../Logger';
@@ -10,6 +14,7 @@ import { hasLocalProof } from '../tier/localProof';
 import { isLocalTier } from '../tier/kind';
 import { isLoopbackHost } from '../tier/dns';
 import { dockerBin, requireTool } from '../requireTool';
+import { settings } from '../run/settings';
 
 const logger = new Logger('PlatformStack');
 
@@ -27,7 +32,7 @@ export function stackProblem(env: NodeJS.ProcessEnv = process.env): string | und
     if (!isLocalTier(env)) return 'local stack only (TIER_KIND=local)';
     let host: string;
     try {
-        host = new URL(env.BASE_URL ?? '').hostname;
+        host = new URL(settings(env).baseUrl ?? '').hostname;
     } catch {
         return 'BASE_URL is not a URL';
     }
@@ -38,16 +43,10 @@ export function stackProblem(env: NodeJS.ProcessEnv = process.env): string | und
 /** The stack configuration from the environment (pure apart from reading `env`). */
 export function stackConfig(env: NodeJS.ProcessEnv = process.env): StackConfig {
     return {
-        dockerBin: env.REG_DOCKER_BIN ?? 'docker',
-        composeFile: env.LOCAL_COMPOSE_FILE?.trim() || env.REG_LOCAL_COMPOSE_FILE?.trim() || undefined,
-        project: env.LOCAL_COMPOSE_PROJECT?.trim() || env.REG_LOCAL_COMPOSE_PROJECT?.trim() || undefined,
-        services: {
-            core: env.LOCAL_SERVICE_CORE?.trim() || env.REG_LOCAL_SERVICE_CORE?.trim() || 'core',
-            rabbitmq: env.LOCAL_SERVICE_RABBITMQ ?? 'rabbitmq',
-            db: env.LOCAL_SERVICE_DB ?? 'db',
-            auth: env.LOCAL_SERVICE_AUTH ?? 'auth',
-            scheduler: env.LOCAL_SERVICE_SCHEDULER ?? 'scheduler',
-        },
+        dockerBin: settings(env).dockerBinOverride ?? 'docker',
+        composeFile: settings(env).composeFile,
+        project: settings(env).composeProject,
+        services: settings(env).services,
     };
 }
 
@@ -66,7 +65,7 @@ export interface CommandResult {
 export type Runner = (bin: string, args: string[], input?: string) => CommandResult;
 
 /** The default runner: `spawnSync` with a 10-minute ceiling (an upgrade's migration can take minutes). */
-export const spawnRunner: Runner = (bin, args, input) => {
+const spawnRunner: Runner = (bin, args, input) => {
     const r = spawnSync(bin, args, { encoding: 'utf8', input, timeout: 600_000, maxBuffer: 64 * 1024 * 1024 });
     return { ok: !r.error && r.status === 0, status: r.status, stdout: r.stdout ?? '', stderr: r.error ? String(r.error) : (r.stderr ?? '') };
 };

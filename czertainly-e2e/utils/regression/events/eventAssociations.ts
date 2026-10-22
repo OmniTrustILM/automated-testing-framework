@@ -8,10 +8,11 @@ import { expect } from '@playwright/test';
 import * as crypto from 'crypto';
 import { GuardedApi } from '../guard/types';
 import { OwnRef, readLedger, recordCreated } from '../ledger/ledger';
-import { runId } from '../ledger/runState';
+import { runId, ownName } from '../ledger/runState';
 import { assertOwnLive, checkOwnership } from '../ledger/ownership';
 import { AssociationScope, EventCode } from './eventVocabulary';
-import { isOk, Sent, sendJson, ownName } from './workflowRequests';
+import { isOk, sendJson } from './workflowRequests';
+import { ApiAnswer } from '../apiReads';
 
 /** Which ledger type each scope's object has. */
 const SCOPE_LEDGER: Record<AssociationScope, string> = { raProfiles: 'raProfiles', groups: 'groups', discoveries: 'discoveries' };
@@ -35,13 +36,7 @@ function associationLine(event: EventCode, resource: AssociationScope, object: O
 export function recordAssociation(event: EventCode, resource: AssociationScope, object: OwnRef, spec: string): OwnRef {
     const known = associationLine(event, resource, object);
     if (known) return known;
-    return recordCreated(
-        'eventAssociations',
-        { uuid: crypto.randomUUID(), name: ownName('assoc') },
-        spec,
-        `${associationKey(event, resource, object.uuid)} object-level association of own triggers on an own ${SCOPE_LEDGER[resource]}`,
-        { object: object.uuid },
-    );
+    return recordCreated('eventAssociations', { uuid: crypto.randomUUID(), name: ownName('assoc') }, { spec, note: `${associationKey(event, resource, object.uuid)} object-level association of own triggers on an own ${SCOPE_LEDGER[resource]}`, parents: { object: object.uuid } });
 }
 
 export interface AssociateOptions extends AssociationScopeRef {
@@ -54,7 +49,7 @@ export interface AssociateOptions extends AssociationScopeRef {
  * `POST /v1/workflows/events` on an own scope: the list of (event, resource, object) is REPLACED by `triggers`. Returns the
  * answer (a 4xx for a refused association is asserted by the caller). The scope object and every trigger are checked live.
  */
-export async function associateTriggers(api: GuardedApi, spec: string, o: AssociateOptions): Promise<Sent> {
+export async function associateTriggers(api: GuardedApi, spec: string, o: AssociateOptions): Promise<ApiAnswer> {
     await assertOwnLive(api, SCOPE_LEDGER[o.resource], o.object, 'associateTriggers (scope)');
     for (const t of o.triggers) await assertOwnLive(api, 'triggers', t, 'associateTriggers (trigger)');
     recordAssociation(o.event, o.resource, o.object, spec);
@@ -67,14 +62,14 @@ export async function associateTriggers(api: GuardedApi, spec: string, o: Associ
 }
 
 /** Removes every trigger of the scope for the event (`triggerUuids: []`, the replace with nothing). */
-export const clearAssociation = (api: GuardedApi, spec: string, o: AssociationScopeRef & { event: EventCode }): Promise<Sent> =>
+export const clearAssociation = (api: GuardedApi, spec: string, o: AssociationScopeRef & { event: EventCode }): Promise<ApiAnswer> =>
     associateTriggers(api, spec, { ...o, triggers: [] });
 
 /**
  * A refused association (negative case): same request, nothing recorded unless the platform accepted it (then the scope
  * is recorded so the teardown clears it). Trigger uuids may be probes (`api.probeUuid()`); they are not checked live.
  */
-export async function probeAssociation(api: GuardedApi, spec: string, o: AssociationScopeRef & { event: EventCode; triggerUuids: string[] }): Promise<Sent> {
+export async function probeAssociation(api: GuardedApi, spec: string, o: AssociationScopeRef & { event: EventCode; triggerUuids: string[] }): Promise<ApiAnswer> {
     await assertOwnLive(api, SCOPE_LEDGER[o.resource], o.object, 'probeAssociation (scope)');
     const sent = await sendJson(api, 'POST', '/api/v1/workflows/events', { event: o.event, resource: o.resource, objectUuid: o.object.uuid, triggerUuids: o.triggerUuids });
     if (isOk(sent)) recordAssociation(o.event, o.resource, o.object, spec);
@@ -93,7 +88,7 @@ export async function getAssociations(api: GuardedApi, resource: AssociationScop
  * unless `localStack` on a proven local stack (`describeLocalOnly` + a context from `getGuardedApiContext(request, env, { localStack: true })`: a spec may not `test.use` the guard options).
  * The caller READS the platform list first (`getPlatformAssociations`) and restores it afterwards.
  */
-export async function platformAssociate(api: GuardedApi, spec: string, event: EventCode, triggers: OwnRef[]): Promise<Sent> {
+export async function platformAssociate(api: GuardedApi, spec: string, event: EventCode, triggers: OwnRef[]): Promise<ApiAnswer> {
     for (const t of triggers) await assertOwnLive(api, 'triggers', t, 'platformAssociate (trigger)');
     recordPlatformAssociation(event, spec);
     return sendJson(api, 'POST', '/api/v1/workflows/events', { event, resource: null, objectUuid: null, triggerUuids: triggers.map((t) => t.uuid) });
@@ -103,7 +98,7 @@ function recordPlatformAssociation(event: EventCode, spec: string): void {
     const key = associationKey(event, 'platform', '-');
     const known = readLedger().find((l) => l.runId === runId() && l.type === 'eventAssociations' && l.event === 'created' && l.note?.startsWith(`${key} `));
     if (known) return;
-    recordCreated('eventAssociations', { uuid: crypto.randomUUID(), name: ownName('assoc-platform') }, spec, `${key} platform-level association (@local only)`);
+    recordCreated('eventAssociations', { uuid: crypto.randomUUID(), name: ownName('assoc-platform') }, { spec, note: `${key} platform-level association (@local only)` });
 }
 
 /**

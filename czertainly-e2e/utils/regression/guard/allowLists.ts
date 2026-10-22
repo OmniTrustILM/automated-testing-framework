@@ -45,10 +45,6 @@ export const POST_CREATE: readonly string[] = [
     // rule / group association rows; the referenced provider rules are read, never written). `internalRules` / `groups`
     // stay probes-only typed fields, `connectorUuid` a reference; the v1 create was allow-listed already.
     '/v2/complianceProfiles',
-    // A saved view of the run's own user (`savedViews` ledger type; interfaces ListViewController.java:55-56,
-    // core ListViewServiceImpl.java:124-147: one row of the caller, nothing on another user's views). Its body is held to
-    // the saved-view shape (guard/savedViews.ts); `defaultView: true` only while no pre-existing view is a default.
-    '/v1/listViews',
 ];
 
 /**

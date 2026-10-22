@@ -1,7 +1,7 @@
 /**
  * ownership — the guard that keeps every mutation and delete on objects this run created (own objects only).
  *
- * Ownership is decided in two layers:
+ * WHAT: the proof of ownership and the refusals built on it. Ownership is decided in two layers:
  * 1. `assertOwn` (ledger, synchronous): the uuid has a `created` line of THIS run and no later `deleted` line, and the
  *    line's name carries the run prefix (`<run id>-`, or `<run id>.` for a DNS name). Two runs, or a hand-made object
  *    that happens to carry a prefix, can never borrow ownership: the prefix is checked on top, never alone.
@@ -11,17 +11,13 @@
  *    It is the last step before every destructive or mutating call: the teardown handlers, the own-object helpers of
  *    apiReads.ts and the guard (guard/createGuard.ts) use it.
  *
- * Named types and the field read (`LIVE_READS`): raProfiles, authorities, credentials, connectors, users (`username`),
- * roles, groups, tokens, tokenProfiles, acmeProfiles, scepProfiles, cmpProfiles, discoveries, notificationProfiles,
- * notificationInstances, customAttributes, workflow triggers / rules / conditions / actions / executions, entities,
- * locations, secrets, vaultInstances, vaultProfiles, complianceProfiles, approvalProfiles, and the own (non-derived)
- * certificates (`commonName`) and keys (`name`).
- * Id-named types (`ID_NAMED`) have no live name to check and rest on the ledger line alone: `acmeAccounts`
- * (the platform names an account by its server-assigned accountId; REG-USE-05 records it as
- * `<run id>-acme-account-<accountId>`), approvals, event associations, saved views, OID entries, scheduled
- * jobs and `k8s:<kind>` lines. A type that is neither in LIVE_READS nor in ID_NAMED is refused (a typo in a type name
- * must never fall back to ledger-only proof). The name that must carry the run prefix is the LEDGER line's: a name a
- * caller passes in is never consulted.
+ * Named types and the field read (`LIVE_READS`) and id-named types (`ID_NAMED`) are derived from the resource-type
+ * registry (resourceTypes.ts: each entry says how its ownership is proven). A named type reads the live object and its
+ * `name` (users: `username`, own certificates: `commonName`) must carry the run prefix. An id-named type (the platform names
+ * the object by an id, REG-USE-05 records an ACME account as `<run id>-acme-account-<accountId>`) has no live name to check and
+ * rests on the ledger line alone, as do `k8s:<kind>` lines. A type that is neither in LIVE_READS nor in ID_NAMED is refused (a
+ * typo in a type name must never fall back to ledger-only proof). The name that must carry the run prefix is the LEDGER
+ * line's: a name a caller passes in is never consulted.
  *
  * Derived objects (`certKey_<CN>`, certificates a discovery onboarded as new) carry no prefix; they are owned through
  * their `derived` line with `createdAfter` and are deleted only when the platform's creation time is not earlier
@@ -41,6 +37,13 @@
  *
  * Messages carry the type and the uuid only, never the name of a refused object: reports may be shared, and
  * names stay in the local state files.
+ *
+ * WHY: the suite runs against shared tiers that hold other people's objects. A prefix on a name is not proof (a hand-made
+ *      object can carry one), so only a ledger line of this run and tier, written when the object was created, lets a
+ *      change or a delete through, and a second read of the live object catches a ledger line that points at the wrong uuid.
+ * HOW: `assertOwn` reads the ledger lines; `assertOwnLive` adds the live read and the name check; `checkOwnership` is the
+ *      same decision as a value for callers that decide instead of throw; `derivedDeletable` is the age rule of a derived
+ *      object, which errs toward keeping when a time is missing or unreadable; `mayDeleteOwn` reads the delete switch.
  */
 import type { APIRequestContext } from '@playwright/test';
 import * as fs from 'fs';
@@ -49,8 +52,11 @@ import { parseFlag } from '../run/flags';
 import { LedgerLine, ledgerFile, parseLedger } from './ledger';
 import { currentRunId } from '../run/runId';
 import { tierIdentity } from '../tier/kind';
+import { idNamedTypesOf, liveReadSpecsOf, type LiveReadSpec } from '../resourceTypes';
+import { settings } from '../run/settings';
+import { rowsOf } from '../json';
+import type { JsonObject } from '../json';
 
-type Json = Record<string, any>;
 
 /**
  * Why the guard refused: `ownership` — the object is not this run's (no / deleted ledger line, other
@@ -98,8 +104,7 @@ export interface OwnershipOptions {
 
 /** REG_RESTRICTED_USERNAME, trimmed and lower-cased, or undefined when unset / empty. */
 export function restrictedUsername(env: NodeJS.ProcessEnv = process.env): string | undefined {
-    const v = env.REG_RESTRICTED_USERNAME?.trim().toLowerCase();
-    return v ? v : undefined;
+    return settings(env).restrictedUsername?.toLowerCase();
 }
 
 let cache: { file: string; size: number; mtimeMs: number; lines: LedgerLine[] } | undefined;
@@ -185,7 +190,7 @@ export interface LiveRead {
     /** Detail URL of the object; may read a list first (parent-scoped detail URLs). undefined = not in its list. */
     url: (api: APIRequestContext, uuid: string, line: LedgerLine) => Promise<string | undefined> | string | undefined;
     /** The live name that must carry the run prefix. */
-    name: (body: Json) => string | undefined;
+    name: (body: JsonObject) => string | undefined;
 }
 
 const parentOf = (line: LedgerLine, key: string): string | undefined => {
@@ -193,7 +198,13 @@ const parentOf = (line: LedgerLine, key: string): string | undefined => {
     return Array.isArray(v) ? v[0] : v;
 };
 
-const byName = (url: (u: string) => string, field = 'name'): LiveRead => ({ url: (_api, u) => url(u), name: (b) => b?.[field] });
+/** A member of a parsed object when it is text. */
+const stringField = (body: JsonObject | undefined, field: string): string | undefined => {
+    const value = body?.[field];
+    return typeof value === 'string' ? value : undefined;
+};
+
+const byName = (url: (u: string) => string, field = 'name'): LiveRead => ({ url: (_api, u) => url(u), name: (b) => stringField(b, field) });
 
 /** Parent-scoped detail: the parent from the ledger line, else from a list read (read-only). */
 const scoped = (parentKey: string, listUrl: string, listParentField: string, detail: (parent: string, u: string) => string): LiveRead => ({
@@ -202,64 +213,50 @@ const scoped = (parentKey: string, listUrl: string, listParentField: string, det
         if (!parent) {
             const res = await api.get(listUrl);
             if (!res.ok()) throw new Error(`GET ${listUrl} answered ${res.status()}`);
-            const body = (await res.json()) as Json[] | Json;
-            const rows: Json[] = Array.isArray(body) ? body : (body.items ?? []);
-            parent = rows.find((r) => r.uuid === uuid)?.[listParentField];
+            const body = (await res.json()) as JsonObject[] | JsonObject;
+            const rows: JsonObject[] = Array.isArray(body) ? body : rowsOf(body.items);
+            parent = stringField(rows.find((r) => r.uuid === uuid), listParentField);
         }
         return parent ? detail(parent, uuid) : undefined;
     },
-    name: (b) => b?.name,
+    name: (b) => stringField(b, 'name'),
 });
 
-export const LIVE_READS: Record<string, LiveRead> = {
-    raProfiles: byName((u) => `/api/v1/raProfiles/${u}`),
-    authorities: byName((u) => `/api/v1/authorities/${u}`),
-    credentials: byName((u) => `/api/v1/credentials/${u}`),
-    connectors: byName((u) => `/api/v1/connectors/${u}`),
-    users: byName((u) => `/api/v1/users/${u}`, 'username'),
-    roles: byName((u) => `/api/v1/roles/${u}`),
-    groups: byName((u) => `/api/v1/groups/${u}`),
-    tokens: byName((u) => `/api/v1/tokens/${u}`),
-    tokenProfiles: scoped('token', '/api/v1/tokenProfiles', 'tokenInstanceUuid', (t, u) => `/api/v1/tokens/${t}/tokenProfiles/${u}`),
-    acmeProfiles: byName((u) => `/api/v1/acmeProfiles/${u}`),
-    scepProfiles: byName((u) => `/api/v1/scepProfiles/${u}`),
-    cmpProfiles: byName((u) => `/api/v1/cmpProfiles/${u}`),
-    discoveries: byName((u) => `/api/v1/discoveries/${u}`),
-    notificationProfiles: byName((u) => `/api/v1/notificationProfiles/${u}`),
-    notificationInstances: byName((u) => `/api/v1/notificationInstances/${u}`),
-    customAttributes: byName((u) => `/api/v1/attributes/custom/${u}`),
-    triggers: byName((u) => `/api/v1/workflows/triggers/${u}`),
-    rules: byName((u) => `/api/v1/workflows/rules/${u}`),
-    conditions: byName((u) => `/api/v1/workflows/conditions/${u}`),
-    actions: byName((u) => `/api/v1/workflows/actions/${u}`),
-    executions: byName((u) => `/api/v1/workflows/executions/${u}`),
-    entities: byName((u) => `/api/v1/entities/${u}`),
-    locations: { url: (_api, u, line) => (parentOf(line, 'entity') ? `/api/v1/entities/${parentOf(line, 'entity')}/locations/${u}` : undefined), name: (b) => b?.name },
-    secrets: byName((u) => `/api/v1/secrets/${u}`),
-    vaultInstances: byName((u) => `/api/v1/vaults/${u}`),
-    vaultProfiles: { url: (_api, u, line) => (parentOf(line, 'vault') ? `/api/v1/vaults/${parentOf(line, 'vault')}/vaultProfiles/${u}` : undefined), name: (b) => b?.name },
-    complianceProfiles: byName((u) => `/api/v1/complianceProfiles/${u}`),
-    approvalProfiles: byName((u) => `/api/v1/approvalProfiles/${u}`),
-    certificates: byName((u) => `/api/v1/certificates/${u}`, 'commonName'),
-    keys: byName((u) => `/api/v1/keys/${u}`),
-    // A key item under its parent key (ledger `parents.key`; no parent → not readable → missing).
-    // `GET /v1/keys/{uuid}/items/{keyItemUuid}` (interfaces CryptographicKeyController.java:140) only reads
-    // (core CryptographicKeyServiceImpl.java:421-432); KeyItemDetailDto extends NameAndUuidDto: `name` is the key's name.
-    keyItems: { url: (_api, u, line) => (parentOf(line, 'key') ? `/api/v1/keys/${parentOf(line, 'key')}/items/${u}` : undefined), name: (b) => b?.name },
-};
+/** `{uuid}` / `{parent}` filled into a registry URL template. */
+const fillUrl = (template: string, values: { uuid: string; parent?: string }): string =>
+    template.replace(/\{(uuid|parent)\}/g, (_match, key: 'uuid' | 'parent') => values[key] ?? '');
+
+/** The live read a registry specification (resourceTypes.ts) describes. */
+export function liveReadOf(spec: LiveReadSpec): LiveRead {
+    switch (spec.kind) {
+        case 'detail':
+            return byName((u) => fillUrl(spec.url, { uuid: u }), spec.nameField);
+        case 'parent':
+            return { url: (_api, u, line) => { const parent = parentOf(line, spec.parent); return parent ? fillUrl(spec.url, { uuid: u, parent }) : undefined; }, name: (b) => stringField(b, 'name') };
+        case 'parent-or-list':
+            return scoped(spec.parent, spec.listUrl, spec.listParentField, (parent, u) => fillUrl(spec.url, { uuid: u, parent }));
+    }
+}
+
+/** The live reads of every named type, built from the registry's specifications. */
+export const liveReadsOf = (specs: Record<string, LiveReadSpec>): Record<string, LiveRead> =>
+    Object.fromEntries(Object.entries(specs).map(([type, spec]) => [type, liveReadOf(spec)]));
+
+/** The live read of every named type (registry entries with a live-read ownership). */
+export const LIVE_READS: Record<string, LiveRead> = liveReadsOf(liveReadSpecsOf());
 
 /**
  * Types whose objects have no name of their own (the platform names them by an id): ledger proof only. `k8s:<kind>`
  * lines are id-named too (`isIdNamed`).
  */
-export const ID_NAMED: ReadonlySet<string> = new Set(['acmeAccounts', 'approvals', 'eventAssociations', 'savedViews', 'oidEntries', 'scheduledJobs']);
+export const ID_NAMED: ReadonlySet<string> = idNamedTypesOf();
 
 export const isIdNamed = (type: string): boolean => ID_NAMED.has(type) || type.startsWith('k8s:');
 
 export interface LiveOwnership {
     line: LedgerLine;
     /** The live object (absent for an id-named type, which is not read). */
-    body?: Json;
+    body?: JsonObject;
     url?: string;
     /** 'list': the detail answered 5xx (known bug) and the object was read from its authoritative full list. */
     via?: 'detail' | 'list';
@@ -297,7 +294,7 @@ export function fullListOf(type: string | undefined): { listUrl: string; bug: st
  * name it. Throws when the list cannot prove anything (no such list, not readable, not an array, at the cap;
  * an empty list, or a row without a string `uuid`, proves nothing either — a broken answer is not absence).
  */
-export async function fullListRow(api: Pick<APIRequestContext, 'get'>, type: string, uuid: string): Promise<Json | undefined> {
+export async function fullListRow(api: Pick<APIRequestContext, 'get'>, type: string, uuid: string): Promise<JsonObject | undefined> {
     const spec = fullListOf(type);
     if (!spec) throw new Error(`${type} ${uuid}: no authoritative full list (a 5xx detail read is never proof of absence)`);
     const res = await api.get(spec.listUrl);
@@ -308,11 +305,11 @@ export async function fullListRow(api: Pick<APIRequestContext, 'get'>, type: str
         throw new Error(`${type} ${uuid}: ${spec.listUrl} answered ${rows.length} rows (one page holds at most ${spec.cap}); it may be truncated and proves nothing`);
     }
     if (rows.length === 0) throw new Error(`${type} ${uuid}: ${spec.listUrl} answered an empty list; it proves nothing`);
-    if (!rows.every((r) => typeof (r as Json | null)?.uuid === 'string')) {
+    if (!rows.every((r) => typeof (r as JsonObject | null)?.uuid === 'string')) {
         throw new Error(`${type} ${uuid}: ${spec.listUrl} answered rows without a string uuid; it proves nothing`);
     }
     const wanted = uuid.toLowerCase();
-    return (rows as Json[]).find((r) => typeof r?.uuid === 'string' && r.uuid.toLowerCase() === wanted);
+    return (rows as JsonObject[]).find((r) => typeof r?.uuid === 'string' && r.uuid.toLowerCase() === wanted);
 }
 
 export interface Absence {
@@ -384,7 +381,7 @@ export async function assertOwnLive(api: APIRequestContext, type: string, ref: {
     if (!url) throw new LiveObjectMissing(type, ref.uuid, 'not in its list');
     const res = await api.get(url);
     if (res.status() === 404) throw new LiveObjectMissing(type, ref.uuid, 'GET answered 404');
-    let body: Json;
+    let body: JsonObject;
     let via: LiveOwnership['via'] = 'detail';
     const list = fullListOf(type);
     if (res.status() >= 500 && list) {
@@ -397,7 +394,7 @@ export async function assertOwnLive(api: APIRequestContext, type: string, ref: {
         via = 'list';
     } else {
         if (!res.ok()) throw new Error(`${helper}: GET ${type} ${ref.uuid} answered ${res.status()}`);
-        body = (await res.json()) as Json;
+        body = (await res.json()) as JsonObject;
     }
     if (!line.derived) {
         const live = reader.name(body);
@@ -410,7 +407,7 @@ export async function assertOwnLive(api: APIRequestContext, type: string, ref: {
 
 /** Own objects are deleted at the end of a run unless API_DELETE_OWN is off (a parsed switch). */
 export function mayDeleteOwn(env: NodeJS.ProcessEnv = process.env): boolean {
-    return parseFlag(env.API_DELETE_OWN, 'API_DELETE_OWN', true);
+    return parseFlag(settings(env).deleteOwn, 'API_DELETE_OWN', true);
 }
 
 /** A derived object may go only when the platform created it at or after the line's createdAfter. */

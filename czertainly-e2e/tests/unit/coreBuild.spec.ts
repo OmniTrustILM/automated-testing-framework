@@ -4,8 +4,9 @@
  * annotation an unreadable marker writes into the (required) testInfo.
  */
 import { APIRequestContext, test, expect } from '@playwright/test';
-import { BuildInfoStore, decideMigrated, getBuildInfo, isMigratedBuild, isMigratedBuildPhase, parseBuildInfo } from '../../utils/regression/coreBuild';
+import { BuildInfoStore, decideMigrated, getBuildInfo, isMigratedBuild, parseBuildInfo } from '../../utils/regression/coreBuild';
 import { BuildInfo } from '../../utils/regression/ledger/runState';
+import { fakeContext } from './helpers/guardRig';
 
 function memoryStore(): BuildInfoStore & { value?: BuildInfo; writes: number } {
     const s = {
@@ -23,13 +24,13 @@ function memoryStore(): BuildInfoStore & { value?: BuildInfo; writes: number } {
 /** A context whose GET /api/v1/info answers from `answers` in order (a thrown Error = network failure). */
 function infoApi(answers: Array<{ status: number; body?: unknown } | Error>): { api: APIRequestContext; calls: () => number } {
     let i = 0;
-    const api = {
+    const api = fakeContext({
         get: async () => {
             const a = answers[Math.min(i++, answers.length - 1)];
             if (a instanceof Error) throw a;
             return { status: () => a.status, ok: () => a.status < 300, json: async () => a.body };
         },
-    } as unknown as APIRequestContext;
+    });
     return { api, calls: () => i };
 }
 
@@ -48,8 +49,6 @@ test('decideMigrated: REG_BUILD wins, then build.branch, else a flagged guess', 
     expect(decideMigrated(parseBuildInfo(SB41), {})).toMatchObject({ migrated: true, guessed: false });
     expect(decideMigrated(parseBuildInfo(MAIN), {})).toMatchObject({ migrated: false, guessed: false });
     expect(decideMigrated({ markerReadable: false }, {})).toMatchObject({ migrated: false, guessed: true });
-    expect(isMigratedBuildPhase({ REG_PHASE: 'B' })).toBe(true);
-    expect(isMigratedBuildPhase({})).toBe(false);
 });
 
 test('a failed read is never cached: the next call reads again and caches the success', async () => {

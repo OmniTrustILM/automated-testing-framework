@@ -1,8 +1,16 @@
 /**
- * The `snapshot` project of both configs, serial: first the live guard proof on the target tier ([guard]: the guard
- * accepts an own role and refuses a pre-existing one, behind a spy that forwards reads only), then the "before" snapshot
- * of a shared tier ([before]) that the non-interference check compares against. The only spec allowed a raw context
- * (tests/unit/specGuards.spec.ts); the rules it proves are in tests/regression/README.md.
+ * API-GEN-33 — Run setup: the guard proof, then the "before" snapshot of a shared tier. ilm#428.
+ *
+ * WHAT: 1. [guard] The tier assertion holds and the run uses one worker; on a local stack a run-prefixed role created through BASE_URL is read back through the core's own URL
+ *          (instance proof); an own role is created with its ledger line first and the guard accepts it, while a run-prefixed name without a ledger line, a pre-existing role and
+ *          a pre-existing RA profile are refused for ownership (the helper and the guarded API, behind a spy that forwards reads only); the teardown registry deletes the own role
+ *          and writes a deleted line.
+ *       2. [before] The total and the pre-existing objects of every resource (about 30) are stored as the snapshot that the non-interference spec compares against; old snapshot
+ *          files (14 days) are purged and a stale snapshot with the same run id is deleted first.
+ * WHY: every later spec relies on the guard to refuse a change to anything the run did not create, so that is proven live on the target tier before the first spec; the snapshot
+ *      is the "before" half of the non-interference proof. A required resource that cannot be read makes the proof incomplete and fails the setup.
+ * HOW: the `snapshot` project of both configs, serial. The only spec allowed a raw context (tests/unit/specGuards.spec.ts); the rules it proves are in tests/regression/README.md.
+ *      It needs BASE_URL (a run without a tier fails); the [before] test is skipped on a local stack; under the dry run the own role is kept and listed by the run-end dry run.
  */
 import { randomUUID } from 'crypto';
 import { expect, getAuthenticatedApiContext, test } from '../../fixtures/testFixtures';
@@ -12,9 +20,9 @@ import { guardApi } from '../../utils/regression/guard/createGuard';
 import { GuardedApi } from '../../utils/regression/guard/types';
 import { purgeOldSnapshots, deleteSnapshot, writeSnapshot, snapshotTier, unreadableRequired } from '../../utils/regression/teardown/nonInterference';
 import { absenceOf, assertOwn, assertOwnLive, isOwnObject, OwnObjectViolation } from '../../utils/regression/ledger/ownership';
-import { createRole } from '../../utils/regression/ownRoles';
+import { createOwnRole } from '../../utils/regression/ownRoles';
 import { enableOwnRaProfile } from '../../utils/regression/ownRaProfiles';
-import { OwnRef, readLedger, recordCreated } from '../../utils/regression/ledger/ledger';
+import { OwnRef, readLedger } from '../../utils/regression/ledger/ledger';
 import { runName, runId } from '../../utils/regression/ledger/runState';
 import { regressionStateDir, beforeSnapshotFile } from '../../utils/regression/run/runId';
 import { removeOwnObject } from '../../utils/regression/teardown/runTeardown';
@@ -40,12 +48,12 @@ test.describe('run setup with the guard proof, then the before snapshot', { tag:
             if (isLocalTier()) {
                 await test.step('Local stack: a run-prefixed role created through BASE_URL is read back through REG_LOCAL_CORE_URL (instance proof)', async () => {
                     await proveLocalInstance(raw, process.env, {
-                        createRole: async () => recordCreated('roles', await createRole(own, runName(`instance-${Date.now().toString(36)}`)), SPEC, 'local instance proof'),
+                        createRole: async () => createOwnRole(own, SPEC, 'instance', { note: 'local instance proof' }),
                     });
                 });
             }
             const role = await test.step('Create a run-prefixed role through the guarded API; the ledger line comes first', async () =>
-                recordCreated('roles', await createRole(own, runName(`guard-${Date.now().toString(36)}`)), SPEC, 'guard proof'));
+                createOwnRole(own, SPEC, 'guard', { note: 'guard proof' }));
 
             await test.step('The guard accepts it (ledger + live name); a run-prefixed name without a ledger line is refused', async () => {
                 expect(isOwnObject(role), 'own: created line of this run and the run prefix').toBe(true);

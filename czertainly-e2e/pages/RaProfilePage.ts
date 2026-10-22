@@ -1,12 +1,18 @@
 /**
- * RaProfilePage — the RA profile detail of the admin UI and its protocol activation (REG-CFG-05). Tabs open by URL
- * (`?tab=<slug>`); protocol rows are `tr[data-id="acme" | "scep" | "cmp"]` of the `Available Protocols` widget, each with
- * a status badge (Enabled / Disabled) and one ProgressButton (Activate / Deactivate). A method that changes the RA
- * profile is only called on one the run created: the spec checks it first with `assertOwnLive`.
+ * RaProfilePage — the RA profile list and detail.
+ *
+ * WHAT: the RA profile list, its Create dialog (returned as `CreateRaProfileDialog`) and the detail with its status row, its
+ *       tabs and the Available Protocols widget (activate a protocol with a profile, read whether a row is active).
+ * WHY: REG-CFG-03 creates an RA profile through the dialog, enables it and opens its tabs; REG-CFG-05 activates ACME on an own RA
+ *      profile and checks the row and the refusal toast of a name with a space; REG-CERT-68 proves the form validation. A method
+ *      that changes an RA profile is only called on one the run created, which the spec proves first.
+ * HOW: tabs by URL or by their name; protocol rows by data id inside the widget, each with a status badge and one progress
+ *      button; the refusal is read from the toast; an `assert…` method never navigates and never clicks a tab.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { Logger } from '../utils/Logger';
 import { CreateRaProfileDialog } from './CreateRaProfileDialog';
+import { waitForDetailRoute } from './ui/detailRoute';
 import { chooseOption } from './ui/select';
 import { assertToast } from './ui/toast';
 import { toolbarButton } from './ui/toolbar';
@@ -19,13 +25,22 @@ export type Protocol = 'acme' | 'scep' | 'cmp';
 
 const PROTOCOL_LABEL: Record<Protocol, string> = { acme: 'ACME', scep: 'SCEP', cmp: 'CMP' };
 
+/** The text a tab shows when the page failed to load it. */
+const ERROR_TEXT = /unexpected error|internal server error/i;
+
 export class RaProfilePage {
     readonly page: Page;
     readonly main: Locator;
+    /** The Available Protocols widget of the detail. */
+    readonly protocolsWidget: Locator;
+    /** The Enabled / Disabled badge in the status row of the detail. */
+    readonly statusBadge: Locator;
 
     constructor(page: Page) {
         this.page = page;
         this.main = page.locator('main');
+        this.protocolsWidget = widgetTitled(this.main, 'Available Protocols');
+        this.statusBadge = this.main.locator('tr[data-id="enabled"] [data-testid="status-badge"]');
     }
 
     async goToList(): Promise<void> {
@@ -50,12 +65,31 @@ export class RaProfilePage {
         await expect(this.main).toBeVisible();
     }
 
+    /**
+     * Waits for the redirect to the new RA profile's detail (`#/raprofiles/detail/<authority>/<uuid>`) and returns its uuid. Call it
+     * after the ledger line.
+     */
+    async waitForDetail(options: { timeout?: number } = {}): Promise<string> {
+        return waitForDetailRoute(this.page, 'raprofiles', { segments: 2, timeout: options.timeout });
+    }
+
     async openTab(tab: RaProfileTab): Promise<void> {
         await this.page.getByRole('tab', { name: tab, exact: true }).click();
     }
 
-    get protocolsWidget(): Locator {
-        return widgetTitled(this.main, 'Available Protocols');
+    /** The page shows no error text (a tab that failed to load shows the platform's error); it never clicks a tab. */
+    async assertNoErrorShown(tab: RaProfileTab): Promise<void> {
+        await expect(this.main, `the ${tab} tab shows no error`).not.toContainText(ERROR_TEXT);
+    }
+
+    /** The detail's Enable button (the RA profile is created disabled). */
+    async enable(): Promise<void> {
+        await toolbarButton(this.page, 'enable').click();
+    }
+
+    /** The status row shows Enabled or Disabled. */
+    async assertStatus(status: 'Enabled' | 'Disabled'): Promise<void> {
+        await expect(this.statusBadge).toHaveText(status);
     }
 
     /** The protocol's row in `Available Protocols`. */
@@ -85,8 +119,6 @@ export class RaProfilePage {
         await expect(dialog).toBeHidden();
     }
 
-
-
     /** The row shows the protocol active: status Enabled and the Deactivate button. */
     async assertProtocolActive(protocol: Protocol): Promise<void> {
         await expect(this.rowButton(protocol)).toHaveText('Deactivate');
@@ -109,5 +141,4 @@ export class RaProfilePage {
         await expect(card).toContainText(text);
         return (await card.innerText()).trim();
     }
-
 }

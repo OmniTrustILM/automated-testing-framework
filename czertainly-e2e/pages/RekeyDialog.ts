@@ -1,32 +1,26 @@
 /**
- * RekeyDialog — the "Rekey Certificate" dialog of the certificate detail toolbar: Key Source External with the CSR
- * upload, submit (returns the rekey answer with the successor's uuid and the body text) and the dialog's error line.
- * Called only on a certificate the run created (the spec checks it with `assertOwnLive` first).
+ * RekeyDialog — the "Rekey Certificate" dialog.
+ *
+ * WHAT: the "Rekey Certificate" dialog: Key Source External with the CSR upload, submit and the error line.
+ * WHY: REG-CERT-08 refuses a same-key CSR and issues a new-key successor; the answer with the successor's uuid goes
+ *       back to the spec.
+ * HOW: a `CertificateToolbarDialog` (open, close, answer reading are shared); opened from the detail toolbar; the
+ *       key source through the Select helper; only on a certificate this run created.
  */
 import { expect, Locator, Page } from '@playwright/test';
-import { Logger } from '../utils/Logger';
-import { CertificateDetailPage } from './CertificateDetailPage';
+import { AnswerWithUuid, CertificateToolbarDialog } from './CertificateToolbarDialog';
 import { chooseOption } from './ui/select';
-import { actAndWaitForApi, UUID } from './ui/waitForResponse';
+import { UUID } from './ui/waitForResponse';
 
-const logger = new Logger('RekeyDialog');
-
-export class RekeyDialog {
-    readonly page: Page;
-    readonly dialog: Locator;
-    private readonly detail: CertificateDetailPage;
+export class RekeyDialog extends CertificateToolbarDialog {
+    readonly submitButton: Locator;
+    /** The dialog's error line after a refused rekey. */
+    readonly error: Locator;
 
     constructor(page: Page) {
-        this.page = page;
-        this.dialog = page.getByRole('dialog', { name: 'Rekey Certificate' });
-        this.detail = new CertificateDetailPage(page);
-    }
-
-    async open(): Promise<Locator> {
-        logger.info('Opening the Rekey dialog');
-        await this.detail.toolbar.button('rekey').click();
-        await expect(this.dialog).toBeVisible();
-        return this.dialog;
+        super(page, 'Rekey Certificate', 'rekey');
+        this.submitButton = this.dialog.getByRole('button', { name: /^(Rekey|Register)$/ });
+        this.error = this.errorLine('rekeyDialogError');
     }
 
     /** Key Source → External, then the CSR into the upload. */
@@ -37,30 +31,9 @@ export class RekeyDialog {
         await textarea.fill(csrPem);
     }
 
-    get submitButton(): Locator {
-        return this.dialog.getByRole('button', { name: /^(Rekey|Register)$/ });
-    }
-
-    /** Submit; returns the rekey call's answer (`POST …/rekey`). */
-    async submit(): Promise<{ status: number; uuid?: string; text: string }> {
+    /** Submit; returns the answer of `POST …/rekey` (its body names the successor: `uuid`). */
+    async submit(): Promise<AnswerWithUuid> {
         await expect(this.submitButton).toBeEnabled();
-        const res = await actAndWaitForApi(this.page, { method: 'POST', path: new RegExp(`/certificates/${UUID}/rekey$`) }, () => this.submitButton.click());
-        const text = await res.text();
-        let uuid: string | undefined;
-        try {
-            uuid = (JSON.parse(text) as { uuid?: string }).uuid;
-        } catch {
-            uuid = undefined; // a body that is not JSON names no successor
-        }
-        return { status: res.status(), uuid, text };
-    }
-
-    get error(): Locator {
-        return this.dialog.getByTestId('rekeyDialogError');
-    }
-
-    async close(): Promise<void> {
-        await this.dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-        await expect(this.dialog).toBeHidden();
+        return this.answerWithUuid({ method: 'POST', path: new RegExp(`/certificates/${UUID}/rekey$`) }, () => this.submitButton.click());
     }
 }

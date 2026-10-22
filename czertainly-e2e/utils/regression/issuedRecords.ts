@@ -1,29 +1,42 @@
 /**
- * issuedRecords — ledger before assertion for certificates and keys the PLATFORM made: the `certKey_<CN>` key linked to a
+ * issuedRecords — ledger before assertion for certificates and keys the PLATFORM made.
+ *
+ * WHAT: records the `certKey_<CN>` key linked to a
  * run certificate (a derived object with a server-clock bound), certificates a protocol issued under a run-prefixed
  * common name (ACME, cert-manager), the recording that also runs when an issuance step throws, the recording after the
  * issuance settled, and the ACME account the run registered.
+ *
+ * Clock rule: a derived key's age is judged on the server's clock (`createdAfter` from the Date header of the call that
+ * made it). Without one the key is recorded with `keepingBound()`, a bound the key can never reach, so the teardown keeps
+ * it and warns; the runner's own clock is never used to decide that a key may be deleted.
+ *
+ * WHY: the teardown only removes what the ledger holds, so a certificate or key that the platform made on the run's behalf
+ *      and that was never recorded would stay on the tier; recording must happen right after the call, before any
+ *      assertion, and also when the issuance step throws.
+ * HOW: `recordDerivedKeyOf` reads the certificate detail and records its key as a derived line with the server-clock bound;
+ *      `recordCertificatesNamed` / `recordIssuedNamed` adopt the certificates of a run-prefixed name from the inventory;
+ *      `recordingIssued` and `recordIssuedSettled` wrap an issuance and record whether it returns or throws.
  */
 import { APIRequestContext, expect } from '@playwright/test';
 import { Logger } from '../Logger';
 import { apiJson, getCertificate, searchCertificates } from './apiReads';
 import { checkOwnership } from './ledger/ownership';
-import { createdAfterMarker, OwnRef, recordCreated, recordDerived } from './ledger/ledger';
+import { keepingBound, OwnRef, recordCreated, recordDerived } from './ledger/ledger';
 import { runName } from './ledger/runState';
 import { hasRunFamilyPrefix } from './run/runId';
+import type { JsonObject } from './json';
+import { objectOf } from './json';
 
 const logger = new Logger('issuedRecords');
-
-type Json = Record<string, any>;
 
 /**
  * Records the key the platform linked to a run certificate (`certKey_<CN>`) as a DERIVED ledger object with the
  * server-clock `createdAfter`, so the run-end teardown removes it when the platform made it during the run and nothing
- * uses it any more (teardownHandlers `keys`). No key, or no server time: nothing is recorded (the key stays; logged).
+ * uses it any more (teardownHandlers `keys`). No key: nothing to record. No server time: the key is still recorded, with `keepingBound()`, so the teardown keeps it (logged).
  */
 export async function recordDerivedKeyOf(api: APIRequestContext, certificateUuid: string, createdAfter: string | undefined, spec: string): Promise<void> {
     const cert = await getCertificate(api, certificateUuid);
-    const keyUuid = cert.key?.uuid as string | undefined;
+    const keyUuid = objectOf(cert.key).uuid as string | undefined;
     if (!keyUuid) {
         logger.info(`certificate ${certificateUuid}: no linked key; no derived key recorded`);
         return;
@@ -31,12 +44,12 @@ export async function recordDerivedKeyOf(api: APIRequestContext, certificateUuid
     if (checkOwnership({ uuid: keyUuid }).own) return;
     let bound = createdAfter;
     if (!bound) {
-        // Never a silent no-op: the key is recorded with the runner clock NOW as its bound. The key was made
-        // before, so the teardown keeps it with a warning instead of deleting it — a visible, human-decided leftover.
-        bound = createdAfterMarker(new Date(), 0, 0);
-        logger.warn(`certificate ${certificateUuid}: no createdAfter for its key ${keyUuid}; recorded with the runner clock now (the teardown will keep it; check by hand)`);
+        // Never a silent no-op: the key is recorded with a bound it can never reach, so the teardown keeps it with a
+        // warning instead of deleting it on a guess — a visible, human-decided leftover.
+        bound = keepingBound();
+        logger.warn(`certificate ${certificateUuid}: no createdAfter for its key ${keyUuid}; recorded with a bound the teardown keeps (check by hand)`);
     }
-    recordDerived('keys', { uuid: keyUuid, name: `key of certificate ${certificateUuid}` }, spec, bound, 'key the platform linked to a run certificate', { certificate: certificateUuid });
+    recordDerived('keys', { uuid: keyUuid, name: `key of certificate ${certificateUuid}` }, { spec, createdAfter: bound, note: 'key the platform linked to a run certificate', parents: { certificate: certificateUuid } });
 }
 
 /**
@@ -63,7 +76,7 @@ export async function recordCertificatesNamed(api: APIRequestContext, commonName
     const rows = await searchCertificates(api, [{ fieldSource: 'property', fieldIdentifier: 'COMMON_NAME', condition: 'EQUALS', value: commonName }], 100);
     const uuids = rows.map((r) => String(r.uuid));
     for (const uuid of uuids) {
-        if (!checkOwnership({ uuid }).own) recordCreated('certificates', { uuid, name: commonName }, spec, note);
+        if (!checkOwnership({ uuid }).own) recordCreated('certificates', { uuid, name: commonName }, { spec, note });
     }
     return uuids;
 }
@@ -133,10 +146,11 @@ export async function recordIssuedSettled(
  */
 export async function recordAcmeAccount(api: APIRequestContext, accountUrl: string, acmeProfile: OwnRef, spec: string): Promise<OwnRef> {
     const accountId = accountUrl.split('/').pop() ?? '';
-    const accounts = await apiJson<Json[]>(api, 'GET', '/api/v1/acmeAccounts');
+    const accounts = await apiJson<JsonObject[]>(api, 'GET', '/api/v1/acmeAccounts');
     const mine = accounts.find((a) => String(a.accountId) === accountId && a.acmeProfileUuid === acmeProfile.uuid);
     expect(mine, `ACME account ${accountId} of the run ACME profile is listed`).toBeTruthy();
     const name = runName(`acme-account-${String(mine!.accountId).replace(/[^A-Za-z0-9-]/g, '')}`);
-    if (checkOwnership({ uuid: mine!.uuid }).own) return { uuid: mine!.uuid, name, kind: 'own' };
-    return recordCreated('acmeAccounts', { uuid: mine!.uuid, name }, spec, 'ACME account, left valid', { acmeProfile: acmeProfile.uuid });
+    const accountUuid = String(mine!.uuid);
+    if (checkOwnership({ uuid: accountUuid }).own) return { uuid: accountUuid, name, kind: 'own' };
+    return recordCreated('acmeAccounts', { uuid: accountUuid, name }, { spec, note: 'ACME account, left valid', parents: { acmeProfile: acmeProfile.uuid } });
 }

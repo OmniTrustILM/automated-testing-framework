@@ -3,28 +3,17 @@ import { loadEnv, TestEnv } from '../utils/env';
 import { LoginPage } from '../pages/LoginPage';
 import { Logger } from '../utils/Logger';
 import { guardApi } from '../utils/regression/guard/createGuard';
-import { GuardedApi, GuardOptions } from '../utils/regression/guard/types';
-import { restrictedIdentity, secondIdentityBlocker, type Credentials } from '../utils/regression/rbac/identities';
+import { GuardedApi } from '../utils/regression/guard/types';
+import { restrictedIdentity } from '../utils/regression/rbac/identities';
 import type { RunRaProfile } from '../utils/regression/ownRaProfiles';
-import type { OwnRef } from '../utils/regression/ledger/ledger';
 import type { TestInfo } from '@playwright/test';
-import {
-  ADMIN_TOKEN_UNAVAILABLE, RESTRICTED_TOKEN_UNAVAILABLE, AccessToken, TokenGrantFailed, TokenGrantOptions, TOKEN_REUSE_MARGIN_MS,
-  expiryOf, fetchAccessToken, opaqueToken, resetTokenCacheForUnitTests, tokenFailureFile, tokenOrSkip,
-} from '../utils/auth/accessToken';
-import { DOCUMENTATION_ADDRESS, anonymousForwardedFor, anonymousHeaders, getAuthenticatedApiContext, newAnonymousContext } from '../utils/auth/apiContext';
+import { ADMIN_TOKEN_UNAVAILABLE, RESTRICTED_TOKEN_UNAVAILABLE, AccessToken, minLifetimeForTest, tokenOrSkip } from '../utils/auth/accessToken';
+import { getAuthenticatedApiContext, newAnonymousContext } from '../utils/auth/apiContext';
 
 const logger = new Logger('TestFixtures');
 
-export { expect };
-
-// Token and identity logic lives in utils/auth/; the names stay importable from here for the specs.
-export {
-  ADMIN_TOKEN_UNAVAILABLE, RESTRICTED_TOKEN_UNAVAILABLE, TokenGrantFailed, TOKEN_REUSE_MARGIN_MS, expiryOf, fetchAccessToken, opaqueToken,
-  resetTokenCacheForUnitTests, tokenFailureFile, tokenOrSkip, DOCUMENTATION_ADDRESS, anonymousForwardedFor, anonymousHeaders, getAuthenticatedApiContext,
-  restrictedIdentity,
-};
-export type { AccessToken, TokenGrantOptions, Credentials };
+// Token and identity logic lives in utils/auth/. Only what the smoke specs and the global setup / teardown import is exported from here.
+export { expect, getAuthenticatedApiContext };
 
 /**
  * Fixtures:
@@ -48,34 +37,31 @@ export type { AccessToken, TokenGrantOptions, Credentials };
  *   A provider that cannot be reached (ECONNREFUSED) is an error, not a skip, and is not remembered.
  * - `ownRaProfile`: the run RA profile (`ensureRunRaProfile`, CA-agnostic). A tier without a healthy CA skips the test with
  *   the helper's named reason (the deploy gate), so a spec needs no try / skip of its own.
- * - `restrictedUser`: the dedicated second identity's ILM user, created by this run (`ensureRestrictedUser`). Without the
- *   second identity, with one equal to the admin, or when a user of that name exists that this run did not create, the
- *   test skips with the named reason.
- *   Both take the ledger spec from the test's `testMeta({ id })` (else the file name), and load their helpers only when a test
- *   asks for them.
- * - `guardOptions`: options of that guard; `test.use({ guardOptions: { localStack: true } })` in an `@local` pack lifts
- *   the ownership rule on a proven local stack only (TIER_KIND=local), nowhere else.
+ *   It takes the ledger spec from the test's `testMeta({ id })` (else the file name), and loads its helpers only when a test asks
+ *   for it.
+ * The spec-facing fixtures built on these (`own`, `needs`, `live`, `signedIn`, `regressionEnv`, `localApi`) live in
+ * fixtures/regressionFixtures.ts, so that the smoke suite loads no more than it does here.
  */
 export const test = base.extend<{
-  env: TestEnv; api: GuardedApi; guardOptions: GuardOptions; anonymousApi: GuardedApi; adminToken: AccessToken | undefined; restrictedToken: AccessToken | undefined;
-  ownRaProfile: RunRaProfile; restrictedUser: OwnRef;
+  env: TestEnv; api: GuardedApi; anonymousApi: GuardedApi; adminToken: AccessToken | undefined; restrictedToken: AccessToken | undefined;
+  ownRaProfile: RunRaProfile;
 }>({
   env: async ({ }, use) => {
     const env = loadEnv();
     await use(env);
   },
-  guardOptions: [{}, { option: true }],
-  api: async ({ request, env, guardOptions }, use) => {
-    const api = guardApi(await getAuthenticatedApiContext(request, env), guardOptions);
+  api: async ({ request, env }, use, testInfo) => {
+    // A cached token is reused only when it outlives the test (the fixture sees the project's timeout, a test may raise its own: see the floor).
+    const api = guardApi(await getAuthenticatedApiContext(request, env, { minLifetimeMs: minLifetimeForTest(testInfo.timeout) }));
     try {
       await use(api);
     } finally {
       await api.dispose();
     }
   },
-  anonymousApi: async ({ env, guardOptions }, use) => {
+  anonymousApi: async ({ env }, use) => {
     const context = await newAnonymousContext(env);
-    const api = guardApi(context, guardOptions);
+    const api = guardApi(context);
     try {
       await use(api);
     } finally {
@@ -96,19 +82,10 @@ export const test = base.extend<{
     await use(token);
   },
   ownRaProfile: async ({ api }, use, testInfo) => {
-    const { ensureRunRaProfileOrSkip } = await import('../utils/regression/ownRaProfiles');
+    // Loaded only by the tests that take this fixture (the smoke suite never does). `require`, not `import()`: a dynamic import of a
+    // module nothing loaded before goes through Node's own loader, which cannot read a TypeScript file.
+    const { ensureRunRaProfileOrSkip } = require('../utils/regression/ownRaProfiles') as typeof import('../utils/regression/ownRaProfiles');
     await use(await ensureRunRaProfileOrSkip(api, ledgerSpecOf(testInfo), (reason) => testInfo.skip(true, reason)));
-  },
-  restrictedUser: async ({ api, env }, use, testInfo) => {
-    // The blocker also refuses a second identity equal to the admin: the suite disables and re-roles that user.
-    const blocker = secondIdentityBlocker(env.username);
-    if (blocker) testInfo.skip(true, blocker);
-    const ded = restrictedIdentity();
-    if (!ded) testInfo.skip(true, 'no second identity');
-    // Loaded lazily (only the tests that use this fixture pay for the RBAC helpers); import the module that defines the
-    // function: an `export *` re-export loses its named exports under a dynamic import().
-    const { ensureRestrictedUserOrSkip } = await import('../utils/regression/rbac/permissionFixtures');
-    await use(await ensureRestrictedUserOrSkip(api, ledgerSpecOf(testInfo), ded!, (reason) => testInfo.skip(true, reason)));
   },
 });
 

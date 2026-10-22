@@ -1,6 +1,7 @@
 import { APIRequestContext, request as playwrightRequest } from '@playwright/test';
 import type { TestEnv } from '../env';
 import { Logger } from '../Logger';
+import { fetchAccessToken } from './accessToken';
 import { isLocalTier } from '../regression/tier/kind';
 import { isLoopbackHost, isPrivateAddress } from '../regression/tier/dns';
 
@@ -8,10 +9,11 @@ import { isLoopbackHost, isPrivateAddress } from '../regression/tier/dns';
 const logger = new Logger('ApiContext');
 
 /**
- * Direct API authentication via Keycloak (Resource Owner Password Credentials flow).
- * Returns an APIRequestContext authorized with the Bearer token.
+ * Direct API authentication via Keycloak (Resource Owner Password Credentials flow), through the cached token of
+ * `fetchAccessToken`. Returns an APIRequestContext authorized with the Bearer token. `minLifetimeMs` (the `api` fixture passes the
+ * test's timeout) keeps a cached token from being reused when it would expire during the test; smoke and global setup omit it.
  */
-export async function getAuthenticatedApiContext(request: APIRequestContext, env: TestEnv): Promise<APIRequestContext> {
+export async function getAuthenticatedApiContext(request: APIRequestContext, env: TestEnv, options: { minLifetimeMs?: number } = {}): Promise<APIRequestContext> {
   if (env.authMode === 'header') {
     // Local development stack: no identity provider. The dev proxy injects the certificate on /api; when the
     // suite talks to core directly, AUTH_CLIENT_CERT (URL-encoded Base64 certificate) is sent the same way.
@@ -23,46 +25,20 @@ export async function getAuthenticatedApiContext(request: APIRequestContext, env
       ignoreHTTPSErrors: true,
     });
   }
-  const authBase = env.authBaseUrl ? env.authBaseUrl.replace(/\/$/, '') : `${env.baseUrl.replace(/\/$/, '')}/kc`;
-  const tokenUrl = `${authBase}/realms/${env.authRealm}/protocol/openid-connect/token`;
 
   if (!env.clientSecret) {
     logger.error('SMOKE_CLIENT_SECRET is missing, but it is required for API authentication via Keycloak.');
     throw new Error('SMOKE_CLIENT_SECRET is missing, but it is required for API authentication via Keycloak.');
   }
 
-  logger.debug(`Fetching access token from: ${tokenUrl} for user: ${env.username}`);
-
-  const response = await request.post(tokenUrl, {
-    form: {
-      grant_type: 'password',
-      client_id: env.authClientId,
-      client_secret: env.clientSecret,
-      username: env.username,
-      password: env.password,
-    }
-  });
-
-  if (!response.ok()) {
-    const errorBody = await response.text();
-    logger.error(`Failed to get access token! Status: ${response.status()} ${response.statusText()}`);
-    throw new Error(`Failed to get access token! Status: ${response.status()} ${response.statusText()} \nBody: ${errorBody}`);
-  }
-
-  const tokenData = await response.json();
-  const accessToken = tokenData.access_token;
-
-  if (!accessToken) {
-    logger.error('Keycloak response did not contain access_token!');
-    throw new Error('Keycloak response did not contain access_token!');
-  }
-
-  logger.info('Successfully obtained access token via API.');
+  // The token comes from the shared cache: one password grant per identity per validity window, and a refused grant is
+  // remembered, so a wrong or rotated password is tried once, not once per test (the account could be locked).
+  const token = await fetchAccessToken(request, env, { username: env.username, password: env.password }, { minLifetimeMs: options.minLifetimeMs });
 
   return await playwrightRequest.newContext({
     baseURL: env.baseUrl,
     extraHTTPHeaders: {
-      'Authorization': `Bearer ${accessToken}`,
+      'Authorization': `Bearer ${token.bearer()}`,
       'Accept': 'application/json',
     },
     ignoreHTTPSErrors: true

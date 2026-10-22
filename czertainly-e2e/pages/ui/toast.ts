@@ -1,8 +1,11 @@
 /**
- * Toasts (fe-administrator Alerts): every card is `data-testid="alert-<id>"` (message in `alert-message-<id>`). Only
- * danger toasts carry role="alert" and stay until dismissed; success and info toasts have no role and vanish after 6 s.
- * Test ids, not role queries: while a modal dialog is open the toasts outside it are aria-hidden. Assert a success toast
- * in the same step as its action, and prefer the API read-back as the oracle.
+ * toast — the toast stack.
+ *
+ * WHAT: the toast stack: find a card by text, assert one with its severity, dismiss all.
+ * WHY: a refusal is shown as a danger toast that stays; success toasts vanish after six seconds, so they are
+ *       asserted in the same step as their action and the API read-back stays the oracle.
+ * HOW: cards by test id (while a modal is open the toasts outside it are hidden from roles); only danger toasts
+ *       carry the alert role.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { Logger } from '../../utils/Logger';

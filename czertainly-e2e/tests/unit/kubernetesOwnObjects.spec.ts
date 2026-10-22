@@ -12,12 +12,12 @@ import { applyOwnManifest, CERT_MANAGER_KINDS, clusterProblem, k8sUuid, K8sRef, 
 import { OwnObjectViolation } from '../../utils/regression/ledger/ownership';
 import { readLedger } from '../../utils/regression/ledger/ledger';
 import { runName } from '../../utils/regression/ledger/runState';
+import { useEnv } from './helpers/guardRig';
 
 const KEYS = ['REG_KUBECTL_BIN', 'REG_STATE_DIR', 'CLEANUP_LEDGER_FILE', 'FAKE_KUBECTL_LOG', 'FAKE_KUBECTL_FAIL_APPLY', 'FAKE_KUBECTL_LEFT', 'FAKE_KUBECTL_NO_LIST', 'FAKE_KUBECTL_CANNOT'];
-let saved: Record<string, string | undefined> = {};
+useEnv(KEYS);
 
 test.beforeEach(({}, testInfo) => {
-    saved = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]));
     const dir = testInfo.outputPath('k8s');
     fs.mkdirSync(dir, { recursive: true });
     const bin = path.join(dir, 'fake-kubectl');
@@ -41,17 +41,6 @@ if (args.includes('get') && args.includes('name')) {
 `);
     fs.chmodSync(bin, 0o755);
     Object.assign(process.env, { REG_KUBECTL_BIN: bin, REG_STATE_DIR: testInfo.outputPath('state'), CLEANUP_LEDGER_FILE: testInfo.outputPath('cleanup.jsonl'), FAKE_KUBECTL_LOG: path.join(dir, 'calls.log') });
-    delete process.env.FAKE_KUBECTL_FAIL_APPLY;
-    delete process.env.FAKE_KUBECTL_LEFT;
-    delete process.env.FAKE_KUBECTL_NO_LIST;
-    delete process.env.FAKE_KUBECTL_CANNOT;
-});
-
-test.afterEach(() => {
-    for (const [k, v] of Object.entries(saved)) {
-        if (v === undefined) delete process.env[k];
-        else process.env[k] = v;
-    }
 });
 
 const calls = () => (fs.existsSync(process.env.FAKE_KUBECTL_LOG!) ? fs.readFileSync(process.env.FAKE_KUBECTL_LOG!, 'utf8').trim().split('\n') : []);

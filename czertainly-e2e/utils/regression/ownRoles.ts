@@ -3,13 +3,10 @@
  * Every create fills the REQUIRED custom attributes of roles a tier defines (a create without them answers 422 there).
  */
 import { GuardedApi } from './guard/types';
-import { apiJson } from './apiReads';
+import { createOwn } from './ownCrud';
 import { requiredCustomAttributes } from './customAttributes';
-import { OwnRef, recordCreated, Ref } from './ledger/ledger';
-import { readRunState, runName, runId, updateRunState } from './ledger/runState';
-import { timestampSuffix } from './text';
-
-type Json = Record<string, any>;
+import { OwnRef } from './ledger/ledger';
+import { readRunState, runName, runId, updateRunState, ownName } from './ledger/runState';
 
 export interface RoleFields {
     description?: string;
@@ -17,28 +14,38 @@ export interface RoleFields {
     email?: string;
 }
 
-/** `POST /v1/roles` for a run-prefixed name; returns the Ref (not recorded: the caller records it). */
-export async function createRole(api: GuardedApi, name: string, fields: RoleFields = {}): Promise<Ref> {
-    const created = await apiJson<Json>(api, 'POST', '/api/v1/roles', {
-        name,
+/** The request body of a role create without its name (every required custom attribute of roles filled). */
+export async function roleBody(api: GuardedApi, fields: RoleFields = {}): Promise<Record<string, unknown>> {
+    return {
         description: fields.description ?? `REG run ${runId()}`,
         ...(fields.email ? { email: fields.email } : {}),
         customAttributes: await requiredCustomAttributes(api, 'roles', runName('ca')),
-    });
-    return { uuid: created.uuid, name };
+    };
 }
 
-/** A NEW run role (not the run's shared role): `<run>-<suffix>-<time>`, recorded in the ledger right after the create. */
-export async function createOwnRole(api: GuardedApi, spec: string, suffix: string, opts: RoleFields & { note?: string } = {}): Promise<OwnRef> {
-    const { note, ...fields } = opts;
-    return recordCreated('roles', await createRole(api, runName(`${suffix}-${timestampSuffix()}`), fields), spec, note ?? 'API prerequisite');
+export interface RoleOptions extends RoleFields {
+    note?: string;
+    /** A planned name (the run's shared role, a fixture role); default `ownName(suffix)`. */
+    name?: string;
+}
+
+/** A NEW run role: `<run>-<suffix>-<unique>`, recorded in the ledger right after the create. */
+export async function createOwnRole(api: GuardedApi, spec: string, suffix: string, o: RoleOptions = {}): Promise<OwnRef> {
+    const { answer: _answer, ...ref } = await createOwn(api, spec, {
+        type: 'roles',
+        path: '/api/v1/roles',
+        name: o.name ?? ownName(suffix),
+        note: o.note ?? 'API prerequisite',
+        body: await roleBody(api, o),
+    });
+    return ref;
 }
 
 /** The run's shared role: the run state's, else a new one created and recorded. */
 export async function ensureRunRole(api: GuardedApi, spec: string): Promise<OwnRef> {
     const state = readRunState();
     if (state.role) return state.role;
-    const ref = recordCreated('roles', await createRole(api, runName('role')), spec, 'API prerequisite');
+    const ref = await createOwnRole(api, spec, 'role', { name: runName('role') });
     updateRunState({ role: ref });
     return ref;
 }

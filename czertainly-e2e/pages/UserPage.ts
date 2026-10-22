@@ -1,21 +1,26 @@
 /**
- * UserPage — the Users list, the user detail and the Create / Edit / Delete User dialogs (REG-CFG-09). Built on
- * SearchableListWidget (`List of Users`), FormDialog (`Create User`, `Edit User`: `text-input-username`, disabled in
- * edit, `-firstName`, `-lastName`, `-email`, `switch-enabled-input`; the "Assigned User Roles" table ticks a role by its
- * row) and ConfirmDeleteDialog (`Delete User`). Detail: widget `User Details` (toolbar `pencil-button` = Edit,
- * `trash-button` = Delete), rows `username`, `email`, `roles`. Create sends POST /users then PATCH /users/{uuid}/roles;
- * Edit sends PUT /users/{uuid}. Actions return the platform's answers; the spec asserts them.
+ * UserPage — the Users list, the user detail and the Create / Edit / Delete User dialogs.
  *
- * Edit and Delete are only called on a user the run created: the spec checks it first with `assertOwnLive` (own objects only).
+ * WHAT: the Users list, the user detail and the Create / Edit / Delete User dialogs, with the "Assigned User Roles" table of the
+ *       create dialog; actions return the platform's answers and assert no status.
+ * WHY: REG-CFG-09 creates a user with the run role (Create sends the user, then its roles), edits with the username locked and
+ *      deletes. `createUser` returns the create answer (with the new uuid) as soon as it arrives, and the roles answer later, so
+ *      the spec writes the ledger line before it waits for the roles request. Edit and Delete are only called on a user the run
+ *      created, which the spec proves first with the live own-object check.
+ * HOW: composed like `RolePage` from `entityScreens`; a role is ticked by its row's own checkbox, no forced click; the edit
+ *      dialog is used only after its custom-attribute editor holds the stored values.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { Logger } from '../utils/Logger';
 import { ConfirmDeleteDialog } from './ConfirmDeleteDialog';
 import { FormDialog } from './FormDialog';
 import { SearchableListWidget } from './SearchableListWidget';
-import { fillRequiredCustomAttributes } from './ui/form';
+import { ApiAnswer } from '../utils/regression/apiReads';
+import { CreateAnswer, createAnswerOf } from './ui/createAnswer';
+import { entityScreens, type EntityScreens } from './ui/entityScreens';
+import { customAttributeEditor, customAttributesDefined, fillRequiredCustomAttributes } from './ui/form';
 import { UUID, watchApiCall } from './ui/waitForResponse';
-import { iconButton, widgetTitled } from './ui/widget';
+import { FORM_READY_MS } from '../utils/regression/timeouts';
 
 const logger = new Logger('UserPage');
 
@@ -34,46 +39,41 @@ export class UserPage {
     readonly createDialog: FormDialog;
     readonly editDialog: FormDialog;
     readonly deleteDialog: ConfirmDeleteDialog;
+    /** The User Details widget. */
+    readonly detailsWidget: Locator;
+    private readonly screens: EntityScreens;
 
     constructor(page: Page) {
         this.page = page;
         this.main = page.locator('main');
-        this.list = new SearchableListWidget(page, 'List of Users');
-        this.createDialog = new FormDialog(page, 'Create User');
-        this.editDialog = new FormDialog(page, 'Edit User');
-        this.deleteDialog = new ConfirmDeleteDialog(page, 'Delete User');
-    }
-
-    get detailsWidget(): Locator {
-        return widgetTitled(this.main, 'User Details');
+        this.screens = entityScreens(page, { route: 'users', listTitle: 'List of Users', detailTitle: 'User Details', caption: 'User' });
+        this.list = this.screens.list;
+        this.createDialog = this.screens.createDialog;
+        this.editDialog = this.screens.editDialog;
+        this.deleteDialog = this.screens.deleteDialog;
+        this.detailsWidget = this.screens.detailsWidget;
     }
 
     async goToList(): Promise<void> {
-        await this.page.goto('administrator/#/users');
-        await expect(this.list.root).toBeVisible();
+        await this.screens.goToList();
     }
 
     /**
-     * The list as the server serves it NOW: the hash route, a reload, and only then the widget wait. A `goto` that only
-     * repeats or changes the hash is no navigation (the document stays, and with it an earlier, possibly stale render),
-     * so the reload comes before the wait: waiting first would wait on the old render.
+     * The list as the server serves it NOW: the hash route, a reload, and only then the widget wait (a `goto` that only repeats
+     * the hash is no navigation, so waiting first would judge the old render).
      */
     async reloadList(): Promise<void> {
-        await this.page.goto('administrator/#/users');
-        await this.page.reload();
-        await expect(this.list.root).toBeVisible();
+        await this.screens.reloadList();
     }
 
     async goToDetail(uuid: string): Promise<void> {
         logger.info(`Opening user ${uuid}`);
-        await this.page.goto(`administrator/#/users/detail/${uuid}`);
-        await expect(this.detailsWidget).toBeVisible();
+        await this.screens.goToDetail(uuid);
     }
 
+    /** The list's "+" → the Create User dialog is open; returns it. */
     async openCreateDialog(): Promise<Locator> {
-        await iconButton(this.list.root, 'plus').click();
-        await expect(this.createDialog.dialog).toBeVisible();
-        return this.createDialog.dialog;
+        return this.screens.openCreateDialog();
     }
 
     /**
@@ -81,7 +81,7 @@ export class UserPage {
      * checkbox (CustomTable's row checkbox is a plain, visible `<input type=checkbox>`: no `force`, so a covered or
      * disabled box fails here instead of being clicked through).
      */
-    async tickRole(dialog: Locator, roleName: string): Promise<void> {
+    private async tickRole(dialog: Locator, roleName: string): Promise<void> {
         const row = dialog.getByRole('row').filter({ has: this.page.getByRole('cell', { name: roleName, exact: true }) });
         await expect(row).toHaveCount(1);
         const box = row.getByRole('checkbox');
@@ -92,11 +92,12 @@ export class UserPage {
     }
 
     /**
-     * Users → "+" → Create User → fields (+ required custom attributes) → roles → Create. Waits for the create POST and
-     * the roles PATCH the form sends after it and returns their statuses; it asserts nothing after the click, so the spec
-     * records what was created before any assertion and then checks the dialog closed.
+     * Users → "+" → Create User → fields (+ required custom attributes) → roles → Create. Returns as soon as the create
+     * POST is answered (`status`, `uuid`, `text`, like every create answer), so the spec records the user BEFORE the
+     * roles PATCH the form sends after it; a slow PATCH can no longer lose the created user. `rolesStatus()` then waits
+     * for that PATCH (undefined when no roles were ticked or the create was refused). It asserts nothing after the click.
      */
-    async createUser(fields: UserFields): Promise<{ createStatus: number; rolesStatus?: number }> {
+    async createUser(fields: UserFields): Promise<CreateAnswer & { rolesStatus: () => Promise<number | undefined> }> {
         const dialog = await this.openCreateDialog();
         await this.createDialog.fillTexts({
             username: fields.username,
@@ -105,40 +106,48 @@ export class UserPage {
             email: fields.email ?? `${fields.username}@example.test`,
         });
         await expect(dialog.getByTestId('switch-enabled-input')).toBeChecked();
-        await fillRequiredCustomAttributes(this.page, dialog, 'qa-reg');
+        await fillRequiredCustomAttributes(this.page, dialog, 'qa-reg', await customAttributesDefined(this.page, 'users'));
         for (const r of fields.roleNames ?? []) await this.tickRole(dialog, r);
         const createCall = watchApiCall(this.page, { method: 'POST', path: /\/api\/v1\/users$/ });
         const rolesCall = (fields.roleNames ?? []).length
             ? watchApiCall(this.page, { method: 'PATCH', path: new RegExp(`/api/v1/users/${UUID}/roles$`) })
             : undefined;
+        rolesCall?.catch(() => undefined); // an unawaited wait that times out must not become an unhandled rejection
+        const startedAt = Date.now();
         await this.createDialog.submitButton.click();
-        const createStatus = (await createCall).status();
-        const rolesStatus = rolesCall && createStatus < 300 ? (await rolesCall).status() : undefined;
-        return { createStatus, rolesStatus };
+        const answer = await createAnswerOf(await createCall, startedAt);
+        return {
+            ...answer,
+            rolesStatus: async () => (rolesCall && answer.status < 300 ? (await rolesCall).status() : undefined),
+        };
     }
 
+    /** The detail's pencil → the Edit User dialog is open; returns it. */
     async openEditDialog(): Promise<Locator> {
-        await iconButton(this.detailsWidget, 'pencil').click();
-        await expect(this.editDialog.dialog).toBeVisible();
-        return this.editDialog.dialog;
+        return this.screens.openEditDialog();
     }
 
     /**
      * Waits until the dialog's custom-attribute editor holds the stored values (seen on a live tier: Save pressed about 240 ms
-     * after the dialog opened sent `customAttributes: []` and core answered 422 "Content for required Custom attribute ... is not provided").
+     * after the dialog opened sent `customAttributes: []` and core answered 422 "Content for required Custom attribute
+     * ... is not provided").
      * The busy overlay is gone, the "Custom attributes" tab (when the tier has custom attributes) shows its editor, and every
      * REQUIRED list attribute shows a value (not the "Select ..." placeholder); then the tab that was active is selected again.
      * If a required value stays empty after the wait, the form did not take it from the user: suspected defect (the error says so).
+     * A tier that defines no custom attributes for users (read from the definitions of the Users resource, a session read) has
+     * no editor: the tab is always shown, but the "Show custom attribute" select exists only when there are definitions to
+     * offer, so there is nothing to wait for and the method returns once the busy overlay is gone.
      */
-    private async waitForCustomAttributeEditor(dialog: Locator): Promise<void> {
+    async waitForCustomAttributeEditor(dialog: Locator): Promise<void> {
         await expect(dialog.getByTestId('widget-busy-overlay')).toHaveCount(0);
         const tab = dialog.getByRole('tab', { name: /^Custom attributes$/i }).first();
         if (!(await tab.isVisible())) return;
+        if (!(await customAttributesDefined(this.page, 'users'))) return;
         const active = dialog.getByRole('tab', { selected: true }).first();
         // No selected tab is fine: then no tab is re-selected afterwards, so a failed read is ignored.
         const activeName = ((await active.textContent().catch(() => '')) ?? '').trim();
         await tab.click();
-        await expect(dialog.getByTestId('select-selectAddCustomAttribute-trigger').first(), 'the custom attribute editor is rendered').toBeAttached();
+        await expect(customAttributeEditor(dialog), 'the custom attribute editor is rendered').toBeAttached();
         const labels = dialog.locator('label[for^="__attributes__custom"]').filter({ hasText: /\*\s*$/ });
         await expect(async () => {
             for (const label of await labels.all()) {
@@ -150,23 +159,21 @@ export class UserPage {
                     if (await input.count()) expect(await input.inputValue(), `required attribute ${(await label.innerText()).trim()} holds its stored value (else suspected defect)`).not.toBe('');
                 }
             }
-        }).toPass({ timeout: 15_000 });
+        }).toPass({ timeout: FORM_READY_MS });
         if (activeName && !/^Custom attributes$/i.test(activeName)) await dialog.getByRole('tab', { name: activeName, exact: true }).click();
     }
 
-    /** Detail → Edit → change names / e-mail → Save; returns the status of `PUT /api/v1/users/{uuid}`. */
-    async editUser(fields: { firstName?: string; lastName?: string; email?: string }): Promise<{ status: number }> {
+    /** Detail → Edit → change names / e-mail → Save; returns the answer of `PUT /api/v1/users/{uuid}`. */
+    async editUser(fields: { firstName?: string; lastName?: string; email?: string }): Promise<ApiAnswer> {
         const dialog = await this.openEditDialog();
         await this.waitForCustomAttributeEditor(dialog);
         await this.editDialog.fillTexts({ firstName: fields.firstName, lastName: fields.lastName, email: fields.email });
-        const answer = await this.editDialog.submit({ method: 'PUT', path: new RegExp(`/api/v1/users/${UUID}$`) });
-        return { status: answer.status() };
+        return this.editDialog.submit({ method: 'PUT', path: new RegExp(`/api/v1/users/${UUID}$`) });
     }
 
-    /** Detail → Delete → "Delete User" → Delete; returns the status of `DELETE /api/v1/users/{uuid}`. */
-    async deleteUserFromDetail(): Promise<{ status: number }> {
-        await iconButton(this.detailsWidget, 'trash').click();
-        return this.deleteDialog.confirm({ method: 'DELETE', path: new RegExp(`/api/v1/users/${UUID}$`) });
+    /** Detail → Delete → "Delete User" → Delete; returns the answer of `DELETE /api/v1/users/{uuid}`. */
+    async deleteFromDetail(): Promise<ApiAnswer> {
+        return this.screens.deleteFromDetail({ method: 'DELETE', path: new RegExp(`/api/v1/users/${UUID}$`) });
     }
 
     /** In the Edit User dialog the username field is disabled and shows the username. */
@@ -201,7 +208,7 @@ export class UserPage {
     }
 
     /** The users list (searched by username) has no row of that name, after the list showed its rows. */
-    async assertNotListed(username: string, opts: { loadTimeout?: number } = {}): Promise<void> {
-        await this.list.assertNotListed(username, opts);
+    async assertNotListed(username: string, options: { loadTimeout?: number } = {}): Promise<void> {
+        await this.screens.assertNotListed(username, options);
     }
 }

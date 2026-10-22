@@ -18,6 +18,7 @@ import { createdAfterMarker, LedgerLine, parseLedger, serverDate } from '../../u
 import {
     acquireRunLock, DEFAULT_RUN_ID, API_DEFAULT_RUN_ID, setRunEnvDefaults, hasRunFamilyPrefix, isDefaultRunId, newRunId, releaseRunLock, RUN_ID_FORMAT, runLockFile, assertValidRunId,
 } from '../../utils/regression/run/runId';
+import { fakeContext } from './helpers/guardRig';
 
 // Each test starts with no cached ledger (a rewrite within one mtime tick would otherwise be missed).
 test.afterEach(() => resetLedgerCacheForTests());
@@ -108,14 +109,14 @@ test('the tier identity of the line is checked when one is given', () => {
 /** A fake request context answering detail GETs from `objects` (uuid → body; missing → 404). */
 function liveApi(objects: Record<string, Record<string, unknown>>): { api: APIRequestContext; gets: string[] } {
     const gets: string[] = [];
-    const api = {
+    const api = fakeContext({
         get: async (url: string) => {
             gets.push(url);
             const uuid = url.split('/').pop()!;
             const body = objects[uuid];
             return { status: () => (body ? 200 : 404), ok: () => !!body, json: async () => body, text: async () => JSON.stringify(body ?? {}) };
         },
-    } as unknown as APIRequestContext;
+    });
     return { api, gets };
 }
 
@@ -167,13 +168,13 @@ test('assertOwnLive checks users by username and certificates by commonName; der
 /** A fake API answering per path: status and body (paths not listed answer 404). Records every GET. */
 function pathApi(routes: Record<string, { status: number; body?: unknown }>): { api: APIRequestContext; gets: string[] } {
     const gets: string[] = [];
-    const api = {
+    const api = fakeContext({
         get: async (url: string) => {
             gets.push(url);
             const r = routes[url] ?? { status: 404 };
             return { status: () => r.status, ok: () => r.status >= 200 && r.status < 300, json: async () => r.body, text: async () => JSON.stringify(r.body ?? {}) };
         },
-    } as unknown as APIRequestContext;
+    });
     return { api, gets };
 }
 
@@ -318,8 +319,8 @@ test('both adhoc ids are recognised, and the prefix family covers both suites', 
 });
 
 test('id-named types rest on the ledger; a type that is neither read live nor id-named is refused', async () => {
-    const api = { get: async () => { throw new Error('no read expected'); } } as unknown as APIRequestContext;
-    for (const type of ['acmeAccounts', 'approvals', 'eventAssociations', 'savedViews', 'oidEntries', 'scheduledJobs', 'k8s:Certificate']) {
+    const api = fakeContext({ get: async () => { throw new Error('no read expected'); } });
+    for (const type of ['acmeAccounts', 'approvals', 'eventAssociations', 'oidEntries', 'scheduledJobs', 'k8s:Certificate']) {
         expect(ID_NAMED.has(type) || type.startsWith('k8s:'), type).toBe(true);
         const lines = [line({ type, name: `${RUN}-${type}` })];
         await expect(assertOwnLive(api, type, { uuid: 'u-1' }, 'test', { lines, runId: RUN, tier: null }), type).resolves.toEqual({ line: lines[0] });

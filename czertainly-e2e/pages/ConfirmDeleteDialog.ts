@@ -1,13 +1,17 @@
 /**
- * ConfirmDeleteDialog — the "Delete <Thing>" confirmation of the admin UI (buttons Cancel / Delete), opened from a
- * detail toolbar. `confirm` clicks Delete and returns the status of the DELETE the dialog sends (the wait is registered
- * before the click); the caller asserts it. Used by the role and user pages.
+ * ConfirmDeleteDialog — the delete confirmation of the admin UI.
+ *
+ * WHAT: the "Delete <thing>" confirmation of the admin UI.
+ * WHY: the role and user pages delete through it; the answer of the DELETE it sends is returned to the spec, which
+ *       asserts it after the ledger line.
+ * HOW: the dialog by its accessible name; the wait for the request is registered before the click.
  */
 import { expect, Locator, Page } from '@playwright/test';
-import { actAndWaitForApi, ApiCall } from './ui/waitForResponse';
+import type { ApiAnswer } from '../utils/regression/apiReads';
+import { actAndWaitForApi, answerFrom, ApiCall } from './ui/waitForResponse';
 
 export class ConfirmDeleteDialog {
-    readonly page: Page;
+    private readonly page: Page;
     readonly dialog: Locator;
 
     /** `caption`: the dialog's accessible name, e.g. `Delete Role`. */
@@ -16,10 +20,10 @@ export class ConfirmDeleteDialog {
         this.dialog = page.getByRole('dialog', { name: caption });
     }
 
-    /** The dialog is open; Delete is clicked; returns the status of the request `call` describes. */
-    async confirm(call: ApiCall): Promise<{ status: number }> {
+    /** The dialog is open; Delete is clicked; returns the answer of the request `call` describes. */
+    async confirm(call: ApiCall): Promise<ApiAnswer> {
         await expect(this.dialog).toBeVisible();
-        const answer = await actAndWaitForApi(this.page, call, () => this.dialog.getByRole('button', { name: 'Delete', exact: true }).click());
-        return { status: answer.status() };
+        const startedAt = Date.now();
+        return answerFrom(await actAndWaitForApi(this.page, call, () => this.dialog.getByRole('button', { name: 'Delete', exact: true }).click()), startedAt);
     }
 }

@@ -3,9 +3,9 @@
  * functions, so a unit test can check what each config selects without loading it (a config calls `prepareRun` at
  * import).
  *
- * Logout runs last: `REG-AUTH-99-*.spec.ts` (REG-AUTH-03, the identity-provider sign-out of the suite's admin browser
+ * Logout runs last: `01-sign-in-and-access/99-sign-out.spec.ts` (REG-AUTH-03, the identity-provider sign-out of the suite's admin browser
  * session) must run after EVERY other regression row. Playwright runs the files of a project alphabetically, so inside
- * `regression` the REG-CFG / REG-DEP / REG-USE files would follow it. It therefore gets its own project `logout`, the
+ * `regression` the files of the later area folders would follow it. It therefore gets its own project `logout`, the
  * TEARDOWN project of `regression`: Playwright runs a teardown project after its setup project and all of that
  * project's dependents, failed or not, and a teardown project may not have dependencies. A
  * `dependencies: ['regression']` project would instead be SKIPPED whenever any regression test is not ok: never use
@@ -18,12 +18,13 @@ import { withTierFilters } from './projectFilters';
 
 export const SETUP_FILES = /tier-snapshot\.setup\.ts$/;
 export const NON_INTERFERENCE = /tier-non-interference\.api\.spec\.ts$/;
+/** The one file of the `run-setup` project (REG-RUN-01): the run objects the later specs build on. */
+export const RUN_SETUP_FILES = /run-objects\.setup\.ts$/;
 /**
- * The one file of the `logout` project (REG-AUTH-03), matched by id and not by slug, so the sign-out spec may be renamed
- * (`REG-AUTH-99-<anything>.spec.ts`) without a config change. Anchored at a path boundary: `XREG-AUTH-99-…` and
- * `sub-REG-AUTH-99-…` are other files.
+ * The one file of the `logout` project (REG-AUTH-03): `99-sign-out.spec.ts` in the sign-in and access folder. Anchored at
+ * a path boundary: a longer folder or file name that merely ends the same way is another file.
  */
-export const LOGOUT_FILE = /(^|[\\/])REG-AUTH-99-[a-z0-9-]+\.spec\.ts$/;
+export const LOGOUT_FILE = /(^|[\\/])01-sign-in-and-access[\\/]99-sign-out\.spec\.ts$/;
 
 /** The use / timeout the row projects share. */
 const ROW_USE = { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } };
@@ -34,17 +35,21 @@ export function regressionProjects(env: NodeJS.ProcessEnv = process.env): Playwr
         [
             { name: 'snapshot', testDir: './tests/api', testMatch: SETUP_FILES, teardown: 'non-interference', timeout: 120_000 },
             { name: 'non-interference', testDir: './tests/api', testMatch: NON_INTERFERENCE, timeout: 120_000 },
+            // Makes the run objects (authority, RA profile, ACME profile, role, token chain) once, after the "before" snapshot has listed
+            // what existed. It skips with a named reason on any tier condition and never fails: Playwright starts a dependent project only
+            // when every test of its dependencies is ok, and a skipped test is ok.
+            { name: 'run-setup', testDir: './tests/api', testMatch: RUN_SETUP_FILES, dependencies: ['snapshot'], timeout: 240_000 },
             {
                 name: 'regression',
-                dependencies: ['snapshot'],
+                dependencies: ['run-setup'],
                 teardown: 'logout',
-                testIgnore: LOGOUT_FILE,
+                testIgnore: [LOGOUT_FILE, RUN_SETUP_FILES],
                 use: ROW_USE,
             },
             // The teardown project of `regression` — runs after every regression row, failed or not; no dependencies.
             { name: 'logout', testMatch: LOGOUT_FILE, use: ROW_USE },
         ],
-        { env, infrastructure: ['snapshot', 'non-interference'] },
+        { env, infrastructure: ['snapshot', 'non-interference', 'run-setup'] },
     );
 }
 

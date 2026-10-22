@@ -9,16 +9,18 @@ import * as crypto from 'crypto';
 import { describeHealth, findConnector, healthByVersion, requiredConnectors } from '../platform/connectorApi';
 import { assertGuarded } from '../guard/types';
 import type { GuardedApi } from '../guard/types';
-import { readJsonOk, readProbe, send } from './searchApi';
-import type { Json, Probe } from './searchApi';
+import { readJsonOk, send, readAnswer } from './searchApi';
 import { checkOwnership } from '../ledger/ownership';
 import { rowsNamed } from '../listReads';
 import { requiredCustomAttributes } from '../customAttributes';
 import { recordCreated } from '../ledger/ledger';
-import { runName } from '../ledger/runState';
-import { uniqueStamp } from '../text';
+import { createOwn, probeCollectionCreate } from '../ownCrud';
+import { runName, ownName } from '../ledger/runState';
 import type { OwnRef } from '../ledger/ledger';
 import { hasRunFamilyPrefix } from '../run/runId';
+import { ApiAnswer } from '../apiReads';
+import { DEFAULT_CREDENTIAL_CONNECTOR, settings } from '../run/settings';
+import { JsonObject } from '../json';
 
 // ------------------------------------------------------------------ names and secrets
 
@@ -34,21 +36,21 @@ export interface CredentialConnector {
     uuid: string;
     name: string;
     /** The Basic kind's `username` / `password` attribute definitions (read live from the connector through core). */
-    usernameDef: Json;
-    passwordDef: Json;
+    usernameDef: JsonObject;
+    passwordDef: JsonObject;
 }
 
 /** The registration name of the credential connector: REG_CREDENTIAL_CONNECTOR, else the credential entry of the required connectors. */
 export function credentialConnectorName(env: NodeJS.ProcessEnv = process.env): string {
-    const named = env.REG_CREDENTIAL_CONNECTOR?.trim();
+    const named = settings(env).credentialConnectorOverride;
     if (named) return named;
-    return requiredConnectors(env).find((n) => /credential/i.test(n)) ?? 'Common-Credential-Connector';
+    return requiredConnectors(env).find((n) => /credential/i.test(n)) ?? DEFAULT_CREDENTIAL_CONNECTOR;
 }
 
 /** The Basic definitions inside the connector's attribute list for kind Basic, or the reason they are not usable. */
-export function basicDefinitions(list: unknown): { usernameDef: Json; passwordDef: Json } | { problem: string } {
+export function basicDefinitions(list: unknown): { usernameDef: JsonObject; passwordDef: JsonObject } | { problem: string } {
     if (!Array.isArray(list)) return { problem: 'the Basic attribute list is not an array' };
-    const defs = (list as Json[]).filter((a) => !a.type || a.type === 'data');
+    const defs = (list as JsonObject[]).filter((a) => !a.type || a.type === 'data');
     const usernameDef = defs.find((a) => a.name === 'username');
     const passwordDef = defs.find((a) => a.name === 'password');
     if (!usernameDef || !passwordDef) return { problem: 'the Basic kind has no username / password data attributes' };
@@ -68,7 +70,7 @@ export async function credentialSetup(api: APIRequestContext, env: NodeJS.Proces
     if (!connector) return { skip: `connector ${name} is not registered on this tier (REG_CREDENTIAL_CONNECTOR names another one)` };
     const health = await healthByVersion(api, connector);
     if (!health.healthy) return { skip: `${describeHealth(health)} — environment blocker (the credential rows need a live connector)` };
-    const read = await readProbe(api, `/api/v1/connectors/${connector.uuid}/attributes/credentialProvider/Basic`);
+    const read = await readAnswer(api, `/api/v1/connectors/${connector.uuid}/attributes/credentialProvider/Basic`);
     if (read.status !== 200) return { skip: `${name}: the Basic attribute definitions read answered ${read.status}` };
     const defs = basicDefinitions(read.json);
     if ('problem' in defs) return { skip: `${name}: ${defs.problem}` };
@@ -90,11 +92,11 @@ export interface BasicValues {
  * content: [{ data }] }` (the current contract, NOT the legacy by-name shape). `withUuid: false` builds the by-name shape
  * that core#2512 reports (the credential row is saved before the attribute lookup fails).
  */
-export function basicAttributes(c: Pick<CredentialConnector, 'usernameDef' | 'passwordDef'>, values: BasicValues, opts: { withUuid?: boolean } = {}): Json[] {
+export function basicAttributes(c: Pick<CredentialConnector, 'usernameDef' | 'passwordDef'>, values: BasicValues, opts: { withUuid?: boolean } = {}): JsonObject[] {
     const withUuid = opts.withUuid !== false;
-    const one = (def: Json, value: string | null | undefined, wrap: (v: string) => unknown): Json[] => {
+    const one = (def: JsonObject, value: string | null | undefined, wrap: (v: string) => unknown): JsonObject[] => {
         if (value === undefined) return [];
-        const attribute: Json = { version: 'v2', ...(withUuid ? { uuid: def.uuid } : {}), name: def.name, contentType: String(def.contentType).toLowerCase() };
+        const attribute: JsonObject = { version: 'v2', ...(withUuid ? { uuid: def.uuid } : {}), name: def.name, contentType: String(def.contentType).toLowerCase() };
         if (value !== null) attribute.content = [{ data: wrap(value) }];
         return [attribute];
     };
@@ -102,15 +104,15 @@ export function basicAttributes(c: Pick<CredentialConnector, 'usernameDef' | 'pa
 }
 
 /** A `POST /v1/credentials` body; `over` replaces or (with `undefined`) drops any member, `null` sends it as null. */
-export function credentialBody(c: Pick<CredentialConnector, 'uuid'>, name: unknown, attributes: Json[], customAttributes: Json[], over: Json = {}): Json {
+export function credentialBody(c: Pick<CredentialConnector, 'uuid'>, name: unknown, attributes: JsonObject[], customAttributes: JsonObject[], over: JsonObject = {}): JsonObject {
     return { name, connectorUuid: c.uuid, kind: 'Basic', attributes, customAttributes, ...over };
 }
 
 // ------------------------------------------------------------------ list reads by exact name
 
 /** The row of a list endpoint with this uuid, or undefined. */
-export async function findRowByUuid(api: APIRequestContext, listUrl: '/api/v1/credentials' | '/api/v1/groups', uuid: string): Promise<Json | undefined> {
-    const rows = readJsonOk<Json[]>(await readProbe(api, listUrl), `GET ${listUrl}`);
+export async function findRowByUuid(api: APIRequestContext, listUrl: '/api/v1/credentials' | '/api/v1/groups', uuid: string): Promise<JsonObject | undefined> {
+    const rows = readJsonOk<JsonObject[]>(await readAnswer(api, listUrl), `GET ${listUrl}`);
     if (!Array.isArray(rows)) throw new Error(`GET ${listUrl} did not answer a list`);
     return rows.find((r) => r?.uuid === uuid);
 }
@@ -124,10 +126,10 @@ export async function findRowByUuid(api: APIRequestContext, listUrl: '/api/v1/cr
 export async function adoptByName(
     api: APIRequestContext, listUrl: '/api/v1/credentials' | '/api/v1/groups' | '/api/v1/raProfiles', type: 'credentials' | 'groups' | 'raProfiles',
     name: string, spec: string, note: string, parents?: Record<string, string>,
-): Promise<Json[]> {
+): Promise<JsonObject[]> {
     const rows = await rowsNamed(api, listUrl, name);
     for (const r of rows) {
-        if (typeof r.uuid === 'string' && !checkOwnership({ uuid: r.uuid }).own) recordCreated(type, { uuid: r.uuid, name }, spec, note, parents);
+        if (typeof r.uuid === 'string' && !checkOwnership({ uuid: r.uuid }).own) recordCreated(type, { uuid: r.uuid, name }, { spec, note, parents });
     }
     return rows;
 }
@@ -135,92 +137,89 @@ export async function adoptByName(
 /** The own object kinds the pack deletes as the behaviour under test. */
 export type DeletableKind = 'credentials' | 'groups';
 
-/** `DELETE /v1/credentials|groups/{own}` (204 expected): status and body never throw. */
-export async function deleteOwnConfigObject(api: GuardedApi, kind: DeletableKind, uuid: string): Promise<Probe> {
-    return send(assertGuarded(api, 'deleteOwnConfigObject'), 'DELETE', `/api/v1/${kind}/${uuid}`);
+/** `DELETE /v1/credentials|groups/{uuid}` through the guard (an own uuid is deleted, a foreign one refused, a probe uuid sent): status and body never throw. A delete the test needs goes through `deleteOwn`. */
+export async function deleteConfigObject(api: GuardedApi, kind: DeletableKind, uuid: string): Promise<ApiAnswer> {
+    return send(assertGuarded(api, 'deleteConfigObject'), 'DELETE', `/api/v1/${kind}/${uuid}`);
 }
 
 /** Bulk `DELETE /v1/credentials|groups` with an explicit uuid list (own uuids and probe uuids); unknown ones are skipped by core. */
-export async function bulkDeleteObjects(api: GuardedApi, kind: DeletableKind, uuids: string[]): Promise<Probe> {
+export async function bulkDeleteObjects(api: GuardedApi, kind: DeletableKind, uuids: string[]): Promise<ApiAnswer> {
     return send(assertGuarded(api, 'bulkDeleteObjects'), 'DELETE', `/api/v1/${kind}`, { data: uuids });
 }
 
 /** `GET /v1/credentials|groups/{uuid}` (status and body never throw). */
-export const readObject = (api: APIRequestContext, kind: DeletableKind, uuid: string): Promise<Probe> => readProbe(api, `/api/v1/${kind}/${uuid}`);
+export const readObject = (api: APIRequestContext, kind: DeletableKind, uuid: string): Promise<ApiAnswer> => readAnswer(api, `/api/v1/${kind}/${uuid}`);
 
 // ------------------------------------------------------------------ credentials
 
-export interface CreateAttempt {
-    probe: Probe;
-    /** Present when the server created an object (2xx with a uuid): already in the ledger. */
-    own?: OwnRef;
-}
-
-/** The uuid of a 2xx create answer (`{ "uuid": "<canonical>" }`), or undefined. */
-export function createdUuid(p: Probe): string | undefined {
-    const uuid = p.status >= 200 && p.status < 300 && p.json && typeof p.json === 'object' ? (p.json as Json).uuid : undefined;
-    return typeof uuid === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uuid) ? uuid : undefined;
-}
-
-export async function createAttempt(api: GuardedApi, url: string, type: string, body: Json, spec: string, note: string, parents?: Record<string, string>): Promise<CreateAttempt> {
-    const probe = await send(assertGuarded(api, `credentialsApi POST ${type}`), 'POST', url, { data: body });
-    const uuid = createdUuid(probe);
-    // Ledger before assertion: an accepted create (also an accidental one) is the run's object. A name that is not a string
-    // (a null / missing-name negative that was accepted) is recorded under a placeholder: it carries no run prefix, so the
-    // run-end teardown reports it instead of deleting it.
-    const own = uuid ? recordCreated(type, { uuid, name: typeof body.name === 'string' ? body.name : '(no name)' }, spec, note, parents) : undefined;
-    return { probe, ...(own ? { own } : {}) };
-}
-
 /** `POST /v1/credentials` with any body; the status never throws, an accepted create is in the ledger before this returns. */
-export async function createCredentialProbe(api: GuardedApi, body: Json, spec: string, note = 'credential create probe'): Promise<CreateAttempt> {
-    return createAttempt(api, '/api/v1/credentials', 'credentials', body, spec, note);
+export async function probeCredential(api: GuardedApi, spec: string, body: JsonObject, note = 'credential create probe'): Promise<ApiAnswer> {
+    return probeCollectionCreate(api, spec, { type: 'credentials', path: '/api/v1/credentials', body, note });
 }
 
-export interface OwnCredential {
-    ref: OwnRef;
+export interface OwnCredential extends OwnRef {
     username: string;
     password: string;
     /** The raw text of the 201 answer (a secret must not be in it either). */
     createText: string;
 }
 
+export interface BasicCredentialOptions {
+    /** The credential connector; without its Basic definitions they are read live from the connector. */
+    connector: Pick<CredentialConnector, 'uuid' | 'name'> & Partial<Pick<CredentialConnector, 'usernameDef' | 'passwordDef'>>;
+    username?: string;
+    password?: string;
+    note?: string;
+}
+
 /** A NEW own Basic credential (201 required; ledger first): run-prefixed unique name, a random username and password. */
-export async function ownCredential(api: GuardedApi, c: CredentialConnector, spec: string, opts: { suffix?: string; username?: string; password?: string; note?: string } = {}): Promise<OwnCredential> {
-    const name = runName(`${opts.suffix ?? 'cred'}-${uniqueStamp()}`);
-    const username = opts.username ?? runName(`cu-${uniqueStamp()}`);
-    const password = opts.password ?? randomSecret();
-    const body = credentialBody(c, name, basicAttributes(c, { username, password }), await requiredCustomAttributes(api, 'credentials', runName('ca')));
-    const { probe, own } = await createCredentialProbe(api, body, spec, opts.note ?? 'own Basic credential (API prerequisite)');
-    if (probe.status !== 201 || !own) throw new Error(`creating the own credential answered ${probe.status} ${probe.text.slice(0, 300)}`);
-    return { ref: own, username, password, createText: probe.text };
+export async function createOwnBasicCredential(api: GuardedApi, spec: string, suffix: string, o: BasicCredentialOptions): Promise<OwnCredential> {
+    let defs = o.connector.usernameDef && o.connector.passwordDef ? { usernameDef: o.connector.usernameDef, passwordDef: o.connector.passwordDef } : undefined;
+    if (!defs) {
+        const read = readJsonOk<unknown>(await readAnswer(api, `/api/v1/connectors/${o.connector.uuid}/attributes/credentialProvider/Basic`), 'GET Basic credential attributes');
+        const found = basicDefinitions(read);
+        if ('problem' in found) throw new Error(`${o.connector.name}: ${found.problem}`);
+        defs = found;
+    }
+    const username = o.username ?? ownName('cu');
+    const password = o.password ?? randomSecret();
+    const created = await createOwn(api, spec, {
+        type: 'credentials',
+        path: '/api/v1/credentials',
+        name: ownName(suffix),
+        note: o.note ?? 'own Basic credential (API prerequisite)',
+        body: credentialBody(o.connector, undefined, basicAttributes(defs, { username, password }), await requiredCustomAttributes(api, 'credentials', runName('ca'))),
+    });
+    if (created.answer.status !== 201) throw new Error(`creating the own credential answered ${created.answer.status} ${created.answer.text.slice(0, 300)}`);
+    const { answer, ...ref } = created;
+    return { ...ref, username, password, createText: answer.text };
 }
 
 /** `GET /v1/credentials/{uuid}` (status and body never throw). */
-export const readCredential = (api: APIRequestContext, uuid: string): Promise<Probe> => readProbe(api, `/api/v1/credentials/${uuid}`);
+export const readCredential = (api: APIRequestContext, uuid: string): Promise<ApiAnswer> => readAnswer(api, `/api/v1/credentials/${uuid}`);
 
 /** The attribute of a credential detail (or list row) by name, or undefined. */
-export const attributeOf = (detail: Json | undefined, name: string): Json | undefined => (Array.isArray(detail?.attributes) ? (detail!.attributes as Json[]).find((a) => a?.name === name) : undefined);
+export const attributeOf = (detail: JsonObject | undefined, name: string): JsonObject | undefined => (Array.isArray(detail?.attributes) ? (detail!.attributes as JsonObject[]).find((a) => a?.name === name) : undefined);
 
 /** Every content item of an attribute that carries a `data` member with a value (a masked secret has none). */
-export const contentWithData = (attribute: Json | undefined): Json[] =>
-    (Array.isArray(attribute?.content) ? (attribute!.content as Json[]) : []).filter((item) => item && item.data !== undefined && item.data !== null);
+export const contentWithData = (attribute: JsonObject | undefined): JsonObject[] =>
+    (Array.isArray(attribute?.content) ? (attribute!.content as JsonObject[]) : []).filter((item) => item && item.data !== undefined && item.data !== null);
 
 /** `PUT /v1/credentials/{own}` with attributes (and the custom attributes the tier requires); `over` adds members (e.g. an ignored `name`). */
-export async function putCredential(api: GuardedApi, uuid: string, attributes: Json[], customAttributes: Json[], over: Json = {}): Promise<Probe> {
+export async function putCredential(api: GuardedApi, uuid: string, attributes: JsonObject[], customAttributes: JsonObject[], over: JsonObject = {}): Promise<ApiAnswer> {
     return send(assertGuarded(api, 'putCredential'), 'PUT', `/api/v1/credentials/${uuid}`, { data: { attributes, customAttributes, ...over } });
 }
 
 /** `PATCH /v1/credentials/{own}/enable|disable`. */
-export async function setCredentialEnabled(api: GuardedApi, uuid: string, enabled: boolean): Promise<Probe> {
+export async function setCredentialEnabled(api: GuardedApi, uuid: string, enabled: boolean): Promise<ApiAnswer> {
     return send(assertGuarded(api, 'setCredentialEnabled'), 'PATCH', `/api/v1/credentials/${uuid}/${enabled ? 'enable' : 'disable'}`);
 }
 
 /** The data values a response attribute (custom or data) holds, in order; [] when it is missing or has no content. */
-export const valuesOf = (detail: Json | undefined, key: 'customAttributes' | 'attributes', name: string): unknown[] => {
-    const list = Array.isArray(detail?.[key]) ? (detail![key] as Json[]) : [];
+export const valuesOf = (detail: JsonObject | undefined, key: 'customAttributes' | 'attributes', name: string): unknown[] => {
+    const list = Array.isArray(detail?.[key]) ? (detail![key] as JsonObject[]) : [];
     const attribute = list.find((a) => a?.name === name);
-    return (Array.isArray(attribute?.content) ? (attribute!.content as Json[]) : []).map((c) => c?.data);
+    return (Array.isArray(attribute?.content) ? (attribute!.content as JsonObject[]) : []).map((c) => c?.data);
 };
 
 // ------------------------------------------------------------------ connectors without the credential function group
@@ -230,8 +229,8 @@ export const valuesOf = (detail: Json | undefined, key: 'customAttributes' | 'at
  * the first by name; undefined when there is none. Reads `GET /v1/connectors` only; run-family names are skipped.
  */
 export async function connectorWithoutCredentialGroup(api: APIRequestContext): Promise<{ uuid: string; name: string } | undefined> {
-    const rows = readJsonOk<Json[]>(await readProbe(api, '/api/v1/connectors'), 'GET /v1/connectors');
+    const rows = readJsonOk<JsonObject[]>(await readAnswer(api, '/api/v1/connectors'), 'GET /v1/connectors');
     const sorted = (Array.isArray(rows) ? rows : []).filter((r) => typeof r?.uuid === 'string' && !hasRunFamilyPrefix(String(r.name))).sort((a, b) => (String(a.name) < String(b.name) ? -1 : 1));
-    const hit = sorted.find((r) => Array.isArray(r.functionGroups) && r.functionGroups.length > 0 && !r.functionGroups.some((g: Json) => g?.functionGroupCode === 'credentialProvider'));
+    const hit = sorted.find((r) => Array.isArray(r.functionGroups) && r.functionGroups.length > 0 && !r.functionGroups.some((g: JsonObject) => g?.functionGroupCode === 'credentialProvider'));
     return hit ? { uuid: String(hit.uuid), name: String(hit.name) } : undefined;
 }

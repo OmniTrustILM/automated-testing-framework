@@ -9,7 +9,7 @@ prepareRun({ configDir: __dirname });
 
 /**
  * Regression suite (REG-*): the release checklist's configuration and usage flows, create-only on a shared tier.
- * Projects (utils/regression/regressionProjects.ts): snapshot → regression → logout (REG-AUTH-99-*.spec.ts) →
+ * Projects (utils/regression/regressionProjects.ts): snapshot → run-setup (the run objects) → regression → logout (01-sign-in-and-access/99-sign-out.spec.ts) →
  * non-interference, then the run-end teardown. Safety model and how to run: tests/regression/README.md.
  */
 export default defineConfig({

@@ -1,3 +1,4 @@
+import { settings } from './settings';
 /**
  * flags — the one parser for the boolean switches of the REG-* / API-* runs.
  *
@@ -25,7 +26,7 @@ export function parseFlag(value: string | undefined, name: string, fallback: boo
 
 /** API_TEARDOWN_DRY_RUN: the run-end teardown prints its plan and deletes nothing (default off). */
 export function isDryRun(env: NodeJS.ProcessEnv = process.env): boolean {
-    return parseFlag(env.API_TEARDOWN_DRY_RUN, 'API_TEARDOWN_DRY_RUN', false);
+    return parseFlag(settings(env).teardownDryRun, 'API_TEARDOWN_DRY_RUN', false);
 }
 
 export class DryRunRefusal extends Error {

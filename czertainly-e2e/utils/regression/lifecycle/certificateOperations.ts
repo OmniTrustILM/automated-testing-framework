@@ -12,7 +12,8 @@ import { isJsonObject, JsonObject } from '../json';
 import { OwnRef, recordCreated } from '../ledger/ledger';
 import { pollUntil } from '../wait';
 import { opsBase } from './certificateLabels';
-import { createdAfterOfAnswer, RawAnswer, RawOptions, sendRaw } from './rawAnswers';
+import { createdAfterOfAnswer, RawOptions, sendRaw } from './rawAnswers';
+import { ApiAnswer } from '../apiReads';
 
 /**
  * Observed states of a certificate until it reaches `target` (distinct, in order of first observation): the state
@@ -50,17 +51,17 @@ export function isSubsequenceOf(observed: readonly string[], expected: readonly 
 
 // ------------------------------------------------------------------ renew, rekey, revoke, issue-existing, probes
 
-export interface SuccessorAnswer extends RawAnswer {
+export interface SuccessorAnswer extends ApiAnswer {
     /** The successor the platform made (recorded), when the answer carried a uuid. */
     successor?: OwnRef;
     createdAfter?: string;
 }
 
 /** Records a successor named by an answer (ledger before assertion); the successor keeps the predecessor's CN. */
-function recordSuccessor(answer: RawAnswer, cert: OwnRef, ra: RaLike, spec: string, note: string): SuccessorAnswer {
+function recordSuccessor(answer: ApiAnswer, cert: OwnRef, ra: RaLike, spec: string, note: string): SuccessorAnswer {
     const uuid = isJsonObject(answer.json) ? answer.json.uuid : undefined;
     if (typeof uuid !== 'string') return { ...answer };
-    const successor = recordCreated('certificates', { uuid, name: cert.name }, spec, note, { raProfile: ra.uuid, authority: ra.authorityUuid, predecessor: cert.uuid });
+    const successor = recordCreated('certificates', { uuid, name: cert.name }, { spec, note, parents: { raProfile: ra.uuid, authority: ra.authorityUuid, predecessor: cert.uuid } });
     return { ...answer, successor, createdAfter: createdAfterOfAnswer(answer) };
 }
 
@@ -106,7 +107,7 @@ export interface RevokeOptions {
 }
 
 /** `POST …/certificates/{own}/revoke` (204, asynchronous completion); the answer is returned unasserted. */
-export async function revokeOwnCertificate(api: GuardedApi, cert: OwnRef, ra: RaLike, opts: RevokeOptions = {}): Promise<RawAnswer> {
+export async function revokeOwnCertificate(api: GuardedApi, cert: OwnRef, ra: RaLike, opts: RevokeOptions = {}): Promise<ApiAnswer> {
     await assertOwnLive(api, 'certificates', cert, 'revokeOwnCertificate');
     const body: JsonObject = { attributes: opts.attributes ?? [], destroyKey: opts.destroyKey ?? false };
     if (opts.reason !== undefined) body.reason = opts.reason;
@@ -126,7 +127,7 @@ export interface IssueExistingOptions {
  * `POST …/certificates/{own}/issue`: completion of a registered certificate, or the issue of a `requested` one
  * The answer is returned unasserted (200 or the 422 texts of the decision table).
  */
-export async function issueExisting(api: GuardedApi, cert: OwnRef, ra: RaLike, opts: IssueExistingOptions = {}): Promise<RawAnswer> {
+export async function issueExisting(api: GuardedApi, cert: OwnRef, ra: RaLike, opts: IssueExistingOptions = {}): Promise<ApiAnswer> {
     await assertOwnLive(api, 'certificates', cert, 'issueExisting');
     const body: JsonObject = { attributes: [], ...(opts.body ?? {}) };
     if (opts.request !== undefined) {
@@ -138,17 +139,17 @@ export async function issueExisting(api: GuardedApi, cert: OwnRef, ra: RaLike, o
 }
 
 /** The three parked-operation endpoints: finalize, confirm revoke, cancel. Each answer unasserted. */
-export async function finalizeIssue(api: GuardedApi, cert: OwnRef, ra: RaLike): Promise<RawAnswer> {
+export async function finalizeIssue(api: GuardedApi, cert: OwnRef, ra: RaLike): Promise<ApiAnswer> {
     await assertOwnLive(api, 'certificates', cert, 'finalizeIssue');
     return sendRaw(api, 'POST', `${opsBase(ra)}/certificates/${cert.uuid}/issue/finalize`, { identifyAttributes: [] });
 }
 
-export async function confirmRevoke(api: GuardedApi, cert: OwnRef, ra: RaLike): Promise<RawAnswer> {
+export async function confirmRevoke(api: GuardedApi, cert: OwnRef, ra: RaLike): Promise<ApiAnswer> {
     await assertOwnLive(api, 'certificates', cert, 'confirmRevoke');
     return sendRaw(api, 'POST', `${opsBase(ra)}/certificates/${cert.uuid}/revoke/confirm`);
 }
 
-export async function cancelPending(api: GuardedApi, cert: OwnRef, ra: RaLike): Promise<RawAnswer> {
+export async function cancelPending(api: GuardedApi, cert: OwnRef, ra: RaLike): Promise<ApiAnswer> {
     await assertOwnLive(api, 'certificates', cert, 'cancelPending');
     return sendRaw(api, 'POST', `${opsBase(ra)}/certificates/${cert.uuid}/cancel`, {});
 }

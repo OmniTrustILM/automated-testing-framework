@@ -105,7 +105,7 @@ function metaIdOf(ts: typeof TS, node: TS.Node): string | undefined {
     return undefined;
 }
 
-/** The tags `testMeta({ … })` adds, read from its literal argument (id, prio, local, gate, phaseB, bug). */
+/** The tags `testMeta({ … })` adds, read from its literal argument (id, prio, local, gate, phaseB, needs, bug). */
 function metaTags(ts: typeof TS, sf: TS.SourceFile, arg: TS.Expression | undefined): string[] {
     if (!arg || !ts.isObjectLiteralExpression(arg)) return [];
     const out: string[] = [];
@@ -117,6 +117,10 @@ function metaTags(ts: typeof TS, sf: TS.SourceFile, arg: TS.Expression | undefin
         if (['local', 'gate', 'phaseB', 'slow'].includes(key) && isTrue) out.push(SIMPLE_TAGS[key]);
         if (key === 'prio' && ts.isStringLiteralLike(v)) out.push(`@p${v.text.slice(1)}`);
         if (key === 'id' && ts.isStringLiteralLike(v)) out.push(idTag(v.text));
+        if (key === 'needs') {
+            const refs = ts.isArrayLiteralExpression(v) ? v.elements : [v];
+            for (const r of refs) if (ts.isStringLiteralLike(r)) out.push(`@needs:${r.text}`);
+        }
         if (key === 'bug') {
             const refs = ts.isArrayLiteralExpression(v) ? v.elements : [v];
             for (const r of refs) out.push(`@bug:${ts.isStringLiteralLike(r) ? r.text : '?'}`);
@@ -157,6 +161,23 @@ export function testBlocks(src: string, fileName = 'spec.ts'): TestBlock[] {
     };
     visit(sf, []);
     return blocks;
+}
+
+/** The lines of the `test.only(` / `describe.only(` / `test.describe.only(` calls of a source (strings and comments are not calls). */
+export function onlyCalls(src: string, fileName = 'spec.ts'): number[] {
+    const ts = typescript();
+    const sf = ts.createSourceFile(fileName, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    const lines: number[] = [];
+    const visit = (n: TS.Node): void => {
+        if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && n.expression.name.text === 'only') {
+            const root = n.expression.expression;
+            const base = ts.isPropertyAccessExpression(root) ? root.expression : root;
+            if (ts.isIdentifier(base) && ['test', 'describe', 'it'].includes(base.text)) lines.push(sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1);
+        }
+        ts.forEachChild(n, visit);
+    };
+    visit(sf);
+    return lines;
 }
 
 /** Every identifier and string literal of a source (comments excluded): a code-level marker search. */

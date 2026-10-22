@@ -9,11 +9,19 @@ import { apiJson } from './apiReads';
 import { requestVersion } from './attributeVersion';
 import type { AttributeDefinition } from './platform/cryptoAlgorithmCases';
 import { GuardedApi } from './guard/types';
-import { sendJson, isOk, ownName } from './events/workflowRequests';
-import { OwnRef, recordCreated } from './ledger/ledger';
-import { runId } from './ledger/runState';
+import { createOwn } from './ownCrud';
+import type { OwnRef } from './ledger/ledger';
+import { runId, ownName } from './ledger/runState';
+import type { JsonObject } from './json';
+import { objectOf, rowsOf } from './json';
 
-type Json = Record<string, any>;
+/** A required attribute of a type the suite cannot fill: a test that cannot proceed on this tier skips on THIS error and on no other. */
+export class UnfillableAttributeError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'UnfillableAttributeError';
+    }
+}
 
 export interface OwnCustomAttribute extends OwnRef {
     /** The attribute name (the `name|contentType` field identifier part). */
@@ -21,27 +29,48 @@ export interface OwnCustomAttribute extends OwnRef {
     contentType: string;
 }
 
+export interface CustomAttributeOptions {
+    /** The resources the definition applies to (default `certificates`). */
+    resources?: string[];
+    /** The content type code (default `string`). */
+    contentType?: string;
+    /** A list attribute with these predefined options (`{ reference: data, data }` each). */
+    options?: string[];
+    /** A list attribute accepts several values unless this is false. */
+    multiSelect?: boolean;
+    label?: string;
+    description?: string;
+    /** A planned name (the seed's isolation prefix); default `ownName(suffix)`. */
+    name?: string;
+    note?: string;
+}
+
 /**
- * An own custom attribute definition (NOT required: a required one would break other users' forms) on the given
- * resources, recorded. The definition name is the ledger name.
+ * An own custom attribute definition (NEVER required: a required one would break other users' forms) on the given
+ * resources, visible and writable, recorded. The definition name is the ledger name.
  */
-export async function createOwnCustomAttribute(api: GuardedApi, spec: string, o: { suffix: string; resources?: string[]; contentType?: string }): Promise<OwnCustomAttribute> {
-    const name = ownName(o.suffix);
+export async function createOwnCustomAttribute(api: GuardedApi, spec: string, suffix: string, o: CustomAttributeOptions = {}): Promise<OwnCustomAttribute> {
+    const name = o.name ?? ownName(suffix);
     const contentType = o.contentType ?? 'string';
-    const sent = await sendJson(api, 'POST', '/api/v1/attributes/custom', {
+    const created = await createOwn(api, spec, {
+        type: 'customAttributes',
+        path: '/api/v1/attributes/custom',
         name,
-        label: name,
-        description: `REG run ${runId()}`,
-        contentType,
-        required: false,
-        visible: true,
-        readOnly: false,
-        list: false,
-        multiSelect: false,
-        resources: o.resources ?? ['certificates'],
+        note: o.note ?? 'own custom attribute (never required)',
+        body: {
+            label: o.label ?? name,
+            description: o.description ?? `REG run ${runId()}`,
+            contentType,
+            required: false,
+            visible: true,
+            readOnly: false,
+            list: !!o.options,
+            multiSelect: !!o.options && o.multiSelect !== false,
+            ...(o.options ? { extensibleList: false, content: o.options.map((data) => ({ reference: data, data })) } : {}),
+            resources: o.resources ?? ['certificates'],
+        },
     });
-    if (!isOk(sent) || typeof sent.json?.uuid !== 'string') throw new Error(`POST /v1/attributes/custom → ${sent.status} ${sent.text.slice(0, 300)}`);
-    const ref = recordCreated('customAttributes', { uuid: sent.json.uuid, name }, spec, 'own custom attribute (never required)');
+    const { answer: _answer, ...ref } = created;
     return { ...ref, attributeName: name, contentType };
 }
 
@@ -49,7 +78,7 @@ export async function createOwnCustomAttribute(api: GuardedApi, spec: string, o:
  * A request custom attribute that sets `attr` to `value`: `{ uuid, name, contentType, content: [{ data }] }`. The content type
  * is the attribute's own when it carries one (`OwnCustomAttribute`), else `string`.
  */
-export const customAttributeRequest = (attr: { uuid: string; name: string; contentType?: string }, value: unknown): Json => ({
+export const customAttributeRequest = (attr: { uuid: string; name: string; contentType?: string }, value: unknown): JsonObject => ({
     uuid: attr.uuid,
     name: attr.name,
     contentType: attr.contentType ?? 'string',
@@ -57,16 +86,16 @@ export const customAttributeRequest = (attr: { uuid: string; name: string; conte
 });
 
 /** The text of a custom attribute on a certificate detail, or undefined (`customAttributes: [{ name, content: [{ data }] }]`). */
-export function customAttributeValue(detail: Json, name: string): unknown {
-    const a = ((detail.customAttributes ?? []) as Json[]).find((x) => x.name === name);
-    const item = a?.content?.[0];
+export function customAttributeValue(detail: JsonObject, name: string): unknown {
+    const a = ((detail.customAttributes ?? []) as JsonObject[]).find((x) => x.name === name);
+    const item = rowsOf(a?.content)[0];
     return item?.data;
 }
 
 // ------------------------------------------------------------------ request attributes and the required-attribute filler
 
 /** A response attribute (`ResponseAttribute` v2 / v3) as the request attribute that sets the same content. */
-export function toRequestAttribute(a: Json): Json {
+export function toRequestAttribute(a: JsonObject): JsonObject {
     return { version: requestVersion(a), uuid: a.uuid, name: a.name, contentType: a.contentType, content: a.content };
 }
 
@@ -85,28 +114,29 @@ export function toRequestAttribute(a: Json): Json {
 export type CustomAttributeResource = string;
 
 /** The pure part of `requiredCustomAttributes` (unit-tested per content type): definitions in, request attributes out. */
-export function requiredAttributeItems(defs: Json[] | undefined, resource: string, value: string, now: Date = new Date()): Json[] {
-    const out: Json[] = [];
+export function requiredAttributeItems(defs: JsonObject[] | undefined, resource: string, value: string, now: Date = new Date()): JsonObject[] {
+    const out: JsonObject[] = [];
     const iso = now.toISOString();
     for (const d of defs ?? []) {
-        if (!d?.properties?.required) continue;
+        const props = objectOf(d?.properties);
+        if (!props.required) continue;
         const type = String(d.contentType);
-        let item: Json;
-        if (d.properties.list && Array.isArray(d.content) && d.content.length) item = { ...d.content[0], contentType: d.content[0].contentType ?? type };
+        let item: JsonObject;
+        if (props.list && Array.isArray(d.content) && d.content.length) item = { ...(d.content[0] as JsonObject), contentType: (d.content[0] as JsonObject).contentType ?? type };
         else if (['string', 'text', 'codeblock'].includes(type)) item = { data: value, contentType: type };
         else if (['integer', 'float'].includes(type)) item = { data: 1, contentType: type };
         else if (type === 'boolean') item = { data: true, contentType: type };
         else if (type === 'date') item = { data: iso.slice(0, 10), contentType: type };
         else if (type === 'time') item = { data: iso.slice(11, 19), contentType: type };
         else if (type === 'datetime') item = { data: iso.slice(0, 19), contentType: type };
-        else throw new Error(`required custom attribute ${d.uuid} on ${resource} has content type ${type}, which the suite cannot fill`);
+        else throw new UnfillableAttributeError(`required custom attribute ${d.uuid} on ${resource} has content type ${type}, which the suite cannot fill`);
         out.push({ version: requestVersion(d, 'v3'), uuid: d.uuid, name: d.name, contentType: type, content: [item] });
     }
     return out;
 }
 
-export async function requiredCustomAttributes(api: APIRequestContext, resource: CustomAttributeResource, value: string): Promise<Json[]> {
-    return requiredAttributeItems(await apiJson<Json[]>(api, 'GET', `/api/v1/attributes/custom/resources/${resource}`), resource, value);
+export async function requiredCustomAttributes(api: APIRequestContext, resource: CustomAttributeResource, value: string): Promise<JsonObject[]> {
+    return requiredAttributeItems(await apiJson<JsonObject[]>(api, 'GET', `/api/v1/attributes/custom/resources/${resource}`), resource, value);
 }
 
 /**
@@ -115,25 +145,25 @@ export async function requiredCustomAttributes(api: APIRequestContext, resource:
  * integer → 1, a list → its first option); optional attributes without a value are left out; a required attribute of
  * a type the suite cannot fill throws (never a guess). `info` / `group` definitions are skipped.
  */
-export function requestAttributesFrom(defs: AttributeDefinition[], values: Record<string, unknown> = {}, fallback = 'qa'): Json[] {
-    const out: Json[] = [];
+export function requestAttributesFrom(defs: AttributeDefinition[], values: Record<string, unknown> = {}, fallback = 'qa'): JsonObject[] {
+    const out: JsonObject[] = [];
     for (const d of defs) {
         if (d.type && !/^data$/i.test(d.type)) continue;
         const type = String(d.contentType ?? 'string');
         const given = values[d.name];
-        let content: Json[] | undefined;
+        let content: JsonObject[] | undefined;
         if (given !== undefined) {
             content = type === 'secret' && (typeof given === 'string') ? [{ data: { secret: given } }] : [{ data: given }];
         } else if (d.properties?.required) {
-            if (d.properties.list && d.content?.length) content = [{ ...(d.content[0] as Json), contentType: (d.content[0] as Json).contentType ?? type }];
+            if (d.properties.list && d.content?.length) content = [{ ...(d.content[0] as unknown as JsonObject), contentType: (d.content[0] as unknown as JsonObject).contentType ?? type }];
             else if (['string', 'text', 'codeblock'].includes(type)) content = [{ data: fallback }];
             else if (type === 'secret') content = [{ data: { secret: fallback } }];
             else if (type === 'boolean') content = [{ data: false }];
             else if (['integer', 'float'].includes(type)) content = [{ data: 1 }];
-            else throw new Error(`required attribute ${d.name} has content type ${type}, which the suite cannot fill`);
+            else throw new UnfillableAttributeError(`required attribute ${d.name} has content type ${type}, which the suite cannot fill`);
         }
         if (!content) continue;
-        const version = requestVersion(d as Json);
+        const version = requestVersion(d);
         // a v3 content item is read by its own contentType (BaseAttributeContentV3, no default subtype); a v2 item has none
         if (version === 'v3') content = content.map((item) => ({ ...item, contentType: item.contentType ?? type }));
         out.push({ name: d.name, uuid: d.uuid, version, contentType: type, content });
@@ -142,5 +172,5 @@ export function requestAttributesFrom(defs: AttributeDefinition[], values: Recor
 }
 
 /** Response attribute → request attribute (data attributes only), for copying a pre-existing object's settings. */
-export const toRequestAttributes = (attributes: Json[] | undefined): Json[] =>
+export const toRequestAttributes = (attributes: JsonObject[] | undefined): JsonObject[] =>
     (attributes ?? []).filter((a) => !a.type || a.type === 'data').map((a) => ({ version: requestVersion(a), uuid: a.uuid, name: a.name, contentType: a.contentType, content: a.content }));

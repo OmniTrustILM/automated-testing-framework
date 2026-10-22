@@ -1,4 +1,4 @@
-export type Method = 'GET' | 'HEAD' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'TRACE' | 'QAPROBE';
+export type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'TRACE' | 'QAPROBE';
 /**
  * The refused-method sentinels (TRACE, API-GEN-32[method], core#2502; QAPROBE, the one fixed token nothing maps —
  * API-GEN-07[unknown-method]): a bodyless READ held to the
@@ -7,11 +7,12 @@ export type Method = 'GET' | 'HEAD' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'TRA
  * method some proxies handle), FOO and every other token stay refused.
  */
 export const PROBE_METHODS: ReadonlySet<string> = new Set(['TRACE', 'QAPROBE']);
-// Literal lists (a test-coverage generator reads these tables as string literals): METHODS = the six HTTP methods plus
-// PROBE_METHODS; BODYLESS = GET / HEAD plus PROBE_METHODS (tests/unit/guardedApiAllowedRequests.spec.ts pins the three in step).
-export const METHODS: ReadonlySet<string> = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'TRACE', 'QAPROBE']);
-/** Methods without a body that only read (the sentinels join GET / HEAD for the body and text/plain rules). */
-export const BODYLESS: ReadonlySet<string> = new Set(['GET', 'HEAD', 'TRACE', 'QAPROBE']);
+// Literal lists (a test-coverage generator reads these tables as string literals): METHODS = the five HTTP methods the
+// suite sends plus PROBE_METHODS (HEAD is not sent through the guard); BODYLESS = GET plus PROBE_METHODS
+// (tests/unit/guardedApiAllowedRequests.spec.ts pins the three in step).
+export const METHODS: ReadonlySet<string> = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'TRACE', 'QAPROBE']);
+/** Methods without a body that only read (the sentinels join GET for the body and text/plain rules). */
+export const BODYLESS: ReadonlySet<string> = new Set(['GET', 'TRACE', 'QAPROBE']);
 /** The three method tables, for the unit test that keeps them in step. */
 export const METHOD_TABLES = { METHODS, BODYLESS, PROBE_METHODS };
 // ------------------------------------------------------------------ options and headers
@@ -39,10 +40,10 @@ export const textPlainType = (value: string): string | undefined => {
     return m ? (m[1] ? TEXT_CONTENT_UTF8 : TEXT_CONTENT) : undefined;
 };
 /** The options the guard forwards to Playwright (plus `method` on `fetch`; `identityOverride` is the guard's own). */
-export const FORWARDED_OPTIONS: readonly string[] = ['data', 'params', 'headers', 'timeout', 'failOnStatusCode', 'ignoreHTTPSErrors', 'maxRedirects', 'maxRetries'];
+export const FORWARDED_OPTIONS: readonly string[] = ['data', 'params', 'headers', 'timeout', 'failOnStatusCode', 'ignoreHTTPSErrors'];
 export const OPTION_KEYS = new Set([...FORWARDED_OPTIONS, 'identityOverride']);
 export const REDIRECTS = new Set([301, 302, 303, 307, 308]);
-/** Playwright's default redirect limit; the guard follows (same-origin) redirects of a GET / HEAD itself. */
+/** Playwright's default redirect limit; the guard follows (same-origin) redirects of a GET itself. */
 export const DEFAULT_MAX_REDIRECTS = 20;
 
 /**

@@ -1,12 +1,18 @@
 /**
- * ImportCertificatesDialog — the "Import certificates and keys" dialog of the certificate list: paste or choose a file,
- * read the inspection answer (the refusal alert, the password field, the detected entries) and import the selected
- * entries. Every method that sends the inspection or the import waits for its response from before the click (observe,
- * never mock) and returns it. Nothing here imports unless a spec calls `submit()` with its own run-named content.
+ * ImportCertificatesDialog — the "Import certificates and keys" dialog.
+ *
+ * WHAT: the "Import certificates and keys" dialog: paste or choose a file, the inspection answer (refusal alert,
+ *       password field, detected entries), import.
+ * WHY: REG-USE-03 imports one run-named PEM; REG-CERT-63 feeds files core refuses and prove nothing is created.
+ *       Every method that causes the inspection or the import returns its answer (status, content type, body text and JSON).
+ * HOW: readonly locators by test id and label; the file input is hidden but takes `setInputFiles`; Enter in the
+ *       password field re-reads the file and never submits.
  */
 import { expect, Locator, Page, Response } from '@playwright/test';
+import type { ApiAnswer } from '../utils/regression/apiReads';
 import { Logger } from '../utils/Logger';
-import { actAndWaitForApi, ApiCall } from './ui/waitForResponse';
+import { actAndWaitForApi, answerFrom, ApiCall } from './ui/waitForResponse';
+import { INSPECTION_ANSWER_MS } from '../utils/regression/timeouts';
 
 const logger = new Logger('ImportCertificatesDialog');
 
@@ -79,35 +85,50 @@ export class ImportCertificatesDialog {
 
     // ---------------------------------------------------------------- input
 
-    /** Types the text into "File content" (a PEM, usually) and leaves the field: the file is read on blur. Resolves with the inspection answer. */
-    async pasteContent(text: string): Promise<Response> {
+    /**
+     * Types the text into "File content" (a PEM, usually) and leaves the field: the file is read on blur. Resolves with the inspection
+     * answer.
+     */
+    async pasteContent(text: string): Promise<ApiAnswer> {
         logger.info(`Pasting ${text.length} characters`);
-        return actAndWaitForApi(this.page, INSPECTION, async () => {
+        return this.answerOf(INSPECTION, async () => {
             await this.fileContent.fill(text);
             await this.fileContent.blur();
         });
     }
 
     /** Chooses a file (bytes in memory, never on disk) and resolves with the inspection answer. */
-    async chooseFile(file: ChosenFile): Promise<Response> {
+    async chooseFile(file: ChosenFile): Promise<ApiAnswer> {
         logger.info(`Choosing a file of ${file.buffer.length} bytes`);
-        return actAndWaitForApi(this.page, { ...INSPECTION, timeout: 90_000 }, () => this.fileInput.setInputFiles(file));
+        return this.answerOf({ ...INSPECTION, timeout: INSPECTION_ANSWER_MS }, () => this.fileInput.setInputFiles(file));
     }
 
     /** Types the file password and presses Enter: the file is read again with it (Enter never submits the form). */
-    async enterPassword(password: string): Promise<Response> {
+    async enterPassword(password: string): Promise<ApiAnswer> {
         logger.info('Entering the file password');
         await expect(this.password).toBeVisible();
-        return actAndWaitForApi(this.page, INSPECTION, async () => {
+        return this.answerOf(INSPECTION, async () => {
             await this.password.fill(password);
             await this.password.press('Enter');
         });
     }
 
     /** Clicks the import button and resolves with the import answer (only for specs that import their own run-named objects). */
-    async submit(): Promise<Response> {
+    async submit(): Promise<ApiAnswer> {
+        await expect(this.submitButton).toBeEnabled();
+        return this.answerOf(IMPORT, () => this.submitButton.click());
+    }
+
+    /** `submit()` with the browser's own response, for the smoke facade `CertificatePage.submitImport`, whose callers read it as one. */
+    async submitForResponse(): Promise<Response> {
         await expect(this.submitButton).toBeEnabled();
         return actAndWaitForApi(this.page, IMPORT, () => this.submitButton.click());
+    }
+
+    /** Runs the action and reads the answer of the request it causes (the wait is registered before the action). */
+    private async answerOf(call: ApiCall, act: () => Promise<unknown>): Promise<ApiAnswer> {
+        const startedAt = Date.now();
+        return answerFrom(await actAndWaitForApi(this.page, call, act), startedAt);
     }
 
     // ---------------------------------------------------------------- assertions
@@ -155,7 +176,7 @@ export class ImportCertificatesDialog {
 
     /**
      * A certificate request is listed as one entry: kind badge "Signing request", its checkbox disabled and unchecked, the
-     * reason "Certificate requests are not imported" (ImportWizard/importRequest.ts:38), and Import disabled.
+     * reason "Certificate requests are not imported" (the ImportWizard request check), and Import disabled.
      */
     async assertSigningRequest(reason: string): Promise<void> {
         await expect(this.detected).toBeVisible();

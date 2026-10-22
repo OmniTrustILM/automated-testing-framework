@@ -1,8 +1,15 @@
 /**
- * Filter, sort and paging checks over rows that were already fetched (or a page function): empty plus not empty is
- * the total, a filter returns only matching rows, AND narrows, the order holds with empty values last, pages add up.
- * A violation throws InvariantViolation naming the field, the condition and the sets or the neighbouring rows.
+ * listInvariants — filter, sort and paging checks over fetched rows.
+ *
+ * WHAT: Filter, sort and paging checks over rows that were already fetched (or a page function): empty plus not empty is
+ *       the total, a filter returns only matching rows, AND narrows, the order holds with empty values last, pages add up.
+ *       A violation throws InvariantViolation naming the field, the condition and the sets or the neighbouring rows.
+ * WHY: Whatever data a tier holds, a filter, a sort and a pager obey rules that need no exact counts.
+ * HOW: Pure checks over rows or a page function; a violation throws `InvariantViolation` naming the field, the condition and the sets or neighbouring rows; `matchesCondition` delegates to the one filter evaluator.
  */
+
+import { satisfiesFilter } from './oracles/values';
+import type { Scalar } from './oracles/values';
 
 export type ListRow = Record<string, unknown>;
 
@@ -29,7 +36,7 @@ function preview(ids: Iterable<string>, max = 10): string {
 }
 
 /** Value at a dotted path (`raProfile.name`, `groups.name` maps over arrays). */
-export function valueAt(row: ListRow, field: string): unknown {
+function valueAt(row: ListRow, field: string): unknown {
     let cur: unknown = row;
     for (const part of field.split('.')) {
         if (cur === null || cur === undefined) return undefined;
@@ -65,7 +72,7 @@ export function expectEmptyPlusNotEmptyEqualsTotal(
 
 // ------------------------------------------------------------------ filter property (reference evaluator)
 
-export type FilterCondition =
+type FilterCondition =
     | 'EQUALS' | 'NOT_EQUALS' | 'CONTAINS' | 'NOT_CONTAINS' | 'STARTS_WITH' | 'ENDS_WITH'
     | 'EMPTY' | 'NOT_EMPTY' | 'GREATER' | 'GREATER_OR_EQUAL' | 'LESSER' | 'LESSER_OR_EQUAL';
 
@@ -85,38 +92,24 @@ const asComparable = (v: unknown): number | string => {
     return String(v);
 };
 
-/** The reference evaluator: does one row satisfy the filter? Array fields match when any element matches. */
+/**
+ * The reference evaluator: does one row satisfy the filter? Array fields match when any element matches. The rules are
+ * the ones of `satisfiesFilter` (the one home of the filter semantics); this adapter only reads the field, turns ISO
+ * dates into instants so they compare as time, and applies `ignoreCase` by lower-casing both sides.
+ */
 export function matchesCondition(row: ListRow, f: FilterSpec): boolean {
     const raw = f.get ? f.get(row) : valueAt(row, f.field);
     if (f.condition === 'EMPTY') return isEmptyValue(raw);
     if (f.condition === 'NOT_EMPTY') return !isEmptyValue(raw);
-    const values = (Array.isArray(raw) ? raw : [raw]).filter((x) => x !== null && x !== undefined);
-    const wanted = Array.isArray(f.value) ? f.value : [f.value];
-    const norm = (x: unknown) => (f.ignoreCase && typeof x === 'string' ? x.toLowerCase() : x);
-    const anyOf = (test: (v: unknown, w: unknown) => boolean) => values.some((v) => wanted.some((w) => test(norm(v), norm(w))));
-    const str = (x: unknown) => String(x);
-    switch (f.condition) {
-        case 'EQUALS':
-            return anyOf((v, w) => v === w || str(v) === str(w));
-        case 'NOT_EQUALS':
-            return !anyOf((v, w) => v === w || str(v) === str(w));
-        case 'CONTAINS':
-            return anyOf((v, w) => str(v).includes(str(w)));
-        case 'NOT_CONTAINS':
-            return !anyOf((v, w) => str(v).includes(str(w)));
-        case 'STARTS_WITH':
-            return anyOf((v, w) => str(v).startsWith(str(w)));
-        case 'ENDS_WITH':
-            return anyOf((v, w) => str(v).endsWith(str(w)));
-        case 'GREATER':
-            return anyOf((v, w) => asComparable(v) > asComparable(w));
-        case 'GREATER_OR_EQUAL':
-            return anyOf((v, w) => asComparable(v) >= asComparable(w));
-        case 'LESSER':
-            return anyOf((v, w) => asComparable(v) < asComparable(w));
-        case 'LESSER_OR_EQUAL':
-            return anyOf((v, w) => asComparable(v) <= asComparable(w));
-    }
+    const ordered = f.condition === 'GREATER' || f.condition === 'GREATER_OR_EQUAL' || f.condition === 'LESSER' || f.condition === 'LESSER_OR_EQUAL';
+    const adapt = (x: unknown): Scalar => {
+        if (ordered) return asComparable(x);
+        const text = typeof x === 'number' || typeof x === 'boolean' ? x : String(x);
+        return f.ignoreCase && typeof text === 'string' ? text.toLowerCase() : text;
+    };
+    const values = (Array.isArray(raw) ? raw : [raw]).filter((x) => x !== null && x !== undefined).map(adapt);
+    const wanted = (Array.isArray(f.value) ? f.value : [f.value]).map(adapt);
+    return satisfiesFilter(values, f.condition, wanted, { caseSensitive: !f.ignoreCase });
 }
 
 /** Every returned row satisfies the filter (the property check; exact sets come from the seed manifest). */
@@ -214,7 +207,7 @@ export function expectSorted(rows: ListRow[], field: string, dir: 'asc' | 'desc'
 
 // ------------------------------------------------------------------ paging
 
-export interface ListPage {
+interface ListPage {
     items: ListRow[];
     totalItems: number;
     totalPages?: number;

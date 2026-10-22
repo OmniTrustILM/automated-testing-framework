@@ -19,8 +19,9 @@ import { METHOD_TABLES, readPostType, PROBE_METHODS } from '../../utils/regressi
 import { DryRunRefusal } from '../../utils/regression/run/flags';
 import { OwnObjectViolation, RefusalKind } from '../../utils/regression/ledger/ownership';
 import { LedgerLine } from '../../utils/regression/ledger/ledger';
-import { Arrived, loopbackServer, LoopbackServer } from './helpers/loopbackServer';
-import { registerGuardRig, withProcessEnv } from './helpers/guardRig';
+import { Arrived, LoopbackServer } from './helpers/loopbackServer';
+import { registerGuardRig } from './helpers/guardRig';
+import { guardVerdict } from './helpers/guardVerdict';
 import { randomBytes } from 'node:crypto';
 // Run-scoped generated test passwords (merge follow-up 2026-10-15): no password-like literal in the file.
 const GEN_PW_1 = `qa-${randomBytes(9).toString('base64url')}`;
@@ -191,11 +192,12 @@ test('inspections: POST /v1/inspections is a body-judged create, never a raw POS
 
 test('inspections and import: a 7 MB file is judged in under 2 s and sent unchanged', async () => {
     const g = guard();
+    const judge = guardVerdict(raw, { lines, runId: RUN, tier: null, env: { BASE_URL, REG_RESTRICTED_USERNAME: 'QA-DED-User' } });
     const file = big();
     expect(file.length).toBeGreaterThan(6_900_000);
     for (const [url, data] of [['/api/v1/inspections', { file, passphrase: GEN_PW_1 }], ['/api/v1/certificates/import', { file, entries: [{ entryReference: 'ab'.repeat(32) }] }]] as const) {
         const started = Date.now();
-        await g.check('POST', url, data);
+        await judge.check('POST', url, data);
         expect(Date.now() - started, `${url} judged`).toBeLessThan(2000);
         const res = await g.post(url, { data });
         expect(res.status()).toBe(200);
@@ -301,8 +303,8 @@ test('raw bodies: xml, octet-stream and multipart are sent as written on the rea
 // refused
 test('probe methods: QAPROBE is sent bodyless through fetch only; PROPFIND and FOO stay refused', async () => {
     expect([...PROBE_METHODS]).toEqual(['TRACE', 'QAPROBE']);
-    expect([...METHOD_TABLES.METHODS]).toEqual(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', ...PROBE_METHODS]);
-    expect([...METHOD_TABLES.BODYLESS]).toEqual(['GET', 'HEAD', ...PROBE_METHODS]);
+    expect([...METHOD_TABLES.METHODS]).toEqual(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', ...PROBE_METHODS]);
+    expect([...METHOD_TABLES.BODYLESS]).toEqual(['GET', ...PROBE_METHODS]);
     // Node's HTTP parser refuses an unknown method, so a raw socket server records the request line.
     const requestLines: string[] = [];
     const server = net.createServer((sock) => {
@@ -325,7 +327,6 @@ test('probe methods: QAPROBE is sent bodyless through fetch only; PROPFIND and F
         expect(res.status()).toBe(400);
         expect(await outcome(g.fetch(`/api/v1/roles/${FOREIGN}`, { method: 'qaprobe' })), 'like TRACE, it may name any object: it changes nothing').toBe('sent');
         expect(requestLines).toEqual(['QAPROBE /api/v1/info HTTP/1.1', `QAPROBE /api/v1/roles/${FOREIGN} HTTP/1.1`]);
-        expect(await outcome(g.check('QAPROBE', '/api/v1/info'))).toBe('sent');
         const refused: Array<[string, () => Promise<unknown>]> = [
             ['a body', () => g.fetch('/api/v1/info', { method: 'QAPROBE', data: 'x' })],
             ['identityOverride', () => g.fetch('/api/v1/info', { method: 'QAPROBE', identityOverride: true } as never)],
@@ -338,10 +339,9 @@ test('probe methods: QAPROBE is sent bodyless through fetch only; PROPFIND and F
             ['FOO', () => g.fetch('/api/v1/info', { method: 'FOO' })],
             ['propfind (lower case)', () => g.fetch('/api/v1/info', { method: 'propfind' })],
             ['QAPROBE2', () => g.fetch('/api/v1/info', { method: 'QAPROBE2' })],
-            ['check() PROPFIND', () => g.check('PROPFIND', '/api/v1/info')],
             // An unknown token is refused as a METHOD, not merely as a path-less mutation: on an own object with a body it stays refused.
             ['FOO on an own object with a body', () => g.fetch(`/api/v1/roles/${OWN_ROLE}`, { method: 'FOO', data: { name: `${RUN}-roles` } })],
-            ['PROPFIND on an own object', () => g.check('PROPFIND', `/api/v1/roles/${OWN_ROLE}`)],
+            ['PROPFIND on an own object', () => g.fetch(`/api/v1/roles/${OWN_ROLE}`, { method: 'PROPFIND' })],
             ['LOCK on an own object', () => g.fetch(`/api/v1/roles/${OWN_ROLE}`, { method: 'LOCK' })],
         ];
         for (const [name, call] of refused) {

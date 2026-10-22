@@ -28,18 +28,18 @@ test('ledger shapes: a canonical uuid or k8s namespace/name with canonical paren
         const bad = [` ${U1}`, `${U1} `, U1.replace(/-/g, ''), 'AAAAAAAAAAAAAAAAAAAAAA', `urn:uuid:${U1}`, '0-0-4000-8000-1', `${U1}/../settings`, '', 'u-1'];
         for (const uuid of bad) {
             expect(ledgerUuidProblem('roles', uuid), JSON.stringify(uuid)).toBeDefined();
-            expect(() => recordCreated('roles', { uuid, name: 'qa-reg-x' }, 'T'), JSON.stringify(uuid)).toThrow(/not a canonical uuid/);
-            expect(() => recordDerived('certificates', { uuid, name: 'x' }, 'T', '2026-10-14T00:00:00.000Z'), JSON.stringify(uuid)).toThrow(/not a canonical uuid/);
+            expect(() => recordCreated('roles', { uuid, name: 'qa-reg-x' }, { spec: 'T' }), JSON.stringify(uuid)).toThrow(/not a canonical uuid/);
+            expect(() => recordDerived('certificates', { uuid, name: 'x' }, { spec: 'T', createdAfter: '2026-10-14T00:00:00.000Z' }), JSON.stringify(uuid)).toThrow(/not a canonical uuid/);
             expect(() => recordDeleted('roles', { uuid, name: 'x' }, 'T'), JSON.stringify(uuid)).toThrow(/not a canonical uuid/);
         }
-        expect(() => recordCreated('roles', { uuid: U1, name: 'qa-reg-x' }, 'T', undefined, { authority: '../x' })).toThrow(/parent/);
-        expect(() => recordCreated('roles', { uuid: U1, name: 'qa-reg-x' }, 'T', undefined, { raProfiles: [U1, 'x'] })).toThrow(/parent/);
-        expect(() => recordCreated('k8s:Issuer', { uuid: U1, name: 'qa-reg-x' }, 'T')).toThrow(/namespace/);
-        expect(() => recordCreated('k8s:Issuer', { uuid: 'ns/Bad_Name', name: 'qa-reg-x' }, 'T')).toThrow(/namespace/);
+        expect(() => recordCreated('roles', { uuid: U1, name: 'qa-reg-x' }, { spec: 'T', parents: { authority: '../x' } })).toThrow(/parent/);
+        expect(() => recordCreated('roles', { uuid: U1, name: 'qa-reg-x' }, { spec: 'T', parents: { raProfiles: [U1, 'x'] } })).toThrow(/parent/);
+        expect(() => recordCreated('k8s:Issuer', { uuid: U1, name: 'qa-reg-x' }, { spec: 'T' })).toThrow(/namespace/);
+        expect(() => recordCreated('k8s:Issuer', { uuid: 'ns/Bad_Name', name: 'qa-reg-x' }, { spec: 'T' })).toThrow(/namespace/);
         expect(fs.existsSync(ledgerFile()), 'nothing was written').toBe(false);
         // Valid shapes are written (either case of a canonical uuid; a k8s namespaced name).
-        recordCreated('roles', { uuid: U1.toUpperCase(), name: 'qa-reg-x' }, 'T', undefined, { authority: U1 });
-        recordCreated('k8s:Issuer', { uuid: 'ns-1/qa-reg-x-issuer', name: 'qa-reg-x-issuer' }, 'T');
+        recordCreated('roles', { uuid: U1.toUpperCase(), name: 'qa-reg-x' }, { spec: 'T', parents: { authority: U1 } });
+        recordCreated('k8s:Issuer', { uuid: 'ns-1/qa-reg-x-issuer', name: 'qa-reg-x-issuer' }, { spec: 'T' });
         expect(readLedger().map((l) => l.uuid)).toEqual([U1.toUpperCase(), 'ns-1/qa-reg-x-issuer']);
         expect(parentsProblem({ raProfiles: [] }), 'an empty parent list').toBeDefined();
         expect(parentsProblem(['x'])).toBeDefined();

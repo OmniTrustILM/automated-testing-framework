@@ -1,8 +1,12 @@
 /**
- * protocolProfiles — own SCEP and CMP profiles: create (recorded before any assertion), enable, activate on an own RA
- * profile and deactivate, plus the teardown handlers for `scepProfiles` / `cmpProfiles`. Activation is only sent for an
- * RA profile and a protocol profile this run created (`assertOwnLive` on both), so the run RA profile and every
- * pre-existing object stay untouched.
+ * protocolProfiles — own SCEP and CMP profiles.
+ *
+ * WHAT: own SCEP and CMP profiles: create (recorded before any assertion), enable, activate on an own RA
+ *       profile and deactivate, plus the teardown handlers for `scepProfiles` / `cmpProfiles`. Activation is only sent for an
+ *       RA profile and a protocol profile this run created (`assertOwnLive` on both), so the run RA profile and every
+ *       pre-existing object stay untouched.
+ * WHY: Protocol activation must never touch the run RA profile or a pre-existing profile.
+ * HOW: Create (recorded before any assertion), enable, activate and deactivate with `assertOwnLive` on both objects, plus the teardown handlers for `scepProfiles` and `cmpProfiles`.
  */
 import * as crypto from 'crypto';
 import { Logger } from '../../Logger';
@@ -12,15 +16,16 @@ import { assertOwnLive, checkOwnership } from '../ledger/ownership';
 import { OwnRaProfile } from '../ownRaProfiles';
 import { apiJson } from '../apiReads';
 import { requiredCustomAttributes } from '../customAttributes';
-import { LedgerLine, OwnRef, recordCreated, Ref } from '../ledger/ledger';
-import { runName, runId } from '../ledger/runState';
+import { LedgerLine, OwnRef } from '../ledger/ledger';
+import { runName, runId, ownName } from '../ledger/runState';
 import type { TeardownContext, TeardownHandler } from '../teardown/runTeardown';
 import { deleteAndVerify } from '../teardown/teardownHandlers';
 import type { JsonObject } from '../json';
+import { createOwn } from '../ownCrud';
 
 const logger = new Logger('ProtocolProfiles');
 
-export type ProtocolKind = 'scep' | 'cmp';
+type ProtocolKind = 'scep' | 'cmp';
 
 /** A random shared secret / challenge password in `[A-Za-z0-9_-]` (never logged, never in a name). */
 export const randomSecret = (bytes = 18): string => crypto.randomBytes(bytes).toString('base64url');
@@ -33,7 +38,9 @@ const parentOf = (line: LedgerLine, key: string): string | undefined => {
 // ------------------------------------------------------------------ SCEP
 
 export interface ScepProfileOptions {
-    name: string;
+    /** A planned name; default `ownName(suffix)`. */
+    name?: string;
+    note?: string;
     /** An OWN certificate (the protocol CA): the guard needs its ledger line (BODY_FIELD_TYPES caCertificateUuid). */
     caCertificateUuid: string;
     /** Sets `enableChallengePassword=true` with this password; absent = no password protection. */
@@ -46,27 +53,27 @@ export interface ScepProfileOptions {
     description?: string;
 }
 
-/** `POST /v1/scepProfiles` (ScepProfileRequestDto); the profile is created DISABLED. */
-export async function createScepProfile(api: GuardedApi, o: ScepProfileOptions): Promise<Ref> {
-    const created = await apiJson<JsonObject>(api, 'POST', '/api/v1/scepProfiles', {
-        name: o.name,
-        description: o.description ?? `REG run ${runId()}`,
-        ...(o.raProfileUuid ? { raProfileUuid: o.raProfileUuid } : {}),
-        issueCertificateAttributes: [],
-        caCertificateUuid: o.caCertificateUuid,
-        customAttributes: await requiredCustomAttributes(api, 'scepProfiles', runName('ca')),
-        ...(o.renewalThreshold !== undefined ? { renewalThreshold: o.renewalThreshold } : {}),
-        includeCaCertificate: o.includeCaCertificate ?? false,
-        includeCaCertificateChain: o.includeCaCertificateChain ?? false,
-        ...(o.challengePassword !== undefined ? { challengePassword: o.challengePassword, enableChallengePassword: true } : {}),
+/** `POST /v1/scepProfiles` (ScepProfileRequestDto); the profile is created DISABLED. Recorded (ledger before any assertion); parents: the CA certificate and the default RA profile. */
+export async function createOwnScepProfile(api: GuardedApi, spec: string, suffix: string, o: ScepProfileOptions): Promise<OwnRef> {
+    const { answer: _answer, ...ref } = await createOwn(api, spec, {
+        type: 'scepProfiles',
+        path: '/api/v1/scepProfiles',
+        name: o.name ?? ownName(suffix),
+        note: o.note ?? 'SCEP profile of the protocol rows',
+        parents: { caCertificate: o.caCertificateUuid, ...(o.raProfileUuid ? { raProfile: o.raProfileUuid } : {}) },
+        body: {
+            description: o.description ?? `REG run ${runId()}`,
+            ...(o.raProfileUuid ? { raProfileUuid: o.raProfileUuid } : {}),
+            issueCertificateAttributes: [],
+            caCertificateUuid: o.caCertificateUuid,
+            customAttributes: await requiredCustomAttributes(api, 'scepProfiles', runName('ca')),
+            ...(o.renewalThreshold !== undefined ? { renewalThreshold: o.renewalThreshold } : {}),
+            includeCaCertificate: o.includeCaCertificate ?? false,
+            includeCaCertificateChain: o.includeCaCertificateChain ?? false,
+            ...(o.challengePassword !== undefined ? { challengePassword: o.challengePassword, enableChallengePassword: true } : {}),
+        },
     });
-    return { uuid: String(created.uuid), name: o.name };
-}
-
-/** Create and record (ledger before any assertion); parents: the CA certificate and the default RA profile. */
-export async function createOwnScepProfile(api: GuardedApi, spec: string, o: ScepProfileOptions, note = 'SCEP profile of the protocol rows'): Promise<OwnRef> {
-    const ref = await createScepProfile(api, o);
-    return recordCreated('scepProfiles', ref, spec, note, { caCertificate: o.caCertificateUuid, ...(o.raProfileUuid ? { raProfile: o.raProfileUuid } : {}) });
+    return ref;
 }
 
 export async function enableOwnScepProfile(api: GuardedApi, scep: OwnRef): Promise<void> {
@@ -74,7 +81,7 @@ export async function enableOwnScepProfile(api: GuardedApi, scep: OwnRef): Promi
     await apiJson(api, 'PATCH', `/api/v1/scepProfiles/${scep.uuid}/enable`);
 }
 
-export async function disableOwnScepProfile(api: GuardedApi, scep: OwnRef): Promise<void> {
+async function disableOwnScepProfile(api: GuardedApi, scep: OwnRef): Promise<void> {
     await assertOwnLive(api, 'scepProfiles', scep, 'disableOwnScepProfile');
     await apiJson(api, 'PATCH', `/api/v1/scepProfiles/${scep.uuid}/disable`);
 }
@@ -86,20 +93,20 @@ export interface ScepActivation {
 }
 
 /** `PATCH …/raProfiles/{own}/protocols/scep/activate/{own scep}` (ActivateScepForRaProfileRequestDto). */
-export async function activateScepOnOwnRaProfile(api: GuardedApi, ra: OwnRaProfile, scep: OwnRef): Promise<ScepActivation> {
+async function activateScepOnOwnRaProfile(api: GuardedApi, ra: OwnRaProfile, scep: OwnRef): Promise<ScepActivation> {
     await assertOwnLive(api, 'raProfiles', ra, 'activateScepOnOwnRaProfile (RA profile)');
     await assertOwnLive(api, 'scepProfiles', scep, 'activateScepOnOwnRaProfile (SCEP profile)');
     const res = await apiJson<JsonObject>(api, 'PATCH', `/api/v1/authorities/${ra.authorityUuid}/raProfiles/${ra.uuid}/protocols/scep/activate/${scep.uuid}`, { issueCertificateAttributes: [] });
     return { scepAvailable: !!res?.scepAvailable, url: typeof res?.url === 'string' ? res.url : undefined };
 }
 
-export async function deactivateScepOnOwnRaProfile(api: GuardedApi, ra: OwnRaProfile): Promise<void> {
+async function deactivateScepOnOwnRaProfile(api: GuardedApi, ra: OwnRaProfile): Promise<void> {
     await assertOwnLive(api, 'raProfiles', ra, 'deactivateScepOnOwnRaProfile');
     await apiJson(api, 'PATCH', `/api/v1/authorities/${ra.authorityUuid}/raProfiles/${ra.uuid}/protocols/scep/deactivate`);
 }
 
 /** `GET …/protocols/scep` of an RA profile (read-only). */
-export async function scepOnRaProfile(api: GuardedApi, authorityUuid: string, raProfileUuid: string): Promise<ScepActivation & JsonObject> {
+async function scepOnRaProfile(api: GuardedApi, authorityUuid: string, raProfileUuid: string): Promise<ScepActivation & JsonObject> {
     return apiJson<ScepActivation & JsonObject>(api, 'GET', `/api/v1/authorities/${authorityUuid}/raProfiles/${raProfileUuid}/protocols/scep`);
 }
 
@@ -120,11 +127,13 @@ export async function ensureScepActiveOnOwnRaProfile(api: GuardedApi, ra: OwnRaP
 
 // ------------------------------------------------------------------ CMP
 
-export type CmpVariant = 'v2' | 'v2_3gpp' | 'v3';
-export type ProtectionMethod = 'sharedSecret' | 'signature';
+type CmpVariant = 'v2' | 'v2_3gpp' | 'v3';
+type ProtectionMethod = 'sharedSecret' | 'signature';
 
 export interface CmpProfileOptions {
-    name: string;
+    /** A planned name; default `ownName(suffix)`. */
+    name?: string;
+    note?: string;
     variant?: CmpVariant;
     requestProtectionMethod?: ProtectionMethod;
     responseProtectionMethod?: ProtectionMethod;
@@ -136,31 +145,32 @@ export interface CmpProfileOptions {
     description?: string;
 }
 
-/** `POST /v1/cmpProfiles` (CmpProfileRequestDto); created DISABLED. Default: v2 / sharedSecret / sharedSecret. */
-export async function createCmpProfile(api: GuardedApi, o: CmpProfileOptions): Promise<Ref> {
+/** `POST /v1/cmpProfiles` (CmpProfileRequestDto); created DISABLED. Default: v2 / sharedSecret / sharedSecret. Recorded before any assertion. */
+export async function createOwnCmpProfile(api: GuardedApi, spec: string, suffix: string, o: CmpProfileOptions = {}): Promise<OwnRef> {
     const request = o.requestProtectionMethod ?? 'sharedSecret';
     const response = o.responseProtectionMethod ?? 'sharedSecret';
-    if (request === 'sharedSecret' && !o.sharedSecret) throw new Error('createCmpProfile: a sharedSecret request protection needs a secret');
-    const created = await apiJson<JsonObject>(api, 'POST', '/api/v1/cmpProfiles', {
-        name: o.name,
-        description: o.description ?? `REG run ${runId()}`,
-        variant: o.variant ?? 'v2',
-        ...(o.raProfileUuid ? { raProfileUuid: o.raProfileUuid, issueCertificateAttributes: [], revokeCertificateAttributes: [] } : {}),
-        customAttributes: await requiredCustomAttributes(api, 'cmpProfiles', runName('ca')),
-        requestProtectionMethod: request,
-        responseProtectionMethod: response,
-        ...(o.sharedSecret ? { sharedSecret: o.sharedSecret } : {}),
-        ...(o.signingCertificateUuid ? { signingCertificateUuid: o.signingCertificateUuid } : {}),
+    if (request === 'sharedSecret' && !o.sharedSecret) throw new Error('createOwnCmpProfile: a sharedSecret request protection needs a secret');
+    const { answer: _answer, ...ref } = await createOwn(api, spec, {
+        type: 'cmpProfiles',
+        path: '/api/v1/cmpProfiles',
+        name: o.name ?? ownName(suffix),
+        note: o.note ?? 'CMP profile of the protocol rows',
+        parents: {
+            ...(o.raProfileUuid ? { raProfile: o.raProfileUuid } : {}),
+            ...(o.signingCertificateUuid ? { signingCertificate: o.signingCertificateUuid } : {}),
+        },
+        body: {
+            description: o.description ?? `REG run ${runId()}`,
+            variant: o.variant ?? 'v2',
+            ...(o.raProfileUuid ? { raProfileUuid: o.raProfileUuid, issueCertificateAttributes: [], revokeCertificateAttributes: [] } : {}),
+            customAttributes: await requiredCustomAttributes(api, 'cmpProfiles', runName('ca')),
+            requestProtectionMethod: request,
+            responseProtectionMethod: response,
+            ...(o.sharedSecret ? { sharedSecret: o.sharedSecret } : {}),
+            ...(o.signingCertificateUuid ? { signingCertificateUuid: o.signingCertificateUuid } : {}),
+        },
     });
-    return { uuid: String(created.uuid), name: o.name };
-}
-
-export async function createOwnCmpProfile(api: GuardedApi, spec: string, o: CmpProfileOptions, note = 'CMP profile of the protocol rows'): Promise<OwnRef> {
-    const ref = await createCmpProfile(api, o);
-    return recordCreated('cmpProfiles', ref, spec, note, {
-        ...(o.raProfileUuid ? { raProfile: o.raProfileUuid } : {}),
-        ...(o.signingCertificateUuid ? { signingCertificate: o.signingCertificateUuid } : {}),
-    });
+    return ref;
 }
 
 export async function enableOwnCmpProfile(api: GuardedApi, cmp: OwnRef): Promise<void> {
@@ -168,7 +178,7 @@ export async function enableOwnCmpProfile(api: GuardedApi, cmp: OwnRef): Promise
     await apiJson(api, 'PATCH', `/api/v1/cmpProfiles/${cmp.uuid}/enable`);
 }
 
-export async function disableOwnCmpProfile(api: GuardedApi, cmp: OwnRef): Promise<void> {
+async function disableOwnCmpProfile(api: GuardedApi, cmp: OwnRef): Promise<void> {
     await assertOwnLive(api, 'cmpProfiles', cmp, 'disableOwnCmpProfile');
     await apiJson(api, 'PATCH', `/api/v1/cmpProfiles/${cmp.uuid}/disable`);
 }
@@ -190,12 +200,12 @@ export async function activateCmpOnOwnRaProfile(api: GuardedApi, ra: OwnRaProfil
     return { cmpAvailable: !!res?.cmpAvailable, cmpUrl: typeof res?.cmpUrl === 'string' ? res.cmpUrl : undefined };
 }
 
-export async function deactivateCmpOnOwnRaProfile(api: GuardedApi, ra: OwnRaProfile): Promise<void> {
+async function deactivateCmpOnOwnRaProfile(api: GuardedApi, ra: OwnRaProfile): Promise<void> {
     await assertOwnLive(api, 'raProfiles', ra, 'deactivateCmpOnOwnRaProfile');
     await apiJson(api, 'PATCH', `/api/v1/authorities/${ra.authorityUuid}/raProfiles/${ra.uuid}/protocols/cmp/deactivate`);
 }
 
-export async function cmpOnRaProfile(api: GuardedApi, authorityUuid: string, raProfileUuid: string): Promise<CmpActivation & JsonObject> {
+async function cmpOnRaProfile(api: GuardedApi, authorityUuid: string, raProfileUuid: string): Promise<CmpActivation & JsonObject> {
     return apiJson<CmpActivation & JsonObject>(api, 'GET', `/api/v1/authorities/${authorityUuid}/raProfiles/${raProfileUuid}/protocols/cmp`);
 }
 

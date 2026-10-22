@@ -10,9 +10,10 @@
  * ambiguous note, this run's own lines, another tier, an unknown type, a creation of an object that existed before or
  * is not there after, a deletion of an object that is still there, an own uuid named by another tool.
  */
-import { APIRequestContext, expect, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { compareSnapshots, confirmForeignCreates, foreignEventOf, foreignResourceType, foreignWindowLines, TierSnapshot } from '../../utils/regression/teardown/nonInterference';
 import { LedgerLine, parseLedger } from '../../utils/regression/ledger/ledger';
+import { fakeContext } from './helpers/guardRig';
 
 const RUN = 'qa-api-20261015-222835-h2yd';
 const MAN = 'qa-man-20261009';
@@ -236,13 +237,13 @@ test('confirmForeignCreates: keys are proven new by their detail creation time; 
         [`/api/v1/keys/${U(46)}`]: [200, { name: 'no creation time' }],
         [`/api/v1/keys/${U(47)}`]: [404, {}],
     };
-    const api = {
+    const api = fakeContext({
         fetch: async (url: string) => {
             reads.push(url);
             const [status, body] = answers[url] ?? [404, {}];
             return { status: () => status, text: async () => JSON.stringify(body) };
         },
-    } as unknown as APIRequestContext;
+    });
     const text = [U(40), U(41), U(42), U(46), U(47)].map((u) => manLine('key', u, INSIDE, 'own key'));
     text.push(manLine('certificate', U(43), INSIDE, 'uploaded'), manLine('raProfile', U(44), INSIDE, 'own'), manLine('key', U(45), INSIDE, 'own key'), manLine('key', U(45), INSIDE, 'DELETED (own)'), manLine('key', KEY, INSIDE, 'own key'));
     const got = await confirmForeignCreates(api, b, a, { ledger: parseLedger(text.join('\n')), runId: RUN });

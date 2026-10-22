@@ -1,13 +1,22 @@
 /**
- * connectorApi — live connector health and read-only connector probes. The stored status `connected` does not say the
- * connector answers now, so health is read live and by interface version (v1 `HealthDto` ok, v2 `HealthInfo` UP), the
- * version taken from the connector detail. Everything here is a GET; the anonymous probes (liveness, readiness,
- * health, info) take a context without credentials.
+ * connectorApi — live connector health and read-only connector probes.
+ *
+ * WHAT: live connector health and read-only connector probes. The stored status `connected` does not say the
+ *       connector answers now, so health is read live and by interface version (v1 `HealthDto` ok, v2 `HealthInfo` UP), the
+ *       version taken from the connector detail. Everything here is a GET; the anonymous probes (liveness, readiness,
+ *       health, info) take a context without credentials.
+ * WHY: A stored status `connected` does not say the connector answers now.
+ * HOW: Health is read live by interface version (v1 `ok`, v2 `UP`) from the connector detail; everything is a GET and the anonymous probes take a context without credentials.
+ *
+ *       The core's own anonymous liveness and readiness probes share one oracle here: `healthGroupProblems` says what is
+ *       wrong with an answer (status 200 and the body exactly `{"status":"UP"}`), `expectHealthGroupUp` asserts it with the
+ *       probe's name, and `isHealthGroupUp` is the yes / no for a poll that waits for startup.
  */
-import type { APIRequestContext, APIResponse } from '@playwright/test';
+import { expect, type APIRequestContext, type APIResponse } from '@playwright/test';
 import { hasRunFamilyPrefix } from '../run/runId';
 import { pollUntil } from '../wait';
 import type { JsonObject } from '../json';
+import { DEFAULT_ADCS_CONNECTOR, DEFAULT_CREDENTIAL_CONNECTOR, settings } from '../run/settings';
 
 export type ConnectorVersion = 1 | 2;
 
@@ -20,7 +29,7 @@ export function parseConnectorVersion(value: unknown): ConnectorVersion | undefi
 }
 
 /** The health path of a connector version. */
-export const healthPath = (uuid: string, version: ConnectorVersion): string => `/api/v${version}/connectors/${uuid}/health`;
+const healthPath = (uuid: string, version: ConnectorVersion): string => `/api/v${version}/connectors/${uuid}/health`;
 
 export interface HealthVerdict {
     healthy: boolean;
@@ -211,43 +220,43 @@ export const PROBE_PATHS = {
     info: '/api/v1/info',
 } as const;
 
-export interface AnonymousProbe {
-    status: number;
-    /** Parsed JSON body, or undefined when the body is empty or not JSON. */
-    json?: unknown;
-    text: string;
-    contentType: string;
-    elapsedMs: number;
+/** The body an anonymous liveness or readiness probe answers: exactly this, and nothing else. */
+const HEALTH_GROUP_BODY = { status: 'UP' } as const;
+
+/** What is wrong with the answer of an anonymous liveness or readiness probe (empty: 200 and exactly `{"status":"UP"}`). */
+export function healthGroupProblems(answer: { status: number; json?: unknown }): string[] {
+    const problems: string[] = [];
+    if (answer.status !== 200) problems.push(`status ${answer.status}, expected 200`);
+    if (JSON.stringify(answer.json) !== JSON.stringify(HEALTH_GROUP_BODY)) problems.push(`body ${JSON.stringify(answer.json)}, expected ${JSON.stringify(HEALTH_GROUP_BODY)}`);
+    return problems;
+}
+
+/** True when the answer of an anonymous liveness or readiness probe is clean (for a poll that waits for the core to start). */
+export const isHealthGroupUp = (answer: { status: number; json?: unknown }): boolean => healthGroupProblems(answer).length === 0;
+
+/** Asserts the answer of an anonymous liveness or readiness probe: 200 and exactly `{"status":"UP"}`; the failure names the probe. */
+export function expectHealthGroupUp(answer: { status: number; json?: unknown; text?: string }, which: string): void {
+    expect(healthGroupProblems(answer), `${which}: ${(answer.text ?? JSON.stringify(answer.json) ?? '').slice(0, 200)}`).toEqual([]);
 }
 
 /** The Accept header of the anonymous probes. */
 export const ACCEPT_JSON = { Accept: 'application/json' } as const;
 
-/**
- * Reads the answer of an anonymous GET (REG-DEP-01.a–c, API-GEN-32[health], REG-USE-07.1). The spec sends the GET itself
- * on the `request` fixture (no Authorization header, no session cookie): the deny-by-default lint allows that fixture
- * for a GET written in the spec, never handed to a helper. On a local stack whose BASE_URL is the frontend dev proxy
+/*
+ * The answer of an anonymous GET (REG-DEP-01.a–c, API-GEN-32[health], REG-USE-07.1) is read with `answerOf`. The spec sends the
+ * GET itself on the `request` fixture (no Authorization header, no session cookie): the deny-by-default lint allows that
+ * fixture for a GET written in the spec, never handed to a helper. On a local stack whose BASE_URL is the frontend dev proxy
  * the proxy adds the admin certificate (AUTH_MODE=header), so such a call is not anonymous there (callers annotate
  * instead of asserting 401).
  */
-export async function readProbe(res: APIResponse, elapsedMs: number): Promise<AnonymousProbe> {
-    const text = await res.text();
-    let json: unknown;
-    try {
-        json = text ? JSON.parse(text) : undefined;
-    } catch {
-        json = undefined;
-    }
-    return { status: res.status(), json, text, contentType: res.headers()['content-type'] ?? '', elapsedMs };
-}
 
 // ------------------------------------------------------------------ the REG-DEP-01.d connector list (pure)
 
-export const DEFAULT_REQUIRED_CONNECTORS = ['Common-Credential-Connector', 'MS-ADCS-NG-Connector'];
+const DEFAULT_REQUIRED_CONNECTORS = [DEFAULT_CREDENTIAL_CONNECTOR, DEFAULT_ADCS_CONNECTOR];
 
 /** REG_REQUIRED_CONNECTORS (comma list) or the default: the credential and the ADCS connector. */
 export function requiredConnectors(env: NodeJS.ProcessEnv = process.env): string[] {
-    const raw = env.REG_REQUIRED_CONNECTORS;
+    const raw = settings(env).requiredConnectors;
     const list = (raw ?? DEFAULT_REQUIRED_CONNECTORS.join(',')).split(',').map((s) => s.trim()).filter(Boolean);
     return [...new Set(list)];
 }
@@ -259,7 +268,7 @@ export function requiredConnectors(env: NodeJS.ProcessEnv = process.env): string
  */
 export function blockedConnectors(env: NodeJS.ProcessEnv = process.env): Map<string, string> {
     const out = new Map<string, string>();
-    const raw = env.REG_BLOCKED_CONNECTORS;
+    const raw = settings(env).blockedConnectors;
     if (!raw || !raw.trim()) return out;
     for (const entry of raw.split(';').map((s) => s.trim()).filter(Boolean)) {
         const i = entry.indexOf(':');

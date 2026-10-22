@@ -1,11 +1,7 @@
-import { Params } from './bodies';
-import { Method } from './headers';
 import { LiveOptions, OwnObjectViolation } from '../ledger/ownership';
 import type { APIRequestContext } from '@playwright/test';
 
 export interface GuardOptions {
-    /** Called right before a request is sent (an observer: tests, logging). */
-    onRequest?: (method: Method, url: string) => void;
     /** `@local` specs: platform endpoints and any object on a proven local stack (TIER_KIND=local + this run's proof). */
     localStack?: boolean;
 }
@@ -17,44 +13,10 @@ export interface GuardOptions {
  */
 export interface GuardTestSeams extends LiveOptions {}
 
-/** The request options the guard reads besides the body (the forwarded options, `identityOverride`). */
-export interface RequestShape {
-    params?: Params;
-    /** Refused (the guard reads JSON bodies only). */
-    form?: unknown;
-    /** Refused (the guard reads JSON bodies only). */
-    multipart?: unknown;
-    headers?: Record<string, string>;
-    timeout?: number;
-    failOnStatusCode?: boolean;
-    ignoreHTTPSErrors?: boolean;
-    /** GET / HEAD: the same-origin redirects the guard follows (default 20); any other method: 0 only. */
-    maxRedirects?: number;
-    maxRetries?: number;
-    /** Allow identity headers (authorization, ssl-client-cert, cookie): a 401 / 403 negative with another identity. */
-    identityOverride?: boolean;
-}
-
 export interface GuardedApi extends APIRequestContext {
     /** A fresh random uuid the guard accepts as a mutation target (negative cases answering 404). */
     probeUuid(): string;
-    /** The guard's verdict without sending anything (throws when refused). `options`: as for a request (RequestShape). */
-    check(method: string, url: string, data?: unknown, options?: RequestShape): Promise<void>;
 }
-
-/** The uuids a request names and, for a target, the ledger type the route acts on (undefined: a body association). */
-interface Claim {
-    /** The ledger type the uuid's line must have (undefined: any own type). */
-    type?: string;
-    /** Where the request named it, for the refusal (`the request acts on raProfiles`, `the body field groupUuids names groups`). */
-    why?: string;
-    /**
-     * Named in a body the server does not read as JSON (`text/plain`, a non-JSON Buffer): no field or list types it, so
-     * only a LIVE-checked ledger type may back it — an id-named line is refused.
-     */
-    free?: boolean;
-}
-export type Claims = Map<string, Claim>;
 
 /** Contexts made by the guard (the runtime brand `assertGuarded` checks). */
 export const GUARDED = new WeakSet<object>();

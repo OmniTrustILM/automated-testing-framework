@@ -1,6 +1,10 @@
 /**
- * renewDialog — offline check of pages/RenewDialog.ts on a stand-in certificate detail: the dialog opens from the
- * toolbar, the register switch is off, the CSR is pasted and submit returns the renew answer with the successor uuid.
+ * renewDialog — offline check of pages/RenewDialog.ts on a stand-in certificate detail.
+ *
+ * WHAT: the dialog opens from the toolbar, the register switch is off, the CSR is pasted and submit returns the renew
+ *       answer with its status and the successor uuid.
+ * WHY: REG-CERT-07 reads the successor's uuid from the answer and asserts the status; both must come back exactly.
+ * HOW: a loopback-addressed context answers the renew POST itself; the stand-in dialog mirrors the product's test ids.
  */
 import { expect, test } from '@playwright/test';
 import { RenewDialog } from '../../pages/RenewDialog';
@@ -29,7 +33,9 @@ test('RenewDialog: open from the toolbar, register switch off, CSR pasted, submi
         await renew.assertRegisterOff();
         await renew.pasteCsr('-----BEGIN CERTIFICATE REQUEST-----\nYQ==\n-----END CERTIFICATE REQUEST-----');
         await expect(renew.dialog.locator('#__fileUpload__fileContent')).toHaveValue(/BEGIN CERTIFICATE REQUEST/);
-        expect(await renew.submit()).toEqual({ status: 200, uuid: U2 });
+        const answer = await renew.submit();
+        expect(answer.status).toBe(200);
+        expect(answer.uuid).toBe(U2);
         await expect(renew.dialog).toBeHidden();
         // Mutant: the register switch on is a refusal of assertRenewRegisterOff.
         await renew.open();

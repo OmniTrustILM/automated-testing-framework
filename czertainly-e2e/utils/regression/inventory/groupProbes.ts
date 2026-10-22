@@ -1,83 +1,44 @@
 /**
- * Group helpers of the group-crud and group-assignment API specs: own groups and group create probes (ledger before any
- * assertion), group assignment on own certificates, and the readers of the certificate history that turn
- * `Update Group` events into comparable group changes.
+ * groupProbes — group helpers of the group CRUD and assignment API specs.
+ *
+ * WHAT: Group helpers of the group-crud and group-assignment API specs: own groups and group create probes (ledger before any
+ *       assertion), group assignment on own certificates, and the readers of the certificate history that turn
+ *       `Update Group` events into comparable group changes.
+ * WHY: Group creates and assignments must be recorded like any create and must read their effect from the certificate history.
+ * HOW: Own groups and create probes recorded before any assertion, assignment on own certificates, and readers that turn `Update Group` history events into group changes.
  */
 import type { APIRequestContext } from '@playwright/test';
 import { assertGuarded } from '../guard/types';
 import type { GuardedApi } from '../guard/types';
-import { readJsonOk, readProbe, send } from './searchApi';
-import type { Json, Probe } from './searchApi';
-import { requiredCustomAttributes } from '../customAttributes';
-import { recordCreated } from '../ledger/ledger';
-import { runName } from '../ledger/runState';
-import { uniqueStamp } from '../text';
-import type { OwnRef } from '../ledger/ledger';
-import { CreateAttempt, createAttempt, createdUuid } from './credentialsApi';
+import { readJsonOk, send, readAnswer } from './searchApi';
+import { probeCollectionCreate } from '../ownCrud';
+import { ApiAnswer } from '../apiReads';
+import { JsonObject } from '../json';
 
 // ------------------------------------------------------------------ groups
 
-export interface GroupFields {
-    description?: string | null;
-    email?: string | null;
-    customAttributes?: Json[];
-}
-
-/** A `POST /v1/groups` body (`name` may be anything: the negative rows send blank, null and whitespace). */
-export const groupBody = (name: unknown, fields: GroupFields = {}): Json => ({ name, ...fields });
-
 /** `POST /v1/groups` with any body; the status never throws, an accepted create is in the ledger before this returns. */
-export async function createGroupProbe(api: GuardedApi, body: Json, spec: string, note = 'group create probe'): Promise<CreateAttempt> {
-    return createAttempt(api, '/api/v1/groups', 'groups', body, spec, note);
-}
-
-/** A NEW own group (201 required; ledger first; any required custom attribute of the tier filled). */
-export async function ownGroup(api: GuardedApi, spec: string, fields: GroupFields = {}, opts: { suffix?: string; note?: string } = {}): Promise<OwnRef & { description?: string | null; email?: string | null }> {
-    const name = runName(`${opts.suffix ?? 'grp'}-${uniqueStamp()}`);
-    const customAttributes = [...(await requiredCustomAttributes(api, 'groups', runName('ca'))), ...(fields.customAttributes ?? [])];
-    const { probe, own } = await createGroupProbe(api, groupBody(name, { ...fields, customAttributes }), spec, opts.note ?? 'own group (API prerequisite)');
-    if (probe.status !== 201 || !own) throw new Error(`creating the own group answered ${probe.status} ${probe.text.slice(0, 300)}`);
-    return { ...own, description: fields.description, email: fields.email };
+export async function probeGroup(api: GuardedApi, spec: string, body: JsonObject, note = 'group create probe'): Promise<ApiAnswer> {
+    return probeCollectionCreate(api, spec, { type: 'groups', path: '/api/v1/groups', body, note });
 }
 
 /** `PUT /v1/groups/{own}` (the body is whatever the row sends: the `name` is ignored by core, omitted members are cleared). */
-export async function putGroup(api: GuardedApi, uuid: string, body: Json): Promise<Probe> {
+export async function putGroup(api: GuardedApi, uuid: string, body: JsonObject): Promise<ApiAnswer> {
     return send(assertGuarded(api, 'putGroup'), 'PUT', `/api/v1/groups/${uuid}`, { data: body });
 }
 
 /** `GET /v1/groups/{uuid}` (status and body never throw). */
-export const readGroup = (api: APIRequestContext, uuid: string): Promise<Probe> => readProbe(api, `/api/v1/groups/${uuid}`);
-
-export interface OwnAttribute {
-    ref: OwnRef;
-    name: string;
-    uuid: string;
-}
-
-/** An own, NOT required string custom attribute on groups (the "omitted custom attributes lose their content" rows); ledger first. */
-export async function ownGroupAttribute(api: GuardedApi, spec: string): Promise<OwnAttribute> {
-    const name = runName(`grp-attr-${uniqueStamp()}`);
-    const probe = await send(assertGuarded(api, 'ownGroupAttribute'), 'POST', '/api/v1/attributes/custom', {
-        data: {
-            name, label: `Group attribute ${uniqueStamp()}`, description: 'own, not required (API-GEN-19)', contentType: 'string', required: false,
-            visible: true, readOnly: false, list: false, multiSelect: false, resources: ['groups'],
-        },
-    });
-    const uuid = createdUuid(probe);
-    const ref = uuid ? recordCreated('customAttributes', { uuid, name }, spec, 'own custom attribute on groups, not required') : undefined;
-    if (!ref || !uuid) throw new Error(`creating the own custom attribute answered ${probe.status} ${probe.text.slice(0, 300)}`);
-    return { ref, name, uuid };
-}
+export const readGroup = (api: APIRequestContext, uuid: string): Promise<ApiAnswer> => readAnswer(api, `/api/v1/groups/${uuid}`);
 
 // ------------------------------------------------------------------ own certificates, groups on certificates, history
 
 /** `GET /v1/certificates/{uuid}` as JSON (a non-200 throws). */
-export async function certificateDetail(api: APIRequestContext, uuid: string): Promise<Json> {
-    return readJsonOk<Json>(await readProbe(api, `/api/v1/certificates/${uuid}`), `GET certificate ${uuid}`);
+export async function certificateDetail(api: APIRequestContext, uuid: string): Promise<JsonObject> {
+    return readJsonOk<JsonObject>(await readAnswer(api, `/api/v1/certificates/${uuid}`), `GET certificate ${uuid}`);
 }
 
 /** `PATCH /v1/certificates/{own}` with any body (`groupUuids`, `ownerUuid`, or `{}`); status and body never throw. */
-export async function patchCertificate(api: GuardedApi, uuid: string, body: Json): Promise<Probe> {
+export async function patchCertificate(api: GuardedApi, uuid: string, body: JsonObject): Promise<ApiAnswer> {
     return send(assertGuarded(api, 'patchCertificate'), 'PATCH', `/api/v1/certificates/${uuid}`, { data: body });
 }
 
@@ -88,14 +49,14 @@ export async function archiveOwnCertificate(api: GuardedApi, uuid: string): Prom
 }
 
 /** `GET /v1/certificates/{uuid}/history` (a non-200 throws). */
-export async function certificateHistory(api: APIRequestContext, uuid: string): Promise<Json[]> {
-    const events = readJsonOk<Json[]>(await readProbe(api, `/api/v1/certificates/${uuid}/history`), `GET certificate history ${uuid}`);
+export async function certificateHistory(api: APIRequestContext, uuid: string): Promise<JsonObject[]> {
+    const events = readJsonOk<JsonObject[]>(await readAnswer(api, `/api/v1/certificates/${uuid}/history`), `GET certificate history ${uuid}`);
     if (!Array.isArray(events)) throw new Error('the certificate history is not a list');
     return events;
 }
 
 /** The event code of a group change in the history (CertificateEvent.UPDATE_GROUP code). */
-export const GROUP_EVENT = 'Update Group';
+const GROUP_EVENT = 'Update Group';
 
 export interface GroupChange {
     /** The group names before and after, sorted; 'undefined' (no group) is the empty list. */
@@ -116,7 +77,7 @@ export function parseGroupChange(message: string): GroupChange | undefined {
 }
 
 /** The group changes in a history, as `from -> to` pairs (successful `Update Group` events only), in the order given. */
-export function groupChanges(events: Json[]): GroupChange[] {
+export function groupChanges(events: JsonObject[]): GroupChange[] {
     return events
         .filter((e) => e?.event === GROUP_EVENT && e?.status === 'SUCCESS' && typeof e?.message === 'string')
         .map((e) => parseGroupChange(String(e.message)))
@@ -127,4 +88,4 @@ export function groupChanges(events: Json[]): GroupChange[] {
 export const changeKey = (c: GroupChange): string => `${c.from.length ? c.from.join(', ') : 'undefined'} -> ${c.to.length ? c.to.join(', ') : 'undefined'}`;
 
 /** How many `Update Group` events a certificate's history holds. */
-export const groupEventCount = (events: Json[]): number => events.filter((e) => e?.event === GROUP_EVENT).length;
+export const groupEventCount = (events: JsonObject[]): number => events.filter((e) => e?.event === GROUP_EVENT).length;

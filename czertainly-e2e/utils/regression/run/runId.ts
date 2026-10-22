@@ -19,12 +19,17 @@
  * config in the runner and again in every worker; workers inherit the runner's environment, so the values decided
  * first win everywhere. This module imports nothing from the suite, so the config can call it before any helper reads
  * `REG_RUN_ID`.
+ *
+ * Two readers: production code reads the run id through `runId()` (ledger/runState.ts: frozen when that module is first
+ * imported, so one run has one id); `currentRunId(env)` reads the live variable and is for the places that honour an
+ * injected `env` seam (the config before runState exists, the local proof, the guard's judge, the unit tests).
  */
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { parseFlag } from './flags';
+import { settings } from './settings';
 
 export const DEFAULT_RUN_ID = 'qa-reg-adhoc';
 /** The API test template's default (`API_RUN_ID ?? 'qa-api-adhoc'`). */
@@ -49,8 +54,9 @@ export function newRunId(now: Date = new Date(), randomInt: (max: number) => num
     return `qa-reg-${date}-${time}-${suffix}`;
 }
 
+/** The run id now in `env` (REG_RUN_ID, else the adhoc default): only where an injected `env` is honoured; elsewhere `runId()`. */
 export function currentRunId(env: NodeJS.ProcessEnv = process.env): string {
-    return env.REG_RUN_ID || DEFAULT_RUN_ID;
+    return settings(env).runId ?? DEFAULT_RUN_ID;
 }
 
 /** True for either adhoc default. */
@@ -65,7 +71,7 @@ export function hasRunFamilyPrefix(name: string | undefined): boolean {
 
 /** Run state, ledger, snapshots and the cleanup ledger: REG_STATE_DIR, else ~/.ilm-qa/regression-state (never the clone). */
 export function regressionStateDir(env: NodeJS.ProcessEnv = process.env): string {
-    return path.resolve(env.REG_STATE_DIR ?? path.join(os.homedir(), '.ilm-qa', 'regression-state'));
+    return path.resolve(settings(env).stateDir ?? path.join(os.homedir(), '.ilm-qa', 'regression-state'));
 }
 
 /** The "before" snapshot the `snapshot` project stores and the run-end teardown compares against. */
@@ -79,7 +85,7 @@ export function assertValidRunId(id: string, env: NodeJS.ProcessEnv = process.en
         throw new Error(`REG_RUN_ID=${id} is an adhoc default: a run under it could not tell its objects from anyone else's. Unset REG_RUN_ID.`);
     }
     if (RUN_ID_FORMAT.test(id)) return;
-    const reuse = parseFlag(env.REG_RUN_ID_REUSE, 'REG_RUN_ID_REUSE', false);
+    const reuse = parseFlag(settings(env).runIdReuse, 'REG_RUN_ID_REUSE', false);
     if (reuse && REUSABLE_RUN_ID.test(id)) return;
     throw new Error(
         `REG_RUN_ID "${id}" is not qa-reg-<yyyymmdd>-<hhmmss>-<4 base36>` +
@@ -97,13 +103,13 @@ export function assertValidRunId(id: string, env: NodeJS.ProcessEnv = process.en
  * - CLEANUP_LEDGER_FILE: the run's cleanup ledger in the state directory, outside the clone.
  */
 export function setRunEnvDefaults(env: NodeJS.ProcessEnv = process.env): string {
-    const handSet = !!env.REG_RUN_ID;
-    if (handSet) assertValidRunId(env.REG_RUN_ID!, env);
+    const handSet = !!settings(env).runId;
+    if (handSet) assertValidRunId(settings(env).runId!, env);
     else env.REG_RUN_ID = newRunId();
     const id = env.REG_RUN_ID!;
     env.API_RUN_ID = id;
-    if (env.API_DELETE_OWN === undefined) env.API_DELETE_OWN = handSet ? '0' : '1';
-    parseFlag(env.API_DELETE_OWN, 'API_DELETE_OWN', true);
+    if (settings(env).deleteOwn === undefined) env.API_DELETE_OWN = handSet ? '0' : '1';
+    parseFlag(settings(env).deleteOwn, 'API_DELETE_OWN', true);
     env.CLEANUP_LEDGER_FILE ||= path.join(regressionStateDir(env), `${id}.cleanup.jsonl`);
     return id;
 }

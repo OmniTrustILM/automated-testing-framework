@@ -1,16 +1,14 @@
 /**
- * Radix Select helpers: the one place that opens, reads and chooses from the admin UI's custom Select.
+ * select — the Select helper.
  *
- * The Select is a popover: a trigger button (`select-<id>-trigger`, aria-haspopup="listbox") and portalled content
- * (`select-<id>-content`) with role="option" rows (`data-value` = the option's code). Inside a Radix dialog the popover is
- * MODAL: the dialog is aria-hidden and the overlay intercepts clicks, so a multi select is closed with Escape, never by a
- * click on the dialog's heading, a label or the trigger. A single select closes itself after a pick.
- *
- * ONE matching rule for a text choice: the EXACT accessible name of the option, nothing else. A label that only starts an
- * option's text is chosen only by an explicit opt-in at the call site, `{ prefix, reason }` (word boundary, so "Equals"
- * never hits "Not equals" and "x-ra" never hits "x-ra-2"; the reason says why the exact name cannot be used there). There
- * is no "contains" fallback: a choice that names no option fails. A RegExp is tested against the option's text;
- * `{ value }` matches the option's `data-value` exactly.
+ * WHAT: the one place that opens, reads and chooses from the admin UI's custom Select (a Radix popover).
+ * WHY: one matching rule for a text choice: the exact accessible name of the option; a prefix only by an explicit
+ *       opt-in with a reason, never "contains", so "Equals" never hits "Not equals"; a choice that names no option
+ *       fails.
+ * HOW: trigger and content by test id (`select-<id>-trigger` / `select-<id>-content`, options with role option and
+ *       a `data-value` code); inside a dialog the popover is modal, so a multi select is closed with Escape, never
+ *       by a click elsewhere; a single select closes itself after a pick; a RegExp is tested against the option
+ *       text, `{ value }` matches `data-value`.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { Logger } from '../../utils/Logger';

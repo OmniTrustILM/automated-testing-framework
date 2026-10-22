@@ -3,12 +3,12 @@
  * rules and stricter (no body, no identity header, no text/plain, no redirect, no side-effect-GET path). It may name any
  * object, because it changes nothing; any other unknown method stays refused.
  */
-import { APIRequestContext, expect, request, test } from '@playwright/test';
+import { APIRequestContext, expect, test } from '@playwright/test';
 import { guardApiWithSeams } from '../../utils/regression/guard/createGuard';
 import { OwnObjectViolation, RefusalKind } from '../../utils/regression/ledger/ownership';
 import { LedgerLine } from '../../utils/regression/ledger/ledger';
-import { loopbackServer, LoopbackServer } from './helpers/loopbackServer';
-import { registerGuardRig, withProcessEnv } from './helpers/guardRig';
+import { LoopbackServer } from './helpers/loopbackServer';
+import { registerGuardRig } from './helpers/guardRig';
 
 const RUN = 'qa-reg-20261014-090000-tr01';
 const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -57,7 +57,6 @@ test('TRACE on an own, a foreign and a plain path is sent bodyless and follows n
     expect(await outcome(g.fetch(`/api/v1/roles/${FOREIGN_ROLE}`, { method: 'TRACE' }))).toBe('sent');
     const res = await g.fetch('/api/v1/info', { method: 'trace' });
     expect(res.status()).toBe(400);
-    expect(await outcome(g.check('TRACE', '/api/v1/info'))).toBe('sent');
     const traces = A.arrived.filter((a) => a.method === 'TRACE');
     expect(traces.map((a) => a.url)).toEqual([`/api/v1/roles/${OWN_ROLE}`, `/api/v1/roles/${FOREIGN_ROLE}`, '/api/v1/info']);
     expect(traces.every((a) => a.body === '')).toBe(true);
@@ -89,13 +88,12 @@ test('TRACE with a body, odd path, other origin, identity header, redirect or _m
         ['text/plain without a body', () => g.fetch('/api/v1/info', { method: 'TRACE', headers: { 'Content-Type': 'text/plain' } })],
         ['maxRedirects > 0', () => g.fetch('/api/v1/redirect-me', { method: 'TRACE', maxRedirects: 1 })],
         ['a _method parameter', () => g.fetch('/api/v1/info?_method=DELETE', { method: 'TRACE' })],
-        ['check(): a body', () => g.check('TRACE', '/api/v1/info', { a: 1 })],
         ['an unknown method stays refused', () => g.fetch('/api/v1/info', { method: 'FOO' })],
     ];
     for (const [name, call] of vectors) expect(await outcome(call()), name).toBe('request');
     // The refusal of a bodyless text/plain TRACE is the TRACE rule itself, not the generic "text/plain needs a body" one.
     const textPlain = await g.fetch('/api/v1/info', { method: 'TRACE', headers: { 'Content-Type': 'text/plain' } }).then(() => undefined, (e: unknown) => e);
-    expect(String((textPlain as Error | undefined)?.message)).toMatch(/text\/plain on a GET \/ HEAD \/ TRACE/);
+    expect(String((textPlain as Error | undefined)?.message)).toMatch(/text\/plain on a GET \/ TRACE/);
     expect(A.arrived, 'nothing refused reached the core').toEqual([]);
     expect(B.arrived, 'nothing reached the other origin').toEqual([]);
 });

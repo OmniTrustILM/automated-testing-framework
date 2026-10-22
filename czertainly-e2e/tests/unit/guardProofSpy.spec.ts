@@ -12,13 +12,13 @@
  */
 import { APIRequestContext, test, expect } from '@playwright/test';
 import { guardApi } from '../../utils/regression/guard/createGuard';
-import { GuardedApi } from '../../utils/regression/guard/types';
 import { readOnlySpy, expectOwnershipRefusal, GuardSpyBlocked } from '../../utils/regression/guardProofSpy';
 import { OwnObjectViolation } from '../../utils/regression/ledger/ownership';
 import { apiJson } from '../../utils/regression/apiReads';
 import { enableOwnRaProfile } from '../../utils/regression/ownRaProfiles';
 import { OwnRef } from '../../utils/regression/ledger/ledger';
 import { runName } from '../../utils/regression/ledger/runState';
+import { useEnv, fakeContext, rawAsGuarded } from './helpers/guardRig';
 
 const FOREIGN_RA = '00000000-0000-4000-8000-000000000002';
 const AUTH = '00000000-0000-4000-8000-000000000009';
@@ -31,7 +31,7 @@ function raw(): { api: APIRequestContext; reached: string[] } {
         reached.push(`${method} ${url}`);
         return reply({ name: 'Production RA', uuid: FOREIGN_RA });
     };
-    const api = {
+    const api = fakeContext({
         get: record('GET'), head: record('HEAD'), post: record('POST'), put: record('PUT'), patch: record('PATCH'), delete: record('DELETE'),
         options: record('OPTIONS'),
         fetch: async (url: string | { url(): string; method(): string }, opts: { method?: string } = {}) => {
@@ -40,24 +40,11 @@ function raw(): { api: APIRequestContext; reached: string[] } {
             return reply();
         },
         dispose: async () => undefined,
-    } as unknown as APIRequestContext;
+    });
     return { api, reached };
 }
 
-const ENV_KEYS = ['API_TEARDOWN_DRY_RUN', 'REG_STATE_DIR', 'TIER_KIND', 'BASE_URL'];
-let saved: Record<string, string | undefined> = {};
-test.beforeEach(({}, testInfo) => {
-    saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
-    for (const k of ENV_KEYS) delete process.env[k];
-    process.env.REG_STATE_DIR = testInfo.outputPath('state'); // an empty ledger: nothing is own
-    process.env.TIER_KIND = 'shared';
-});
-test.afterEach(() => {
-    for (const [k, v] of Object.entries(saved)) {
-        if (v === undefined) delete process.env[k];
-        else process.env[k] = v;
-    }
-});
+useEnv(['API_TEARDOWN_DRY_RUN', 'REG_STATE_DIR', 'TIER_KIND', 'BASE_URL'], (testInfo) => ({ REG_STATE_DIR: testInfo.outputPath('state'), TIER_KIND: 'shared' })); // an empty ledger: nothing is own
 
 test('the spy forwards reads and refuses every mutating request without sending it', async () => {
     const r = raw();
@@ -92,7 +79,7 @@ test('the proof: helper and guarded PATCH / DELETE refuse a pre-existing RA prof
         const r = raw();
         const watched = readOnlySpy(r.api);
         const forged = { uuid: FOREIGN_RA, name: runName('forged'), kind: 'own' } as OwnRef;
-        expect((await expectOwnershipRefusal(enableOwnRaProfile(watched.api as unknown as GuardedApi, AUTH, forged))).uuid).toBe(FOREIGN_RA);
+        expect((await expectOwnershipRefusal(enableOwnRaProfile(rawAsGuarded(watched.api), AUTH, forged))).uuid).toBe(FOREIGN_RA);
         const guarded = guardApi(watched.api);
         expect((await expectOwnershipRefusal(guarded.patch(`/api/v1/authorities/${AUTH}/raProfiles/${FOREIGN_RA}/disable`))).reason).toMatch(/no ledger "created" line/);
         expect((await expectOwnershipRefusal(guarded.delete(`/api/v1/authorities/${AUTH}/raProfiles/${FOREIGN_RA}`))).kind).toBe('ownership');

@@ -27,6 +27,7 @@ import { parseFlag } from './flags';
 import { acquireRunLock, setRunEnvDefaults, releaseRunLock } from './runId';
 import { assertAuthModeAllowed, assertLocalAllowed, LocalProofOptions, removeLocalProof } from '../tier/localProof';
 import { freezeTierEnv, tierIdentity } from '../tier/kind';
+import { settings } from './settings';
 
 export interface PrepareRunOptions extends LocalProofOptions {
     /** The config's folder (`__dirname`): its `.env` is the default env file. */
@@ -71,14 +72,15 @@ export function prepareRun(opts: PrepareRunOptions): string {
     // file the USER named must exist. REG_ENV_FILE_PINNED marks the pin and counts ONLY inside a worker.
     // A second load in the runner process itself is recognised by this module's memory, never by the variable.
     const inWorker = env.TEST_WORKER_INDEX !== undefined;
-    const pinned = !!env.REG_ENV_FILE && ((inWorker && env.REG_ENV_FILE_PINNED === env.REG_ENV_FILE) || pinnedInThisProcess === env.REG_ENV_FILE);
+    const named = settings(env).envFile;
+    const pinned = !!named && ((inWorker && env.REG_ENV_FILE_PINNED === named) || pinnedInThisProcess === named);
     env.REG_ENV_FILE = loadDotenv(env, opts.configDir, { allowApiEnvFile: true, requireExplicit: !pinned });
     env.REG_ENV_FILE_PINNED = env.REG_ENV_FILE;
     pinnedInThisProcess = env.REG_ENV_FILE;
     freezeTierEnv(env);
     const runId = setRunEnvDefaults(env);
-    parseFlag(env.API_TEARDOWN_DRY_RUN, 'API_TEARDOWN_DRY_RUN', false);
-    parseFlag(env.REG_KEPT_STRICT, 'REG_KEPT_STRICT', false);
+    parseFlag(settings(env).teardownDryRun, 'API_TEARDOWN_DRY_RUN', false);
+    parseFlag(settings(env).keptStrict, 'REG_KEPT_STRICT', false);
     const proof = {
         probe: opts.probe, resolve: opts.resolve, containers: opts.containers, interfaces: opts.interfaces,
         dockerContext: opts.dockerContext, daemonId: opts.daemonId, inContainer: opts.inContainer,

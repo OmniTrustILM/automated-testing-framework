@@ -7,7 +7,10 @@
  * - every test carries one priority tag `@p1` / `@p2` / `@p3` (the nightly selects `@p1`, the `api-rest` project
  *   `@p2|@p3`); a characterisation pin (`@pin:<question>`) is never P1;
  * - `@gate` is API-GEN-32 only;
- * - `@local` also needs `describeLocalOnly(test)` in the spec, `@needs:<x>` a `requireTool` / preflight in `beforeAll`;
+ * - `@local` also needs `describeLocalOnly(test)` in the spec;
+ * - `@needs:<x>` names one thing a row cannot run without (`Needs`, the one catalogue below). A spec that takes the
+ *   `needs` fixture of fixtures/regressionFixtures.ts gets every declared need resolved from READS before it creates
+ *   anything; an unmet need skips the test with the named reason;
  * - `testMeta()` also tags the test with its id (`@REG-USE-05`) and may name a table row (`row`, an annotation).
  *   `--grep` is a regular expression, so `--grep @REG-USE-05` selects the id AND its sub-ids (`@REG-USE-05.1`): use it
  *   for a whole checklist item; `--grep "@REG-USE-05(?![\w.-])"` selects exactly that id;
@@ -17,6 +20,24 @@
  */
 
 export type Prio = 'P1' | 'P2' | 'P3';
+
+/**
+ * What a row may need from the tier or the runner, the one catalogue of the `@needs:<x>` tags (`needs` in `testMeta`).
+ * Runner tools: `openssl`, `sscep`, `docker`, `cluster` (kubectl and a reachable cluster). Local-stack services: `keycloak-local`,
+ * `smtp-catcher`, `webhook-receiver`. Connectors and identities the tier must offer: `ca` (a healthy certificate authority
+ * with an enabled RA profile to copy), `ejbca-ng`, `pkcs11`, `v1-discovery`, `v2-discovery`, `email-provider`,
+ * `webhook-provider`, `second-identity`. A runner-hosted TLS listener: `scan-target`. A connector that must be online:
+ * `connector-online`.
+ */
+export const NEEDS = [
+    'ca', 'ejbca-ng', 'pkcs11', 'second-identity', 'keycloak-local', 'v1-discovery', 'v2-discovery', 'email-provider', 'webhook-provider',
+    'smtp-catcher', 'webhook-receiver', 'scan-target', 'connector-online', 'openssl', 'sscep', 'docker', 'cluster',
+] as const;
+
+/** One need of a row (a value of `NEEDS`). */
+export type Needs = (typeof NEEDS)[number];
+
+const isNeed = (what: string): what is Needs => (NEEDS as readonly string[]).includes(what);
 
 /** The QA task every ilm#424 regression row is registered under. */
 export const REGISTERED_ISSUE = 'ilm#448';
@@ -46,8 +67,8 @@ export const tags = {
         if (!/^[A-Za-z0-9._-]+$/.test(question)) throw new Error(`tags.pin: "${question}" is not a question id`);
         return `@pin:${question}`;
     },
-    needs: (what: string): string => {
-        if (!/^[a-z0-9-]+$/.test(what)) throw new Error(`tags.needs: "${what}" is not a capability name`);
+    needs: (what: Needs): string => {
+        if (!isNeed(what)) throw new Error(`tags.needs: "${what}" is not one of ${NEEDS.join(', ')}`);
         return `@needs:${what}`;
     },
     bug: (ref: string): string => `@bug:${checkRef('bug', ref)}`,
@@ -62,7 +83,8 @@ export interface Meta {
     pin?: string;
     /** Known product bug(s): the test must also call test.fail(). */
     bug?: string | string[];
-    needs?: string | string[];
+    /** What the row cannot run without (see `Needs`); the `needs` fixture skips the test with a named reason when one is unmet. */
+    needs?: Needs | Needs[];
     local?: boolean;
     gate?: boolean;
     phaseB?: boolean;

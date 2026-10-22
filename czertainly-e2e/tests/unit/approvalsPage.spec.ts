@@ -1,7 +1,11 @@
 /**
- * approvalsPage — offline checks of pages/ApprovalsPage.ts: the list row status and checkbox, the detail status and
- * recipient comment on `setContent` documents, and the override Approve / Reject through the confirm dialog with the
- * PATCH the page object waits for (a loopback-addressed context answered by the test).
+ * approvalsPage — offline checks of pages/ApprovalsPage.ts.
+ *
+ * WHAT: the list row status and checkbox, the detail status and recipient comment on `setContent` documents, and the
+ *       override Approve / Reject through the confirm dialog; each override returns the answer (`ApiAnswer`) of its PATCH.
+ * WHY: REG-CERT-16 / 17 decide through the override path and assert the answer's status; a wrong button must fail on the
+ *      wait for the exact request, not pass on another one.
+ * HOW: stand-in documents shaped like the admin UI; a loopback-addressed context answers the PATCH itself.
  */
 import { expect, test } from '@playwright/test';
 import { ApprovalsPage } from '../../pages/ApprovalsPage';
@@ -59,11 +63,11 @@ test('ApprovalsPage.overrideApprove / overrideReject: the list toolbar, the conf
         const approvals = new ApprovalsPage(page);
         await approvals.goToList();
         await approvals.checkRow(U1);
-        expect(await approvals.overrideApprove(U1)).toBe(204);
+        expect((await approvals.overrideApprove(U1)).status).toBe(204);
         await approvals.assertStatus(U1, 'Approved');
         expect(patched).toEqual([`/api/v1/approvals/${U1}/approve`]);
         await approvals.goToList();
-        expect(await approvals.overrideReject(U1)).toBe(204);
+        expect((await approvals.overrideReject(U1)).status).toBe(204);
         await approvals.assertStatus(U1, 'Rejected');
         expect(patched).toEqual([`/api/v1/approvals/${U1}/approve`, `/api/v1/approvals/${U1}/reject`]);
         // Mutant: Approve on the toolbar must never satisfy a reject (the wrong icon = the wrong route, caught by the wait).

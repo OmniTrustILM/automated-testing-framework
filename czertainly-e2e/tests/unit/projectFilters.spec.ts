@@ -5,7 +5,7 @@
  * takeFirst (a project's grep REPLACES the config's).
  */
 import { test, expect } from '@playwright/test';
-import { allOf, anyOf, resolveProjectFilters, selectsTest, tierRules, withTierFilters } from '../../utils/regression/projectFilters';
+import { allOf, anyOf, isMigratedBuildPhase, resolveProjectFilters, selectsTest, tierRules, withTierFilters } from '../../utils/regression/projectFilters';
 
 test('or: any pattern; and: every pattern, in any order', () => {
     const o = anyOf(/@p1\b/, [/@p2\b/, /@p3\b/])!;
@@ -22,6 +22,13 @@ test('or: any pattern; and: every pattern, in any order', () => {
 test('tierRules: @local excluded unless TIER_KIND=local; @phaseB only with REG_PHASE=B', () => {
     expect(tierRules({})).toEqual({ grep: undefined, grepInvert: /@local\b/ });
     expect(tierRules({ TIER_KIND: 'local', REG_PHASE: 'B' })).toEqual({ grep: /@phaseB\b/, grepInvert: undefined });
+});
+
+test('isMigratedBuildPhase: only REG_PHASE=B, and tierRules agrees with it', () => {
+    expect(isMigratedBuildPhase({ REG_PHASE: 'B' })).toBe(true);
+    expect(isMigratedBuildPhase({ REG_PHASE: 'A' })).toBe(false);
+    expect(isMigratedBuildPhase({})).toBe(false);
+    for (const env of [{ REG_PHASE: 'B' }, { REG_PHASE: 'A' }, {}]) expect(tierRules(env).grep !== undefined, JSON.stringify(env)).toBe(isMigratedBuildPhase(env));
 });
 
 test('withTierFilters folds the rules into each project; infrastructure ignores the phase grep', () => {

@@ -1,7 +1,10 @@
 /**
- * publicText — the public-text lint (utils/regression/publicText.ts) over comments, titles, messages, rules and docs:
- * no private shorthand, tool or model names or local paths; each pattern class is caught, ordinary words and the
- * allow-listed public ids are not; no file name under the scanned folders carries a round or batch marker.
+ * publicText — the public-text lint (utils/regression/publicText.ts) over comments, titles, messages, rules and docs.
+ *
+ * WHAT: no private shorthand, tool or model names or local paths; each pattern class is caught, ordinary words and the
+ *       allow-listed public ids are not; no file name under the scanned folders carries a round or batch marker.
+ * WHY: the repository is public; a private id or path in a comment or a title must fail before it is pushed.
+ * HOW: hand-made source strings go through `publicTextHitsIn`, and the allow-list entries are checked against their exact files.
  */
 import { test, expect } from '@playwright/test';
 import * as path from 'path';
@@ -121,8 +124,11 @@ test('public text: each allow-list entry names its exact files; a defining file 
     const seed = join('C', '03');
     const fixture = join('F', '4');
     expect(publicTextHitsIn('utils/regression/inventory/searchTables.ts', `// the ${seed} date`)).toEqual([]);
-    expect(publicTextHitsIn('tests/api/auth-permissions-by-role.api.spec.ts', `// the ${seed} date`).map((h) => h.cls)).toEqual(['candidate-id']);
-    expect(publicTextHitsIn('utils/regression/rbac/permissionFixtures.ts', `// fixture ${fixture}`)).toEqual([]);
+    expect(publicTextHitsIn('tests/api/01-auth/permissions-by-role.api.spec.ts', `// the ${seed} date`).map((h) => h.cls)).toEqual(['candidate-id']);
+    for (const file of ['utils/regression/rbac/permissionMatrix.ts', 'utils/regression/rbac/permissionObjects.ts']) {
+        expect(publicTextHitsIn(file, `// fixture ${fixture}`), file).toEqual([]);
+    }
+    expect(publicTextHitsIn('utils/regression/rbac/permissionFixtures.ts', `// fixture ${fixture}`).map((h) => h.cls), 'the module that was split is no longer listed').toEqual(['finding-id']);
     expect(publicTextHitsIn('utils/auth/accessToken.ts', `// fixture ${fixture}`).map((h) => h.cls)).toEqual(['finding-id']);
     expect(publicTextHitsIn('tests/unit/rbacWire.spec.ts.bak', `// fixture ${fixture}`).map((h) => h.cls), 'a prefix of a listed path is not enough').toEqual(['finding-id']);
 });

@@ -1,6 +1,9 @@
 /**
- * Tables of the admin UI whose header cells carry the column id (`thead th[data-id]`): find a column by that id and a
- * row's cell in it, instead of a fixed position (columns move between FE releases and with the user's column choice).
+ * table — column-by-id table helpers.
+ *
+ * WHAT: tables whose header cells carry the column id: find a column by that id and a row's cell in it.
+ * WHY: columns move between releases and with the user's column choice; a fixed position is a wrong oracle.
+ * HOW: the header ids are read once; the cell is the row's td at that index.
  */
 import { expect, Locator } from '@playwright/test';
 

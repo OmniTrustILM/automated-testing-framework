@@ -3,13 +3,13 @@
  * space or non-ASCII character is refused before parsing, the path as written must be the path sent (no dot segments),
  * non-canonical uuid forms are refused, and reads go to BASE_URL's origin only, so the token never reaches another host.
  */
-import { APIRequestContext, expect, request, test } from '@playwright/test';
+import { APIRequestContext, expect, test } from '@playwright/test';
 import { allowedRawPost } from '../../utils/regression/guard/rawPost';
 import { guardApiWithSeams } from '../../utils/regression/guard/createGuard';
 import { OwnObjectViolation, RefusalKind } from '../../utils/regression/ledger/ownership';
 import { apiJson } from '../../utils/regression/apiReads';
 import { LedgerLine } from '../../utils/regression/ledger/ledger';
-import { Arrived, loopbackServer, LoopbackServer } from './helpers/loopbackServer';
+import { Arrived, LoopbackServer } from './helpers/loopbackServer';
 import { registerGuardRig, withProcessEnv } from './helpers/guardRig';
 
 const RUN = 'qa-reg-20261013-120000-ab12';
@@ -173,12 +173,11 @@ test('dot segments (plain, tab-split, encoded, backslash) never reach a platform
     ]);
 });
 
-// origin: GET / HEAD / fetch, raw read POSTs and apiJson on an authenticated context never carry the token to another host
-test('origin: GET, HEAD, fetch, read POSTs and apiJson on an authenticated context never leak the token', async () => {
+// origin: GET / fetch, raw read POSTs and apiJson on an authenticated context never carry the token to another host
+test('origin: GET, fetch, read POSTs and apiJson on an authenticated context never leak the token', async () => {
     const g = guard();
     const elsewhere = `${B.origin}/api/v1/roles`;
     expect(await outcome(g.get(elsewhere))).toBe('request');
-    expect(await outcome(g.head(elsewhere))).toBe('request');
     expect(await outcome(g.fetch(elsewhere, { method: 'GET' }))).toBe('request');
     expect(await outcome(g.get(`//127.0.0.1:${B.port}/api/v1/roles`)), 'protocol-relative').toBe('request');
     expect(await outcome(g.get(`http://localhost:${A.port}/api/v1/roles`)), 'another host name for the same server is another origin').toBe('request');
@@ -404,7 +403,6 @@ test('bulk endpoints: path-less platform endpoints and nested or empty lists are
         ['CBOM upload with a stray list', 'POST', '/api/v1/cboms/upload', { x: { roleUuids: [OWN_ROLE] } }],
         ['OID delete with a stray list', 'DELETE', '/api/v1/oids', { oidUuids: [OWN_ROLE] }],
         ['discovery schedule with a stray list', 'POST', '/api/v1/discoveries/schedule', { a: { uuids: [OWN_ROLE] } }],
-        ['list view create with nested filters', 'POST', '/api/v1/listViews', { name: 'x', filters: { uuids: [OWN_ROLE] } }],
         ['settings events PATCH with an own list', 'PATCH', '/api/v1/settings/events', { eventsMapping: { x: [OWN_ROLE] }, uuids: [OWN_ROLE] }],
     ];
     for (const [name, method, url, data] of cases) expect(await outcome(g.fetch(url, { method, data: data as object })), name).toBe('request');

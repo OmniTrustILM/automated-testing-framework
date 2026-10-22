@@ -10,6 +10,7 @@ import { attemptCleanup } from '../cleanupLedger';
 import { assertOwn, carriesRunPrefix, OwnObjectViolation } from './ledger/ownership';
 import { OwnRef, recordCreated, recordDeleted } from './ledger/ledger';
 import { runId } from './ledger/runState';
+import { settings } from './run/settings';
 
 export interface K8sRef {
     /** The object's kind as in its manifest (CzertainlyIssuer, Certificate, Secret). */
@@ -34,7 +35,7 @@ const resourceOf = (ref: K8sRef): string => ref.resource ?? ref.kind.toLowerCase
 
 /** kubectl in the object's namespace; throws with kubectl's stderr on a non-zero exit. */
 export function runKubectl(namespace: string, args: string[], input?: string, timeoutMs = 240_000): string {
-    const bin = process.env.REG_KUBECTL_BIN || 'kubectl';
+    const bin = settings().kubectlBin;
     return execFileSync(bin, ['-n', namespace, ...args], { input, encoding: 'utf8', timeout: timeoutMs, stdio: ['pipe', 'pipe', 'pipe'] });
 }
 
@@ -45,7 +46,7 @@ function assertRunPrefixed(ref: K8sRef, helper: string): void {
 /** Record an object the run owns (before it exists, or one a controller wrote for the run); returns its OwnRef. */
 export function recordOwnK8sObject(ref: K8sRef, spec: string, note?: string): OwnRef {
     assertRunPrefixed(ref, 'recordOwnK8sObject');
-    return recordCreated(ledgerType(ref), { uuid: k8sUuid(ref), name: ref.name }, spec, note);
+    return recordCreated(ledgerType(ref), { uuid: k8sUuid(ref), name: ref.name }, { spec, note });
 }
 
 /**

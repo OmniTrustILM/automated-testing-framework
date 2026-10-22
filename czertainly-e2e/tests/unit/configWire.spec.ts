@@ -1,16 +1,19 @@
 /**
- * configWire — loopback wire check of the config helpers of the main flows (own RA profiles, roles, users, the inventory
- * seed subset, ACME activation, issued records) on one stateful fake core (tests/unit/helpers/loopbackServer.ts): every
- * request goes through the guard, each test asserts what arrived, the ledger is written before any assertion, a foreign
- * object or a raw context is refused before anything is sent. The ledger lives in a per-test REG_STATE_DIR.
+ * configWire — loopback wire check of the config helpers of the main flows.
+ *
+ * WHAT: the helpers for own RA profiles, roles, users, the inventory seed subset, ACME activation and issued records, on one
+ *       stateful fake core (tests/unit/helpers/loopbackServer.ts): every request goes through the guard, each test asserts
+ *       what arrived, the ledger is written before any assertion, a foreign object or a raw context is refused before
+ *       anything is sent.
+ * WHY: a helper that creates or changes an object is only safe if what it sends and records is proven, without a tier.
+ * HOW: a loopback server answers like core; the ledger lives in a per-test REG_STATE_DIR.
  */
-import { APIRequestContext, expect, request, test } from '@playwright/test';
+import { APIRequestContext, expect, test } from '@playwright/test';
 import * as forge from 'node-forge';
 import { connectorsAlive, findConnector, healthByVersion, probeAttributes, waitForHealthy } from '../../utils/regression/platform/connectorApi';
-import { guardApi } from '../../utils/regression/guard/createGuard';
 import { GuardedApi } from '../../utils/regression/guard/types';
 import { buildSeedSubset, manifestProblems, planSeedSubset } from '../../utils/regression/inventory/seedMinimal';
-import { OwnObjectViolation } from '../../utils/regression/ledger/ownership';
+import { derivedDeletable, OwnObjectViolation } from '../../utils/regression/ledger/ownership';
 import { adcsBlocker } from '../../utils/regression/config/authorities';
 import { issueWithCsr, uploadOwnCertificate } from '../../utils/regression/ownCertificates';
 import {
@@ -24,12 +27,14 @@ import {
 import { requiredCustomAttributes } from '../../utils/regression/customAttributes';
 import { createOwnRole, ensureRunRole } from '../../utils/regression/ownRoles';
 import { createOwnUser, setOwnUserRoles } from '../../utils/regression/ownUsers';
-import { createRaProfileLike, enableOwnRaProfile, ensureAcmeOnRaProfile, ensureOwnRaProfile, ensureRunRaProfile, ensureRunRaProfileOrSkip, pickHealthyAuthority, RaProfileSourceMissing } from '../../utils/regression/ownRaProfiles';
+import { createOwnRaProfileLike, enableOwnRaProfile, ensureAcmeOnRaProfile, ensureOwnRaProfile, ensureRunRaProfile, ensureRunRaProfileOrSkip, pickHealthyAuthority, RaProfileSourceMissing } from '../../utils/regression/ownRaProfiles';
 import { rowsNamed } from '../../utils/regression/listReads';
 import { issueOnly, OwnRef, readLedger, recordCreated } from '../../utils/regression/ledger/ledger';
 import { readRunState, runName, runId, updateRunState } from '../../utils/regression/ledger/runState';
 import { selfSignedPem } from '../../utils/regression/pkiBuilders';
-import { Answer, Arrived, loopbackServer, LoopbackServer } from './helpers/loopbackServer';
+import { Answer, Arrived, LoopbackServer } from './helpers/loopbackServer';
+import { FakeCore as BaseCore } from './helpers/fakeCore';
+import { registerFakeCore, rawAsGuarded } from './helpers/guardRig';
 
 const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const C_ADCS = U(1);
@@ -54,7 +59,7 @@ const ACME_ACCOUNT = U(52);
 type Json = Record<string, any>;
 
 /** A fake core that remembers what the run created (GET answers it) and serves a fixed tier around it. */
-class FakeCore {
+class ConfigCore extends BaseCore {
     adcsHealthy = false;
     /** An enabled RA profile on the MS ADCS authority (the copy source when MS ADCS is healthy). */
     adcsHasRa = false;
@@ -83,8 +88,7 @@ class FakeCore {
     get searchCount(): number {
         return this.searches;
     }
-    private seq = 1000;
-    readonly store = new Map<string, Json>();
+    protected seq = 1000;
     readonly certs: Json[] = [];
 
     /** A certificate the platform lists (search row) and serves (detail, with its linked key): `commonName`, `state`, `key.uuid`. */
@@ -95,18 +99,13 @@ class FakeCore {
         return cert;
     }
 
-    private next(): string {
-        this.seq += 1;
-        return `aaaaaaaa-0000-4000-8000-${String(this.seq).padStart(12, '0')}`;
-    }
-
-    answer = (a: Arrived): Answer | undefined => {
+    protected respond(a: Arrived): Answer | undefined {
         const path = a.url.split('?')[0];
         const body = a.body ? (JSON.parse(a.body) as Json) : undefined;
         if (a.method === 'GET') return this.get(path);
         if (a.method === 'POST') return this.post(path, body);
         return { status: 204 };
-    };
+    }
 
     private get(path: string): Answer {
         if (this.failDetailReads > 0 && /^\/api\/v1\/certificates\/[0-9a-f-]{36}$/.test(path)) {
@@ -221,40 +220,13 @@ class FakeCore {
 }
 
 let server: LoopbackServer;
-let core: FakeCore;
+let core: ConfigCore;
 let raw: APIRequestContext;
 let api: GuardedApi;
 
-const ENV_KEYS = ['REG_STATE_DIR', 'BASE_URL', 'TIER_KIND', 'REG_RUN_ID', 'REG_RA_PROFILE_NAME', 'REG_CA_CONNECTORS', 'REG_ADCS_CONNECTOR', 'API_TEARDOWN_DRY_RUN'];
-let saved: Record<string, string | undefined> = {};
-
-test.beforeAll(async () => {
-    server = await loopbackServer((a) => core.answer(a));
-});
-
-test.afterAll(async () => {
-    await server.close();
-});
-
-test.beforeEach(async ({}, testInfo) => {
-    saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
-    for (const k of ENV_KEYS) delete process.env[k];
-    process.env.REG_STATE_DIR = testInfo.outputPath('state');
-    process.env.BASE_URL = `${server.origin}/administrator/`;
-    process.env.TIER_KIND = 'shared';
-    process.env.REG_RUN_ID = runId(); // the guard's currentRunId() equals the ledger writer's runId()
-    core = new FakeCore();
-    server.reset();
-    raw = await request.newContext({ baseURL: process.env.BASE_URL, extraHTTPHeaders: { Authorization: 'Bearer SECRET-TOKEN' } });
-    api = guardApi(raw);
-});
-
-test.afterEach(async () => {
-    await api.dispose();
-    for (const [k, v] of Object.entries(saved)) {
-        if (v === undefined) delete process.env[k];
-        else process.env[k] = v;
-    }
+registerFakeCore(() => core, (rig) => ({ server, raw, api } = rig), { clear: ['REG_RA_PROFILE_NAME', 'REG_CA_CONNECTORS', 'REG_ADCS_CONNECTOR'] });
+test.beforeEach(() => {
+    core = new ConfigCore();
 });
 
 const wire = () => server.mutations().map((a) => `${a.method} ${a.url}`);
@@ -328,8 +300,8 @@ test('ensureOwnRaProfile: an issue-only parent (REG_RA_PROFILE_NAME, local) is n
     expect(wire()).toEqual([]);
 });
 
-test('createRaProfileLike with a raw context is refused (not-guarded); nothing is sent', async () => {
-    expect(await refusal(createRaProfileLike(raw as unknown as GuardedApi, { uuid: R_SRC, authorityUuid: A_EJBCA }, runName('x')))).toBe('not-guarded');
+test('createOwnRaProfileLike with a raw context is refused (not-guarded); nothing is sent', async () => {
+    expect(await refusal(createOwnRaProfileLike(rawAsGuarded(raw), 'T', 'x', { source: { uuid: R_SRC, authorityUuid: A_EJBCA }, note: 'x' }))).toBe('not-guarded');
     expect(wire()).toEqual([]);
 });
 
@@ -386,7 +358,7 @@ test('buildSeedSubset: own attribute, own disabled user, three uploads, owner PA
 });
 
 test('buildSeedSubset with a raw context is refused (not-guarded); nothing is sent', async () => {
-    expect(await refusal(buildSeedSubset(raw as unknown as GuardedApi, 'T', planSeedSubset(runName, 'raw')))).toBe('not-guarded');
+    expect(await refusal(buildSeedSubset(rawAsGuarded(raw), 'T', planSeedSubset(runName, 'raw')))).toBe('not-guarded');
     expect(wire()).toEqual([]);
 });
 
@@ -398,7 +370,7 @@ test('issueWithCsr goes through the guard (create path); recordCertificatesNamed
     const issued = await issueWithCsr(api, ra.authorityUuid, ra.uuid, 'TUlJQw==');
     expect(wire()).toEqual([`POST /api/v2/operations/authorities/${A_EJBCA}/raProfiles/${ra.uuid}/certificates`]);
     expect(issued.createdAfter, 'createdAfter from the server Date header').toBeTruthy();
-    expect(await refusal(issueWithCsr(raw as unknown as GuardedApi, ra.authorityUuid, ra.uuid, 'TUlJQw=='))).toBe('not-guarded');
+    expect(await refusal(issueWithCsr(rawAsGuarded(raw), ra.authorityUuid, ra.uuid, 'TUlJQw=='))).toBe('not-guarded');
 
     // A protocol-made certificate of a run-prefixed name is adopted; reads only.
     const cn = `${runId()}.example.test`;
@@ -452,7 +424,7 @@ test('ledger before assertion: recordCreated writes the line the guard accepts f
     expect(line.name.startsWith(`${runId()}-`)).toBe(true);
     server.reset();
     expect(await refusal(api.put(`/api/v1/roles/${r.uuid}`, { data: { name: r.name, description: 'x' } }))).toBe('sent');
-    const unrecorded = recordCreated('roles', { uuid: U(77), name: 'Production role' }, 'T');
+    const unrecorded = recordCreated('roles', { uuid: U(77), name: 'Production role' }, { spec: 'T' });
     expect(await refusal(api.delete(`/api/v1/roles/${unrecorded.uuid}`)), 'a ledger line without the run prefix proves nothing').toBe('ownership');
     expect(wire()).toEqual([`PUT /api/v1/roles/${r.uuid}`]);
 });
@@ -601,7 +573,7 @@ test('every own-object create fills the required custom attributes of its resour
     const want = [{ version: 'v3', uuid: U(46), name: 'costCenter', contentType: 'integer', content: [{ data: 1, contentType: 'integer' }] }];
     const role = await createOwnRole(api, 'T', 'role-attr');
     expect(bodyOf('POST', '/api/v1/roles').customAttributes, `role ${role.name}`).toEqual(want);
-    // The run's shared role goes through createRole (ensureRunRole), a separate path from createOwnRole.
+    // The run's shared role goes through ensureRunRole (a planned name), a separate path from createOwnRole.
     const shared = await ensureRunRole(api, 'T');
     const sharedBody = server.arrived.filter((a) => a.method === 'POST' && a.url === '/api/v1/roles').map((a) => JSON.parse(a.body) as Json).find((b) => b.name === shared.name)!;
     expect(sharedBody.customAttributes, `shared role ${shared.name}`).toEqual(want);
@@ -611,20 +583,20 @@ test('every own-object create fills the required custom attributes of its resour
     expect(read, `definitions read for the ACME profile ${acme.acmeProfile.uuid} and its RA profile`).toEqual(expect.arrayContaining(['roles', 'acmeProfiles', 'raProfiles']));
 });
 
-test('recordDerivedKeyOf without a createdAfter still records the key, with the runner clock now as its bound and a warning — never a silent no-op', async () => {
+test('recordDerivedKeyOf without a createdAfter still records the key, with a bound ahead of now that the teardown keeps — never a silent no-op', async () => {
     const cert = core.addCert(runName('f9.example.test'), 'issued');
     const t0 = Date.now();
     await recordDerivedKeyOf(api, cert.uuid, undefined, 'T');
     const line = readLedger().find((l) => l.type === 'keys' && l.uuid === cert.key.uuid)!;
     expect(line).toMatchObject({ derived: true, parents: { certificate: cert.uuid } });
-    expect(Date.parse(line.createdAfter!)).toBeGreaterThanOrEqual(t0 - 1);
-    expect(Date.parse(line.createdAfter!)).toBeLessThanOrEqual(Date.now());
+    expect(Date.parse(line.createdAfter!), 'the bound lies ahead of the runner clock').toBeGreaterThan(t0 + 3_600_000);
+    expect(derivedDeletable(line, new Date(Date.now() + 3_600_000).toISOString()), 'a key made now, even on a server clock an hour ahead, is kept').toBe(false);
 });
 
 test('recordDerivedKeyOrNamed: a failed detail read falls back to the by-name recording; a failure of that too surfaces', async () => {
     const cn = runName('f2.example.test');
     const cert = core.addCert(cn, 'issued');
-    recordCreated('certificates', { uuid: cert.uuid, name: cn }, 'T', 'x');
+    recordCreated('certificates', { uuid: cert.uuid, name: cn }, { spec: 'T', note: 'x' });
     core.failDetailReads = 1;
     await recordDerivedKeyOrNamed(api, cert.uuid, cn, '2026-10-14T00:00:00.000Z', 'T', 'x');
     expect(readLedger().filter((l) => l.type === 'keys').map((l) => l.uuid), 'the key is recorded by the second read').toEqual([cert.key.uuid]);

@@ -1,7 +1,11 @@
 /**
- * X.509 certificates with a chosen validity, key size, signature hash, issuer and CA flag for the inventory seeds,
- * built with @peculiar/x509 (loaded lazily). A CA gets basicConstraints cA=true; an end entity gets none, so the platform
- * classifies each as root CA, intermediate CA, self-signed end entity or end entity. No openssl, no network.
+ * seedCertificates — X.509 certificates for the inventory seeds.
+ *
+ * WHAT: X.509 certificates with a chosen validity, key size, signature hash, issuer and CA flag for the inventory seeds,
+ *       built with @peculiar/x509 (loaded lazily). A CA gets basicConstraints cA=true; an end entity gets none, so the platform
+ *       classifies each as root CA, intermediate CA, self-signed end entity or end entity. No openssl, no network.
+ * WHY: The seed needs certificates with chosen validity, key size, hash, issuer and CA flag.
+ * HOW: Built with @peculiar/x509 loaded lazily; a CA gets basicConstraints cA=true, an end entity none; no openssl, no network.
  */
 import * as crypto from 'crypto';
 import type * as X509 from '@peculiar/x509';
@@ -57,7 +61,7 @@ export interface BuiltCertificate {
 }
 
 /** A date at second precision (X.509 UTCTime / GeneralizedTime carry no milliseconds). */
-export const dateAtSecond = (d: Date): Date => new Date(Math.floor(d.getTime() / 1000) * 1000);
+const dateAtSecond = (d: Date): Date => new Date(Math.floor(d.getTime() / 1000) * 1000);
 
 async function generateRsa(bits: KeyBits, hash: SignatureHash): Promise<CryptoKeyPair> {
     return (await crypto.webcrypto.subtle.generateKey(

@@ -1,82 +1,91 @@
 /**
- * In-memory builders of the files the import, inspection and upload rows send (certificates, PKCS#7, PKCS#12, PEM
- * bundles, CSRs, garbage bytes) and the exact refusal texts core answers for them. No network, no file system, no ledger:
- * a builder returns bytes and the reference values a test recomputes; names are run-prefixed (`importCn`).
+ * importFixtures — in-memory builders of the import, inspection and upload files.
+ *
+ * WHAT: In-memory builders of the files the import, inspection and upload rows send (certificates, PKCS#7, PKCS#12, PEM
+ *       bundles, CSRs, garbage bytes) and the exact refusal texts core answers for them. No network, no file system, no ledger:
+ *       a builder returns bytes and the reference values a test recomputes; names are run-prefixed (`importCn`).
+ * WHY: Import rows need many shapes of certificate container and the exact refusal text core answers for each, with no file on disk.
+ * HOW: Builders return bytes and the reference values a test recomputes; no network, no file system, no ledger; names are run-prefixed through `importCn`.
  */
+import { expectRefused, type RefusedAnswer } from '../errorContract';
 import * as crypto from 'crypto';
 import * as forge from 'node-forge';
 import { csrWithSan, newKeyMaterial, pemToDer, sha256Hex } from '../pkiBuilders';
-import { runName } from '../ledger/runState';
+import { ownName, checkedCommonName } from '../ledger/runState';
 
 // ------------------------------------------------------------------ limits and exact texts
 
 /** The limits core holds one uploaded file to (names of the code constants in the comments). */
 export const LIMITS = {
-    /** `UploadedFile.MAXIMUM_LENGTH` (interfaces model/core/secret/UploadedFile.java:25), decoded bytes. */
+    /** `UploadedFile.MAXIMUM_LENGTH` (interfaces model/core/secret/UploadedFile.java), decoded bytes. */
     fileBytes: 5 * 1024 * 1024,
-    /** `ContainerLimits.MAXIMUM_CERTIFICATES` (container/ContainerLimits.java:10). */
+    /** `ContainerLimits.MAXIMUM_CERTIFICATES` (container/ContainerLimits.java). */
     certificates: 200,
-    /** `ContainerLimits.MAXIMUM_OTHER_ENTRIES` (container/ContainerLimits.java:13): keys, secret keys and requests together. */
+    /** `ContainerLimits.MAXIMUM_OTHER_ENTRIES` (container/ContainerLimits.java): keys, secret keys and requests together. */
     otherEntries: 100,
 } as const;
 
-/** `KeyFileRefusal.LIMIT_EXCEEDED` = "The file exceeds the %s limit of %s." (key/normalization/KeyFileRefusal.java:21). */
+/** `KeyFileRefusal.LIMIT_EXCEEDED` = "The file exceeds the %s limit of %s." (key/normalization/KeyFileRefusal.java). */
 export const limitExceeded = (limit: string, maximum: number): string => `The file exceeds the ${limit} limit of ${maximum}.`;
 
 /** The fixed 422 messages. Each is one element of the 422 JSON array (`["<text>"]`). */
 export const REFUSAL = {
-    /** ContainerRefusal.NOT_SUPPORTED_FORMAT (container/ContainerRefusal.java:13-15). */
+    /** ContainerRefusal.NOT_SUPPORTED_FORMAT (container/ContainerRefusal.java). */
     notSupportedFormat:
         'The file is not in a supported format: PKCS#12, JKS, JCEKS, PEM, PKCS#7, a certificate, a certificate request, a PKCS#8 key, an OpenSSL traditional key or an OpenSSH private key.',
-    /** ContainerRefusal.PEM_TOO_MANY_KEYS (:19). */
+    /** ContainerRefusal.PEM_TOO_MANY_KEYS. */
     pemTooManyKeys: 'A PEM file can hold at most one private key.',
-    /** ContainerRefusal.PEM_BLOCK_UNSUPPORTED (:17) with the block type, repeated when it matches `[A-Za-z0-9 .-]{1,64}` (KeyFileRefusal.REPEATABLE). */
+    /** ContainerRefusal.PEM_BLOCK_UNSUPPORTED with the block type, repeated when it matches `[A-Za-z0-9 .-]{1,64}` (KeyFileRefusal.REPEATABLE). */
     pemBlockUnsupported: (type: string): string => `The file holds a PEM block of type ${type}, which is not supported.`,
-    /** ContainerRefusal.INTEGRITY_FAILED (:21-22): a PKCS#12 whose MAC does not verify — password wrong OR missing, one string. */
+    /** ContainerRefusal.INTEGRITY_FAILED: a PKCS#12 whose MAC does not verify — password wrong OR missing, one string. */
     integrityFailed: "The file's integrity check failed: the passphrase is wrong or missing, or the file is damaged.",
-    /** ContainerRefusal.TWO_PASSPHRASES (:27-28). */
+    /** ContainerRefusal.TWO_PASSPHRASES. */
     twoPassphrases: 'The file protects its keys with a different passphrase than the file itself, which is not supported.',
-    /** KeyFileRefusal.UNREADABLE (key/normalization/KeyFileRefusal.java:23-24): a protected key, passphrase wrong OR missing, one string. */
+    /** KeyFileRefusal.UNREADABLE (key/normalization/KeyFileRefusal.java): a protected key, passphrase wrong OR missing, one string. */
     keyUnreadable: 'The key could not be read: the passphrase is wrong or missing, or the file is damaged.',
-    /** `LIMIT_EXCEEDED` with ContainerLimits.CERTIFICATE_LIMIT ("certificate count", :15) and the maximum (:10). */
+    /** `LIMIT_EXCEEDED` with ContainerLimits.CERTIFICATE_LIMIT ("certificate count") and the maximum. */
     certificateCount: limitExceeded('certificate count', LIMITS.certificates),
-    /** `LIMIT_EXCEEDED` with ContainerLimits.ENTRY_LIMIT ("entry count", :17) and the maximum (:13). */
+    /** `LIMIT_EXCEEDED` with ContainerLimits.ENTRY_LIMIT ("entry count") and the maximum. */
     entryCount: limitExceeded('entry count', LIMITS.otherEntries),
-    /** `UploadRequestDto.isFileWithinLimit` (interfaces model/client/upload/UploadRequestDto.java:48-51), prefixed with the property name by bean validation. */
+    /** `UploadRequestDto.isFileWithinLimit` (interfaces model/client/upload/UploadRequestDto.java), prefixed with the property name by bean validation. */
     fileTooLarge: `fileWithinLimit file must not exceed ${LIMITS.fileBytes} bytes`,
-    /** `@NotNull(message = "file is required")` (UploadRequestDto.java:36), prefixed with the field. */
+    /** `@NotNull(message = "file is required")` (UploadRequestDto.java), prefixed with the field. */
     fileRequired: 'file file is required',
-    /** FileInspectionServiceImpl.NOT_A_UUID (core service/impl/FileInspectionServiceImpl.java:56, thrown :109). */
+    /** FileInspectionServiceImpl.NOT_A_UUID (core service/impl/FileInspectionServiceImpl.java). */
     tokenProfileNotUuid: 'tokenProfileUuid must be a UUID',
-    /** NotFoundException(TokenProfile.class, uuid) (FileInspectionServiceImpl.java:98 via KeyImportGates.requireAccess:94-99): the 404 `{message}`. */
+    /** NotFoundException(TokenProfile.class, uuid) (FileInspectionServiceImpl.java via KeyImportGates.requireAccess:94-99): the 404 `{message}`. */
     tokenProfileNotFound: (uuid: string): string => `Object of type 'TokenProfile' identified by ${uuid} is not found.`,
-    /** `UploadedFileDeserializer.WRONG_FORMAT` (interfaces model/core/secret/UploadedFileDeserializer.java): answered as the 400 "Unable to read HTTP message" (ExceptionHandlingAdvice.java:397). */
+    /** `UploadedFileDeserializer.WRONG_FORMAT` (interfaces model/core/secret/UploadedFileDeserializer.java): answered as the 400 "Unable to read HTTP message" (ExceptionHandlingAdvice.java). */
     unreadableMessage: 'Unable to read HTTP message',
     // Plain upload (`POST /v1/certificates/upload`, `/upload/async`)
-    /** CertificateUtil.parseUploadedCertificateContent (core util/CertificateUtil.java:318-320). */
+    /** CertificateUtil.parseUploadedCertificateContent (core util/CertificateUtil.java). */
     uploadKeystore: 'The file is a keystore. Import it with the certificate import operation.',
-    /** CertificateUtil.java:339-340 with the PEM type. */
+    /** CertificateUtil.java with the PEM type. */
     uploadNotCertificate: (type: string): string => `Uploaded PEM encoded content is not certificate. Uploaded PEM type: ${type}`,
-    /** CertificateUtil.java:353. */
+    /** CertificateUtil.java. */
     uploadInvalid: 'Uploaded certificate content has invalid or unsupported format.',
-    /** CertificateUploadServiceImpl.java:65 → AlreadyExistException → 409 `{message}` (ExceptionHandlingAdvice.java:129-134). */
+    /** CertificateUploadServiceImpl.java → AlreadyExistException → 409 `{message}` (ExceptionHandlingAdvice.java). */
     uploadDuplicate: (fingerprint: string): string => `Certificate already exists with fingerprint ${fingerprint}`,
-    /** The wizard's inline refusal of a certificate request (FE ImportWizard/importRequest.ts:38). */
+    /** The wizard's inline refusal of a certificate request (FE ImportWizard/importRequest.ts). */
     requestNotImported: 'Certificate requests are not imported',
 } as const;
 
-/** The red alert of the wizard for a refused inspection: `extractError(err, 'Failed to read the uploaded file')` (FE ducks/inspections-epics.ts:18, utils/net.ts). */
+/** The red alert of the wizard for a refused inspection: `extractError(err, 'Failed to read the uploaded file')` (FE ducks/inspections-epics.ts, utils/net.ts). */
 export const inspectionAlert = (status: number, text: string): string => `Failed to read the uploaded file (${status}): ${text}`;
 
 // ------------------------------------------------------------------ names, encodings, references
 
-let counter = 0;
 
-/** A run-prefixed common name, unique per call (safe under `--repeat-each`): `<run id>-imp-<time>-<n>-<suffix>`. */
+/** A run-prefixed common name, unique per call (safe under `--repeat-each`): `<run id>-imp-<suffix>-<unique>`. */
 export function importCn(suffix: string): string {
-    counter += 1;
-    return runName(`imp-${Date.now().toString(36)}-${counter}-${suffix}`);
+    return checkedCommonName(ownName(`imp-${suffix}`));
 }
+
+/**
+ * The refusal of an import or inspection file, as the import specs state it: 422, `application/json`, the message list of
+ * the error contract holding exactly one message, and that message is `text` (a string: equal; a regular expression: matches).
+ */
+export const expectImportRefused = (answer: RefusedAnswer, text: string | RegExp, what?: string): string[] => expectRefused(answer, { status: 422, text, what });
 
 export const toBase64 = (bytes: Buffer | Uint8Array | string): string => Buffer.from(bytes as Buffer).toString('base64');
 
@@ -204,7 +213,7 @@ export interface Pkcs8Key {
 /**
  * A fresh RSA-2048 key as PKCS#8. With a passphrase it is `ENCRYPTED PRIVATE KEY` under PBES2 (PBKDF2 with
  * HMAC-SHA256, AES-256-CBC), the protection core accepts (KeyProtection.PBKDF2_PRFS / PBES2_CIPHERS,
- * key/normalization/KeyProtection.java:55-70; SHA-1 as PRF would be refused as "protected with ... not supported").
+ * key/normalization/KeyProtection.java; SHA-1 as PRF would be refused as "protected with ... not supported").
  */
 export function pkcs8Key(passphrase?: string): Pkcs8Key {
     const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', {
@@ -243,7 +252,7 @@ const INT = (n: number) => forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.a
 /**
  * A PKCS#12 whose MAC is computed with `filePassphrase` while its key is protected (PBES2, SHA-256 PRF, AES-256) under
  * `keyPassphrase`: core verifies the MAC with the passphrase it is given, then finds that the key does not open and
- * answers TWO_PASSPHRASES (ContainerAssembler.description, ContainerAssembler.java:137-146; Pkcs12Format class comment).
+ * answers TWO_PASSPHRASES (ContainerAssembler.description, ContainerAssembler.java; Pkcs12Format class comment).
  * Built by hand because node-forge protects every part of a file with one password: AuthenticatedSafe = one plain
  * `data` safe holding a shrouded key bag and a certificate bag; MacData = SHA-1 HMAC over the AuthenticatedSafe, key
  * derived with the PKCS#12 KDF (id 3), 2048 iterations (the construction of forge's own `toPkcs12Asn1`).
@@ -278,13 +287,6 @@ export function pkcs12TwoPassphrases(cn: string, filePassphrase: string, keyPass
 }
 
 // ------------------------------------------------------------------ PEM compositions
-
-export interface Bundle {
-    /** Leaf certificate, then its CA, then the leaf's key (PKCS#8): the order OpenSSL users paste. */
-    pem: string;
-    leaf: Identity;
-    ca: Identity;
-}
 
 /** A PEM with two private keys (PKCS#8 plain): refused whole, whatever else it holds. */
 export function pemTwoKeys(): string {

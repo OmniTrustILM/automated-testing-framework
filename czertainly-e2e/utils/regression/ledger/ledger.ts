@@ -72,6 +72,15 @@ export function createdAfterMarker(serverTime: Date | string, requestMs = 0, mar
     return new Date(t - marginMs - Math.max(0, requestMs)).toISOString();
 }
 
+/** How far ahead of the runner's clock `keepingBound` lies: more than any clock skew between a runner and a server. */
+export const KEEPING_BOUND_AHEAD_MS = 24 * 3600 * 1000;
+
+/**
+ * The `createdAfter` of a derived object whose server time is unknown: a day ahead of the runner's clock, so the object
+ * (made before now, on whatever clock) is never created at or after it and the teardown keeps it.
+ */
+export const keepingBound = (now: number = Date.now()): string => new Date(now + KEEPING_BOUND_AHEAD_MS).toISOString();
+
 // ---------------------------------------------------------------- ledger
 
 export type LedgerEvent = 'created' | 'deleted';
@@ -178,6 +187,12 @@ const tierField = (): { tier?: string } => {
 };
 
 export interface RecordOptions {
+    /** The spec (or the run step) that created the object: the `spec` of the ledger line. */
+    spec: string;
+    /** Why the object exists (a short note on the line). */
+    note?: string;
+    /** The objects a later change or delete needs (`raProfile`, `authority`, `token`, ...). */
+    parents?: LedgerLine['parents'];
     /** The create response's server Date, for objects whose derived children need a createdAfter. */
     serverAt?: Date | string;
     /** The platform's own key (`oidEntries`: the OID; the uuid must be `oidEntryLedgerUuid(key)`). */
@@ -185,7 +200,8 @@ export interface RecordOptions {
 }
 
 /** Append a created object to the ledger (type is the API resource, e.g. raProfiles); returns it as an OwnRef. */
-export function recordCreated(type: string, ref: Ref, spec: string, note?: string, parents?: LedgerLine['parents'], opts: RecordOptions = {}): OwnRef {
+export function recordCreated(type: string, ref: Ref, opts: RecordOptions): OwnRef {
+    const { spec, note, parents } = opts;
     assertLedgerShape('recordCreated', type, ref.uuid, parents, opts.key);
     appendLine({
         at: new Date().toISOString(),
@@ -210,7 +226,19 @@ export function recordCreated(type: string, ref: Ref, spec: string, note?: strin
  * only together with `createdAfter` (from `createdAfterMarker`, server clock): the teardown deletes it only when its
  * creation time is not earlier.
  */
-export function recordDerived(type: string, ref: Ref, spec: string, createdAfter: Date | string, note?: string, parents?: LedgerLine['parents'], ofRun: string = runId()): void {
+export interface DerivedOptions {
+    spec: string;
+    /** The server-clock bound from `createdAfterMarker`: the teardown deletes the object only when it was created at or after it. */
+    createdAfter: Date | string;
+    note?: string;
+    parents?: LedgerLine['parents'];
+    /** The run the line belongs to (default: this run). */
+    runId?: string;
+}
+
+export function recordDerived(type: string, ref: Ref, opts: DerivedOptions): void {
+    const { spec, createdAfter, note, parents } = opts;
+    const ofRun = opts.runId ?? runId();
     assertLedgerShape('recordDerived', type, ref.uuid, parents);
     appendLine({
         at: new Date().toISOString(),

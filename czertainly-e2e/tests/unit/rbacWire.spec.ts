@@ -1,23 +1,24 @@
 /**
  * The rbac/ helpers on the wire: the real guard and a real APIRequestContext against a stateful loopback fake core. Users
  * and roles (authApi; deletes proven by the list, foreign objects refused before sending), `callAs` (the other identity's
- * token on that request only), the dedicated user, the role switch and the barrier, and the RBAC objects (permissionFixtures).
+ * token on that request only), the dedicated user, the role switch and the barrier, and the RBAC objects (permissionObjects).
  */
-import { APIRequestContext, expect, request, test } from '@playwright/test';
+import { APIRequestContext, expect, test } from '@playwright/test';
 import * as forge from 'node-forge';
-import { postRole, postUser, replaceOwnRoleUsers, replaceOwnUserRoles, roleUserUuids, saveOwnPermissions, setOwnUserEnabled, updateOwnRole, updateOwnUser, userRoleUuids, addOwnUserRole, removeOwnUserRole, readPermissions, deleteOwnUserOrRole } from '../../utils/regression/rbac/authApi';
+import { probeRole, probeUser, replaceOwnRoleUsers, replaceOwnUserRoles, roleUserUuids, saveOwnPermissions, setOwnUserEnabled, updateOwnRole, updateOwnUser, userRoleUuids, addOwnUserRole, removeOwnUserRole, readPermissions, deleteOwnUserOrRole } from '../../utils/regression/rbac/authApi';
 import { usersOrRolesNamed } from '../../utils/regression/listReads';
-import { guardApi } from '../../utils/regression/guard/createGuard';
 import { GuardedApi } from '../../utils/regression/guard/types';
 import { callAs, callWithAuthorization } from '../../utils/regression/rbac/identities';
 import { OwnObjectViolation } from '../../utils/regression/ledger/ownership';
-import { applyFixture, applyFixtureWithRole, ensureRbacObjects, ensureRestrictedUser, ensureRestrictedUserOrSkip, RESTRICTED_USER_NOT_OWN_REASON, RestrictedUserNotOwn, restrictedRoleSwitch } from '../../utils/regression/rbac/permissionFixtures';
+import { applyFixture, applyFixtureWithRole, ensureRbacObjects, ensureRestrictedUser, ensureRestrictedUserOrSkip, RESTRICTED_USER_NOT_OWN_REASON, RestrictedUserNotOwn, restrictedRoleSwitch } from '../../utils/regression/rbac/permissionObjects';
 import { createOwnRole } from '../../utils/regression/ownRoles';
 import { createOwnUser } from '../../utils/regression/ownUsers';
 import { RaProfileSourceMissing } from '../../utils/regression/ownRaProfiles';
 import { OwnRef, readLedger, recordCreated } from '../../utils/regression/ledger/ledger';
-import { runName, runId } from '../../utils/regression/ledger/runState';
-import { Answer, Arrived, loopbackServer, LoopbackServer } from './helpers/loopbackServer';
+import { runName } from '../../utils/regression/ledger/runState';
+import { Answer, Arrived, LoopbackServer } from './helpers/loopbackServer';
+import { FakeCore as BaseCore } from './helpers/fakeCore';
+import { registerFakeCore, rawAsGuarded } from './helpers/guardRig';
 import { randomBytes } from 'node:crypto';
 // Run-scoped generated test passwords (merge follow-up 2026-10-15): no password-like literal in the file.
 const GEN_PW_1 = `qa-${randomBytes(9).toString('base64url')}`;
@@ -32,13 +33,14 @@ const R_SRC = U(21);
 const SYSTEM_ROLE = U(31);
 const FOREIGN_USER = U(32);
 
-class AuthCore {
+class AuthCore extends BaseCore {
+    protected uuidPrefix = 'bbbbbbbb-0000-4000-8000-';
     users = new Map<string, Json>();
     roles = new Map<string, Json>();
     groups = new Map<string, Json>();
     raProfiles = new Map<string, Json>();
     certs = new Map<string, Json>();
-    private seq = 1000;
+    protected seq = 1000;
     /** The CA is healthy and has an enabled RA profile to copy. */
     caHealthy = true;
     /** What `POST /users` answers for a username that exists (the known bug core#2297 answers 500). */
@@ -49,13 +51,9 @@ class AuthCore {
     dedicatedUsername = 'qa-restricted-account';
 
     constructor() {
+        super();
         this.roles.set(SYSTEM_ROLE, { uuid: SYSTEM_ROLE, name: 'admin', systemRole: true, permissions: { allowAllResources: true, resources: [] } });
         this.users.set(FOREIGN_USER, { uuid: FOREIGN_USER, username: 'someone-else', enabled: true, roles: [] });
-    }
-
-    private next(): string {
-        this.seq += 1;
-        return `bbbbbbbb-0000-4000-8000-${String(this.seq).padStart(12, '0')}`;
     }
 
     /** The profile of the identity behind the bearer: the admin, or the DED user computed from the roles it holds. */
@@ -80,9 +78,9 @@ class AuthCore {
         return { status: 401, body: { message: 'Unauthorized' } };
     }
 
-    answer = (a: Arrived): Answer | undefined => {
+    protected respond(a: Arrived): Answer | undefined {
         const [path] = a.url.split('?');
-        const body = a.body ? (JSON.parse(a.body) as any) : undefined;
+        const body: Json = a.body ? JSON.parse(a.body) : {};
         const auth = a.headers.authorization as string | undefined;
         let m: RegExpExecArray | null;
         if (path === '/api/v1/auth/profile') return this.profile(auth);
@@ -118,7 +116,7 @@ class AuthCore {
         if ((m = /^\/api\/v1\/users\/([0-9a-f-]{36})\/roles$/.exec(path))) {
             const u = this.users.get(m[1]);
             if (!u) return { status: 500, body: { message: 'Internal server error.' } };
-            if (a.method === 'PATCH') u.roles = [...new Set<string>(body)];
+            if (a.method === 'PATCH') u.roles = [...new Set<string>(Object.values<string>(body))];
             return { status: 200, body: a.method === 'GET' ? u.roles.map((r: string) => ({ uuid: r, name: this.roles.get(r)?.name })) : { ...u } };
         }
         if ((m = /^\/api\/v1\/users\/([0-9a-f-]{36})\/roles\/([0-9a-f-]{36})$/.exec(path))) {
@@ -199,40 +197,17 @@ class AuthCore {
             return { status: 200, body: this.certs.get(m[1]) };
         }
         return { status: 404, body: { message: `no fake route ${a.method} ${path}` } };
-    };
+    }
 }
 
 let server: LoopbackServer;
 let core: AuthCore;
 let raw: APIRequestContext;
 let api: GuardedApi;
-const ENV_KEYS = ['REG_STATE_DIR', 'BASE_URL', 'TIER_KIND', 'REG_RUN_ID', 'REG_CA_CONNECTORS', 'REG_RESTRICTED_USERNAME', 'REG_RESTRICTED_PASSWORD'];
-let saved: Record<string, string | undefined> = {};
 
-test.beforeAll(async () => {
-    server = await loopbackServer((a) => core.answer(a));
-});
-test.afterAll(async () => {
-    await server.close();
-});
-test.beforeEach(async ({}, testInfo) => {
-    saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
-    for (const k of ENV_KEYS) delete process.env[k];
-    process.env.REG_STATE_DIR = testInfo.outputPath('state');
-    process.env.BASE_URL = `${server.origin}/administrator/`;
-    process.env.TIER_KIND = 'shared';
-    process.env.REG_RUN_ID = runId();
+registerFakeCore(() => core, (rig) => ({ server, raw, api } = rig), { clear: ['REG_CA_CONNECTORS', 'REG_RESTRICTED_USERNAME', 'REG_RESTRICTED_PASSWORD'], token: 'ADM-TOKEN' });
+test.beforeEach(() => {
     core = new AuthCore();
-    server.reset();
-    raw = await request.newContext({ baseURL: process.env.BASE_URL, extraHTTPHeaders: { Authorization: 'Bearer ADM-TOKEN' } });
-    api = guardApi(raw);
-});
-test.afterEach(async () => {
-    await api.dispose();
-    for (const [k, v] of Object.entries(saved)) {
-        if (v === undefined) delete process.env[k];
-        else process.env[k] = v;
-    }
 });
 
 const wire = () => server.mutations().map((a) => `${a.method} ${a.url}`);
@@ -263,7 +238,7 @@ test('setOwnUserEnabled: enable / disable are sent for an own user, repeats answ
     // L-disable: a ref that IS the calling account (own on paper) is refused by the helper before the request leaves.
     core.users.set(ADM_UUID, { uuid: ADM_UUID, username: runName('self'), enabled: true, roles: [] });
     const self = { uuid: ADM_UUID, name: runName('self'), kind: 'own' } as OwnRef;
-    recordCreated('users', self, 'T');
+    recordCreated('users', self, { spec: 'T' });
     server.reset();
     await expect(setOwnUserEnabled(api, self, false)).rejects.toThrow(/calling account itself/);
     expect(wire()).toEqual([]);
@@ -344,15 +319,15 @@ test('updateOwnRole sends `name` on purpose (the contract accepts and ignores it
     expect(wire()).toEqual([]);
 });
 
-test('postUser / postRole return the answer without asserting it (the duplicate probes read the status and body)', async () => {
+test('probeUser / probeRole return the answer without asserting it (the duplicate probes read the status and body)', async () => {
     const user = await createOwnUser(api, 'T', 'dup');
-    const second = await postUser(api, user.name);
+    const second = await probeUser(api, 'T', user.name);
     expect(second.status).toBe(500);
     expect(second.json).toEqual({ message: 'Internal server error.' });
     const role = await createOwnRole(api, 'T', 'dup');
-    expect((await postRole(api, role.name)).status).toBe(500);
+    expect((await probeRole(api, 'T', role.name)).status).toBe(500);
     // A system role name: a create naming no uuid is allow-listed, the platform answers.
-    expect((await postRole(api, 'admin')).status).toBe(500);
+    expect((await probeRole(api, 'T', 'admin')).status).toBe(500);
     expect(await usersOrRolesNamed(api, 'roles', 'admin')).toHaveLength(1);
 });
 
@@ -494,6 +469,6 @@ test('ensureRbacObjects: no healthy CA → RaProfileSourceMissing with the named
 test('a raw context handed to a mutating AUTH helper is refused (not-guarded) and nothing is sent', async () => {
     const role = await createOwnRole(api, 'T', 'raw');
     server.reset();
-    expect(await refusal(updateOwnRole(raw as unknown as GuardedApi, role, { description: 'x' }))).toBe('not-guarded');
+    expect(await refusal(updateOwnRole(rawAsGuarded(raw), role, { description: 'x' }))).toBe('not-guarded');
     expect(wire()).toEqual([]);
 });

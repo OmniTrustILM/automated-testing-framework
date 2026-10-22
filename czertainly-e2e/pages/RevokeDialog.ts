@@ -1,39 +1,29 @@
 /**
- * RevokeDialog — the "Revoke Certificate" dialog of the certificate detail toolbar: the reason Select (its labels read
- * from the open option list, compared as an exact set), the choice of a reason and submit, which returns the status of
- * the revoke call. Called only on a certificate the run created (the spec checks it with `assertOwnLive` first).
+ * RevokeDialog — the "Revoke Certificate" dialog.
+ *
+ * WHAT: the "Revoke Certificate" dialog: the reason select and submit.
+ * WHY: REG-CERT-10 checks the exact set of reasons offered and revokes with Key compromise; the status goes back to
+ *       the spec.
+ * HOW: a `CertificateToolbarDialog` (open, close, answer reading are shared); opened from the detail toolbar; the
+ *       reasons are read from the open option list (the placeholder is not a reason).
  */
 import { expect, Locator, Page } from '@playwright/test';
-import { Logger } from '../utils/Logger';
-import { CertificateDetailPage } from './CertificateDetailPage';
+import { ApiAnswer } from '../utils/regression/apiReads';
+import { CertificateToolbarDialog } from './CertificateToolbarDialog';
 import { chooseOption, readSelectOptions } from './ui/select';
-import { actAndWaitForApi, UUID } from './ui/waitForResponse';
-
-const logger = new Logger('RevokeDialog');
+import { UUID } from './ui/waitForResponse';
 
 /** The placeholder option of a Select ("Choose …"): shown in the list, but not a value. */
 const PLACEHOLDER_OPTION = /^choose\b/i;
 
-export class RevokeDialog {
-    readonly page: Page;
-    readonly dialog: Locator;
-    private readonly detail: CertificateDetailPage;
+export class RevokeDialog extends CertificateToolbarDialog {
+    readonly reasonTrigger: Locator;
+    readonly submitButton: Locator;
 
     constructor(page: Page) {
-        this.page = page;
-        this.dialog = page.getByRole('dialog', { name: 'Revoke Certificate' });
-        this.detail = new CertificateDetailPage(page);
-    }
-
-    async open(): Promise<Locator> {
-        logger.info('Opening the Revoke dialog');
-        await this.detail.toolbar.button('revoke').click();
-        await expect(this.dialog).toBeVisible();
-        return this.dialog;
-    }
-
-    get reasonTrigger(): Locator {
-        return this.dialog.getByTestId('select-revokeReason-trigger');
+        super(page, 'Revoke Certificate', 'revoke');
+        this.reasonTrigger = this.dialog.getByTestId('select-revokeReason-trigger');
+        this.submitButton = this.dialog.getByTestId('revokeSubmit');
     }
 
     /**
@@ -54,9 +44,8 @@ export class RevokeDialog {
         await chooseOption(this.page, this.reasonTrigger, label);
     }
 
-    /** Submit; returns the revoke call's status (`POST …/revoke` → 204). */
-    async submit(): Promise<{ status: number }> {
-        const res = await actAndWaitForApi(this.page, { method: 'POST', path: new RegExp(`/certificates/${UUID}/revoke$`) }, () => this.dialog.getByTestId('revokeSubmit').click());
-        return { status: res.status() };
+    /** Submit; returns the answer of `POST …/revoke` (204). */
+    async submit(): Promise<ApiAnswer> {
+        return this.answerWithUuid({ method: 'POST', path: new RegExp(`/certificates/${UUID}/revoke$`) }, () => this.submitButton.click());
     }
 }

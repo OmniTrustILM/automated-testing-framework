@@ -12,8 +12,8 @@ repository.
 | Suite | Folder | Config | What it checks |
 |---|---|---|---|
 | smoke | `tests/smoke` | `playwright.config.ts` | a short health check of a dedicated deployment; **not create-only** (see below) |
-| regression | `tests/regression` | `playwright.regression.config.ts` | the release checklist's installation, configuration and usage flows, plus the certificate lifecycle rows |
-| API | `tests/api` | `playwright.api.config.ts` | positive and negative API cases of the same features, and the migration gate |
+| regression | `tests/regression` | `playwright.regression.config.ts` | the release checklist's installation, configuration and usage flows, plus the extension rows per area |
+| API | `tests/api` | `playwright.api.config.ts` | positive and negative API cases per area, and the migration gate |
 | unit | `tests/unit` | `playwright.unit.config.ts` | the framework itself (guard, ledger, teardown, configs, page objects); no environment |
 | visual | `tests/visual` | `playwright.visual.config.ts` | screenshot baselines of a locally running frontend |
 
@@ -51,7 +51,10 @@ lock file in the state directory refuses a second live run with the same id.
    authority is copied at runtime and never stored in the repository).
 2. **Ledger before assertion.** Every create is recorded in the run ledger (`created-objects.jsonl` in the state
    directory, `REG_STATE_DIR`, always outside the clone) right after the create call and before any assertion: type,
-   name, uuid, the spec or test id, the parents a later step needs, and the tier identity.
+   name, uuid, the spec or test id, the parents a later step needs, and the tier identity. A create made in the UI is
+   recorded from the form's answer, not from the page it redirects to: the page object's `submit…` method returns
+   `{ status, uuid, text, … }` as soon as the request is answered, the spec calls `recordUiCreate` (or `recordIfCreated`
+   for a probe that expects a refusal), and only then waits for the detail route. Page objects never write ledger lines.
 3. **Ownership is the ledger plus the live object.** A helper that changes an object takes the `OwnRef` that
    `recordCreated` returned and calls `assertOwnLive` first: the object needs a `created` line of this run on this tier
    AND a live name that carries the run prefix. The prefix alone is never enough.
@@ -140,7 +143,7 @@ npx playwright test -c playwright.regression.config.ts --grep @REG-USE-05
 # exactly one id, without its sub-ids
 npx playwright test -c playwright.regression.config.ts --grep "@REG-USE-05(?![\w.-])"
 # one file
-npx playwright test -c playwright.regression.config.ts REG-USE-05-issue-certificate-with-acme-client
+npx playwright test -c playwright.regression.config.ts 12-main-usage/05-issue-with-an-acme-client
 # the migration gate first, as a pipeline does (stop on a non-zero exit)
 npx playwright test -c playwright.api.config.ts --project=gate
 # reuse an earlier run's objects while debugging one spec (a hand-set id keeps its objects at the end)
@@ -172,16 +175,23 @@ Notes:
 Projects of the regression config (`utils/regression/regressionProjects.ts`):
 
 1. `snapshot`: the guard proof, then the before snapshot;
-2. `regression`: every REG spec except the sign-out spec;
-3. `logout`: `REG-AUTH-99-*.spec.ts`, the teardown project of `regression` (it ends the shared admin's sign-in, so it
-   runs after every other row, failed or not); the sign-out spec comes with the other areas, so the project is empty
-   here;
-4. `non-interference`: the teardown project of `snapshot`;
-5. the run-end teardown.
+2. `run-setup`: the run objects the later specs build on (the MS ADCS authority, the RA profile on the first healthy CA, the ACME
+   profile, the role and the token chain), made once through the API (`tests/api/run-objects.setup.ts`, `utils/regression/run/runObjects.ts`).
+   A tier that cannot offer one skips its row with the named reason and never fails (Playwright does not start `regression` when a test of
+   its dependency failed). It is infrastructure: `REG_PHASE=B` keeps it. A run with `--no-deps`, or a `--grep` that leaves it out, still gets
+   each object when the spec that needs it calls its `ensure…` helper;
+3. `regression`: every REG spec except the sign-out spec and the setup file;
+4. `logout`: `01-sign-in-and-access/99-sign-out.spec.ts`, the teardown project of `regression` (it ends the shared admin's sign-in, so it
+   runs after every other row, failed or not);
+5. `non-interference`: the teardown project of `snapshot`;
+6. the run-end teardown.
+
+The UI specs of the configuration area (`03-configuration`) create and keep objects of their own; none of them becomes a run object.
 
 The API config uses the same frame: `snapshot` → `gate` (API-GEN-32, `@gate`) → `api-p1` (`@p1`, runs even when the
 gate is red, to explain it) and `api-rest` (`@p2` / `@p3`, skipped when the gate fails) → `non-interference` → teardown.
-A Playwright dependency cannot cross two configs, so a pipeline runs the gate first and stops on a non-zero exit.
+The API config does not depend on `run-setup`: its `api-p1` rows must run when the gate is red, so they keep the lazy `ensure…` calls, which read
+the same run-state file. A Playwright dependency cannot cross two configs, so a pipeline runs the gate first and stops on a non-zero exit.
 
 ## Specs
 
@@ -190,44 +200,64 @@ priority tag (`@p1`, `@p2`, `@p3`), the issues it covers and the rule it asserts
 
 | Spec | Checklist item |
 |---|---|
-| `REG-DEP-01-post-install-check` | Deployment 1: versions, anonymous health bodies, the `/info` contract, required connectors alive (`REG_BLOCKED_CONNECTORS=name:reason` skips one with the named blocker) |
-| `REG-DEP-02-upgrade-keeps-objects-and-connectors` | Deployment 2: upgrade on a local tier; objects and connectors survive it |
-| `REG-CFG-01-credential` | Configuration 1: basic credential, duplicate name refused |
-| `REG-CFG-02-microsoft-adcs-authority` | Configuration 2: MS ADCS authority (skips with the named blocker when the connector's live health fails) |
-| `REG-CFG-03-ra-profile` | Configuration 3: RA profile on MS ADCS, created disabled, then enabled |
-| `REG-CFG-04-acme-profile` | Configuration 4: ACME profile with a pre-authorised DNS identifier |
-| `REG-CFG-05-acme-on-ra-profile` | Configuration 5: ACME activated on an own RA profile |
-| `REG-CFG-06-group` | Configuration 6: certificate group, duplicate name refused |
-| `REG-CFG-07-role` | Configuration 7: role: duplicate name, edit, delete |
-| `REG-CFG-08-role-permissions` | Configuration 8: role permissions |
-| `REG-CFG-09-user-with-role` | Configuration 9: user with the role: edit, delete |
-| `REG-USE-01-dashboard` | Usage 1: dashboard tiles, charts, legend drill-down |
-| `REG-USE-02-filter-inventory-by-common-name` | Usage 2: inventory filter, detail, clear filter |
-| `REG-USE-03-import-certificate` | Usage 3: import PEM, "already in inventory", PKCS#12 password, CSR refused |
-| `REG-USE-04-issue-certificate-in-ui-with-external-csr` | Usage 4: issue in the UI with an external CSR; SANs, details, history |
-| `REG-USE-05-issue-certificate-with-acme-client` | Usage 5: ACME (the RFC 8555 client in `utils/regression/protocols/acmeClient.ts`) |
-| `REG-USE-06-issue-certificate-with-cert-manager` | Usage 6: cert-manager issuer (skips without a cluster and the namespaced permissions) |
-| `REG-USE-07-issue-certificate-through-api` | Usage 7: issue through the v2 operations API; response contract, history, download |
+| `07-deployment/01-post-install-check.spec.ts` | Deployment 1: versions, anonymous health bodies, the `/info` contract, required connectors alive (`REG_BLOCKED_CONNECTORS=name:reason` skips one with the named blocker) |
+| `07-deployment/02-upgrade-keeps-objects-and-connectors.spec.ts` | Deployment 2: upgrade on a local tier; objects and connectors survive it |
+| `03-configuration/01-credential.spec.ts` | Configuration 1: basic credential, duplicate name refused |
+| `03-configuration/02-microsoft-adcs-authority.spec.ts` | Configuration 2: MS ADCS authority (skips with the named blocker when the connector's live health fails) |
+| `03-configuration/03-ra-profile.spec.ts` | Configuration 3: RA profile on MS ADCS, created disabled, then enabled |
+| `03-configuration/04-acme-profile.spec.ts` | Configuration 4: ACME profile with a pre-authorised DNS identifier |
+| `03-configuration/05-acme-on-ra-profile.spec.ts` | Configuration 5: ACME activated on an own RA profile |
+| `03-configuration/06-group.spec.ts` | Configuration 6: certificate group, duplicate name refused |
+| `03-configuration/07-role.spec.ts` | Configuration 7: role: duplicate name, edit, delete |
+| `03-configuration/08-role-permissions.spec.ts` | Configuration 8: role permissions |
+| `03-configuration/09-user-with-role.spec.ts` | Configuration 9: user with the role: edit, delete |
+| `12-main-usage/01-dashboard.spec.ts` | Usage 1: dashboard tiles, charts, legend drill-down |
+| `12-main-usage/02-filter-inventory-by-common-name.spec.ts` | Usage 2: inventory filter, detail, clear filter |
+| `12-main-usage/03-import-certificate.spec.ts` | Usage 3: import PEM, "already in inventory", PKCS#12 password, CSR refused |
+| `12-main-usage/04-issue-in-the-ui-with-an-external-csr.spec.ts` | Usage 4: issue in the UI with an external CSR; SANs, details, history |
+| `12-main-usage/05-issue-with-an-acme-client.spec.ts` | Usage 5: ACME (the RFC 8555 client in `utils/regression/protocols/acmeClient.ts`) |
+| `12-main-usage/06-issue-with-cert-manager.spec.ts` | Usage 6: cert-manager issuer (skips without a cluster and the namespaced permissions) |
+| `12-main-usage/07-issue-through-the-api.spec.ts` | Usage 7: issue through the v2 operations API; response contract, history, download |
 
-The certificate lifecycle rows follow the same naming, `REG-<AREA>-<NN>-<behaviour>.spec.ts` for the regression suite
-and `<area>-<behaviour>.api.spec.ts` for the API suite: `REG-CERT-07` (renew and rekey), `REG-CERT-10` (revoke),
-`REG-CERT-12` (pre-register and complete) and `REG-CERT-16` (approvals). The API suite covers the same features:
-credentials (`credential-*`), RA profiles (`ra-profile-*`), ACME (`protocol-acme`), groups (`group-*`), authentication,
-users, roles and permissions (`auth-*`) and certificates (`certificate-*`: issue, renew and rekey, revoke, state guards,
-history, concurrent operations, registration, approvals, import, search). The other areas (sign-in and the restricted
-user in the UI, the certificate list in the UI, compliance, connectors, core, keys and tokens, SCEP and CMP, vault
-secrets, discovery, workflows and notifications, the API contract checks) are added later with the same naming.
-Rows that need something a tier may not have carry a
-`@needs:<x>` tag and skip with the named deploy gate, never pass.
+Spec files sit in numbered area folders: `tests/regression/<NN-area>/<NN-behaviour>.spec.ts` for the regression suite and
+`tests/api/<NN-area>/<behaviour>.api.spec.ts` for the API suite. The numbers keep the run order (Playwright runs the
+files of a project in path order). The ids stay inside the files; the id families are `AUTH` (sign-in, sessions, restricted user, sign-out), `CERT`
+(certificate lifecycle and the certificate list), `COMP`, `CONN`, `CORE`, `KEY`, `PROT` (ACME, SCEP, CMP), `SEC`,
+`DISC` (discovery), `WFL` (workflows and notifications), `RUN` (the run-setup project). Rows that need something a tier may not have declare it
+in `testMeta({ needs })` (one value of the `Needs` catalogue in `utils/regression/tags.ts`, written as the tag `@needs:<x>`) and skip with the named
+deploy gate, never pass.
+
+### Fixtures of a spec
+
+`fixtures/regressionFixtures.ts` extends the smoke-sized `fixtures/testFixtures.ts` (`api`, `anonymousApi`, `adminToken`, `restrictedToken`,
+`ownRaProfile`) with the fixtures a spec needs for the safety steps. A spec that takes none of them is unchanged.
+
+| Fixture | What it gives | Example |
+|---|---|---|
+| `needs` | resolves what the test needs from reads and skips with the named reason of the first unmet need; the needs declared in `testMeta({ needs })` are resolved before any `own` or page call | `await needs.require('ca', 'second-identity')`, or `await needs.ca()` |
+| `own` | creators and ledger steps bound to the test's ledger id (`createOwn<Thing>` helpers); `record` writes the ledger line of a UI create from the form's answer, `recordNamed` the by-name line, `deleted` the deleted line | `const ref = own.record('groups', await groupsPage.submitCreate(), { note: 'created in the dialog' })` |
+| `live` | runs the live own-object check and returns the `LiveOwn` handle that page actions on own objects take (nothing else builds one; `as LiveOwn` is refused by the lint) | `const role = await live('roles', ref)` |
+| `signedIn` | the admin page after the sign-in (the sign-in and sign-out specs keep their explicit logins) | `await signedIn.goto('administrator/#/roles')` |
+| `regressionEnv` | the typed reader of the `REG_*` / `API_*` settings | `regressionEnv.caConnectors` |
+| `localApi` | the guarded API of a `@local` row on a proven local stack (the guard's `localStack` option); it throws for any other test | `await localApi.post('/api/v1/…', …)` inside `describeLocalOnly` |
+
+The `needs` fixture (and the needs declared in `testMeta`) is resolved when the test's fixtures are set up, before the test and its `beforeEach` hooks but not before `beforeAll`: a create made in `beforeAll` happens before any need is checked, so creates belong in the test or in a fixture.
+
+Every fixture name is registered in the spec lint (`utils/regression/specLint/rules.ts`, `bindings.ts`), so `test.use({ … })` cannot replace
+one and a mutation through `localApi` is judged like one through `api`.
 
 **Known failures** are marked with `test.fail()` and `testMeta({ bug })` right before the failing step. They pass while the
 bug exists and turn red ("expected to fail, but passed") once it is fixed; remove the marker then.
 
-## Event rows
+## Events and discovery rows
 
-- The registration rows create their own conditions, rules, actions and triggers, own objects like any other. Their
-  event association is made on an own RA profile, recorded before it is sent and cleared by the teardown. Nothing is
-  associated at platform level on a shared tier.
+- Conditions, rules, actions, triggers, notification instances / profiles and discoveries are own objects like any other.
+  An event association is recorded before it is sent and cleared by the teardown on an own scope. Nothing is associated at
+  platform level on a shared tier: those rows are `@local`.
+- Discovery targets are only the run's own TLS target or the documentation ranges of RFC 5737; the certificates a run
+  onboards are `derived` lines and deleted by uuid.
+- Delivery is asserted only in a local notification setup; on a shared tier the rows use internal-only profiles or
+  check the stored state.
 - A row that asserts an exact firing reads the platform event settings first and skips with a named reason when a
   platform-level trigger already listens on its events.
 
@@ -243,9 +273,9 @@ bug exists and turn red ("expected to fail, but passed") once it is fixed; remov
 - **Module layout without re-exports**: every helper is imported from the file that defines it; there are no index or
   re-export files (barrels), with the one exception named under Layout.
 - **`testMeta()`**: the details of one test (ledger id, priority, issue, optional table row and rules); it adds the tags.
-- **`…Wire` unit files** (`lifecycleWire`, `rbacWire` …): helpers sent through the real guard to a fake
+- **`…Wire` unit files** (`lifecycleWire`, `platformWire`, `rbacWire` …): helpers sent through the real guard to a fake
   core on loopback (127.0.0.1), so the requests on the wire are checked without an environment.
-- **Page-object units**: page objects run against stand-in documents loaded with
+- **`…StandIn` unit files** and the page-object units: page objects run against stand-in documents loaded with
   `page.setContent` (or served on loopback), shaped like the admin UI.
 - **`pkiBuilders`**: the one module that builds keys, CSRs and certificates and their encodings for every flow.
 - **`seedMinimal`** / **`seedFull`**: the three-certificate seed of the migration checks, and the 24-certificate seed of the
@@ -253,6 +283,8 @@ bug exists and turn red ("expected to fail, but passed") once it is fixed; remov
 - **`uiWidget`**: the unit file of `pages/ui/widget.ts` (an admin UI `<section>` with a title and its icon buttons).
 - **`lifecycle/rawAnswers`**: one guarded request whose answer is read without throwing, and the readers of its error body.
 - **`FormDialog`**: a create / edit dialog of the admin UI (text inputs, submit, cancel), used by the role and user pages.
+- **`platform.spec` / `protocols.spec`**: the unit files of the pure parts of the `platform/` and `protocols/` helpers
+  (no server, no browser); their wire halves are `platformWire` and `protocolsWire`.
 
 ## Layout
 
@@ -263,7 +295,7 @@ bug exists and turn red ("expected to fail, but passed") once it is fixed; remov
   run lock), `runId.ts` (run id, state directory, run lock), `flags.ts` (the switch parser and the dry-run check).
 - `utils/regression/tier/`: `kind.ts` (TIER_KIND, the frozen variables, the tier identity), `dns.ts` (which hosts count
   as local), `docker.ts` (the container and daemon readers), `localProof.ts` (the local-backend proof, `describeLocalOnly`).
-- `utils/regression/ledger/`: `ledger.ts` (ledger lines and the references they hand out), `runState.ts` (`runId()`,
+- `utils/regression/ledger/`: `ledger.ts` (ledger lines and the references they hand out), `uiCreates.ts` (the ledger line of a UI create, from its answer), `runState.ts` (`runId()`,
   `runName`, the run state file), `ownership.ts` (`checkOwnership`, `assertOwn`, `assertOwnLive`).
 - `utils/regression/guard/`: the guard. `createGuard.ts` (read the request once, check it, send exactly what was
   checked), `types.ts` (`GuardedApi`, `assertGuarded`), `uuids.ts`, `urls.ts`, `allowLists.ts`, `targets.ts`,
@@ -273,8 +305,9 @@ bug exists and turn red ("expected to fail, but passed") once it is fixed; remov
   (the snapshot and the comparison).
 - `utils/regression/tags.ts` (`testMeta()`, the tag builders), `specLint/` (`parseSpec.ts`: test blocks and tag rules;
   `rawMutations.ts`: the deny-by-default lint), `publicText.ts`, `coreBuild.ts` (the core build marker),
-  `requireTool.ts` (external tools, the one docker binary reader).
-- The area helpers the main flows use (`lifecycle/`, `config/`, and parts of `platform/`, `protocols/`, `events/`,
-  `rbac/`, `inventory/`) and the page objects in `pages/` (shared UI parts in `pages/ui/`: select, toolbar, toast, widget, form,
+  `requireTool.ts` (external tools, the one docker binary reader), `needs.ts` (the resolver of each `Needs` value), `ownObjects.ts` (what the `own` fixture
+  offers), `ledger/liveOwn.ts` (the `LiveOwn` handle), `run/runObjects.ts` (the objects of the `run-setup` project).
+- The area helpers (`lifecycle/`, `platform/`, `protocols/`, `events/`, `discovery/`, `rbac/`, `inventory/`,
+  `config/`) and the page objects in `pages/` (shared UI parts in `pages/ui/`: select, toolbar, toast, widget, form,
   list, table). Every module is imported from the file that defines it (the one re-export, `utils/regression/tier.ts`, serves the
   smoke suite's `utils/env.ts`, which never changes).

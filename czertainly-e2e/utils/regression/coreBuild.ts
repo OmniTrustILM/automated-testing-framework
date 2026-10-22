@@ -14,15 +14,12 @@
 import { APIRequestContext } from '@playwright/test';
 import { Logger } from '../Logger';
 import { BuildInfo, readRunState, updateRunState } from './ledger/runState';
+import { settings } from './run/settings';
 
 const logger = new Logger('Build');
 
 /** The core branch of the Spring Boot 4.1 migration (integration/spring-boot-4.1). */
 const MIGRATED_BRANCH = /spring-boot-4\.1/;
-
-export function isMigratedBuildPhase(env: NodeJS.ProcessEnv = process.env): boolean {
-    return env.REG_PHASE === 'B';
-}
 
 /** Parse the /v1/info body; a body without `build.branch` is an unreadable marker. */
 export function parseBuildInfo(body: unknown): BuildInfo {
@@ -75,7 +72,7 @@ interface Annotatable {
 
 /** The decision itself, separate from the API read so it is unit-testable. */
 export function decideMigrated(info: BuildInfo, env: NodeJS.ProcessEnv = process.env): { migrated: boolean; why: string; guessed: boolean } {
-    const flag = env.REG_BUILD?.toLowerCase();
+    const flag = settings(env).build?.toLowerCase();
     if (flag === 'sb41') return { migrated: true, why: 'REG_BUILD=sb41', guessed: false };
     if (flag === 'main' || flag === 'baseline') return { migrated: false, why: `REG_BUILD=${flag}`, guessed: false };
     if (info.markerReadable) {

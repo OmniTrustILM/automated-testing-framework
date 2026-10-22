@@ -1,5 +1,5 @@
 /**
- * The run-end teardown handlers of utils/workflowUtils.ts and utils/notificationUtils.ts, loaded the way runTeardown loads
+ * The run-end teardown handlers of utils/regression/events/workflowTeardown.ts and notificationTeardown.ts, loaded the way runTeardown loads
  * them (HANDLER_MODULES, wrapped by wrapHandlerWithGuard) against an in-memory core: workflow and notification objects are read,
  * deleted and proven absent (a foreign object is refused); an own scope's event association is cleared and proven, a foreign
  * one or a platform line is never cleared; DELETE_ORDER removes actions before the executions they use.
@@ -8,14 +8,11 @@ import { APIRequestContext, expect, test } from '@playwright/test';
 import { LiveObjectMissing, OwnObjectViolation } from '../../utils/regression/ledger/ownership';
 import { LedgerLine } from '../../utils/regression/ledger/ledger';
 import { DELETE_ORDER, handlerOf, planTeardown, TeardownContext, TeardownHandler } from '../../utils/regression/teardown/runTeardown';
+import { fakeResponse, FakeReply } from './helpers/fakeResponse';
+import { partialOf, useEnv } from './helpers/guardRig';
 
 const RUN = 'qa-reg-20261014-120000-ab12';
 type Json = Record<string, any>;
-interface Reply {
-    status: number;
-    body?: unknown;
-}
-
 class FakeCore {
     store = new Map<string, Json>();
     calls: string[] = [];
@@ -31,7 +28,7 @@ class FakeCore {
         return this;
     }
 
-    private handle(method: string, url: string, data: unknown): Reply {
+    private handle(method: string, url: string, data: unknown): FakeReply {
         const path = url.split('?')[0];
         this.calls.push(`${method} ${path}`);
         if (method === 'GET' && path === '/api/v1/settings/events') return { status: 200, body: this.settings };
@@ -53,9 +50,8 @@ class FakeCore {
     }
 
     api(): APIRequestContext {
-        const resp = (r: Reply) => ({ status: () => r.status, ok: () => r.status >= 200 && r.status < 300, json: async () => r.body, text: async () => JSON.stringify(r.body ?? '') });
-        const call = (method: string) => async (url: string, opts?: { data?: unknown }) => resp(this.handle(method, url, opts?.data));
-        return { get: call('GET'), post: call('POST'), patch: call('PATCH'), put: call('PUT'), delete: call('DELETE'), dispose: async () => undefined } as unknown as APIRequestContext;
+        const call = (method: string) => async (url: string, opts?: { data?: unknown }) => fakeResponse(this.handle(method, url, opts?.data));
+        return partialOf<APIRequestContext>({ get: call('GET'), post: call('POST'), patch: call('PATCH'), put: call('PUT'), delete: call('DELETE'), dispose: async () => undefined });
     }
 
     mutations(): string[] {
@@ -71,19 +67,7 @@ const line = (type: string, over: Partial<LedgerLine> = {}): LedgerLine => {
 const assocLine = (event: string, resource: string, object: LedgerLine, over: Partial<LedgerLine> = {}): LedgerLine =>
     line('eventAssociations', { note: `${event}|${resource}|${object.uuid} object-level association`, parents: { object: object.uuid }, ...over });
 
-const ENV_KEYS = ['REG_STATE_DIR', 'REG_RUN_ID', 'API_TEARDOWN_DRY_RUN'];
-let saved: Record<string, string | undefined> = {};
-test.beforeEach(({}, testInfo) => {
-    saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
-    for (const k of ENV_KEYS) delete process.env[k];
-    process.env.REG_STATE_DIR = testInfo.outputPath('state');
-});
-test.afterEach(() => {
-    for (const [k, v] of Object.entries(saved)) {
-        if (v === undefined) delete process.env[k];
-        else process.env[k] = v;
-    }
-});
+useEnv(['REG_STATE_DIR', 'REG_RUN_ID', 'API_TEARDOWN_DRY_RUN'], (testInfo) => ({ REG_STATE_DIR: testInfo.outputPath('state') }));
 
 async function run(core: FakeCore, l: LedgerLine, ledger: LedgerLine[] = [l]): Promise<{ error?: unknown }> {
     const h = handlerOf(l.type) as TeardownHandler;

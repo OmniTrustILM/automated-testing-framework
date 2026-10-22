@@ -5,7 +5,7 @@
  * missing before snapshot on a shared tier.
  */
 import { randomUUID } from 'node:crypto';
-import { APIRequestContext, request, test, expect } from '@playwright/test';
+import { request, test, expect } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { CleanupFailure, readCleanupFailures, formatCleanupReport } from '../../utils/cleanupLedger';
@@ -13,12 +13,14 @@ import { DryRunRefusal } from '../../utils/regression/run/flags';
 import { LedgerLine } from '../../utils/regression/ledger/ledger';
 import { localProofFile } from '../../utils/regression/tier/localProof';
 import runTeardown, {
-    defaultPrepSteps, DELETE_ORDER, isDeletedBefore, executeTeardown, formatPlan, HANDLER_MODULES, handlerOf, isKeptStrict, loadHandlers, planTeardown, PlanItem,
+    defaultPrepSteps, DELETE_ORDER, isDeletedBefore, executeTeardown, formatPlan, HANDLER_MODULES, HANDLER_SOURCES, handlerOf, isKeptStrict, loadHandlers, planTeardown, PlanItem,
     TeardownPrepStep, readKeptReport, reauthenticating, recordWorkaround, REFERENCED_BY, removeOwnObject, formatRunSummary, deleteStepOf, TeardownHandler, writeKeptReport,
     resetHandlerModulesForTests, FINAL_PASS_NOTE, isRetryableFailure, wrapHandlerWithGuard,
 } from '../../utils/regression/teardown/runTeardown';
 import { ID_NAMED, LIVE_READS } from '../../utils/regression/ledger/ownership';
+import { RESOURCE_REGISTRY, TEARDOWN_STEPS } from '../../utils/regression/resourceTypes';
 import { loopbackServer } from './helpers/loopbackServer';
+import { useEnv, fakeContext } from './helpers/guardRig';
 
 // Each test loads the handler modules afresh (a test may register a module of its own).
 test.afterEach(() => resetHandlerModulesForTests());
@@ -31,21 +33,7 @@ const line = (type: string, over: Partial<LedgerLine> = {}): LedgerLine => {
     return { at: `2026-10-13T12:00:${String(seq).padStart(2, '0')}.000Z`, runId: RUN, type, name: `${RUN}-${type}-${seq}`, uuid: `${type}-${seq}`, spec: 'T', event: 'created', ...over };
 };
 
-const ENV_KEYS = ['CLEANUP_LEDGER_FILE', 'REG_STATE_DIR', 'REG_RUN_ID', 'API_RUN_ID', 'API_TEARDOWN_DRY_RUN', 'API_DELETE_OWN', 'TIER_KIND', 'BASE_URL', 'REG_TIER_ID', 'AUTH_MODE', 'REG_KEPT_STRICT'];
-let saved: Record<string, string | undefined> = {};
-test.beforeEach(({}, testInfo) => {
-    saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
-    for (const k of ENV_KEYS) delete process.env[k];
-    process.env.CLEANUP_LEDGER_FILE = testInfo.outputPath('cleanup.jsonl');
-    process.env.REG_STATE_DIR = testInfo.outputPath('state');
-    process.env.TIER_KIND = 'shared'; // frozen by the configs at load
-});
-test.afterEach(() => {
-    for (const [k, v] of Object.entries(saved)) {
-        if (v === undefined) delete process.env[k];
-        else process.env[k] = v;
-    }
-});
+useEnv(['CLEANUP_LEDGER_FILE', 'REG_STATE_DIR', 'REG_RUN_ID', 'API_RUN_ID', 'API_TEARDOWN_DRY_RUN', 'API_DELETE_OWN', 'TIER_KIND', 'BASE_URL', 'REG_TIER_ID', 'AUTH_MODE', 'REG_KEPT_STRICT'], (testInfo) => ({ CLEANUP_LEDGER_FILE: testInfo.outputPath('cleanup.jsonl'), REG_STATE_DIR: testInfo.outputPath('state'), TIER_KIND: 'shared' /* frozen by the configs at load */ }));
 
 /** Handlers that record the order of removals; `fail` maps a uuid to the error its removal throws. */
 function recorder(fail: Record<string, Error> = {}): { handler: (type: string) => TeardownHandler | undefined; removed: string[] } {
@@ -58,7 +46,7 @@ function recorder(fail: Record<string, Error> = {}): { handler: (type: string) =
     return { handler, removed };
 }
 
-const fakeApi = { dispose: async () => undefined } as unknown as APIRequestContext;
+const fakeApi = fakeContext({ dispose: async () => undefined });
 /** Defaults of every executeTeardown call here: no tier check (no BASE_URL in unit tests), no retry delay. */
 const quick = { tier: null, retryDelayMs: 1 } as const;
 
@@ -109,7 +97,7 @@ test('every object gets a fresh authenticated context, disposed after its step',
     let disposed = 0;
     const newApi = async () => {
         created++;
-        return { dispose: async () => void disposed++ } as unknown as APIRequestContext;
+        return fakeContext({ dispose: async () => void disposed++ });
     };
     await executeTeardown({ ...quick, runId: RUN, newApi, readLines: () => lines, handler: recorder().handler, onDeleted: () => undefined });
     expect(created).toBe(3);
@@ -121,38 +109,46 @@ test('the post-delete context authenticates again once on a 401 and retries', as
     let logins = 0;
     const newApi = async () => {
         logins++;
-        return { get: async () => ({ status: () => answers.shift() ?? 200 }) } as unknown as APIRequestContext;
+        return fakeContext({ fetch: async () => ({ status: () => answers.shift() ?? 200 }) });
     };
     const api = await reauthenticating(newApi);
-    expect((await api.get('/api/v1/roles')).status()).toBe(200);
+    expect((await api.fetch('/api/v1/roles')).status()).toBe(200);
     expect(logins).toBe(2);
 });
 
-test('every HANDLER_MODULES module that exists resolves every type it registers (37 types in the full tree)', () => {
-    const dir = path.join(__dirname, '../../utils/regression');
-    const present = Object.entries(HANDLER_MODULES).filter(([, module]) => fs.existsSync(path.join(dir, `${module}.ts`)));
-    expect(present.length, 'every registered module file is in this tree').toBe(Object.keys(HANDLER_MODULES).length);
-    expect(present.length, 'registered ledger types').toBe(37);
-    for (const [type, module] of present) {
-        expect(loadHandlers(module)?.[type], `${module} exports the ${type} handler`).toBeDefined();
-        expect(handlerOf(type), `handlerOf(${type})`).toBeDefined();
+test('every registry entry has every field and resolves a guarded handler', () => {
+    const steps = TEARDOWN_STEPS.map((s) => s.step);
+    const seen = new Set<string>();
+    let lastStep = 0;
+    for (const entry of RESOURCE_REGISTRY) {
+        const t = entry.type;
+        expect(typeof t === 'string' && t.length > 0, 'a type name').toBe(true);
+        expect(seen.has(t), `${t} is listed once`).toBe(false);
+        seen.add(t);
+        expect(steps, `${t} names a teardown step`).toContain(entry.teardown.step);
+        expect(entry.teardown.step, `${t} keeps the array in delete order`).toBeGreaterThanOrEqual(lastStep);
+        lastStep = entry.teardown.step;
+        expect(Object.keys(HANDLER_SOURCES), `${t} names a handler module that is imported`).toContain(entry.teardown.handler);
+        expect(['detail', 'parent', 'parent-or-list', 'id-named'], `${t} says how its ownership is proven`).toContain(entry.ownership.kind);
+        const snapshot = entry.snapshot as Record<string, unknown>;
+        expect(['def', 'gap', 'coveredBy'].filter((k) => k in snapshot), `${t} has exactly one snapshot answer`).toHaveLength(1);
+        for (const k of ['gap', 'coveredBy']) if (k in snapshot) expect(String(snapshot[k]).length, `${t} says why (${k})`).toBeGreaterThan(10);
+        expect(loadHandlers(entry.teardown.handler)?.[t], `${entry.teardown.handler} exports the ${t} handler`).toBeDefined();
+        expect(handlerOf(t), `handlerOf(${t})`).toBeDefined();
+    }
+    expect(Object.keys(HANDLER_MODULES).sort(), 'the handler map covers exactly the registry').toEqual([...seen].sort());
+    for (const [module, handlers] of Object.entries(HANDLER_SOURCES)) {
+        for (const t of Object.keys(handlers)) expect(HANDLER_MODULES[t], `${module} exports a handler for ${t}, which the registry gives to ${HANDLER_MODULES[t]}`).toBe(module);
     }
 });
 
-test('an absent handler module means "no handler"; a module that fails to load throws', async ({}, testInfo) => {
-    const dir = path.join(__dirname, '../../utils/regression');
-    const out = testInfo.outputPath('handlers');
-    fs.mkdirSync(out, { recursive: true });
-    fs.writeFileSync(path.join(out, 'brokenDependency.js'), "require('./no-such-dependency');\nexports.teardownHandlers = {};\n");
-    fs.writeFileSync(path.join(out, 'throwsOnLoad.js'), "throw new Error('module body failed');\n");
-    const rel = (name: string): string => path.relative(dir, path.join(out, name));
-    expect(handlerOf('stackedType', { stackedType: rel('absentArea') }), 'absent module file').toBeUndefined();
-    expect(() => handlerOf('stackedType', { stackedType: rel('brokenDependency') }), 'a missing dependency is not an absent module').toThrow(/no-such-dependency/);
-    expect(() => handlerOf('stackedType', { stackedType: rel('throwsOnLoad') })).toThrow(/module body failed/);
+test('a handler module that is not in the import map means "no handler"', () => {
+    expect(handlerOf('stackedType', { stackedType: 'absentArea' }), 'a module without an import').toBeUndefined();
+    expect(handlerOf('stackedType', { stackedType: 'stacked' }, { stacked: { stackedType: { action: 'remove it', remove: async () => undefined } } })?.action, 'an injected module').toBe('remove it');
 });
 
 test('"no handler (type X)" is reported only for types that have ledger lines', async () => {
-    // Never a real area module name here (lifecycle / workflowUtils arrive with their areas).
+    // Never a real area module name here (lifecycle / workflowTeardown arrive with their areas).
     expect(loadHandlers('a-module-that-never-exists'), 'a module that does not exist').toBeUndefined();
     expect(handlerOf('roles')?.action, 'the core types resolve to teardownHandlers').toMatch(/DELETE \/api\/v1\/roles/);
     expect(handlerOf('unregisteredType'), 'a type without a registry entry has no handler').toBeUndefined();
@@ -525,6 +521,33 @@ test('importing runTeardown loads no env file; utils/env.ts is required only whe
     expect(src).not.toMatch(/^import [^;]*from '\.\.\/env';/m);
 });
 
+// A handler module that cannot be loaded must stop the run at import, before any object is touched: the handlers are imported
+// statically, so a broken module makes runTeardown itself fail to load (fail closed), never a silent run without that handler.
+test('a teardown handler module that fails to load fails the import of runTeardown instead of being skipped', () => {
+    const utilsRoot = path.resolve(__dirname, '../../utils') + path.sep;
+    const ours = (k: string) => k.startsWith(utilsRoot);
+    const saved = Object.entries(require.cache).filter(([k]) => ours(k));
+    const broken = require.resolve('../../utils/regression/inventory/inventoryTeardown');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const nodeModule = require('module') as { _load: (request: string, parent: unknown, isMain: boolean) => unknown };
+    const realLoad = nodeModule._load;
+    for (const [k] of saved) delete require.cache[k];
+    try {
+        nodeModule._load = function (request: string, parent: unknown, isMain: boolean) {
+            const parentFile = (parent as { filename?: string } | null)?.filename ?? '';
+            if (/inventoryTeardown$/.test(request) && ours(parentFile)) throw new Error('handler module failed to load');
+            return realLoad.call(this, request, parent, isMain);
+        };
+        expect(() => require('../../utils/regression/teardown/runTeardown')).toThrow(/handler module failed to load/);
+        expect(Object.keys(require.cache), 'the half-loaded runTeardown is not left in the cache').not.toContain(require.resolve('../../utils/regression/teardown/runTeardown'));
+        expect(Object.keys(require.cache)).not.toContain(broken);
+    } finally {
+        nodeModule._load = realLoad;
+        for (const k of Object.keys(require.cache)) if (ours(k)) delete require.cache[k];
+        for (const [k, v] of saved) require.cache[k] = v;
+    }
+});
+
 // ------------------------------------------------------------------ the cleanup report and the run summary keep the full error text; the compliance-profile delete order
 
 const PROFILE = 'bbbbbbbb-0000-4000-8000-000000000001';
@@ -632,10 +655,10 @@ test('final pass: a renamed (foreign) object is still refused by the guard; the 
     const inner: string[] = [];
     const guarded = wrapHandlerWithGuard('certificates', { action: 'c', remove: async () => { inner.push('call'); throw new Error('Failed to delete: 500 - referenced'); } });
     const handler = (type: string): TeardownHandler => type === 'certificates' ? guarded : ({ action: type, remove: async () => { live.name = 'renamed-by-someone'; } });
-    const api = {
+    const api = fakeContext({
         get: async () => ({ status: () => 200, ok: () => true, json: async () => ({ uuid: cert.uuid, commonName: live.name }) }),
         dispose: async () => undefined,
-    } as unknown as APIRequestContext;
+    });
     const result = await executeTeardown({ ...quick, runId: RUN, newApi: async () => api, readLines: () => [cert, scep], handler, onDeleted: () => undefined, preSteps: [] });
     expect(inner, 'two first attempts reached the handler; the pass stopped at the live-name guard').toEqual(['call', 'call']);
     expect(result.failed.map((f) => f.uuid)).toEqual([cert.uuid]);

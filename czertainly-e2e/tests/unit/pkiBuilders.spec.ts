@@ -122,8 +122,8 @@ test('certificateInfo: SANs, subject and SPKI of a certificate; fingerprints agr
     const der64 = leaf.replace(/-----(BEGIN|END) CERTIFICATE-----|\s+/g, '');
     expect(certificateInfo(der64).spkiBase64).toBe(info.spkiBase64);
     expect(sha256FingerprintOfPem(leaf)).toBe(sha256Fingerprint(parseCertificate(leaf)));
-    const self = selfSignedPem('qa-reg-x-seed-a');
-    expect(certificateInfo(self.pem).subject).toBe('CN=qa-reg-x-seed-a');
+    const self = selfSignedPem('qa-reg-x-seed-one');
+    expect(certificateInfo(self.pem).subject).toBe('CN=qa-reg-x-seed-one');
 });
 
 test('sameSans is set equality (order and DNS case ignored, no extras); sansOfDetail reads dNSName / iPAddress', () => {

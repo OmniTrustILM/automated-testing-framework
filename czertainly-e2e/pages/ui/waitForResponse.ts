@@ -1,8 +1,13 @@
 /**
- * "Act, then wait for the API's answer": the one place that registers `page.waitForResponse` BEFORE the action (so a fast
- * answer is never missed) and returns the Response once the action has run.
+ * waitForResponse — act, then wait for the API answer.
+ *
+ * WHAT: act, then wait for the API answer: the one place that runs an action and returns the response it caused.
+ * WHY: the wait is registered before the action, so a fast answer is never missed.
+ * HOW: method and path of the call match the response; `UUID` is the shared pattern for an id in a path; `answerFrom` reads
+ *       a response into the one `ApiAnswer` shape.
  */
 import type { Page, Response } from '@playwright/test';
+import { ApiAnswer, answerOf } from '../../utils/regression/apiReads';
 
 /** The path segment of an object id in an API path (a uuid). */
 export const UUID = '[0-9a-f-]{36}';
@@ -39,4 +44,18 @@ export async function actAndWaitForApi(page: Page, call: ApiCall, act: () => Pro
         throw error;
     }
     return answer;
+}
+
+/**
+ * The answer of a response in the shared `ApiAnswer` shape. A body the browser no longer holds (an empty 204, a page that
+ * moved on) reads as empty text: the status is the proof, and a failed body read must not hide it.
+ */
+export async function answerFrom(response: Response, startedAt: number): Promise<ApiAnswer> {
+    let text = '';
+    try {
+        text = await response.text();
+    } catch {
+        text = '';
+    }
+    return answerOf({ status: () => response.status(), headers: () => response.headers(), text: async () => text }, startedAt);
 }

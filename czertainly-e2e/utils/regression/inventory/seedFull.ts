@@ -1,26 +1,32 @@
 /**
- * The full certificate seed of the inventory specs: 24 own certificates with chosen dates, keys and issuers, 2 own
- * groups, 5 own custom attribute definitions and an own owner, uploaded in a fixed order so the default list order is
- * known. Every object is in the ledger before any assertion; the manifest is reused while every object is still this run's.
+ * seedFull — the full certificate seed of the inventory specs.
  *
- * Differences from the expected row tables, each deliberate:
- * - notBefore is `clock - 30 d - <index> h` (distinct per certificate, C21 and C22 equal), not a flat `-30 d`, so a sort
- *   by NOT_BEFORE has the single C21 / C22 tie the row tables expect instead of 22 ties; every window oracle that
- *   reads notBefore keeps its ±1 day margin;
- * - the `day` attribute values are `<Y>-01-10 …` with Y = clock year + 4 (fixed literal dates such as 2030 would rot);
- * - the clock is read ONCE per seed (`clock`), values are read back from the API after the upload and the read-back values
- *   are what the tests use as EQUALS literals.
+ * WHAT: The full certificate seed of the inventory specs: 24 own certificates with chosen dates, keys and issuers, 2 own
+ *       groups, 5 own custom attribute definitions and an own owner, uploaded in a fixed order so the default list order is
+ *       known. Every object is in the ledger before any assertion; the manifest is reused while every object is still this run's.
+ *
+ *       Differences from the expected row tables, each deliberate:
+ *       - notBefore is `clock - 30 d - <index> h` (distinct per certificate, C21 and C22 equal), not a flat `-30 d`, so a sort
+ *         by NOT_BEFORE has the single C21 / C22 tie the row tables expect instead of 22 ties; every window oracle that
+ *         reads notBefore keeps its ±1 day margin;
+ *       - the `day` attribute values are `<Y>-01-10 …` with Y = clock year + 4 (fixed literal dates such as 2030 would rot);
+ *       - the clock is read ONCE per seed (`clock`), values are read back from the API after the upload and the read-back values
+ *         are what the tests use as EQUALS literals.
+ * WHY: Exact row-set checks need a known data set in a known default order.
+ * HOW: Uploaded in a fixed order and recorded before any assertion; the manifest is reused while every object is still this run's; the clock is read once and read-back values become the EQUALS literals.
  */
 import { Logger } from '../../Logger';
 import { assertOwn } from '../ledger/ownership';
 import { buildCertificate, BuiltCertificate, generateKeys, IssuerHandle, KeyBits, SignatureHash } from './seedCertificates';
-import { createOwnAttribute, patchOwnCertificateOk, readCertificate, uploadBuilt, AttributeValue } from './seedOwnedObjects';
+import { patchOwnCertificateOk, readCertificate, uploadBuilt, AttributeValue } from './seedOwnedObjects';
 import { createOwnGroup } from '../ownGroups';
 import { Filter, isolation } from './searchApi';
-import { createUser } from '../ownUsers';
-import { OwnRef, recordCreated } from '../ledger/ledger';
+import { createOwnUser } from '../ownUsers';
+import { OwnRef } from '../ledger/ledger';
 import { readRunState, runName, runId, updateRunState } from '../ledger/runState';
 import type { GuardedApi } from '../guard/types';
+import { uniqueSuffix } from '../text';
+import { createOwnCustomAttribute } from '../customAttributes';
 
 const logger = new Logger('InventorySeedFull');
 
@@ -28,10 +34,10 @@ const DAY = 24 * 3600 * 1000;
 const HOUR = 3600 * 1000;
 
 export type CertId = `C${string}`;
-export type GroupKey = 'a' | 'b';
-export type AttributeKey = 'txt' | 'num' | 'day' | 'flag' | 'pick';
+type GroupKey = 'a' | 'b';
+type AttributeKey = 'txt' | 'num' | 'day' | 'flag' | 'pick';
 
-export interface SeedAPlanRow {
+export interface CertificateSeedRow {
     id: CertId;
     /** Common-name token after the seed prefix. */
     token: string;
@@ -56,8 +62,8 @@ export interface SeedAPlanRow {
     pick?: string[];
 }
 
-/** The SEED-A certificates of the inventory tests; notBefore hours make the instants distinct. */
-export const SEED_A_ROWS: readonly SeedAPlanRow[] = [
+/** The certificates of the certificate seed; notBefore hours make the instants distinct. */
+export const CERTIFICATE_SEED_ROWS: readonly CertificateSeedRow[] = [
     { id: 'C01', token: 'alpha-web', notBeforeHours: 1, notAfterDays: 5, keyBits: 2048, hash: 'SHA-256', groups: ['a'], owner: true, txt: 'red', num: 10, day: 0, flag: true, pick: ['a'] },
     { id: 'C02', token: 'alpha-api', notBeforeHours: 2, notAfterDays: 15, keyBits: 2048, hash: 'SHA-256', groups: ['a'], owner: true, txt: 'red', num: 20, day: 1, flag: true, pick: ['a', 'b'] },
     { id: 'C03', token: 'beta-web', notBeforeHours: 3, notAfterDays: 25, keyBits: 2048, hash: 'SHA-256', groups: ['a', 'b'], owner: false, txt: 'Red', num: 30, day: 2, flag: false, pick: ['b'] },
@@ -85,10 +91,10 @@ export const SEED_A_ROWS: readonly SeedAPlanRow[] = [
 ];
 
 /** Upload order: the CA first, then C01…C23 (so created descending reads C23 … C01, C24). */
-export const SEED_A_UPLOAD_ORDER: readonly CertId[] = ['C24', ...SEED_A_ROWS.filter((r) => r.id !== 'C24').map((r) => r.id)];
+export const CERTIFICATE_SEED_UPLOAD_ORDER: readonly CertId[] = ['C24', ...CERTIFICATE_SEED_ROWS.filter((r) => r.id !== 'C24').map((r) => r.id)];
 
 /** Default listing order of the 24 seeds (created descending): C23 … C01, C24. */
-export const SEED_A_DEFAULT_ORDER: readonly CertId[] = [...SEED_A_UPLOAD_ORDER].reverse();
+export const SEED_A_DEFAULT_ORDER: readonly CertId[] = [...CERTIFICATE_SEED_UPLOAD_ORDER].reverse();
 
 /** The `day` attribute values for a clock year: Y-01-10, Y-02-20, Y-03-30, Y-03-30, (Y+1)-01-01. */
 export function dayValues(clock: Date): string[] {
@@ -98,7 +104,7 @@ export function dayValues(clock: Date): string[] {
 
 export const PICK_OPTIONS = ['a', 'b', 'c'] as const;
 
-export interface AttributePlan {
+interface AttributePlan {
     name: string;
     label: string;
     contentType: 'string' | 'integer' | 'date' | 'boolean';
@@ -107,7 +113,7 @@ export interface AttributePlan {
     identifier: string;
 }
 
-export interface SeedACert {
+export interface CertificateSeedEntry {
     id: CertId;
     token: string;
     commonName: string;
@@ -128,8 +134,8 @@ export interface SeedACert {
     notAfter: string;
 }
 
-export interface SeedAPlan {
-    kind: 'seed-a';
+export interface CertificateSeedPlan {
+    kind: 'certificate-seed';
     stamp: string;
     /** `<run>-flt-<stamp>-`: the isolation prefix of every seed certificate, group and attribute. */
     prefix: string;
@@ -138,23 +144,23 @@ export interface SeedAPlan {
     groups: Record<GroupKey, { name: string }>;
     attributes: Record<AttributeKey, AttributePlan>;
     owner: { username: string };
-    certificates: SeedACert[];
+    certificates: CertificateSeedEntry[];
 }
 
-export interface SeedAManifest extends SeedAPlan {
+export interface SeedAManifest extends CertificateSeedPlan {
     runId: string;
     groupUuids: Record<GroupKey, string>;
     attributeUuids: Record<AttributeKey, string>;
     ownerUuid: string;
-    certificates: Array<SeedACert & { uuid: string; fingerprint: string; serialHex: string }>;
+    certificates: Array<CertificateSeedEntry & { uuid: string; fingerprint: string; serialHex: string }>;
 }
 
-/** The plan of SEED-A (pure): names, instants, values. `name` and `stamp` are injectable for the unit tests. */
-export function planSeedA(clock: Date = new Date(), name: (suffix: string) => string = runName, stamp: string = Date.now().toString(36)): SeedAPlan {
+/** The pure description of the certificate seed: names, instants, values. `name` and `stamp` are injectable for the unit tests. */
+export function planCertificateSeed(clock: Date = new Date(), name: (suffix: string) => string = runName, stamp: string = uniqueSuffix()): CertificateSeedPlan {
     const prefix = name(`flt-${stamp}-`);
     const days = dayValues(clock);
-    const at = (row: SeedAPlanRow, kind: 'before' | 'after'): string => {
-        const base = row.sameInstantAs ? SEED_A_ROWS.find((r) => r.id === row.sameInstantAs)! : row;
+    const at = (row: CertificateSeedRow, kind: 'before' | 'after'): string => {
+        const base = row.sameInstantAs ? CERTIFICATE_SEED_ROWS.find((r) => r.id === row.sameInstantAs)! : row;
         const ms = kind === 'after'
             ? clock.getTime() + base.notAfterDays * DAY
             : clock.getTime() + (base.notBeforeDays ?? -30) * DAY - base.notBeforeHours * HOUR;
@@ -168,7 +174,7 @@ export function planSeedA(clock: Date = new Date(), name: (suffix: string) => st
         identifier: `${prefix}${key}|${contentType.toUpperCase()}`,
     });
     return {
-        kind: 'seed-a',
+        kind: 'certificate-seed',
         stamp,
         prefix,
         clock: clock.toISOString(),
@@ -181,7 +187,7 @@ export function planSeedA(clock: Date = new Date(), name: (suffix: string) => st
             pick: attr('pick', 'pick', 'string', [...PICK_OPTIONS]),
         },
         owner: { username: `${prefix}owner` },
-        certificates: SEED_A_ROWS.map((r) => ({
+        certificates: CERTIFICATE_SEED_ROWS.map((r) => ({
             id: r.id,
             token: r.token,
             commonName: `${prefix}${r.token}`,
@@ -203,13 +209,13 @@ export function planSeedA(clock: Date = new Date(), name: (suffix: string) => st
 }
 
 /** The isolation filter of a seed set: Common Name starts with the prefix (every exact row-set oracle carries it). */
-export const seedIsolation = (m: Pick<SeedAPlan, 'prefix'>): Filter => isolation(m.prefix);
+export const seedIsolation = (m: Pick<CertificateSeedPlan, 'prefix'>): Filter => isolation(m.prefix);
 
 // ------------------------------------------------------------------ pure accessors
 
 export const certById = (m: SeedAManifest, id: CertId): SeedAManifest['certificates'][number] => {
     const c = m.certificates.find((x) => x.id === id);
-    if (!c) throw new Error(`SEED-A has no ${id}`);
+    if (!c) throw new Error(`the certificate seed has no ${id}`);
     return c;
 };
 
@@ -219,29 +225,29 @@ export const idsOfUuids = (m: SeedAManifest, uuids: readonly string[]): CertId[]
     uuids.map((u) => m.certificates.find((c) => c.uuid === u)?.id ?? (`?${u.slice(0, 8)}` as CertId)).sort() as CertId[];
 
 /** Ids of the seeds satisfying a predicate (the reference set of a row). */
-export const idsWhere = (m: SeedAPlan, pred: (c: SeedACert) => boolean): CertId[] => m.certificates.filter(pred).map((c) => c.id);
+export const idsWhere = (m: CertificateSeedPlan, pred: (c: CertificateSeedEntry) => boolean): CertId[] => m.certificates.filter(pred).map((c) => c.id);
 
 // ------------------------------------------------------------------ build
 
 const stillOwn = (m: SeedAManifest): boolean => {
     try {
-        for (const uuid of [...Object.values(m.groupUuids), ...Object.values(m.attributeUuids), m.ownerUuid, ...m.certificates.map((c) => c.uuid)]) assertOwn({ uuid }, 'ensureSeedA');
+        for (const uuid of [...Object.values(m.groupUuids), ...Object.values(m.attributeUuids), m.ownerUuid, ...m.certificates.map((c) => c.uuid)]) assertOwn({ uuid }, 'ensureCertificateSeed');
         return true;
     } catch {
         return false;
     }
 };
 
-/** Is there a usable SEED-A of this run in the run state (so the next `ensureSeedA` sends nothing)? */
-export function hasSeedA(): boolean {
-    const m = readRunState().inventorySeed?.seedA as SeedAManifest | undefined;
-    return !!m && m.runId === runId() && !seedAProblems(m).length && stillOwn(m);
+/** Is there a usable certificate seed of this run in the run state (so the next `ensureCertificateSeed` sends nothing)? */
+export function hasCertificateSeed(): boolean {
+    const m = readRunState().inventorySeed?.certificateSeed as SeedAManifest | undefined;
+    return !!m && m.runId === runId() && !certificateSeedProblems(m).length && stillOwn(m);
 }
 
-/** Why a manifest is not a usable SEED-A (empty = usable). */
-export function seedAProblems(m: SeedAManifest, ofRun: string = runId()): string[] {
+/** Why a manifest is not a usable certificate seed (empty = usable). */
+export function certificateSeedProblems(m: SeedAManifest, ofRun: string = runId()): string[] {
     const problems: string[] = [];
-    if (m.kind !== 'seed-a') problems.push(`kind ${String(m.kind)}`);
+    if (m.kind !== 'certificate-seed') problems.push(`kind ${String(m.kind)}`);
     if (m.runId !== ofRun) problems.push('the manifest belongs to another run');
     if (!m.prefix.startsWith(`${ofRun}-`)) problems.push('the prefix does not carry the run prefix');
     if (m.certificates.length !== 24) problems.push(`${m.certificates.length} certificates (24 expected)`);
@@ -251,26 +257,26 @@ export function seedAProblems(m: SeedAManifest, ofRun: string = runId()): string
 }
 
 /**
- * Builds SEED-A through the guarded API, or returns this run's earlier one. 24 uploads, 2 groups, 5 attribute definitions,
+ * Builds the certificate seed through the guarded API, or returns this run's earlier one. 24 uploads, 2 groups, 5 attribute definitions,
  * the owner user and the group / owner / trusted-CA updates (about 60 requests, ~20-40 s): the first caller sets a long
  * test timeout. `onStep` reports progress for `test.step`-less callers.
  */
 export async function ensureCertificateSeed(api: GuardedApi, spec: string): Promise<SeedAManifest> {
-    const earlier = readRunState().inventorySeed?.seedA as SeedAManifest | undefined;
-    if (earlier && earlier.runId === runId() && !seedAProblems(earlier).length && stillOwn(earlier)) return earlier;
+    const earlier = readRunState().inventorySeed?.certificateSeed as SeedAManifest | undefined;
+    if (earlier && earlier.runId === runId() && !certificateSeedProblems(earlier).length && stillOwn(earlier)) return earlier;
 
-    const plan = planSeedA();
-    logger.info(`building SEED-A under ${plan.prefix}…`);
+    const plan = planCertificateSeed();
+    logger.info(`building the certificate seed under ${plan.prefix}…`);
 
     // Keys first, in parallel (native RSA): the CA's 2048 bits, the 3072 / 4096 ones take longest.
     const handles = new Map<CertId, IssuerHandle>();
     const built = new Map<CertId, BuiltCertificate>();
     const keyPairs = new Map<CertId, CryptoKeyPair>();
     await Promise.all(plan.certificates.map(async (c) => void keyPairs.set(c.id, await generateKeys(c.keyBits, c.issuedBy ? 'SHA-256' : c.hash))));
-    for (const id of SEED_A_UPLOAD_ORDER) {
+    for (const id of CERTIFICATE_SEED_UPLOAD_ORDER) {
         const c = plan.certificates.find((x) => x.id === id)!;
         const issuer = c.issuedBy ? handles.get(c.issuedBy) : undefined;
-        if (c.issuedBy && !issuer) throw new Error(`SEED-A: ${c.id} needs ${c.issuedBy} built first`);
+        if (c.issuedBy && !issuer) throw new Error(`certificate seed: ${c.id} needs ${c.issuedBy} built first`);
         const b = await buildCertificate({
             commonName: c.commonName,
             notBefore: new Date(c.notBefore),
@@ -289,15 +295,15 @@ export async function ensureCertificateSeed(api: GuardedApi, spec: string): Prom
     const attributeUuids = {} as Record<AttributeKey, string>;
     for (const key of ['txt', 'num', 'day', 'flag', 'pick'] as const) {
         const a = plan.attributes[key];
-        const ref = await createOwnAttribute(api, spec, { name: a.name, label: a.label, contentType: a.contentType, options: a.options });
+        const ref = await createOwnCustomAttribute(api, spec, 'seed', { name: a.name, label: a.label, contentType: a.contentType, options: a.options, description: `REG run ${runId()}: inventory seed`, note: 'seed custom attribute (not required)' });
         attributeUuids[key] = ref.uuid;
     }
-    const owner = recordCreated('users', await createUser(api, plan.owner.username, { enabled: false }), spec, 'seed owner (disabled)');
+    const owner = await createOwnUser(api, spec, 'seed-owner', { name: plan.owner.username, enabled: false, note: 'seed owner (disabled)' });
     const groupUuids = {} as Record<GroupKey, string>;
-    for (const key of ['a', 'b'] as const) groupUuids[key] = (await createOwnGroup(api, spec, plan.groups[key].name, {}, `seed group ${key}`)).uuid;
+    for (const key of ['a', 'b'] as const) groupUuids[key] = (await createOwnGroup(api, spec, 'grp', { name: plan.groups[key].name, note: `seed group ${key}` })).uuid;
 
     // Uploads, sequentially: the CA first, then C01…C23. The attribute values travel in the upload request.
-    const values = (c: SeedACert): AttributeValue[] => {
+    const values = (c: CertificateSeedEntry): AttributeValue[] => {
         const out: AttributeValue[] = [];
         const add = (key: AttributeKey, data: unknown[] | null) => {
             if (data === null) return;
@@ -312,9 +318,9 @@ export async function ensureCertificateSeed(api: GuardedApi, spec: string): Prom
         return out;
     };
     const refs = new Map<CertId, OwnRef>();
-    for (const id of SEED_A_UPLOAD_ORDER) {
+    for (const id of CERTIFICATE_SEED_UPLOAD_ORDER) {
         const c = plan.certificates.find((x) => x.id === id)!;
-        const up = await uploadBuilt(api, spec, built.get(id)!, values(c), `SEED-A ${id}`);
+        const up = await uploadBuilt(api, spec, built.get(id)!, values(c), `certificate seed ${id}`);
         refs.set(id, up);
     }
 
@@ -341,34 +347,34 @@ export async function ensureCertificateSeed(api: GuardedApi, spec: string): Prom
         });
     }
     const manifest: SeedAManifest = { ...plan, runId: runId(), groupUuids, attributeUuids, ownerUuid: owner.uuid, certificates };
-    updateRunState({ inventorySeed: { ...(readRunState().inventorySeed ?? {}), seedA: manifest } });
-    logger.info(`SEED-A built: ${certificates.length} certificates`);
+    updateRunState({ inventorySeed: { ...(readRunState().inventorySeed ?? {}), certificateSeed: manifest } });
+    logger.info(`certificate seed built: ${certificates.length} certificates`);
     return manifest;
 }
 
-// ------------------------------------------------------------------ SEED-B (archive) and SEED-C (group replace)
+// ------------------------------------------------------------------ the two small seeds (archive, group replace)
 
-export interface SmallSeedCert {
+interface SmallSeedCert {
     key: string;
     commonName: string;
     uuid: string;
 }
 
 export interface SmallSeedManifest {
-    kind: 'seed-b' | 'seed-c';
+    kind: 'archive-seed' | 'group-seed';
     runId: string;
     prefix: string;
     groups: Array<{ key: string; name: string; uuid: string }>;
     certificates: SmallSeedCert[];
 }
 
-async function buildSmallSeed(api: GuardedApi, spec: string, kind: 'seed-b' | 'seed-c', tag: string, certKeys: string[], groupKeys: string[], assign: (certKey: string) => string[]): Promise<SmallSeedManifest> {
-    const stamp = Date.now().toString(36);
+async function buildSmallSeed(api: GuardedApi, spec: string, kind: 'archive-seed' | 'group-seed', tag: string, certKeys: string[], groupKeys: string[], assign: (certKey: string) => string[]): Promise<SmallSeedManifest> {
+    const stamp = uniqueSuffix();
     const prefix = runName(`${tag}-${stamp}-`);
     const groups: SmallSeedManifest['groups'] = [];
     for (const key of groupKeys) {
         const name = `${prefix}${key}`;
-        groups.push({ key, name, uuid: (await createOwnGroup(api, spec, name, {}, `${kind} group ${key}`)).uuid });
+        groups.push({ key, name, uuid: (await createOwnGroup(api, spec, 'grp', { name, note: `${kind} group ${key}` })).uuid });
     }
     const clock = new Date();
     const certificates: SmallSeedCert[] = [];
@@ -385,5 +391,5 @@ async function buildSmallSeed(api: GuardedApi, spec: string, kind: 'seed-b' | 's
     return { kind, runId: runId(), prefix, groups, certificates };
 }
 
-/** Fresh SEED-B / SEED-C for a test that mutates them destructively (a second set under another stamp). */
-export const buildFreshSeedB = (api: GuardedApi, spec: string): Promise<SmallSeedManifest> => buildSmallSeed(api, spec, 'seed-b', 'arc', ['b1', 'b2', 'b3'], ['grp'], () => ['grp']);
+/** Fresh archive and group seeds for a test that mutates them destructively (a second set under another stamp). */
+export const buildFreshSeedB = (api: GuardedApi, spec: string): Promise<SmallSeedManifest> => buildSmallSeed(api, spec, 'archive-seed', 'arc', ['b1', 'b2', 'b3'], ['grp'], () => ['grp']);

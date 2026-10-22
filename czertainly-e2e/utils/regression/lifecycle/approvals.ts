@@ -1,11 +1,15 @@
 /**
- * approvals — the run's approval profile, the approval gate on an own RA-profile clone (the run RA profile is never
- * gated), the approvals of an own certificate (recorded in the ledger when found) and their decisions through the
- * override path. The API answers a status with the enum name, the UI with the label: compare through
- * `sameApprovalStatus`.
+ * approvals — the run's approval profile and the approval gate.
+ *
+ * WHAT: the run's approval profile, the approval gate on an own RA-profile clone (the run RA profile is never
+ *       gated), the approvals of an own certificate (recorded in the ledger when found) and their decisions through the
+ *       override path. The API answers a status with the enum name, the UI with the label: compare through
+ *       `sameApprovalStatus`.
+ * WHY: Approval tests need a gate that never touches the run RA profile and decisions that go through the override path.
+ * HOW: The gate sits on an own clone of the run RA profile; approvals of an own certificate are recorded when found; `sameApprovalStatus` compares the API enum name with the UI label.
  */
 import type { APIRequestContext } from '@playwright/test';
-import { apiJson } from '../apiReads';
+import { apiJson, ApiAnswer } from '../apiReads';
 import type { GuardedApi } from '../guard/types';
 import { assertOwnLive, checkOwnership } from '../ledger/ownership';
 import { cloneRunRaProfile, RaLike } from '../ownRaProfiles';
@@ -14,9 +18,9 @@ import type { JsonObject } from '../json';
 import { OwnRef, recordCreated } from '../ledger/ledger';
 import { readRunState, runName, runId, updateRunState } from '../ledger/runState';
 import { pollUntil } from '../wait';
-import { RawAnswer, sendRaw } from './rawAnswers';
+import { sendRaw } from './rawAnswers';
 
-// ------------------------------------------------------------------ RA+ clones and the approval gate
+// ------------------------------------------------------------------ clones of the run RA profile and the approval gate
 
 /**
  * The run's approval profile (`AP`, run state `approvalProfile`): one step, approver = the run's OWN role (the body may
@@ -35,13 +39,13 @@ export async function ensureApprovalProfile(api: GuardedApi, spec: string): Prom
         expiry: 24,
         approvalSteps: [{ roleUuid: role.uuid, order: 1, requiredApprovals: 1, description: `REG run ${runId()} step` }],
     });
-    const ref = recordCreated('approvalProfiles', { uuid: created.uuid, name }, spec, 'API prerequisite; one step, approver = the run role');
+    const ref = recordCreated('approvalProfiles', { uuid: created.uuid, name }, { spec, note: 'API prerequisite; one step, approver = the run role' });
     updateRunState({ approvalProfile: ref });
     return ref;
 }
 
 /** `PATCH /v1/approvalProfiles/{own}/associations/raProfiles/{own}` (both objects own). */
-export async function associateApprovalProfile(api: GuardedApi, approvalProfile: OwnRef, ra: OwnRef): Promise<void> {
+async function associateApprovalProfile(api: GuardedApi, approvalProfile: OwnRef, ra: OwnRef): Promise<void> {
     await assertOwnLive(api, 'approvalProfiles', approvalProfile, 'associateApprovalProfile (approval profile)');
     await assertOwnLive(api, 'raProfiles', ra, 'associateApprovalProfile (RA profile)');
     await apiJson(api, 'PATCH', `/api/v1/approvalProfiles/${approvalProfile.uuid}/associations/raProfiles/${ra.uuid}`);
@@ -56,7 +60,7 @@ export async function dissociateApprovalProfile(api: GuardedApi, approvalProfile
 }
 
 export interface ApprovalGate {
-    /** The own RA+ clone every gated call goes through. */
+    /** The own clone of the run RA profile every gated call goes through. */
     ra: OwnRef & RaLike;
     approvalProfile: OwnRef;
     /** Associate the approval profile with the clone (idempotent on the gate object). */
@@ -65,7 +69,7 @@ export interface ApprovalGate {
     release(): Promise<void>;
 }
 
-/** An RA+ clone with the run approval profile; `associate: false` leaves the clone ungated until `associate()`. */
+/** An own RA profile clone with the run approval profile; `associate: false` leaves the clone ungated until `associate()`. */
 export async function openApprovalGate(api: GuardedApi, spec: string, suffix: string, opts: { associate?: boolean } = {}): Promise<ApprovalGate> {
     const ra = await cloneRunRaProfile(api, spec, suffix);
     const approvalProfile = await ensureApprovalProfile(api, spec);
@@ -91,7 +95,7 @@ export async function openApprovalGate(api: GuardedApi, spec: string, suffix: st
 // ------------------------------------------------------------------ approvals (override path)
 
 /** The approvals of a certificate (`GET /v1/certificates/{uuid}/approvals`, a plain read). */
-export async function approvalsOf(api: APIRequestContext, certificateUuid: string): Promise<JsonObject[]> {
+async function approvalsOf(api: APIRequestContext, certificateUuid: string): Promise<JsonObject[]> {
     const body = await apiJson<{ approvals?: JsonObject[] } | undefined>(api, 'GET', `/api/v1/certificates/${certificateUuid}/approvals`);
     return body?.approvals ?? [];
 }
@@ -136,7 +140,7 @@ export async function findApproval(api: APIRequestContext, cert: OwnRef, spec: s
     // approval only for an own certificate AND an own approval profile, both named here and confirmed live).
     const ap = typeof row.approvalProfileUuid === 'string' ? checkOwnership({ uuid: row.approvalProfileUuid }) : undefined;
     const parents = { certificate: cert.uuid, ...(ap?.own && ap.line?.type === 'approvalProfiles' ? { approvalProfile: String(row.approvalProfileUuid) } : {}) };
-    const ref = checkOwnership({ uuid }).own ? ({ uuid, name, kind: 'own' } as OwnRef) : recordCreated('approvals', { uuid, name }, spec, `approval ${row.resourceAction ?? ''} of an own certificate`, parents);
+    const ref = checkOwnership({ uuid }).own ? ({ uuid, name, kind: 'own' } as OwnRef) : recordCreated('approvals', { uuid, name }, { spec, note: `approval ${row.resourceAction ?? ''} of an own certificate`, parents });
     return { ...ref, row };
 }
 
@@ -152,7 +156,7 @@ export async function waitForApprovalStatus(api: GuardedApi, approval: OwnRef, s
 }
 
 /** The override decision (`PATCH /v1/approvals/{own}/approve|reject`: 204, recipient comment "Approval flow overridden"). */
-export async function decideApproval(api: GuardedApi, approval: OwnRef, decision: 'approve' | 'reject'): Promise<RawAnswer> {
+export async function decideApproval(api: GuardedApi, approval: OwnRef, decision: 'approve' | 'reject'): Promise<ApiAnswer> {
     await assertOwnLive(api, 'approvals', approval, `decideApproval (${decision})`);
     return sendRaw(api, 'PATCH', `/api/v1/approvals/${approval.uuid}/${decision}`);
 }

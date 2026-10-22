@@ -1,11 +1,12 @@
 /**
  * teardownHandlers — how the run-end teardown removes each kind of object the regression suite can create.
  *
- * Loaded lazily by runTeardown's registry (type → module) and wrapped by `wrapHandlerWithGuard`: before `remove` runs, the dry
+ * WHAT: one handler per kind of object (certificates, keys, discoveries, ACME profiles, compliance profiles, roles, users, …),
+ * and the certificate-key safety net. Loaded lazily by runTeardown's registry (type → module) and wrapped by `wrapHandlerWithGuard`: before `remove` runs, the dry
  * run is checked and the live object is read through `assertOwnLive` (ledger line of this run on this tier, live
  * run-prefixed name for named types); `ctx.live` is that object and its uuid is in `ctx.seen`. Later batches add
  * their own `teardownHandlers` export in the module that creates the objects (protocolProfiles, cryptoApi,
- * workflowUtils, …) and get the same wrapper; until such a module exists the teardown reports "no handler (type X)".
+ * workflowTeardown, …) and get the same wrapper; until such a module exists the teardown reports "no handler (type X)".
  *
  * Deletion rule: `deleteAndVerify` sends the DELETE only for an object read with 200 in this step, accepts a 404
  * answer only then, and proves absence afterwards with a detail GET (polled: some deletes finish asynchronously).
@@ -20,17 +21,29 @@
  * the run, a discovered certificate someone assigned to a group): no delete, a warning and a line in the kept report
  * (REG_KEPT_STRICT=1 turns a non-empty kept list red). A derived object whose creation time cannot be read is NOT
  * kept quietly: the handler throws, the object stays on the tier and the run ends red, so a human checks it.
+ *
+ * Clock rule: a derived object's age is judged on the server's clock (a history or discovery time, or the `createdAfter`
+ * taken from a response's Date header); where no server time exists, the object is still recorded, with `keepingBound()`,
+ * so its handler answers 'kept' and it lands in the kept report. It is never judged on the runner's clock and never left
+ * out of the ledger.
+ *
+ * WHY: the teardown is the one place that deletes, so every delete must be proven safe before it is sent and proven done
+ *      after it: an object of another run or another person is never touched, an object whose absence cannot be shown
+ *      leaves the run red.
+ * HOW: the wrapper reads the live object through `assertOwnLive`; the handler sends the DELETE only for what that read
+ *      returned; `deleteAndVerify` confirms absence with a detail read (a list read for roles and users); a handler that
+ *      cannot decide throws.
  */
 import { APIRequestContext, APIResponse } from '@playwright/test';
-import { revokeCertificate, waitForCertificateState } from '../../certificateUtils';
-import { listNewlyDiscoveredInventoryUuids } from '../../discoveryUtils';
+import { listNewlyDiscoveredInventoryUuids, revokeThroughAuthority, waitUntilRevoked } from './certificateTeardownCalls';
 import { assertNotDryRun } from '../run/flags';
 import { absenceOf, assertOwnLive, carriesRunPrefix, derivedDeletable, checkOwnership } from '../ledger/ownership';
-import { createdAfterMarker, LedgerLine, recordDerived } from '../ledger/ledger';
-import type { TeardownContext, TeardownHandler } from './runTeardown';
+import { createdAfterMarker, keepingBound, LedgerLine, recordDerived } from '../ledger/ledger';
+import type { TeardownContext, TeardownHandler } from './teardownTypes';
 import { pollUntil } from '../wait';
+import { objectOf } from '../json';
+import type { JsonObject } from '../json';
 
-type Json = Record<string, any>;
 
 const parent = (line: LedgerLine, key: string): string | undefined => {
     const v = line.parents?.[key];
@@ -43,11 +56,11 @@ const parentList = (line: LedgerLine, key: string): string[] => {
 };
 
 /** GET that answers the body on 2xx, undefined on 404, and throws on anything else. */
-async function getJson(api: APIRequestContext, url: string): Promise<Json | undefined> {
+async function getJson(api: APIRequestContext, url: string): Promise<JsonObject | undefined> {
     const resp = await api.get(url);
     if (resp.status() === 404) return undefined;
     if (!resp.ok()) throw new Error(`GET ${url} failed: ${resp.status()} - ${(await resp.text()).slice(0, 300)}`);
-    return (await resp.json()) as Json;
+    return (await resp.json()) as JsonObject;
 }
 
 function blocked(message: string, blockedBy: string): Error {
@@ -100,7 +113,7 @@ export async function deleteAndVerify(ctx: TeardownContext, spec: DeleteSpec): P
 }
 
 /** Read a second object (not the handler's own line) live, marking it seen; LiveObjectMissing propagates. */
-async function ownLive(ctx: TeardownContext, type: string, line: LedgerLine | { uuid: string }, helper: string): Promise<Json | undefined> {
+async function ownLive(ctx: TeardownContext, type: string, line: LedgerLine | { uuid: string }, helper: string): Promise<JsonObject | undefined> {
     const { body } = await assertOwnLive(ctx.api, type, line, helper, { lines: ctx.ledger, runId: ctx.runId, tier: ctx.tier, ...(ctx.knownBug ? { onKnownBug: ctx.knownBug } : {}) });
     if (body) ctx.seen.add(line.uuid);
     return body;
@@ -111,7 +124,8 @@ async function authorityOfRaProfile(ctx: TeardownContext, raProfileUuid: string)
     const own = ctx.ledger.find((l) => l.uuid === raProfileUuid && l.event === 'created');
     const fromLedger = own && parent(own, 'authority');
     if (fromLedger) return fromLedger;
-    return (await getJson(ctx.api, `/api/v1/raProfiles/${raProfileUuid}`))?.authorityInstanceUuid;
+    const authority = (await getJson(ctx.api, `/api/v1/raProfiles/${raProfileUuid}`))?.authorityInstanceUuid;
+    return typeof authority === 'string' ? authority : undefined;
 }
 
 /** Live (created, not deleted) ledger objects of this run of one type. */
@@ -146,13 +160,13 @@ const inSet = (set: Set<string> | undefined, uuid: unknown): boolean => typeof u
  * answer is the old one: any attachment adopts. The order makes it safe: certificates are step 4, groups / users / RA
  * profiles later, so the own objects still exist when the certificate is judged and are deleted afterwards anyway.
  */
-export function adoptionOf(cert: Json, own?: OwnAttachments): string[] {
+export function adoptionOf(cert: JsonObject, own?: OwnAttachments): string[] {
     const why: string[] = [];
-    const ra = cert.raProfile?.uuid;
+    const ra = objectOf(cert.raProfile).uuid;
     if (ra && !inSet(own?.raProfiles, ra)) why.push('RA profile');
     const owner = cert.ownerUuid ?? (cert.owner ? '(name only)' : undefined);
     if ((cert.owner || cert.ownerUuid) && !inSet(own?.users, owner)) why.push('owner');
-    if (Array.isArray(cert.groups) && cert.groups.length && !cert.groups.every((g: Json) => inSet(own?.groups, g?.uuid))) why.push('groups');
+    if (Array.isArray(cert.groups) && cert.groups.length && !cert.groups.every((g: JsonObject) => inSet(own?.groups, g?.uuid))) why.push('groups');
     if (Array.isArray(cert.locations) && cert.locations.length) why.push('locations');
     if (cert.certificateRequest) why.push('certificate request');
     return why;
@@ -175,10 +189,10 @@ export async function certificateCreationTime(api: APIRequestContext, uuid: stri
  * (uuid, name, message) for what it could not delete, so a non-empty list is a failure carrying the messages; (4) absence by GET.
  */
 export async function removeComplianceProfile(ctx: TeardownContext, uuid: string): Promise<void> {
-    const associationsOf = async (): Promise<Json[] | undefined> => {
+    const associationsOf = async (): Promise<JsonObject[] | undefined> => {
         const r = await ctx.api.get(`/api/v2/complianceProfiles/${uuid}/associations`);
         if (!r.ok()) return undefined;
-        const rows = (await r.json().catch(() => [])) as Json[];
+        const rows = (await r.json().catch(() => [])) as JsonObject[];
         return Array.isArray(rows) ? rows : [];
     };
     const first0 = await associationsOf();
@@ -215,7 +229,7 @@ export async function removeComplianceProfile(ctx: TeardownContext, uuid: string
             if (!left) throw new Error(`compliance profile ${uuid}: DELETE /v1 answered ${first.status()} (${firstText}); the associations cannot be read, so the force delete (which removes every association) is not sent`);
             const forced = await ctx.api.delete('/api/v2/complianceProfiles/force', { data: [uuid] });
             if (!forced.ok()) throw new Error(`compliance profile ${uuid}: DELETE /v1 answered ${first.status()} (${firstText}); DELETE /v2/force answered ${forced.status()} - ${(await forced.text()).replace(/\s+/g, ' ').slice(0, 300)}`);
-            const messages = ((await forced.json().catch(() => [])) as Json[]) ?? [];
+            const messages = ((await forced.json().catch(() => [])) as JsonObject[]) ?? [];
             if (Array.isArray(messages) && messages.length) {
                 throw new Error(`compliance profile ${uuid}: DELETE /v1 answered ${first.status()} (${firstText}); DELETE /v2/force refused: ${messages.map((m) => `${m.name ?? m.uuid}: ${m.message}`).join('; ').slice(0, 400)}`);
             }
@@ -232,18 +246,21 @@ export async function removeComplianceProfile(ctx: TeardownContext, uuid: string
  * the keys step (5) re-reads the ledger and deletes it under its own rules (not in a token, made after `createdAfter`, unused
  * once the certificate is gone). Recorded only when: the name is exactly `certKey_<run-prefixed CN>`, the key is in no token,
  * its only association is this certificate, it was created no earlier than a minute before the certificate, and the ledger
- * does not hold it yet. An ITEM uuid is never recorded.
+ * does not hold it yet. An ITEM uuid is never recorded. The certificate's creation time is the server's (its history, else the
+ * server Date of its ledger line); with neither, the age cannot be judged, so the key is recorded with `keepingBound()` (the other
+ * conditions still apply) and the keys step keeps it: it appears in the kept report, never deleted on a guess.
  */
-export async function recordCertKeySafetyNet(ctx: TeardownContext, line: LedgerLine, cert: Json): Promise<string[]> {
+export async function recordCertKeySafetyNet(ctx: TeardownContext, line: LedgerLine, cert: JsonObject): Promise<string[]> {
     const cn = String(cert.commonName ?? line.name ?? '');
     if (!carriesRunPrefix(cn, ctx.runId, 'certificates')) return [];
     const wanted = `certKey_${cn}`;
     const candidates = new Set<string>();
-    if (typeof cert.key?.uuid === 'string') candidates.add(cert.key.uuid);
+    const keyUuid = objectOf(cert.key).uuid;
+    if (typeof keyUuid === 'string') candidates.add(keyUuid);
     try {
         const res = await ctx.api.post('/api/v1/keys', { data: { itemsPerPage: 100, pageNumber: 1, filters: [{ fieldSource: 'property', fieldIdentifier: 'CKI_NAME', condition: 'EQUALS', value: wanted }] } });
         if (res.ok()) {
-            for (const row of ((await res.json()) as { cryptographicKeys?: Json[] }).cryptographicKeys ?? []) {
+            for (const row of ((await res.json()) as { cryptographicKeys?: JsonObject[] }).cryptographicKeys ?? []) {
                 if (String(row.name) === wanted) candidates.add(String(row.keyWrapperUuid ?? ''));
             }
         } else {
@@ -254,26 +271,42 @@ export async function recordCertKeySafetyNet(ctx: TeardownContext, line: LedgerL
     }
     candidates.delete('');
     const created = await certificateCreationTime(ctx.api, line.uuid);
-    // The history gives the certificate's creation time; without it the ledger line's own bound (server clock) is used, never "now".
-    const basis = created ? Date.parse(created) : Date.parse(String(line.createdAfter ?? line.at ?? ''));
-    const bound = new Date((Number.isNaN(basis) ? Date.now() : basis) - 60_000);
+    // The certificate's creation time is the server's: its history, else the server Date the ledger line kept from the create
+    // answer. With neither there is no server time to judge the key by: it is recorded with the keeping bound (never the runner's
+    // clock), so the keys step answers 'kept' and the key lands in the kept report instead of being forgotten.
+    const basis = Date.parse(String(created || line.serverAt || ''));
+    const judged = !Number.isNaN(basis);
+    if (!judged && candidates.size) ctx.warn(`certificate ${line.uuid}: no server time for its creation (no history, no server date on its ledger line); its certKey_ key is recorded to be kept, check by hand`);
+    const bound = judged ? new Date(basis - 60_000) : new Date(keepingBound());
     const recorded: string[] = [];
     for (const wrapper of candidates) {
         if (checkOwnership({ uuid: wrapper }, { lines: ctx.ledger, runId: ctx.runId }).own) continue;
         const res = await ctx.api.get(`/api/v1/keys/${wrapper}`);
         if (res.status() === 404) continue; // an item uuid (or a gone key): never deleted directly
         if (!res.ok()) { ctx.warn(`certificate ${line.uuid}: key ${wrapper} unreadable (${res.status()}); not recorded`); continue; }
-        const key = (await res.json()) as Json;
-        const others = (key.associations ?? []).filter((a: Json) => String(a?.uuid ?? a) !== line.uuid);
-        if (String(key.name) !== wanted || key.tokenInstanceUuid || others.length || !key.creationTime || Date.parse(String(key.creationTime)) < bound.getTime()) {
+        const key = (await res.json()) as JsonObject;
+        const others = keyAssociationsOf(key).filter((a) => String(objectOf(a).uuid ?? a) !== line.uuid);
+        if (String(key.name) !== wanted || key.tokenInstanceUuid || others.length || (judged && (!key.creationTime || Date.parse(String(key.creationTime)) < bound.getTime()))) {
             ctx.warn(`certificate ${line.uuid}: key ${wrapper} does not qualify for the leftover net (name ${String(key.name)}, token ${key.tokenInstanceUuid ? 'yes' : 'no'}, other associations ${others.length})`);
             continue;
         }
-        recordDerived('keys', { uuid: wrapper, name: wanted }, 'runTeardown', bound, 'certKey_ key of an own certificate, found by the teardown safety net', { certificate: line.uuid }, ctx.runId);
+        recordDerived('keys', { uuid: wrapper, name: wanted }, { spec: 'runTeardown', createdAfter: bound, note: judged ? 'certKey_ key of an own certificate, found by the teardown safety net' : 'certKey_ key of an own certificate, found by the teardown safety net; no server time, kept', parents: { certificate: line.uuid }, runId: ctx.runId });
         recorded.push(wrapper);
     }
     return recorded;
 }
+
+/**
+ * Every element of a key's `associations`, whatever its shape: an object with a uuid, or a bare uuid string. A key
+ * counts as used by any element (the object's uuid, or the string itself), so no element can be dropped by a filter on the
+ * element type. An absent or null value is no association; any other value that is not a list (a string, an object, a
+ * number) cannot be read, so it counts as one element that belongs to no certificate: the key reads as USED.
+ */
+export const keyAssociationsOf = (key: JsonObject): unknown[] => {
+    const value: unknown = key.associations;
+    if (Array.isArray(value)) return value;
+    return value === undefined || value === null ? [] : [{ unreadable: value }];
+};
 
 const certificates: TeardownHandler = {
     action: 'derived: keep unless made after createdAfter and not adopted; issued with an RA profile: revoke (v2) → wait revoked → delete; else delete',
@@ -305,15 +338,15 @@ const certificates: TeardownHandler = {
         }
         if (cert.state === 'issued') {
             // Lines written before `parents` existed fall back to the certificate's own RA profile; none → no revoke.
-            const raProfileUuid = parent(line, 'raProfile') ?? cert.raProfile?.uuid;
-            const authorityUuid = parent(line, 'authority') ?? cert.raProfile?.authorityInstanceUuid;
+            const raProfileUuid = parent(line, 'raProfile') ?? stringOf(objectOf(cert.raProfile).uuid);
+            const authorityUuid = parent(line, 'authority') ?? stringOf(objectOf(cert.raProfile).authorityInstanceUuid);
             if (raProfileUuid && authorityUuid) {
                 try {
-                    await revokeCertificate(ctx.api, { authorityUuid, raProfileUuid, certUuid: line.uuid, reason: 'unspecified' });
+                    await revokeThroughAuthority(ctx.api, { authorityUuid, raProfileUuid, certUuid: line.uuid, reason: 'unspecified' });
                 } catch (e) {
                     throw blocked(`revoke refused: ${String(e).slice(0, 300)}`, `authority ${authorityUuid}`);
                 }
-                await waitForCertificateState(ctx.api, line.uuid, 'revoked', 120_000);
+                await waitUntilRevoked(ctx.api, line.uuid, 120_000);
             }
         }
         await deleteAndVerify(ctx, { uuid: line.uuid, what: `certificate ${line.uuid}`, detailUrl: `/api/v1/certificates/${line.uuid}` });
@@ -326,7 +359,7 @@ const bulkKeyCall = (ctx: TeardownContext, method: 'patch' | 'delete', path: str
 
 /**
  * Exactly ONE handler for every own (non-derived) token key (protocol rows): the area
- * modules have no `keys` handler of their own (protocols/protocolCa.ts, platform/keyApi.ts) — HANDLER_MODULES.keys is
+ * modules have no `keys` handler of their own (protocols/protocolCa.ts, platform/keys.ts) — HANDLER_MODULES.keys is
  * this module. Without it core refuses to delete the key's token profile ("dependent Key(s)", TokenProfileWriter.java:195-203)
  * and then the token ("Dependent Token Profiles", TokenInstanceServiceImpl.java:524-537), so a protocol-CA run would
  * leave key + token profile + token behind. Core's `DELETE /v1/keys` (CryptographicKeyServiceImpl.java:615-645) destroys
@@ -369,11 +402,12 @@ const keys: TeardownHandler = {
                 'not provably made by this run: check it by hand');
         }
         const inToken = !!key.tokenInstanceUuid;
-        const createdByUs = derivedDeletable(line, key.creationTime);
-        const used = (key.associations?.length ?? 0) > 0;
+        const createdByUs = derivedDeletable(line, stringOf(key.creationTime));
+        const associationCount = keyAssociationsOf(key).length;
+        const used = associationCount > 0;
         if (inToken || !createdByUs || used) {
             ctx.warn(`kept derived key ${line.uuid}: token=${inToken ? 'yes' : 'no'} created=${key.creationTime ?? '-'} (after ${line.createdAfter}) ` +
-                `associations=${key.associations?.length ?? 0}`);
+                `associations=${associationCount}`);
             return 'kept';
         }
         await deleteAndVerify(ctx, {
@@ -403,23 +437,23 @@ const keyItems: TeardownHandler = {
     },
 };
 
+/** A value that is text, else undefined. */
+const stringOf = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
+
 const discoveries: TeardownHandler = {
-    action: 'record the certificates it onboarded as new (derived, createdAfter from the server clock), then delete the discovery',
+    action: 'record the certificates it onboarded as new (derived; createdAfter from the server clock, else the keeping bound), then delete the discovery',
     async remove(ctx, line) {
         const discovery = ctx.live!;
-        // The server's clock, never the runner's: the discovery's own start time, else the create response's Date.
-        const serverTime = discovery.startTime ?? line.serverAt;
-        let createdAfter: string;
-        if (serverTime) createdAfter = createdAfterMarker(serverTime);
-        else {
-            createdAfter = line.at;
-            ctx.warn(`discovery ${line.uuid}: no server timestamp; its onboarded certificates use the runner clock (${line.at}) as createdAfter`);
-        }
+        // The server's clock, never the runner's: the discovery's own start time, else the create response's Date. With neither,
+        // the certificates are still recorded, with the keeping bound: the certificate handler then answers 'kept' for each of
+        // them and they land in the kept report, instead of becoming untracked when the discovery goes.
+        const serverTime = stringOf(discovery.startTime) ?? line.serverAt;
+        const createdAfter = serverTime ? createdAfterMarker(serverTime) : keepingBound();
+        if (!serverTime) ctx.warn(`discovery ${line.uuid}: no server timestamp; the certificates it onboarded are recorded to be kept, check by hand`);
         const known = new Set(ctx.ledger.map((l) => l.uuid));
         for (const uuid of await listNewlyDiscoveredInventoryUuids(ctx.api, line.uuid)) {
             if (!known.has(uuid)) {
-                recordDerived('certificates', { uuid, name: `onboarded by discovery ${line.uuid}` }, 'runTeardown', createdAfter,
-                    'new in the inventory through an own discovery', { discovery: line.uuid }, ctx.runId);
+                recordDerived('certificates', { uuid, name: `onboarded by discovery ${line.uuid}` }, { spec: 'runTeardown', createdAfter, note: serverTime ? 'new in the inventory through an own discovery' : 'new in the inventory through an own discovery; no server time, kept', parents: { discovery: line.uuid }, runId: ctx.runId });
             }
         }
         await deleteAndVerify(ctx, { uuid: line.uuid, what: `discovery ${line.uuid}`, detailUrl: `/api/v1/discoveries/${line.uuid}` });
@@ -466,7 +500,7 @@ const acmeAccounts: TeardownHandler = {
         // The documented list proves the route; absence from it plus a 404 on the detail proves the account gone.
         const listResp = await ctx.api.get('/api/v1/acmeAccounts');
         if (!listResp.ok()) throw new Error(`ACME account ${line.uuid}: route or object missing (GET /api/v1/acmeAccounts answered ${listResp.status()})`);
-        const account = ((await listResp.json()) as Json[]).find((a) => a.uuid === line.uuid);
+        const account = ((await listResp.json()) as JsonObject[]).find((a) => a.uuid === line.uuid);
         if (account) {
             throw new Error(`ACME account ${line.uuid} is still listed (status ${account.status}) after its profile was removed; the API has no delete for accounts`);
         }
@@ -506,11 +540,11 @@ const users: TeardownHandler = {
     action: 'remove the user from its roles (PATCH /users/{uuid}/roles []), then delete (a 5xx detail: confirmed through the full list, core#2511)',
     async remove(ctx, line) {
         const rolesUrl = `/api/v1/users/${line.uuid}/roles`;
-        const roles = (await getJson(ctx.api, rolesUrl)) as unknown as Json[] | undefined;
+        const roles = (await getJson(ctx.api, rolesUrl)) as unknown as JsonObject[] | undefined;
         if (roles && roles.length) {
             const resp = await ctx.api.patch(rolesUrl, { data: [] });
             if (!resp.ok()) throw new Error(`Failed to remove user ${line.uuid} from its roles: ${resp.status()} - ${(await resp.text()).slice(0, 300)}`);
-            const left = (await getJson(ctx.api, rolesUrl)) as unknown as Json[] | undefined;
+            const left = (await getJson(ctx.api, rolesUrl)) as unknown as JsonObject[] | undefined;
             if (left?.length) throw new Error(`user ${line.uuid} still has ${left.length} role(s) after the roles were cleared`);
         }
         await deleteAndVerify(ctx, { uuid: line.uuid, what: `user ${line.uuid}`, detailUrl: `/api/v1/users/${line.uuid}`, type: 'users' });
@@ -537,7 +571,7 @@ export async function ungateOwnRaProfiles(ctx: TeardownContext): Promise<void> {
         await ownLive(ctx, 'approvalProfiles', ap, 'teardown.ungateOwnRaProfiles (approval profile)');
         const url = `/api/v1/approvalProfiles/${ap.uuid}/associations`;
         const read = async (): Promise<Array<{ resource: string; uuid: string }>> => {
-            const rows = (await getJson(ctx.api, url)) as unknown as Json[] | undefined;
+            const rows = (await getJson(ctx.api, url)) as unknown as JsonObject[] | undefined;
             if (!Array.isArray(rows)) throw new Error(`approval profile ${ap.uuid}: ${url} did not answer a list`);
             return rows.map((r) => ({ resource: String(r?.resource ?? ''), uuid: String(r?.uuid ?? r?.objectUuid ?? r?.resourceUuid ?? '').toLowerCase() }));
         };

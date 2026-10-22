@@ -1,11 +1,14 @@
 /**
- * lifecycleWire — loopback wire check of the lifecycle/ helpers on one stateful fake core: issue, renew, rekey, revoke,
- * register and the parked-operation probes on OWN certificates are sent with their bodies and record what they made
- * before any assertion; foreign objects and raw contexts are refused before anything leaves; the approval gate, the
- * override decisions and the teardown handlers of approvals and approval profiles send what the rules say.
+ * lifecycleWire — loopback wire check of the lifecycle helpers.
+ *
+ * WHAT: issue, renew, rekey, revoke, register and the parked-operation probes on OWN certificates are sent with their
+ *       bodies and record what they made before any assertion; foreign objects and raw contexts are refused before anything
+ *       leaves; the approval gate, the override decisions and the teardown handlers of approvals and approval profiles send
+ *       what the rules say.
+ * WHY: these helpers act on certificates and approvals of a shared tier; what they send and record must be proven offline.
+ * HOW: one stateful fake core behind a loopback server; each test asserts the requests that arrived and the ledger.
  */
-import { APIRequestContext, expect, request, test } from '@playwright/test';
-import { guardApi } from '../../utils/regression/guard/createGuard';
+import { APIRequestContext, expect, test } from '@playwright/test';
 import { GuardedApi } from '../../utils/regression/guard/types';
 import { decideApproval, dissociateApprovalProfile, ensureApprovalProfile, findApproval, openApprovalGate } from '../../utils/regression/lifecycle/approvals';
 import { cancelPending, confirmRevoke, finalizeIssue, issueExisting, observeStatesUntil, rekeyOwnCertificate, renewOwnCertificate, revokeOwnCertificate } from '../../utils/regression/lifecycle/certificateOperations';
@@ -18,7 +21,9 @@ import { ensureRunRaProfile } from '../../utils/regression/ownRaProfiles';
 import { OwnRef, readLedger, recordCreated } from '../../utils/regression/ledger/ledger';
 import { readRunState, runName, runId } from '../../utils/regression/ledger/runState';
 import type { TeardownContext } from '../../utils/regression/teardown/runTeardown';
-import { Answer, Arrived, loopbackServer, LoopbackServer } from './helpers/loopbackServer';
+import { Answer, Arrived, LoopbackServer } from './helpers/loopbackServer';
+import { FakeCore as BaseCore } from './helpers/fakeCore';
+import { registerFakeCore, rawAsGuarded } from './helpers/guardRig';
 
 const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const C_EJBCA = U(2);
@@ -32,28 +37,22 @@ const CN_ATTR = '9abaeba0-973d-11ed-a8fc-0242ac120002';
 type Json = Record<string, any>;
 
 /** A fake core that remembers what the run created and serves a fixed EJBCA-NG tier around it. */
-class FakeCore {
-    private seq = 1000;
-    readonly store = new Map<string, Json>();
+class LifecycleCore extends BaseCore {
+    protected seq = 1000;
     /** approvals by certificate uuid */
     readonly approvals = new Map<string, Json>();
     approvalProfileDeleteStatus = 204;
     associations: Json[] = [];
 
-    private next(): string {
-        this.seq += 1;
-        return `aaaaaaaa-0000-4000-8000-${String(this.seq).padStart(12, '0')}`;
-    }
-
     /** Answer without a Date header (the bound of a derived object then comes from the runner clock). */
     noDate = false;
 
-    answer = (a: Arrived): Answer | undefined => {
-        const out = this.route(a);
+    protected respond(a: Arrived): Answer | undefined {
+        const out = this.routeRequest(a);
         return out && this.noDate ? { ...out, noDate: true } : out;
-    };
+    }
 
-    private route = (a: Arrived): Answer | undefined => {
+    private routeRequest = (a: Arrived): Answer | undefined => {
         const path = a.url.split('?')[0];
         const body = a.body ? (JSON.parse(a.body) as Json) : undefined;
         if (a.method === 'GET') return this.get(path);
@@ -185,41 +184,13 @@ function cnOf(body: Json | undefined): string {
 }
 
 let server: LoopbackServer;
-let core: FakeCore;
+let core: LifecycleCore;
 let raw: APIRequestContext;
 let api: GuardedApi;
 
-const ENV_KEYS = ['REG_STATE_DIR', 'BASE_URL', 'TIER_KIND', 'REG_RUN_ID', 'REG_RA_PROFILE_NAME', 'REG_CA_CONNECTORS', 'REG_ADCS_CONNECTOR', 'API_TEARDOWN_DRY_RUN'];
-let saved: Record<string, string | undefined> = {};
-
-test.beforeAll(async () => {
-    server = await loopbackServer((a) => core.answer(a));
-});
-
-test.afterAll(async () => {
-    await server.close();
-});
-
-test.beforeEach(async ({}, testInfo) => {
-    saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
-    for (const k of ENV_KEYS) delete process.env[k];
-    process.env.REG_STATE_DIR = testInfo.outputPath('state');
-    process.env.BASE_URL = `${server.origin}/administrator/`;
-    process.env.TIER_KIND = 'shared';
-    process.env.REG_RUN_ID = runId();
-    process.env.REG_CA_CONNECTORS = 'EJBCA-NG-Connector';
-    core = new FakeCore();
-    server.reset();
-    raw = await request.newContext({ baseURL: process.env.BASE_URL, extraHTTPHeaders: { Authorization: 'Bearer SECRET-TOKEN' } });
-    api = guardApi(raw);
-});
-
-test.afterEach(async () => {
-    await api.dispose();
-    for (const [k, v] of Object.entries(saved)) {
-        if (v === undefined) delete process.env[k];
-        else process.env[k] = v;
-    }
+registerFakeCore(() => core, (rig) => ({ server, raw, api } = rig), { env: { REG_CA_CONNECTORS: 'EJBCA-NG-Connector' }, clear: ['REG_RA_PROFILE_NAME', 'REG_ADCS_CONNECTOR'] });
+test.beforeEach(() => {
+    core = new LifecycleCore();
 });
 
 const wire = () => server.mutations().map((a) => `${a.method} ${a.url}`);
@@ -244,14 +215,14 @@ test('issue, renew, rekey, revoke, issue-existing and the parked-operation probe
     const issueBody = bodyOf('POST', `/api/v2/operations/authorities/${A_EJBCA}/raProfiles/${ra.uuid}/certificates`);
     expect(issueBody).toMatchObject({ format: 'pkcs10', attributes: [], customAttributes: [] });
     expect(readLedger().find((l) => l.uuid === cert.uuid)).toMatchObject({ type: 'certificates', name: cert.cn, parents: { raProfile: ra.uuid, authority: A_EJBCA } });
-    // An answer without a Date header: the bound falls back to the runner clock at the request start (never undefined).
+    // An answer without a Date header: the bound is one the teardown keeps, a day ahead of the runner clock (never undefined).
     core.noDate = true;
     const startedAt = Date.now();
     const noDate = await submitOwnCertificate(api, ra, 'T', { suffix: 'nodate' });
     core.noDate = false;
     expect(noDate.answer.serverAt).toBeUndefined();
-    expect(Date.parse(noDate.createdAfter!)).toBeLessThanOrEqual(startedAt + 1000);
-    expect(Date.parse(noDate.createdAfter!)).toBeGreaterThan(startedAt - 120_000);
+    expect(Date.parse(noDate.createdAfter!)).toBeGreaterThan(startedAt + 3_600_000);
+    expect(Date.parse(noDate.createdAfter!)).toBeLessThanOrEqual(Date.now() + 25 * 3_600_000);
     server.reset();
 
     const csr = csrFromKey(cert.keys, cert.cn, cert.sans);
@@ -305,7 +276,7 @@ test('the same calls on a FOREIGN certificate are refused by the helper (ownersh
     expect(await refusal(issueExisting(api, foreign, ra, {}))).toBe('ownership');
     expect(await refusal(api.post(`/api/v2/operations/authorities/${A_EJBCA}/raProfiles/${ra.uuid}/certificates/${FOREIGN_CERT}/renew`, { data: { attributes: [] } }))).toBe('ownership');
     expect(await refusal(decideApproval(api, { uuid: FOREIGN_APPROVAL, name: 'x', kind: 'own' }, 'approve'))).toBe('ownership');
-    expect(await refusal(renewOwnCertificate(raw as unknown as GuardedApi, foreign, ra, 'T', {}))).toBe('ownership');
+    expect(await refusal(renewOwnCertificate(rawAsGuarded(raw), foreign, ra, 'T', {}))).toBe('ownership');
     expect(wire()).toEqual([]);
 });
 
@@ -419,9 +390,9 @@ test('teardown handlers: a Pending approval is rejected through the override pat
 test('a raw context handed to a mutating lifecycle helper is refused (not-guarded); nothing is sent', async () => {
     const ra = await ensureRunRaProfile(api, 'T');
     server.reset();
-    expect(await refusal(submitOwnCertificate(raw as unknown as GuardedApi, ra, 'T'))).toBe('not-guarded');
-    expect(await refusal(ensureApprovalProfile(raw as unknown as GuardedApi, 'T'))).toBe('not-guarded');
-    recordCreated('certificates', { uuid: U(77), name: runName('x') }, 'T');
-    expect(await refusal(revokeOwnCertificate(raw as unknown as GuardedApi, { uuid: U(77), name: runName('x'), kind: 'own' }, ra))).not.toBe('sent');
+    expect(await refusal(submitOwnCertificate(rawAsGuarded(raw), ra, 'T'))).toBe('not-guarded');
+    expect(await refusal(ensureApprovalProfile(rawAsGuarded(raw), 'T'))).toBe('not-guarded');
+    recordCreated('certificates', { uuid: U(77), name: runName('x') }, { spec: 'T' });
+    expect(await refusal(revokeOwnCertificate(rawAsGuarded(raw), { uuid: U(77), name: runName('x'), kind: 'own' }, ra))).not.toBe('sent');
     expect(wire()).toEqual([]);
 });

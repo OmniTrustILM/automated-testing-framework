@@ -1,8 +1,13 @@
 /**
- * CertificateDetailPage — the detail page of one certificate (`#/certificates/detail/<uuid>`): the toolbar of the
- * `Certificate Properties` / `CSR Properties` widget, the state badge, the Registration widget and the rows of the
- * Related Certificates and Approvals tabs. Asserts never navigate: the spec opens the page or tab first. The dialogs the
- * toolbar opens are their own classes (RenewDialog, RekeyDialog, RevokeDialog, CompleteRegistrationDialog).
+ * CertificateDetailPage — the detail page of one certificate.
+ *
+ * WHAT: the detail page of one certificate: the properties widget and its toolbar, the state badge, the
+ *       Registration widget and the rows of the Related Certificates and Approvals tabs.
+ * WHY: REG-CERT-07 / 10 / 12 / 16 read the state and the toolbar decision table after each lifecycle action.
+ *       Asserts never navigate: the spec opens the page or tab first. The dialogs the toolbar opens are their own
+ *       classes.
+ * HOW: tabs by URL slug (no click race); `openFresh` reloads the Details tab because the page a create leaves open does not
+ *       poll; the widget by its heading; toolbar buttons through the shared icon map; rows by data id.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { Logger } from '../utils/Logger';
@@ -23,29 +28,42 @@ export class CertificateDetailPage {
     readonly page: Page;
     readonly main: Locator;
     readonly tablist: Locator;
+    /** The properties widget of the detail page (`Certificate Properties`, or `CSR Properties` before issuance). */
+    readonly propertiesWidget: Locator;
+    /** The state label shown in the Details tab (`certificate-status` of the `certState` row). */
+    readonly stateBadge: Locator;
+    readonly registrationWidget: Locator;
 
     constructor(page: Page) {
         this.page = page;
         this.main = page.locator('main');
         this.tablist = page.getByRole('tablist');
+        this.propertiesWidget = widgetTitled(this.main, /^(Certificate|CSR) Properties$/);
+        this.stateBadge = this.main.locator('tr[data-id="certState"] [data-testid="certificate-status"]');
+        this.registrationWidget = widgetTitled(this.main, 'Registration');
     }
 
-    /** Open a detail tab by its URL slug (`?tab=<slug>`): no race with a click. */
-    async goToDetailTab(uuid: string, tab: DetailTab): Promise<void> {
-        logger.info(`Opening certificate ${uuid} tab ${tab}`);
-        await this.page.goto(`/administrator/#/certificates/detail/${uuid}?tab=${slug(tab)}`);
+    /** Opens the detail page of a certificate, on a tab when given (by its URL slug `?tab=<slug>`: no race with a click). */
+    async goToDetail(uuid: string, options: { tab?: DetailTab } = {}): Promise<void> {
+        logger.info(`Opening certificate ${uuid}${options.tab ? ` tab ${options.tab}` : ''}`);
+        await this.page.goto(`/administrator/#/certificates/detail/${uuid}${options.tab ? `?tab=${slug(options.tab)}` : ''}`);
         await expect(this.main).toBeVisible();
-        await expect(this.tablist.getByRole('tab', { name: tab, exact: true })).toHaveAttribute('aria-selected', 'true');
+        if (options.tab) await expect(this.tablist.getByRole('tab', { name: options.tab, exact: true })).toHaveAttribute('aria-selected', 'true');
+    }
+
+    /**
+     * Opens the Details tab of a certificate after a reload: the detail page that a create or a lifecycle dialog leaves open does not
+     * poll, so the state it shows is the one from before.
+     */
+    async openFresh(uuid: string): Promise<void> {
+        await this.goToDetail(uuid);
+        await this.page.reload();
+        await this.openTab('Details');
     }
 
     /** Click a tab of the page that is open. */
     async openTab(tab: DetailTab): Promise<void> {
         await this.tablist.getByRole('tab', { name: tab, exact: true }).click();
-    }
-
-    /** The properties widget of the detail page (`Certificate Properties`, or `CSR Properties` before issuance). */
-    get propertiesWidget(): Locator {
-        return widgetTitled(this.main, /^(Certificate|CSR) Properties$/);
     }
 
     /** The toolbar buttons of the properties widget, by action name. */
@@ -58,18 +76,9 @@ export class CertificateDetailPage {
         await expectButtons(this.toolbar, expected, 'toolbar');
     }
 
-    /** The state label shown in the Details tab (`certificate-status` of the `certState` row). */
-    get stateBadge(): Locator {
-        return this.main.locator('tr[data-id="certState"] [data-testid="certificate-status"]');
-    }
-
     /** The Details tab (open) shows the state label. */
     async assertState(label: string): Promise<void> {
         await expect(this.stateBadge).toHaveText(label);
-    }
-
-    get registrationWidget(): Locator {
-        return widgetTitled(this.main, 'Registration');
     }
 
     registrationRow(row: 'state' | 'expires' | 'failedAttempts'): Locator {

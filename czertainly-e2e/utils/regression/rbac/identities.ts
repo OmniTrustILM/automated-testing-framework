@@ -1,12 +1,20 @@
 /**
- * identities — who is calling: the shared admin test user (the `api` fixture), throwaway own users that never sign in, no
- * credentials, and the dedicated second identity (REG_RESTRICTED_USERNAME / REG_RESTRICTED_PASSWORD; rows that need it skip
- * with `secondIdentityBlocker`, and no wrong-password attempt is ever made). `callAs` sends one request with another identity's
- * token through the GUARDED context; `parseProfile` reads `GET /v1/auth/profile` (user fields top level, permissions below).
+ * identities — who is calling.
+ *
+ * WHAT: who is calling: the shared admin test user (the `api` fixture), throwaway own users that never sign in, no
+ *       credentials, and the dedicated second identity (REG_RESTRICTED_USERNAME / REG_RESTRICTED_PASSWORD; rows that need it skip
+ *       with `secondIdentityBlocker`, and no wrong-password attempt is ever made). `callAs` sends one request with another identity's
+ *       token through the GUARDED context; `parseProfile` reads `GET /v1/auth/profile` (user fields top level, permissions below).
+ * WHY: Permission rows need the admin, a throwaway user and a dedicated second identity, and must never guess a password.
+ * HOW: `callAs` sends one request with another identity's token through the guarded context, `parseProfile` reads the profile, and a missing second identity is a named skip.
  */
 import { APIRequestContext, expect, Page } from '@playwright/test';
+import { ApiAnswer, answerOf } from '../apiReads';
 import type { GuardedApi } from '../guard/types';
 import { isLocalTier } from '../tier/kind';
+import { settings } from '../run/settings';
+import type { JsonObject } from '../json';
+import { rowsOf } from '../json';
 
 export interface Credentials {
     username: string;
@@ -19,14 +27,13 @@ export const SECOND_IDENTITY_REQUEST =
 
 /** DED from the environment, or undefined when either variable is unset. */
 export function restrictedIdentity(env: NodeJS.ProcessEnv = process.env): Credentials | undefined {
-    const username = env.REG_RESTRICTED_USERNAME?.trim();
-    const password = env.REG_RESTRICTED_PASSWORD;
+    const { restrictedUsername: username, restrictedPassword: password } = settings(env);
     return username && password ? { username, password } : undefined;
 }
 
 /**
  * Why a row that needs the second identity cannot run, or undefined. The skip reason names the request. Guard of the
- * plan: the DED username must differ from the admin's (case-insensitively) — the suite disables, re-roles
+ * Guard: the DED username must differ from the admin's (case-insensitively) — the suite disables, re-roles
  * and signs out DED, never the admin.
  */
 export function secondIdentityBlocker(adminUsername: string, env: NodeJS.ProcessEnv = process.env): string | undefined {
@@ -51,7 +58,7 @@ export function keycloakLocalBlocker(authMode: string, env: NodeJS.ProcessEnv = 
 
 // ------------------------------------------------------------------ the profile
 
-export interface ResourceActions {
+interface ResourceActions {
     resource: string;
     actions: string[];
 }
@@ -65,14 +72,12 @@ export interface Profile {
     allowedActions: ResourceActions[];
 }
 
-type Json = Record<string, any>;
-
 /** Parse `GET /v1/auth/profile`; throws naming the missing part when the body is not a `UserProfileDetailDto`. */
 export function parseProfile(body: unknown): Profile {
-    const b = body as Json | undefined;
+    const b = body as JsonObject | undefined;
     if (!b || typeof b !== 'object') throw new Error('the profile is not a JSON object');
     if (typeof b.username !== 'string' || !b.username) throw new Error('the profile has no top-level `username` (UserProfileDetailDto; the ledger text "user.username" is the pre-2.x shape)');
-    const perms = b.permissions as Json | undefined;
+    const perms = b.permissions as JsonObject | undefined;
     if (!perms || !Array.isArray(perms.allowedListings) || !Array.isArray(perms.allowedActions)) {
         throw new Error('the profile has no `permissions.allowedListings` / `permissions.allowedActions`');
     }
@@ -80,9 +85,9 @@ export function parseProfile(body: unknown): Profile {
         uuid: String(b.uuid),
         username: b.username,
         enabled: typeof b.enabled === 'boolean' ? b.enabled : undefined,
-        roles: Array.isArray(b.roles) ? b.roles.map((r: Json) => ({ uuid: String(r.uuid), name: String(r.name) })) : [],
+        roles: Array.isArray(b.roles) ? b.roles.map((r: JsonObject) => ({ uuid: String(r.uuid), name: String(r.name) })) : [],
         allowedListings: perms.allowedListings.map(String),
-        allowedActions: perms.allowedActions.map((a: Json) => ({ resource: String(a.resource), actions: (a.actions ?? []).map(String) })),
+        allowedActions: rowsOf(perms.allowedActions).map((a) => ({ resource: String(a.resource), actions: ((a.actions ?? []) as unknown[]).map(String) })),
     };
 }
 
@@ -105,24 +110,6 @@ export async function assertNotCaller(api: APIRequestContext, targetUuid: string
 
 // ------------------------------------------------------------------ one request with another identity
 
-export interface Answered {
-    status: number;
-    contentType: string;
-    text: string;
-    json: any;
-    elapsedMs: number;
-}
-
-/** Parse a body as JSON when it is, else undefined (a 401 may carry no body). */
-function jsonOrUndefined(text: string): any {
-    if (!text.trim()) return undefined;
-    try {
-        return JSON.parse(text);
-    } catch {
-        return undefined;
-    }
-}
-
 export type CallMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 export interface CallOptions {
@@ -137,7 +124,7 @@ export interface CallOptions {
  * identity header (the context's own credentials, or none on a credential-less context). Never throws on a refusal
  * status; the caller asserts it.
  */
-export async function callWithAuthorization(api: GuardedApi, authorization: string | undefined, method: CallMethod, url: string, opts: CallOptions = {}): Promise<Answered> {
+export async function callWithAuthorization(api: GuardedApi, authorization: string | undefined, method: CallMethod, url: string, opts: CallOptions = {}): Promise<ApiAnswer> {
     const started = Date.now();
     const res = await api.fetch(url, {
         method,
@@ -147,12 +134,11 @@ export async function callWithAuthorization(api: GuardedApi, authorization: stri
         ...(opts.params === undefined ? {} : { params: opts.params }),
         failOnStatusCode: false,
     });
-    const text = await res.text();
-    return { status: res.status(), contentType: res.headers()['content-type'] ?? '', text, json: jsonOrUndefined(text), elapsedMs: Date.now() - started };
+    return answerOf(res, started);
 }
 
 /** One request as the identity that owns `token` (`Bearer <token>`); `undefined`: the context's own identity. */
-export async function callAs(api: GuardedApi, token: string | undefined, method: CallMethod, url: string, data?: unknown): Promise<Answered> {
+export async function callAs(api: GuardedApi, token: string | undefined, method: CallMethod, url: string, data?: unknown): Promise<ApiAnswer> {
     return callWithAuthorization(api, token === undefined ? undefined : `Bearer ${token}`, method, url, { data });
 }
 
@@ -173,10 +159,10 @@ export interface AnonymousTarget {
  * client address). Local stack: a request with no credentials from a LOOPBACK address is the `localhost` system user
  * (auth-rbac A10, `PlatformAuthenticationFilter`), and in header mode the dev proxy adds the admin certificate to every
  * /api call, so the call goes to the core's own port (REG_LOCAL_CORE_URL) with an `X-Forwarded-For` from the
- * documentation range (core reads that header first: `AuthHelper.java:304-326`), which makes the caller not loopback.
+ * documentation range (core reads that header first: `AuthHelper.java`), which makes the caller not loopback.
  */
 export function anonymousTarget(env: NodeJS.ProcessEnv = process.env): AnonymousTarget {
-    const core = env.REG_LOCAL_CORE_URL?.replace(/\/+$/, '');
+    const core = settings(env).localCoreUrl?.replace(/\/+$/, '');
     if (isLocalTier(env) && core) return { base: core, headers: { 'X-Forwarded-For': DOCUMENTATION_ADDRESS, Accept: 'application/json' } };
     return { base: '', headers: { Accept: 'application/json' } };
 }
@@ -199,7 +185,7 @@ export function leaksInternals(text: string): string | undefined {
  * TTL on the instances that did not process the change (documented, caching.md).
  */
 export function coreReplicas(env: NodeJS.ProcessEnv = process.env): number {
-    const n = Number(env.REG_CORE_REPLICAS ?? '1');
+    const n = Number(settings(env).coreReplicas);
     return Number.isInteger(n) && n >= 1 ? n : 1;
 }
 

@@ -1,24 +1,14 @@
 /**
- * Status-and-body helpers of the certificate search API: `send` never throws on a status and returns a `Probe`, so a
+ * Status-and-body helpers of the certificate search API: `send` never throws on a status and returns an `ApiAnswer`, so a
  * negative can assert the status and the body; filter and sort builders, the absolute condition sets of each field type,
  * the catalogue reader and paged search reads. Every function that can send a non-GET takes the guarded `api` fixture.
  */
 import type { APIRequestContext } from '@playwright/test';
 import type { GuardedApi } from '../guard/types';
-
-export type Json = Record<string, any>;
+import { ApiAnswer, answerOf } from '../apiReads';
+import type { JsonObject } from '../json';
 
 // ------------------------------------------------------------------ one request, never throwing on a status
-
-/** What a request answered: status, headers (lower-cased), raw text, parsed JSON (undefined when empty or not JSON), duration. */
-export interface Probe {
-    status: number;
-    contentType: string;
-    headers: Record<string, string>;
-    text: string;
-    json: unknown;
-    ms: number;
-}
 
 export interface SendOptions {
     data?: unknown;
@@ -29,34 +19,22 @@ export interface SendOptions {
     timeout?: number;
 }
 
-async function toProbe(res: { status(): number; headers(): Record<string, string>; text(): Promise<string> }, started: number): Promise<Probe> {
-    const text = await res.text();
-    let json: unknown;
-    try {
-        json = text ? JSON.parse(text) : undefined;
-    } catch {
-        json = undefined;
-    }
-    const headers = res.headers();
-    return { status: res.status(), contentType: headers['content-type'] ?? '', headers, text, json, ms: Date.now() - started };
-}
-
 /** One request through the guarded context; the status never throws. The guard may still refuse the request (OwnObjectViolation). */
-export async function send(api: GuardedApi, method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, opts: SendOptions = {}): Promise<Probe> {
+export async function send(api: GuardedApi, method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, opts: SendOptions = {}): Promise<ApiAnswer> {
     const started = Date.now();
     const res = await api.fetch(url, { method, ...opts });
-    return toProbe(res, started);
+    return answerOf(res, started);
 }
 
 /** A GET through any context (the `request` fixture without credentials, or a guarded one); the status never throws. */
-export async function readProbe(api: APIRequestContext, url: string, opts: { headers?: Record<string, string>; params?: Record<string, string | number | boolean>; timeout?: number } = {}): Promise<Probe> {
+export async function readAnswer(api: APIRequestContext, url: string, opts: { headers?: Record<string, string>; params?: Record<string, string | number | boolean>; timeout?: number } = {}): Promise<ApiAnswer> {
     const started = Date.now();
     const res = await api.get(url, { failOnStatusCode: false, ...opts });
-    return toProbe(res, started);
+    return answerOf(res, started);
 }
 
 /** The JSON body of a probe that must be a 2xx; else throws with the status and the first 300 characters. */
-export function readJsonOk<T = any>(p: Probe, what: string): T {
+export function readJsonOk<T = any>(p: ApiAnswer, what: string): T {
     if (p.status < 200 || p.status > 299) throw new Error(`${what}: answered ${p.status} ${p.text.slice(0, 300)}`);
     return p.json as T;
 }
@@ -101,24 +79,24 @@ export const isolation = (prefix: string): Filter => propertyFilter('COMMON_NAME
 export const CERTIFICATES = '/api/v1/certificates';
 
 /** `POST /api/v1/certificates` (or another search endpoint) with a body; status and body never throw. */
-export async function searchRaw(api: GuardedApi, body: SearchBody | Json, url: string = CERTIFICATES): Promise<Probe> {
+export async function searchRaw(api: GuardedApi, body: SearchBody | JsonObject, url: string = CERTIFICATES): Promise<ApiAnswer> {
     return send(api, 'POST', url, { data: body });
 }
 
 /** The rows of a list answer (`certificates`, `keys`, `discoveries`, … — the member holding the array), else []. */
-export function rowsOf(body: unknown, member?: string): Json[] {
-    if (Array.isArray(body)) return body as Json[];
+export function rowsOf(body: unknown, member?: string): JsonObject[] {
+    if (Array.isArray(body)) return body as JsonObject[];
     if (body && typeof body === 'object') {
-        const o = body as Json;
+        const o = body as JsonObject;
         if (member && Array.isArray(o[member])) return o[member];
         const arrays = Object.entries(o).filter(([, v]) => Array.isArray(v));
-        if (arrays.length === 1) return arrays[0][1] as Json[];
+        if (arrays.length === 1) return arrays[0][1] as JsonObject[];
     }
     return [];
 }
 
 export interface PageAnswer {
-    rows: Json[];
+    rows: JsonObject[];
     totalItems: number;
     totalPages: number;
     pageNumber: number;
@@ -128,7 +106,7 @@ export interface PageAnswer {
 /** `POST` a certificate search and require 200: the page as typed numbers (a non-200 throws with the status and body). */
 export async function searchPage(api: GuardedApi, body: SearchBody, opts: { url?: string; member?: string } = {}): Promise<PageAnswer> {
     const p = await searchRaw(api, body, opts.url ?? CERTIFICATES);
-    const json = readJsonOk<Json>(p, `search ${JSON.stringify(body).slice(0, 200)}`);
+    const json = readJsonOk<JsonObject>(p, `search ${JSON.stringify(body).slice(0, 200)}`);
     return {
         rows: rowsOf(json, opts.member ?? 'certificates'),
         totalItems: Number(json.totalItems),
@@ -139,7 +117,7 @@ export async function searchPage(api: GuardedApi, body: SearchBody, opts: { url?
 }
 
 /** Every page of a search, 1-based, with a page-count cap (the isolation filter keeps it small). */
-export async function searchAllRows(api: GuardedApi, body: SearchBody, opts: { url?: string; member?: string; pageSize?: number; maxPages?: number } = {}): Promise<Json[]> {
+export async function searchAllRows(api: GuardedApi, body: SearchBody, opts: { url?: string; member?: string; pageSize?: number; maxPages?: number } = {}): Promise<JsonObject[]> {
     const pageSize = opts.pageSize ?? 100;
     const first = await searchPage(api, { ...body, itemsPerPage: pageSize, pageNumber: 1 }, opts);
     const rows = [...first.rows];
@@ -150,7 +128,7 @@ export async function searchAllRows(api: GuardedApi, body: SearchBody, opts: { u
 }
 
 /** The uuids of rows, sorted: the unit of a set comparison. */
-export const uuidSet = (rows: Json[]): string[] => rows.map((r) => String(r.uuid)).sort();
+export const uuidSet = (rows: JsonObject[]): string[] => rows.map((r) => String(r.uuid)).sort();
 
 // ------------------------------------------------------------------ the searchable-fields catalogue (GET .../search)
 

@@ -1,10 +1,14 @@
 /**
- * preRegistration — platform-level pre-registration of own certificates (`…/certificates/register`, with or without a
- * challenge), the registration block of a detail, the registration and validation settings of the tier (read, never
- * set), and the re-validation of an own certificate. The placeholder a register makes is recorded before any assertion.
+ * preRegistration — platform-level pre-registration of own certificates.
+ *
+ * WHAT: platform-level pre-registration of own certificates (`…/certificates/register`, with or without a
+ *       challenge), the registration block of a detail, the registration and validation settings of the tier (read, never
+ *       set), and the re-validation of an own certificate. The placeholder a register makes is recorded before any assertion.
+ * WHY: A placeholder certificate registered with or without a challenge must be recorded and completed like any own certificate.
+ * HOW: The register call, the registration block of a detail, the registration and validation settings (read, never set) and re-validation; the placeholder is recorded before any assertion.
  */
 import type { APIRequestContext } from '@playwright/test';
-import { apiJson, getCertificate } from '../apiReads';
+import { apiJson, getCertificate, ApiAnswer } from '../apiReads';
 import { requestVersion } from '../attributeVersion';
 import type { GuardedApi } from '../guard/types';
 import { Logger } from '../../Logger';
@@ -13,10 +17,10 @@ import type { RaLike } from '../ownRaProfiles';
 import { isJsonObject, JsonObject } from '../json';
 import { OwnRef, recordCreated } from '../ledger/ledger';
 import { runId } from '../ledger/runState';
-import { timestampSuffix } from '../text';
 import { opsBase } from './certificateLabels';
 import { certificateName } from '../ownCertificates';
-import { createdAfterOfAnswer, RawAnswer, sendRaw } from './rawAnswers';
+import { createdAfterOfAnswer, sendRaw } from './rawAnswers';
+import { uniqueSuffix } from '../text';
 
 const logger = new Logger('Lifecycle');
 
@@ -39,14 +43,14 @@ interface PlatformCertificateSettings {
 // ------------------------------------------------------------------ register and complete (pre-registration)
 
 /** A challenge secret: 12–255 printable ASCII; run-prefixed so a log line never looks like a real secret. */
-export const newChallenge = (): string => `${runId()}-s-${Math.random().toString(36).slice(2, 10)}${timestampSuffix()}`;
+export const newChallenge = (): string => `${runId()}-s-${Math.random().toString(36).slice(2, 10)}${uniqueSuffix()}`;
 
 /** The platform default CN definition (core `CsrAttributes`, a fixed uuid). */
 export const DEFAULT_CN_DEFINITION: Readonly<AttributeDefinitionRef> = { uuid: '9abaeba0-973d-11ed-a8fc-0242ac120002', name: 'commonName', contentType: 'string', version: 'v3' };
 
 /**
  * Pure: the request attribute carrying `cn` for a CN definition. A v3 request attribute's content items are polymorphic
- * on their own `contentType` (interfaces BaseAttributeContentV3.java:20-34, no default subtype), so every v3 item carries
+ * on their own `contentType` (interfaces BaseAttributeContentV3.java, no default subtype), so every v3 item carries
  * it; without it core answers 400 "Unable to read HTTP message". A v2 item has no such member.
  */
 export function cnAttributeOf(def: AttributeDefinitionRef, cn: string): JsonObject {
@@ -60,7 +64,7 @@ export function cnAttributeOf(def: AttributeDefinitionRef, cn: string): JsonObje
  * (`GET /v1/certificates/csr/attributes?raProfileUuid=`), as a request attribute carrying `cn`. Without the set (an
  * RA profile the suite may not query) the platform default definition is used.
  */
-export async function cnRequestAttribute(api: APIRequestContext, ra: Pick<RaLike, 'uuid'>, cn: string): Promise<JsonObject> {
+export async function commonNameRequestAttribute(api: APIRequestContext, ra: Pick<RaLike, 'uuid'>, cn: string): Promise<JsonObject> {
     let def: AttributeDefinitionRef = DEFAULT_CN_DEFINITION;
     try {
         const defs = await apiJson<AttributeDefinitionRef[]>(api, 'GET', `/api/v1/certificates/csr/attributes?raProfileUuid=${encodeURIComponent(ra.uuid)}`);
@@ -85,7 +89,7 @@ export interface RegisterOptions {
 }
 
 export interface Registration {
-    answer: RawAnswer;
+    answer: ApiAnswer;
     cn: string;
     secret?: string;
     /** The placeholder the platform made (recorded), when the answer carried a uuid. */
@@ -100,13 +104,13 @@ export interface Registration {
  */
 export async function registerOwnCertificate(api: GuardedApi, ra: RaLike, spec: string, opts: RegisterOptions = {}): Promise<Registration> {
     const cn = opts.cn ?? certificateName(opts.suffix ?? 'reg');
-    const body: JsonObject = { csrAttributes: [await cnRequestAttribute(api, ra, cn)], attributes: [], customAttributes: [], ...(opts.body ?? {}) };
+    const body: JsonObject = { csrAttributes: [await commonNameRequestAttribute(api, ra, cn)], attributes: [], customAttributes: [], ...(opts.body ?? {}) };
     if (opts.secret !== undefined) body.authorizationSecret = opts.secret;
     if (opts.expiresAt !== undefined) body.expiresAt = opts.expiresAt;
     const answer = await sendRaw(api, 'POST', `${opsBase(ra)}/certificates/register`, body);
     const uuid = isJsonObject(answer.json) ? answer.json.uuid : undefined;
     const cert = typeof uuid === 'string'
-        ? recordCreated('certificates', { uuid, name: cn }, spec, opts.note ?? `pre-registered via API${opts.secret ? ' with a challenge' : ''}`, { raProfile: ra.uuid, authority: ra.authorityUuid })
+        ? recordCreated('certificates', { uuid, name: cn }, { spec, note: opts.note ?? `pre-registered via API${opts.secret ? ' with a challenge' : ''}`, parents: { raProfile: ra.uuid, authority: ra.authorityUuid } })
         : undefined;
     return { answer, cn, secret: opts.secret, cert, createdAfter: createdAfterOfAnswer(answer) };
 }

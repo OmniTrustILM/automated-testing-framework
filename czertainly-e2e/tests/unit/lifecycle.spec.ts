@@ -7,15 +7,11 @@ import { expect, test } from '@playwright/test';
 import { approvalStatusLabel, recipientComments, sameApprovalStatus } from '../../utils/regression/lifecycle/approvals';
 import { EVENT_CODES, historyOrderProblem, sortedHistory } from '../../utils/regression/lifecycle/certificateHistory';
 import { approvalClosedText, opsBase, REVOKE_REASONS, revokedText, STATE_LABELS, stateGuardText } from '../../utils/regression/lifecycle/certificateLabels';
-import { specialCharCn } from '../../utils/regression/ownCertificates';
 import { isSubsequenceOf } from '../../utils/regression/lifecycle/certificateOperations';
 import { cnAttributeOf, DEFAULT_CN_DEFINITION, msBetween, newChallenge } from '../../utils/regression/lifecycle/preRegistration';
 import { leaksIn, messageOf, messagesOf } from '../../utils/regression/lifecycle/rawAnswers';
 import { csrWithEmailSan, csrInfo } from '../../utils/regression/pkiBuilders';
-import { carriesRunPrefix } from '../../utils/regression/ledger/ownership';
-import { runName, runId } from '../../utils/regression/ledger/runState';
-
-const answer = (status: number, text: string) => ({ status, text, startedAt: new Date(0), elapsedMs: 1 });
+import { fakeAnswer } from './helpers/fakeAnswer';
 
 test('isSubsequenceOf: the observed state walk must appear in the expected order, nothing else', () => {
     const walk = ['requested', 'pending_issue', 'issued'];
@@ -79,10 +75,10 @@ test('rule texts: state guards use the state label, the nine revoke reasons carr
 });
 
 test('raw-answer readers: a 422 is a string array, a 400 / 404 is {message}; anything else names the shape', () => {
-    expect(messagesOf(answer(422, '["Certificate is already revoked. Certificate: x"]'))).toEqual(['Certificate is already revoked. Certificate: x']);
-    expect(() => messagesOf(answer(422, '{"message":"x"}'))).toThrow(/JSON array of non-empty strings/);
-    expect(messageOf(answer(400, '{"message":"Failed to submit certificate request"}'))).toBe('Failed to submit certificate request');
-    expect(() => messageOf(answer(400, '["x"]'))).toThrow(/\{"message": "<text>"\}/);
+    expect(messagesOf(fakeAnswer(422, '["Certificate is already revoked. Certificate: x"]'))).toEqual(['Certificate is already revoked. Certificate: x']);
+    expect(() => messagesOf(fakeAnswer(422, '{"message":"x"}'))).toThrow(/JSON array of non-empty strings/);
+    expect(messageOf(fakeAnswer(400, '{"message":"Failed to submit certificate request"}'))).toBe('Failed to submit certificate request');
+    expect(() => messageOf(fakeAnswer(400, '["x"]'))).toThrow(/\{"message": "<text>"\}/);
     expect(recipientComments({ approvalSteps: [{ approvalStepRecipients: [{ comment: 'Approval flow overridden' }, { comment: null }] }] })).toEqual(['Approval flow overridden']);
     expect(recipientComments({})).toEqual([]);
 });
@@ -110,14 +106,6 @@ test('csrWithEmailSan: a DNS name and an rfc822Name next to the CN; newChallenge
         expect(s).toMatch(/^qa-/);
     }
     expect(msBetween('2026-10-14T10:00:00Z', new Date('2026-10-14T10:05:00Z'))).toBe(5 * 60 * 1000);
-});
-
-test('the API-CERT-21[rfc4514] CN starts with the run prefix (the teardown\'s ownership rule), the special characters come after it; a leading space would not be own', () => {
-    const cn = specialCharCn(runName('c21dn-x'));
-    expect(cn.startsWith(`${runId()}-`)).toBe(true);
-    expect(cn).toMatch(/, O= QA\+Team$/);
-    expect(carriesRunPrefix(cn, runId(), 'certificates')).toBe(true);
-    expect(carriesRunPrefix(` ${cn}`, runId(), 'certificates'), 'the old shape (leading space) is refused by the ownership rule').toBe(false);
 });
 
 // ------------------------------------------------------------------ approval status (lifecycle approvals)

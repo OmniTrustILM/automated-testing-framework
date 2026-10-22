@@ -1,7 +1,11 @@
 /**
- * cryptoAlgorithmCases — the key algorithm cases as data: per provider what must be offered, must not be offered, and
- * which cells the tests run (generate, sign / verify, encrypt / decrypt), with the software cryptography provider's
- * attribute names. Pure data and functions; the live attribute definitions are still read before a key is made.
+ * cryptoAlgorithmCases — the key algorithm cases as data.
+ *
+ * WHAT: the key algorithm cases as data: per provider what must be offered, must not be offered, and
+ *       which cells the tests run (generate, sign / verify, encrypt / decrypt), with the software cryptography provider's
+ *       attribute names. Pure data and functions; the live attribute definitions are still read before a key is made.
+ * WHY: The algorithm matrix must be read as data, with the provider's names in one place.
+ * HOW: Per provider what must be offered, must not be offered and which cells run; pure, while the live attribute definitions are still read before a key is made.
  */
 
 export type Provider = 'scp-v1' | 'scp-v2' | 'pkcs11';
@@ -110,26 +114,26 @@ export function absentFamilies(provider: Provider): Family[] {
 }
 
 /** Algorithm entries that must never appear in a create-key algorithm list (software-cryptography-provider#50: Unknown / AES / deprecated names). */
-export const NEVER_OFFERED_ALGORITHMS: readonly string[] = ['Unknown', 'AES', 'CRYSTALS-Dilithium', 'SPHINCS+'];
+const NEVER_OFFERED_ALGORITHMS: readonly string[] = ['Unknown', 'AES', 'CRYSTALS-Dilithium', 'SPHINCS+'];
 
 /** The must-offer algorithm list per provider (SoftHSM behind PKCS#11 reports RSA and ECDSA only, ilm#415). */
-export const MUST_OFFER_ALGORITHMS: Readonly<Record<Provider, readonly Algorithm[]>> = {
+const MUST_OFFER_ALGORITHMS: Readonly<Record<Provider, readonly Algorithm[]>> = {
     'scp-v1': ['RSA', 'ECDSA', 'ML-DSA', 'FALCON', 'SLH-DSA', 'ML-KEM'],
     'scp-v2': ['RSA', 'ECDSA', 'ML-DSA', 'FALCON', 'SLH-DSA', 'ML-KEM'],
     pkcs11: ['RSA', 'ECDSA'],
 };
 
 /** The must-not-offer algorithm list per provider. */
-export const MUST_NOT_OFFER_ALGORITHMS: Readonly<Record<Provider, readonly Algorithm[]>> = {
+const MUST_NOT_OFFER_ALGORITHMS: Readonly<Record<Provider, readonly Algorithm[]>> = {
     'scp-v1': [],
     'scp-v2': [],
     pkcs11: ['FALCON'],
 };
 
 /** Sign digests executed on RSA / ECDSA (v2 lists hold SHA-2 only, never MD5 / SHA-1 — API-KEY-15). */
-export const SIGN_DIGESTS = ['SHA-256', 'SHA-384', 'SHA-512'] as const;
-export const RSA_SCHEMES = ['PKCS1-v1_5', 'PSS'] as const;
-export const FORBIDDEN_DIGESTS = ['MD5', 'SHA-1', 'SHA1'] as const;
+const SIGN_DIGESTS = ['SHA-256', 'SHA-384', 'SHA-512'] as const;
+const RSA_SCHEMES = ['PKCS1-v1_5', 'PSS'] as const;
+const FORBIDDEN_DIGESTS = ['MD5', 'SHA-1', 'SHA1'] as const;
 
 export interface SignVariant {
     family: Family;

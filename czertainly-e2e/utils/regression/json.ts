@@ -11,3 +11,9 @@ export type JsonObject = Record<string, unknown>;
 export function isJsonObject(value: unknown): value is JsonObject {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
+
+/** The value as a JSON object; `{}` when it is anything else (a missing member reads as an empty object). */
+export const objectOf = (value: unknown): JsonObject => (isJsonObject(value) ? value : {});
+
+/** The value as a list of JSON objects: its object elements; `[]` when it is not a list. */
+export const rowsOf = (value: unknown): JsonObject[] => (Array.isArray(value) ? value.filter(isJsonObject) : []);

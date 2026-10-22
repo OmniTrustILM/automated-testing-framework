@@ -17,10 +17,16 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same branch or pull request makes the older run pointless.
+concurrency:
+  group: framework-checks-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   checks:
     name: Unit tests and spec parsing
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: czertainly-e2e
@@ -46,6 +52,10 @@ jobs:
       - name: Unit tests
         run: npm run test:unit
 
+      # The unit tests must write nothing into the tracked tree (a snapshot, a fixture, a generated file).
+      - name: Unit tests left the tree unchanged
+        run: git diff --exit-code
+
       # Every spec is imported and listed. This is what catches a broken import or a syntax error
       # in a suite that cannot otherwise be exercised here, because running it needs a platform.
       # Listing loads the configs but never runs their globalTeardown, so nothing reaches a tier.
@@ -57,3 +67,9 @@ jobs:
 
       - name: All specs parse (API-*)
         run: npx playwright test -c playwright.api.config.ts --list
+
+      - name: All specs parse (unit)
+        run: npx playwright test -c playwright.unit.config.ts --list
+
+      - name: All specs parse (visual)
+        run: npx playwright test -c playwright.visual.config.ts --list

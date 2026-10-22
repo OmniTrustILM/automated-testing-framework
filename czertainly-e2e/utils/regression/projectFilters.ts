@@ -12,12 +12,18 @@
  * `resolveProjectFilters()` mirrors Playwright's takeFirst so a unit test can check what a config really selects.
  */
 import { isLocalTier } from './tier/kind';
+import { settings } from './run/settings';
 
 /** `@local` and every `@local:<x>` variant. */
 export const LOCAL_TAG = /@local\b/;
 export const PHASE_B_TAG = /@phaseB\b/;
 
 type Grep = RegExp | RegExp[] | undefined;
+
+/** True when REG_PHASE=B: the run targets the migrated build, and only `@phaseB` tests are selected. */
+export function isMigratedBuildPhase(env: NodeJS.ProcessEnv = process.env): boolean {
+    return settings(env).phase === 'B';
+}
 
 function sources(grep: Grep): string[] {
     if (!grep) return [];
@@ -51,7 +57,7 @@ export interface TierRules {
 /** The rules of this run: exclude `@local` unless TIER_KIND=local; select only `@phaseB` when REG_PHASE=B. */
 export function tierRules(env: NodeJS.ProcessEnv = process.env): TierRules {
     return {
-        grep: env.REG_PHASE === 'B' ? PHASE_B_TAG : undefined,
+        grep: isMigratedBuildPhase(env) ? PHASE_B_TAG : undefined,
         grepInvert: isLocalTier(env) ? undefined : LOCAL_TAG,
     };
 }

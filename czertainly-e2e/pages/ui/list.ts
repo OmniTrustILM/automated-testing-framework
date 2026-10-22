@@ -1,6 +1,11 @@
 /**
- * List pages: waiting for real rows (a list renders skeleton rows first), the filter badges above a list, and the
- * inventory text filter (Source → Field → Condition → value → Add) used by the 18 main flows.
+ * list — list helpers for the main-usage flows.
+ *
+ * WHAT: list helpers of the main-usage flows: wait for real rows (a list renders skeleton rows first), read the
+ *       filter badges above a list, add one text filter (Source, Field, Condition, value, Add).
+ * WHY: the main-usage specs need only the inventory text filter; the full filter widget with its conditions is
+ *       `FilterWidget`, used by `CertificateListPage`.
+ * HOW: rows by their detail link; selects by label; the value box is readonly until focused.
  */
 import { expect, Page } from '@playwright/test';
 import { chooseOption, selectTriggerByLabel } from './select';
