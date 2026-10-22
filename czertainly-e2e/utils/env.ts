@@ -55,8 +55,23 @@ export type SmokeEnv = {
   // SMK-005 - Issue Certificate through ACME
   namespace?: string;  // SMOKE_TESTS_NAMESPACE — where the test creates Issuer / Certificate / Secret
   acmeSolverDomain?: string;  // ACME_SOLVER_DOMAIN — parent domain of the name the HTTP-01 solver answers on
-  acmeIngressClass?: string;  // ACME_INGRESS_CLASS — ingress class cert-manager gives the solver's Ingress
+  acmeSolver: AcmeSolver;     // ACME_SOLVER_GATEWAY, else ACME_INGRESS_CLASS — how the solver is routed
 };
+
+/** How cert-manager routes the HTTP-01 challenge to its solver in the runner's cluster. */
+export type AcmeSolver =
+  | { kind: 'ingress'; ingressClassName: string }
+  | { kind: 'gateway'; gatewayName: string };
+
+/**
+ * A cluster's ingress controller reads either Ingress objects or Gateway API routes, and a solver
+ * of the other kind is never served. ACME_SOLVER_GATEWAY names a Gateway in the run's namespace
+ * and selects an HTTPRoute solver; without it the solver is an Ingress of ACME_INGRESS_CLASS.
+ */
+export function acmeSolverFrom(gatewayName?: string, ingressClass?: string): AcmeSolver {
+  if (gatewayName) return { kind: 'gateway', gatewayName };
+  return { kind: 'ingress', ingressClassName: ingressClass || 'nginx' };
+}
 
 /**
  * The platform has to reach the HTTP-01 solver by name, and the solver's Ingress lives in the
@@ -113,7 +128,7 @@ export function loadEnv(): TestEnv {
 
       namespace: process.env.SMOKE_TESTS_NAMESPACE,
       acmeSolverDomain: process.env.ACME_SOLVER_DOMAIN || parentDomainOf(required('BASE_URL')),
-      acmeIngressClass: process.env.ACME_INGRESS_CLASS || 'nginx',
+      acmeSolver: acmeSolverFrom(process.env.ACME_SOLVER_GATEWAY, process.env.ACME_INGRESS_CLASS),
     },
   };
 
