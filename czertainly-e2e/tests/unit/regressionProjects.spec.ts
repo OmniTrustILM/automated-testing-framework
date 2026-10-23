@@ -25,6 +25,7 @@ const RUN_SETUP = 'tests/api/run-objects.setup.ts';
 test('the logout file is selected by logout only, every other REG spec by regression only, no file twice', () => {
     const projects = regressionProjects({});
     expect(projects.map((p) => p.name)).toEqual(['snapshot', 'non-interference', 'run-setup', 'regression', 'logout']);
+    expect(projects.map((p) => p.name).filter((n) => /timestamping|key-onboarding/.test(n!)), 'the developers\' blocks have their own config').toEqual([]);
     for (const f of FILES) {
         const names = projectsSelectingFile(projects.filter((p) => p.name === 'regression' || p.name === 'logout'), f);
         expect(names, f).toEqual(LOGOUT_FILE.test(f) ? ['logout'] : ['regression']);

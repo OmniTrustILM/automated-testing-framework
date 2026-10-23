@@ -232,7 +232,7 @@ export function liveReadOf(spec: LiveReadSpec): LiveRead {
         case 'detail':
             return byName((u) => fillUrl(spec.url, { uuid: u }), spec.nameField);
         case 'parent':
-            return { url: (_api, u, line) => { const parent = parentOf(line, spec.parent); return parent ? fillUrl(spec.url, { uuid: u, parent }) : undefined; }, name: (b) => stringField(b, 'name') };
+            return { url: (_api, u, line) => { const parent = parentOf(line, spec.parent); return parent ? fillUrl(spec.url, { uuid: u, parent }) : undefined; }, name: (b) => stringField(b, spec.nameField ?? 'name') };
         case 'parent-or-list':
             return scoped(spec.parent, spec.listUrl, spec.listParentField, (parent, u) => fillUrl(spec.url, { uuid: u, parent }));
     }

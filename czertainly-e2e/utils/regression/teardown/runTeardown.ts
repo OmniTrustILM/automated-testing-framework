@@ -74,6 +74,8 @@ import { teardownHandlers as protocolHandlers } from '../protocols/protocolProfi
 import { teardownHandlers as platformHandlers } from '../platform/platformTeardown';
 import { teardownHandlers as inventoryHandlers } from '../inventory/inventoryTeardown';
 import { teardownHandlers as schedulerHandlers } from '../platform/schedulerApi';
+import { teardownHandlers as timestampingHandlers } from '../../timestamping/teardown';
+import { TIMESTAMPING_REFERENCED_BY } from '../../timestamping/resourceTypes';
 import { deleteOrderOf, handlerModulesOf, type HandlerModule } from '../resourceTypes';
 import { assertOwn, assertOwnLive, WorkaroundNote, LiveObjectMissing, mayDeleteOwn, checkOwnership } from '../ledger/ownership';
 import { LedgerLine, ledgerFile, readLedger, recordDeleted } from '../ledger/ledger';
@@ -118,6 +120,8 @@ export const REFERENCED_BY: ReadonlyArray<{ a: string; b: string; core: string }
     { a: 'raProfiles', b: 'certificates', core: 'handler order: the certificate handler (teardownHandlers certificates) revokes an issued certificate through its RA profile, so the certificate step precedes the RA profile step (4 before 10)' },
     { a: 'tokenProfiles', b: 'keys', core: 'service/writer/TokenProfileWriter.java:195-203 validateNoDependentObjects: "Cannot delete Token Profile … dependent Key(s)"' },
     { a: 'tokens', b: 'tokenProfiles', core: 'service/impl/TokenInstanceServiceImpl.java:524-537 deleteTokenInstance: "Dependent Token Profiles: …"' },
+    // The timestamping block's types (pairs and citations in utils/timestamping/resourceTypes.ts).
+    ...TIMESTAMPING_REFERENCED_BY,
 ];
 
 /** The step a type is deleted in (99: none). */
@@ -146,6 +150,7 @@ export const HANDLER_SOURCES: Record<HandlerModule, Record<string, TeardownHandl
     platform: platformHandlers,
     inventory: inventoryHandlers,
     scheduler: schedulerHandlers,
+    timestamping: timestampingHandlers,
 };
 
 /**
@@ -452,6 +457,9 @@ class TeardownRun {
             } else {
                 this.onDeleted(item);
                 this.result.deleted.push({ type: item.type, uuid: item.uuid });
+                // An earlier teardown of this run (the timestamping block's own) may have recorded a failure for this
+                // object; it is gone now, so that record must not fail the run as a leftover.
+                rewriteCleanupFailures((all) => all.filter((f) => !(f.resource === item.type && f.uuid === item.uuid)));
             }
         } finally {
             await api.dispose().catch(() => undefined);

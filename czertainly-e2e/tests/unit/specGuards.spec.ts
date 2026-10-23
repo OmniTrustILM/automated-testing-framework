@@ -5,6 +5,13 @@
  * reasons) and no sleeps, icon classes or raw row locators outside pages/ (a counted allow-list that may only shrink).
  * The area fixtures (`fixtures/areas/*.ts`, the per-folder setups a spec may take `test` from) are linted like specs, and
  * their shape by utils/regression/specLint/areaFixtures.ts: one extend that only adds fixtures, never redefines one.
+ *
+ * The developers' timestamping and key onboarding blocks (`tests/timestamping`, `utils/timestamping`, `tests/key-onboarding`,
+ * `utils/keyOnboarding`) are NOT scanned, by agreement. The timestamping block's reason: its TSP protocol
+ * requests use a plain context with Basic auth and deliberate odd media types and methods, and openssl / docker run as child
+ * processes, which these rules would refuse. Its safety rests on `@local` + describeLocalOnly (a shared tier selects nothing),
+ * the guarded admin API (`localApi`) with the local-stack proof, and the ledger (tests/timestamping/README.md). The key onboarding block
+ * rests on the same four and runs docker for the token's key pairs (tests/key-onboarding/README.md).
  */
 import { test, expect } from '@playwright/test';
 import { listedTitleProblems, titleProblems } from '../../utils/regression/specLint/titleLint';

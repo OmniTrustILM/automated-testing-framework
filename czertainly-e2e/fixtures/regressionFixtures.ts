@@ -26,7 +26,8 @@ import type { APIRequestContext, Page, TestInfo } from '@playwright/test';
 import { ledgerSpecOf, loginAsSmokeUser, test as testFixtures } from './testFixtures';
 import { loadEnv, type TestEnv } from '../utils/env';
 import { minLifetimeForTest } from '../utils/auth/accessToken';
-import { getAuthenticatedApiContext } from '../utils/auth/apiContext';
+import { getAuthenticatedApiContext, openAuthenticatedApiContext } from '../utils/auth/apiContext';
+import { renewingContext } from '../utils/auth/renewingContext';
 import { guardApi } from '../utils/regression/guard/createGuard';
 import type { GuardedApi } from '../utils/regression/guard/types';
 import { LiveOwn } from '../utils/regression/ledger/liveOwn';
@@ -67,8 +68,11 @@ export interface RegressionWorkerFixtures {
     workerApi: GuardedApi;
 }
 
-/** A worker's guarded context is built once and kept for the worker: its token must outlive a long stretch of tests. */
-export const WORKER_API_MIN_LIFETIME_MS = 600_000;
+/**
+ * A worker's guarded context is kept for the whole worker, which outlives one access token (a hook before a group and a hook after it
+ * are minutes apart): the context renews itself when its token has less than this left (utils/auth/renewingContext.ts).
+ */
+export const WORKER_API_RENEW_MARGIN_MS = 120_000;
 
 export interface RegressionFixtures {
     needs: NeedsApi;
@@ -133,10 +137,24 @@ export async function withLocalApi(
 /**
  * The body of the `workerApi` fixture: the authenticated context of the admin identity, wrapped in the guard (`guardApi`, the same
  * factory as the test-scoped `api`; a raw context is never handed to a fixture), disposed when the worker ends. `grantContext` only sends
- * the token request and is disposed right after the grant.
+ * the token request; it stays open while the worker lives, because the context renews its token (a new grant) when less than
+ * WORKER_API_RENEW_MARGIN_MS of it is left. `localStack: true` is for a block that runs on a proven local stack only: it refuses (throws,
+ * `use` never called) unless the tier is local and holds the local-backend proof, and gives the guard its `localStack` option.
  */
-export async function withWorkerApi(grantContext: APIRequestContext, env: TestEnv, use: (api: GuardedApi) => Promise<void>): Promise<void> {
-    const api = guardApi(await getAuthenticatedApiContext(grantContext, env, { minLifetimeMs: WORKER_API_MIN_LIFETIME_MS }));
+export async function withWorkerApi(
+    grantContext: APIRequestContext, env: TestEnv, use: (api: GuardedApi) => Promise<void>,
+    options: { localStack?: boolean; renewMarginMs?: number; now?: () => number } = {},
+): Promise<void> {
+    if (options.localStack) {
+        if (!isLocalTier()) throw new Error('workerApi: only a local stack (TIER_KIND=local) may take the local-stack guard');
+        if (!hasLocalProof()) throw new Error('workerApi: this run holds no authenticated local-backend proof (API-GEN-33, guard row)');
+    }
+    const margin = options.renewMarginMs ?? WORKER_API_RENEW_MARGIN_MS;
+    const context = renewingContext(
+        () => openAuthenticatedApiContext(grantContext, env, { minLifetimeMs: margin }),
+        { marginMs: margin, ...(options.now ? { now: options.now } : {}) },
+    );
+    const api = guardApi(context, options.localStack ? { localStack: true } : {});
     try {
         await use(api);
     } finally {

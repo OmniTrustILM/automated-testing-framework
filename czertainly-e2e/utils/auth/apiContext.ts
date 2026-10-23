@@ -14,16 +14,27 @@ const logger = new Logger('ApiContext');
  * test's timeout) keeps a cached token from being reused when it would expire during the test; smoke and global setup omit it.
  */
 export async function getAuthenticatedApiContext(request: APIRequestContext, env: TestEnv, options: { minLifetimeMs?: number } = {}): Promise<APIRequestContext> {
+  return (await openAuthenticatedApiContext(request, env, options)).context;
+}
+
+/**
+ * The same context together with the moment its token expires (milliseconds; Infinity without a token: the header mode), for a caller that
+ * must renew the context before the token runs out (utils/auth/renewingContext.ts).
+ */
+export async function openAuthenticatedApiContext(
+  request: APIRequestContext, env: TestEnv, options: { minLifetimeMs?: number } = {},
+): Promise<{ context: APIRequestContext; expiresAt: number }> {
   if (env.authMode === 'header') {
     // Local development stack: no identity provider. The dev proxy injects the certificate on /api; when the
     // suite talks to core directly, AUTH_CLIENT_CERT (URL-encoded Base64 certificate) is sent the same way.
     const cert = process.env.AUTH_CLIENT_CERT;
     logger.info(`AUTH_MODE=header: ${cert ? 'sending ssl-client-cert' : 'relying on the dev proxy'} for API calls`);
-    return await playwrightRequest.newContext({
+    const context = await playwrightRequest.newContext({
       baseURL: env.baseUrl,
       extraHTTPHeaders: { Accept: 'application/json', ...(cert ? { 'ssl-client-cert': cert } : {}) },
       ignoreHTTPSErrors: true,
     });
+    return { context, expiresAt: Number.POSITIVE_INFINITY };
   }
 
   if (!env.clientSecret) {
@@ -35,7 +46,7 @@ export async function getAuthenticatedApiContext(request: APIRequestContext, env
   // remembered, so a wrong or rotated password is tried once, not once per test (the account could be locked).
   const token = await fetchAccessToken(request, env, { username: env.username, password: env.password }, { minLifetimeMs: options.minLifetimeMs });
 
-  return await playwrightRequest.newContext({
+  const context = await playwrightRequest.newContext({
     baseURL: env.baseUrl,
     extraHTTPHeaders: {
       'Authorization': `Bearer ${token.bearer()}`,
@@ -43,6 +54,7 @@ export async function getAuthenticatedApiContext(request: APIRequestContext, env
     },
     ignoreHTTPSErrors: true
   });
+  return { context, expiresAt: token.expiresAt };
 }
 
 // ------------------------------------------------------------------ the anonymous context

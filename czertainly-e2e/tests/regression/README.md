@@ -186,6 +186,9 @@ Projects of the regression config (`utils/regression/regressionProjects.ts`):
 5. `non-interference`: the teardown project of `snapshot`;
 6. the run-end teardown.
 
+The developers' blocks (`@dev-tests`: timestamping, key onboarding) are not part of this config: each has its own run and report
+(`playwright.devblock.config.ts`, `tests/dev-blocks/README.md`).
+
 The UI specs of the configuration area (`03-configuration`) create and keep objects of their own; none of them becomes a run object.
 
 The API config uses the same frame: `snapshot` → `gate` (API-GEN-32, `@gate`) → `api-p1` (`@p1`, runs even when the

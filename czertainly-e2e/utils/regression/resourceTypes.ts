@@ -17,12 +17,13 @@
  * ARRAY ORDER is the delete order: entries are grouped by teardown step and, inside a step, deleted in the listed order
  * (dependants before what they depend on; the reference graph core enforces is `REFERENCED_BY` in runTeardown).
  */
+import { TIMESTAMPING_REGISTRY_ENTRIES } from '../timestamping/resourceTypes';
 import {
     certMarker, discoveryMarker, enabledMarker, foreignKeyRows, keyItemsDelta, keyMarksFromDetail, keyWindowCuts, keyWrapperOf, ResourceDef,
 } from './teardown/snapshotModel';
 
 /** The module that exports the `teardownHandlers` of a type (runTeardown maps each key to its import). */
-export type HandlerModule = 'core' | 'lifecycle' | 'workflow' | 'notification' | 'protocols' | 'platform' | 'inventory' | 'scheduler';
+export type HandlerModule = 'core' | 'lifecycle' | 'workflow' | 'notification' | 'protocols' | 'platform' | 'inventory' | 'scheduler' | 'timestamping';
 
 /**
  * How the live object of a named type is read before anything is done to it. `{uuid}` and `{parent}` stand for the object's
@@ -32,7 +33,7 @@ export type LiveReadSpec =
     /** `GET <url>`. */
     | { kind: 'detail'; url: string; nameField?: string }
     /** `GET <url>` under the parent named by the ledger line (`parents.<parent>`); no parent on the line: not readable. */
-    | { kind: 'parent'; parent: string; url: string }
+    | { kind: 'parent'; parent: string; url: string; nameField?: string }
     /** As `parent`, but a line without the parent finds it by reading `listUrl` (`listParentField` of the row with this uuid). */
     | { kind: 'parent-or-list'; parent: string; listUrl: string; listParentField: string; url: string };
 
@@ -59,7 +60,11 @@ export interface ResourceTypeEntry {
 export const TEARDOWN_STEPS: ReadonlyArray<{ step: number; label: string }> = [
     { step: 1, label: 'pending approvals of own certificates (reject through the override path)' },
     { step: 2, label: 'object-level event associations on own objects' },
-    { step: 3, label: 'discoveries (their new certificates become derived lines first)' },
+    {
+        step: 3,
+        label: 'discoveries (their new certificates become derived lines first); timestamping block: Basic credentials → TSP profiles ' +
+            '(activation removed, credential secrets awaited) → signing profiles (signing records emptied) → time-quality configurations',
+    },
     { step: 4, label: 'certificates, own and derived (own RA profiles ungated from own approval profiles first: PRE_STEPS)' },
     { step: 5, label: 'keys' },
     { step: 6, label: 'key items (gone with their key; a remaining item is reported)' },
@@ -101,6 +106,9 @@ export const RESOURCE_REGISTRY = defineResourceTypes([
             },
         },
     },
+    // The timestamping block's four types, in delete order after `discoveries` (utils/timestamping/resourceTypes.ts); the
+    // handlers are in utils/timestamping/teardown.ts, every type is @local only.
+    ...TIMESTAMPING_REGISTRY_ENTRIES,
     {
         type: 'certificates', teardown: { step: 4, handler: 'core' }, ownership: detail('/api/v1/certificates/{uuid}', 'commonName'),
         snapshot: {
