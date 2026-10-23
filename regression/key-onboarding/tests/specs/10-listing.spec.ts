@@ -3,11 +3,9 @@ import { expect, identityOf, labelled, test } from '../utils/fixtures';
 
 test.describe('Listing the key pairs on a token', () => {
   test('the token profile offers key listing', async ({ admin, provisioned }) => {
-    const profile = await admin.get<{ keyListAvailable: boolean }>(
-      `/v1/tokens/${provisioned.token.uuid}/tokenProfiles/${provisioned.tokenProfile.uuid}`,
-    );
+    const profiles = await admin.get<Array<{ uuid: string }>>('/v1/tokenProfiles?keyListable=true');
 
-    expect(profile.keyListAvailable).toBe(true);
+    expect(profiles.map((profile) => profile.uuid)).toContain(provisioned.tokenProfile.uuid);
   });
 
   test('lists each planted key pair with whether it can be onboarded', async ({ admin, provisioned }) => {
