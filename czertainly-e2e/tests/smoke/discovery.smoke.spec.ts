@@ -80,7 +80,8 @@ test.describe('@smoke discovery', () => {
 
         try {
           const connectors = await connectorUtils.getAllConnectors(apiRequest);
-          const foundConnector = connectors.find(c => c.url === env.smoke.discoveryProviderUrl);
+          const foundConnector = connectorUtils.connectorAt(
+            connectors, env.smoke.discoveryProviderUrl!, env.smoke.discoveryProviderName);
 
           if (!foundConnector) {
             logger.debug(`Available connectors: ${connectors.map(c => `${c.name} (${c.url})`).join(', ')}`);
