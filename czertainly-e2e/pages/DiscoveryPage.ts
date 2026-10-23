@@ -63,7 +63,8 @@ export class DiscoveryPage {
         await this.providerTrigger.click();
         const providerOption = this.page
             .locator('#discoveryProviderSelect-listbox')
-            .getByRole('option', { name: provider });
+            // Exact: a connector registered as v1 and v2 is listed as "<name>" and "<name>-v2".
+            .getByRole('option', { name: provider, exact: true });
         await providerOption.waitFor({ state: 'visible' });
         await providerOption.click();
 
