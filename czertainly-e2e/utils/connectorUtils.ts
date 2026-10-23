@@ -26,6 +26,21 @@ export interface ConnectorDto {
     authType: string;
 }
 
+/**
+ * The connector registered at `url`. Core keeps connectors unique by URL and interface version, so
+ * one connector can be registered once per version at the same URL, and the UI shows a different
+ * form for each version. When several share the URL, the one named `name` is used; without that
+ * match the choice would be arbitrary, so this throws instead.
+ */
+export function connectorAt(connectors: ConnectorDto[], url: string, name?: string): ConnectorDto | undefined {
+    const atUrl = connectors.filter((c) => c.url === url);
+    if (atUrl.length <= 1) return atUrl[0];
+    const named = atUrl.find((c) => c.name === name);
+    if (named) return named;
+    throw new Error(`${atUrl.length} connectors are registered at ${url} (${atUrl.map((c) => c.name).join(', ')}); `
+        + `name the one to use (got "${name ?? ''}").`);
+}
+
 export async function getAllConnectors(
     request: APIRequestContext
 ): Promise<ConnectorDto[]> {
