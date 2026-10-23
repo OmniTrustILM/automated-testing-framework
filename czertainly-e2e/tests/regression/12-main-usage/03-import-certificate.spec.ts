@@ -25,7 +25,7 @@ import { INVENTORY_APPEAR_MS } from '../../../utils/regression/timeouts';
 test.describe('Certificate import', { tag: tags.regression }, () => {
     test('a PEM imported in the dialog is in the inventory and a second import says already there',
         testMeta({
-            id: 'REG-USE-03', prio: 'P1', issue: 'ilm#428',
+            id: 'REG-USE-03', row: 'PEM import, then already in inventory', prio: 'P1', issue: 'ilm#428',
             rule: ['release checklist Usage 3: import a certificate through the import dialog; the result badge says Imported, then Already in inventory for the same PEM'],
         }),
         async ({ signedIn: page, api, own }) => {
@@ -83,7 +83,7 @@ test.describe('Certificate import', { tag: tags.regression }, () => {
 
     test('a protected PKCS#12 asks for its password and lists its entries only with the right one',
         testMeta({
-            id: 'REG-USE-03', prio: 'P1', issue: 'ilm#428',
+            id: 'REG-USE-03', row: 'protected PKCS#12 asks for password', prio: 'P1', issue: 'ilm#428',
             rule: ['the import dialog asks for the password of a protected PKCS#12, refuses a wrong one and lists the entries with the key destination'],
         }),
         async ({ signedIn: page }, testInfo) => {

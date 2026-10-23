@@ -58,9 +58,11 @@ test('the spy forwards reads and refuses every mutating request without sending 
     await expect(spy.api.put('/api/v1/roles/x')).rejects.toThrow(GuardSpyBlocked);
     await expect(spy.api.fetch('/api/v1/roles/x', { method: 'delete' })).rejects.toThrow(GuardSpyBlocked);
     const request = { url: () => '/api/v1/roles/y', method: () => 'PATCH' };
+    // a Request-shaped object where the guard takes a URL string: the cast is the point of the case
     await expect(spy.api.fetch(request as unknown as string)).rejects.toThrow(GuardSpyBlocked);
     // GET / HEAD only — any other verb, and any method the spy does not know, is refused too.
     await expect(spy.api.fetch('/api/v1/roles', { method: 'OPTIONS' })).rejects.toThrow(GuardSpyBlocked);
+    // `options` is no method of the guarded API: reached through a cast to prove the spy refuses a verb it does not know
     await expect((spy.api as unknown as { options(u: string): Promise<unknown> }).options('/api/v1/roles')).rejects.toThrow(GuardSpyBlocked);
     await spy.api.dispose();
     expect(r.reached, 'only the reads reached the raw context').toEqual([

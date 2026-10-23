@@ -16,7 +16,7 @@ import { AttributeDefinition, PROFILE_USAGES, Provider, SCP_ATTR, Usage } from '
 import type { GuardedApi } from '../guard/types';
 import { assertOwnLive } from '../ledger/ownership';
 import { apiJson } from '../apiReads';
-import { requiredCustomAttributes } from '../customAttributes';
+import { requestAttributesFrom, requiredCustomAttributes } from '../customAttributes';
 import { OwnRef, Ref } from '../ledger/ledger';
 import { runName, runId, ownName } from '../ledger/runState';
 import { isJsonObject, JsonObject } from '../json';
@@ -100,6 +100,8 @@ export interface TokenOptions {
     connector: CryptoConnector;
     /** `SOFT` on a v1 record; omitted on a v2 record (the v2 request carries no kind). */
     kind?: string;
+    /** The activation code the token is created with (default: a generated one); a v1 token needs the same code again to be activated. */
+    code?: string;
 }
 
 /**
@@ -118,7 +120,7 @@ export async function createOwnToken(api: GuardedApi, spec: string, suffix: stri
             description: `REG run ${runId()}`,
             connectorUuid: o.connector.uuid,
             ...(o.kind ? { kind: o.kind } : {}),
-            attributes: tokenRequestAttributes(defs, tokenAlias(name), activationCode()),
+            attributes: tokenRequestAttributes(defs, tokenAlias(name), o.code ?? activationCode()),
             customAttributes: await requiredCustomAttributes(api, 'tokens', runName('ca')),
         },
     });
@@ -133,6 +135,18 @@ export const getOwnToken = (api: APIRequestContext, token: OwnRef): Promise<Json
 export async function reloadOwnToken(api: GuardedApi, token: OwnRef): Promise<JsonObject> {
     await assertOwnLive(api, 'tokens', token, 'tokens.reloadOwnToken');
     return apiJson<JsonObject>(api, 'PATCH', `/api/v1/tokens/${token.uuid}`);
+}
+
+/** The activation request attributes of a v1 token (pure): the live activation definitions, the token code filled with the creation code. */
+export function activationAttributesFor(defs: AttributeDefinition[], code: string): JsonObject[] {
+    return requestAttributesFrom(defs, { [SCP_ATTR.tokenCode.name]: code }, code);
+}
+
+/** `PATCH /v1/tokens/{uuid}/activate` on an own v1 token with the code it was created with (the definitions are read live first). */
+export async function activateOwnToken(api: GuardedApi, token: OwnRef, code: string): Promise<void> {
+    await assertOwnLive(api, 'tokens', token, 'tokens.activateOwnToken');
+    const defs = await apiJson<AttributeDefinition[]>(api, 'GET', `/api/v1/tokens/${token.uuid}/activate/attributes`);
+    await apiJson(api, 'PATCH', `/api/v1/tokens/${token.uuid}/activate`, activationAttributesFor(defs, code));
 }
 
 export const V2_TOKEN_STATUSES: readonly string[] = ['Connected', 'Disconnected', 'Warning', 'Unknown'];

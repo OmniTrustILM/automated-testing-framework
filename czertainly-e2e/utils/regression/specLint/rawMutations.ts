@@ -93,6 +93,9 @@ import { RULES, type Rule } from './rules';
  *                      })`), `String(token)`, `JSON.stringify`, `console.*` / `logger.*` / `.push` arguments are violations;
  *                      `token.bearer()` / `token.claims()`, a truthiness check, `test.skip(!token, …)` and a call argument of a helper
  *                      (`callAs(api, token.bearer(), …)`, jwtTools) pass.
+ * - response-state    `.headers()` / `.allHeaders()` / `.headersArray()` / `.storageState()` called on any receiver: only a header
+ *                      assertion passes (`res.headers()['content-type']` with a literal name that is no cookie or credential
+ *                      header, and the `headers` option of `checkRefusedMethod`); cookies and storage state never;
  * - live-forge          `as LiveOwn` / `<LiveOwn>`: a `LiveOwn` is the proof that `live(type, ref)` ran the live own-object check, and only
  *                      `LiveOwn.prove` builds one (private constructor); a cast would fake the proof;
  * A receiver is GUARDED when it is the `api` fixture of a test / hook, a parameter typed `GuardedApi`, the result of
@@ -104,7 +107,7 @@ export type RawMutationRule =
     | 'raw-context' | 'raw-request-use' | 'unit-seam' | 'guarded-cast' | 'guarded-reassign' | 'context-method' | 'fetch-method'
     | 'dynamic-method' | 'method-extraction' | 'apiJson' | 'send-method' | 'raw-xhr' | 'util-import' | 'raw-process'
     | 'test-import' | 'fixture-extend' | 'route-method' | 'raw-network' | 'spec-import' | 'env-write' | 'fs-write'
-    | 'dynamic-code' | 'request-option' | 'token-use' | 'guard-internal' | 'live-forge';
+    | 'dynamic-code' | 'request-option' | 'token-use' | 'guard-internal' | 'live-forge' | 'response-state';
 
 export interface RawMutation {
     line: number;

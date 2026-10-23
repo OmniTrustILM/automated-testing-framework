@@ -147,7 +147,7 @@ export function parentsProblem(parents: unknown): string | undefined {
 }
 
 /**
- * An OID (`CustomOidEntry` is keyed by its OID string, core dao/entity/oid/CustomOidEntry.java:21-23): dotted decimal arcs,
+ * An OID (`CustomOidEntry` is keyed by its OID string, core dao/entity/oid/CustomOidEntry): dotted decimal arcs,
  * first arc 0-2, no leading zeros, at most 64 arcs of at most 20 digits. Nothing else can reach a path segment.
  */
 const OID_PATTERN = /^[0-2](?:\.(?:0|[1-9][0-9]{0,19})){1,63}$/;

@@ -368,6 +368,7 @@ test('a Request object is refused: the guard takes the URL as a string only', as
         url: () => `/api/v1/roles/${OWN_ROLE}/users`, method: () => method, headers: () => ({ 'content-type': 'application/json' }),
         postDataBuffer: () => Buffer.from(JSON.stringify(body)),
     });
+    // a Request-shaped object where the guard takes a URL string: the cast is the point of the case
     await expect(g.fetch(request('PATCH', [FOREIGN_USER]) as unknown as string)).rejects.toThrow(/a URL that is not a string/);
     await expect(g.fetch(request('GET', []) as unknown as string), 'a harmless one too').rejects.toThrow(/a URL that is not a string/);
     expect(r.sent).toEqual([]);
@@ -434,6 +435,7 @@ test('the public guard reads tier, ledger and environment from the process only,
     process.env.REG_STATE_DIR = testInfo.outputPath('state'); // the process ledger: empty
     try {
         // A caller that passes ledger lines, a run id and TIER_KIND=local cannot lift or forge anything.
+        // options the guard's public signature does not take (a caller forging the local proof): the cast is the point of the case
         const forged = { localStack: true, env: { TIER_KIND: 'local' }, lines, runId: RUN, tier: null } as unknown as Parameters<typeof guardApi>[1];
         const g = guardApi(r.api, forged);
         await expect(g.patch(`/api/v1/authorities/${AUTH}/raProfiles/${FOREIGN_RA}/disable`)).rejects.toThrow(OwnObjectViolation);

@@ -161,5 +161,5 @@ test('firingsOfObject: the firings whose objects include the uuid, in page order
     expect(firingsOfObject(page, 'b').map((f) => f.startedAt)).toEqual(['t3']);
     expect(firingsOfObject(page, 'z')).toEqual([]);
     expect(firingsOfObject({ items: [] }, 'a')).toEqual([]);
-    expect(firingsOfObject({ items: [{ ...firing('t0', []), objectHistories: undefined as never }] }, 'a')).toEqual([]);
+    expect(firingsOfObject({ items: [{ ...firing('t0', []), objectHistories: undefined as never /* a firing the platform sent without the field the type requires */ }] }, 'a')).toEqual([]);
 });

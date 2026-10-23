@@ -12,6 +12,7 @@
 import { APIRequestContext, expect, Page } from '@playwright/test';
 import { ApiAnswer, answerOf } from '../apiReads';
 import type { GuardedApi } from '../guard/types';
+import { leakReason } from '../errorContract';
 import { isLocalTier } from '../tier/kind';
 import { settings } from '../run/settings';
 import type { JsonObject } from '../json';
@@ -173,11 +174,7 @@ export function anonymousTarget(env: NodeJS.ProcessEnv = process.env): Anonymous
  * container's default error page (auth-rbac G1: a refusal answers 401 and nothing else about the implementation).
  */
 export function leaksInternals(text: string): string | undefined {
-    if (/Whitelabel/i.test(text)) return 'the Whitelabel error page';
-    if (/\n\s+at\s+[\w.$<>]+\(/.test(text) || /\bat\s+[\w.$]+\([\w.]+\.java:\d+\)/.test(text)) return 'a stack trace';
-    if (/\b[a-z][\w]*(?:\.[a-z][\w]*)+\.[A-Z]\w*(?:Exception|Error)\b/.test(text)) return 'a Java exception class';
-    if (/\.java:\d+/.test(text)) return 'a source file reference';
-    return undefined;
+    return leakReason(text);
 }
 
 /**

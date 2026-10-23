@@ -31,9 +31,9 @@ function findKey(value: unknown, re: RegExp): string | undefined {
  * strings; `entries` a non-empty array (at most 250) of objects whose ONLY key is `entryReference`, a 64-character
  * lower-case hex fingerprint; any `keyDestination` key (even null, any case, anywhere — also inside `customAttributes`)
  * refuses. Core: a certificate entry with a `keyDestination` is refused (`TAKES_NO_DESTINATION`,
- * CertificateImportServiceImpl.java:102, :202-206), a key entry without one is refused (`NEEDS_DESTINATION`, :101,
- * :208-210), a CSR entry is refused (:199-201); so a body of this shape can reach the certificate registration only
- * (:385-406, the plain upload), never the key import (KeyImportGates.java:113-129, :154-165). Only
+ * CertificateImportServiceImpl), a key entry without one is refused (`NEEDS_DESTINATION`), a CSR entry is
+ * refused; so a body of this shape can reach the certificate registration only
+ * (the plain upload), never the key import (KeyImportGates). Only
  * `certificateOutcome: "created"` results belong in the ledger (the spec's duty).
  */
 export function importBodyShapeProblem(view: BodyView): string | undefined {
@@ -65,8 +65,8 @@ const PROXY_CODE = /^proxycode$/i;
 /**
  * A connector create may name a pre-existing PROXY by its code — `proxyCode` is a plain
  * string, not a uuid, so the uuid rules never see it, yet core binds the new connector to that proxy and routes the
- * validate call through it (`service/v2/impl/ConnectorServiceImpl.java:651` → `resolveProxy`, `:958-969`
- * `proxyRepository.findByCode`). The v1 create delegates to the v2 one (`service/impl/ConnectorServiceImpl.java:133-145`).
+ * validate call through it (`service/v2/impl/ConnectorServiceImpl` → `resolveProxy`,
+ * `proxyRepository.findByCode`). The v1 create delegates to the v2 one (`service/impl/ConnectorServiceImpl`).
  * So any `proxyCode` key (any case, any depth, any non-blank value) refuses on both creates; `proxyUuid` stays probes-only
  * (BODY_FIELD_TYPES). A blank / null / absent `proxyCode` names nothing (`:964` `isBlank`).
  */

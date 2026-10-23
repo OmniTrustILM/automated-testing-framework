@@ -3,6 +3,7 @@
  * "v3" / "v2", and every helper that copies an attribute definition sends the string form. Pure.
  */
 import { expect, test } from '@playwright/test';
+import type { AttributeDefinition } from '../../utils/regression/platform/cryptoAlgorithmCases';
 import { requestVersion } from '../../utils/regression/attributeVersion';
 import { requiredAttributeItems, toRequestAttribute, requestAttributesFrom, toRequestAttributes } from '../../utils/regression/customAttributes';
 
@@ -29,13 +30,13 @@ test('every helper that copies a definition sends the string version, given nume
     expect(toRequestAttribute({ version: 3, uuid: 'u', name: 'n', contentType: 'string', content: [] }).version).toBe('v3');
     expect(toRequestAttribute({ version: 2, uuid: 'u', name: 'n', contentType: 'string', content: [] }).version).toBe('v2');
     expect(toRequestAttributes([{ version: 3, uuid: 'u', name: 'n', contentType: 'string', content: [], type: 'data' }])[0].version).toBe('v3');
-    const filled = requestAttributesFrom([{ name: 'a', uuid: 'u', contentType: 'string', type: 'data', version: 3, properties: { required: true } } as any]);
+    const filled = requestAttributesFrom([{ name: 'a', uuid: 'u', contentType: 'string', type: 'data', version: 3, properties: { required: true } } as AttributeDefinition]);
     expect(filled[0].version).toBe('v3');
     for (const a of [...required, ...filled]) expect(typeof a.version, 'never a number on the wire').toBe('string');
 });
 
 test('requestAttributesFrom: every v3 content item carries contentType (given, fallback, list copy); v2 items stay {data}', () => {
-    const v3 = (extra: Record<string, unknown>) => ({ uuid: 'u', type: 'data', version: 3, properties: { required: true }, ...extra }) as any;
+    const v3 = (extra: Record<string, unknown>) => ({ name: 'n', contentType: 'string', uuid: 'u', type: 'data', version: 3, properties: { required: true }, ...extra }) as AttributeDefinition;
     const out = requestAttributesFrom([
         v3({ name: 'given', contentType: 'string' }),
         v3({ name: 'pass', contentType: 'secret' }),
@@ -54,6 +55,6 @@ test('requestAttributesFrom: every v3 content item carries contentType (given, f
         ['list', 'v3', [{ reference: 'A', data: 'a', contentType: 'string' }]],
         ['listOwn', 'v3', [{ reference: 'B', data: 'b', contentType: 'text' }]],
     ]);
-    const v2 = requestAttributesFrom([{ name: 'given', uuid: 'u', contentType: 'string', type: 'data', version: 2 } as any, { name: 'str', uuid: 'u', contentType: 'string', type: 'data', version: 2, properties: { required: true } } as any], { given: 'g' }, 'fb');
+    const v2 = requestAttributesFrom([{ name: 'given', uuid: 'u', contentType: 'string', type: 'data', version: 2 } as AttributeDefinition, { name: 'str', uuid: 'u', contentType: 'string', type: 'data', version: 2, properties: { required: true } } as AttributeDefinition], { given: 'g' }, 'fb');
     expect(v2.map((a) => [a.version, a.content])).toEqual([['v2', [{ data: 'g' }]], ['v2', [{ data: 'fb' }]]]);
 });

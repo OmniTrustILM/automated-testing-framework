@@ -360,13 +360,13 @@ const bulkKeyCall = (ctx: TeardownContext, method: 'patch' | 'delete', path: str
 /**
  * Exactly ONE handler for every own (non-derived) token key (protocol rows): the area
  * modules have no `keys` handler of their own (protocols/protocolCa.ts, platform/keys.ts) — HANDLER_MODULES.keys is
- * this module. Without it core refuses to delete the key's token profile ("dependent Key(s)", TokenProfileWriter.java:195-203)
- * and then the token ("Dependent Token Profiles", TokenInstanceServiceImpl.java:524-537), so a protocol-CA run would
- * leave key + token profile + token behind. Core's `DELETE /v1/keys` (CryptographicKeyServiceImpl.java:615-645) destroys
+ * this module. Without it core refuses to delete the key's token profile ("dependent Key(s)", TokenProfileWriter)
+ * and then the token ("Dependent Token Profiles", TokenInstanceServiceImpl), so a protocol-CA run would
+ * leave key + token profile + token behind. Core's `DELETE /v1/keys` (CryptographicKeyServiceImpl) destroys
  * every item at the connector and deletes the key with its associations whatever the items' states; it answers 204 even
  * for a uuid it did not find, so absence is proven by `GET /v1/keys/{uuid}`. Should the delete be refused (a 4xx),
  * the items are deactivated and destroyed first (`PATCH /v1/keys/disable`, `PATCH /v1/keys/destroy`: the destroy takes
- * DEACTIVATED / PRE_ACTIVE / COMPROMISED items, :1555-1560) and the delete is sent once more. Never a foreign key:
+ * DEACTIVATED / PRE_ACTIVE / COMPROMISED items) and the delete is sent once more. Never a foreign key:
  * wrapHandlerWithGuard reads it live first (ledger line + run-prefixed live name). The derived `certKey_*` rule is unchanged.
  */
 async function removeOwnTokenKey(ctx: TeardownContext, line: LedgerLine): Promise<void> {
@@ -555,10 +555,10 @@ const users: TeardownHandler = {
  * Approval-profile dissociation (a step hook before the certificate step): every own, live approval profile is dissociated from
  * every own, live RA profile it is associated with, so a crashed spec cannot leave the run-end revoke gated (a
  * certificate under an RA profile that still carries the run's approval profile goes `pending_approval` on revoke).
- * Routes (interfaces ApprovalProfileController.java:108, :133): `GET /v1/approvalProfiles/{uuid}/associations` (a list
+ * Routes (interfaces ApprovalProfileController): `GET /v1/approvalProfiles/{uuid}/associations` (a list
  * of ResourceObjectDto: `resource`, `objectUuid`, `name`; `uuid` / `resourceUuid` are read as fallbacks) and
  * `DELETE /v1/approvalProfiles/{uuid}/associations/raProfiles/{raProfileUuid}` (core
- * ApprovalProfileServiceImpl.java:251-270 `disassociateApprovalProfile`: deletes the relation row only). Both objects
+ * ApprovalProfileServiceImpl `disassociateApprovalProfile`: deletes the relation row only). Both objects
  * are read live first; the dissociation is proven by re-reading the list. A pre-existing RA profile that
  * carries the own approval profile is never touched (reported as a warning: the own profile's own deletion will fail
  * later and name it).

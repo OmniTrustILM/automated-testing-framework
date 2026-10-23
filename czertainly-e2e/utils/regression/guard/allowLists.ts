@@ -19,29 +19,29 @@ export const POST_CREATE: readonly string[] = [
     // Body-judged creates of four areas (inventory, certificate lifecycle, platform):
     // `POST /v1/inspections` — class "body-judged, creates nothing". NOT a read: with a
     // `tokenProfileUuid` core resolves the profile and records the connector's import-capability answer on that profile
-    // row (KeyTransferCapabilityService.java:139-156 → KeyTransferCapabilityWriter.java:50-64), so the field is judged
+    // row (KeyTransferCapabilityService → KeyTransferCapabilityWriter), so the field is judged
     // as a typed body field (guard/routes.ts BODY_FIELD_TYPES → tokenProfiles: own or a probe); without it, or with a plain
-    // non-uuid string, nothing is persisted but the audit record (FileInspectionServiceImpl.java:51-53, :76-101;
-    // ContainerReader.java:9-23; InspectionControllerImpl.java:27-39). A raw context may still not POST it.
+    // non-uuid string, nothing is persisted but the audit record (FileInspectionServiceImpl;
+    // ContainerReader; InspectionControllerImpl). A raw context may still not POST it.
     '/v1/inspections',
     // `POST /v1/certificates/import`, certificate-only entries (CREATE_BODY_SHAPES): a
     // certificate entry goes through the same upload as `/v1/certificates/upload` and one already in the inventory is
-    // left as it is (`EXISTING`, no write: CertificateImportServiceImpl.java:385-406); a `keyDestination` (the key
+    // left as it is (`EXISTING`, no write: CertificateImportServiceImpl); a `keyDestination` (the key
     // import, which writes into a token profile) is refused by the shape rule before anything is sent.
     '/v1/certificates/import',
     // Certificate lifecycle: a platform-level pre-registration CREATES a certificate placeholder (core
-    // ClientOperationServiceImpl.registerCertificate, service/v2/impl/ClientOperationServiceImpl.java:620-700: a new
+    // ClientOperationServiceImpl.registerCertificate, service/v2/impl/ClientOperationServiceImpl: a new
     // REQUESTED → PENDING_REGISTRATION → REGISTERED row under the path RA profile; with a secret, a new
-    // CertificateRegistrationAuthorization row, :1046-1062; nothing on a pre-existing object). Body judged like every
+    // CertificateRegistrationAuthorization row; nothing on a pre-existing object). Body judged like every
     // create: `sourceCertificateUuid` → certificates, `ownerUuid` → users, `groupUuids` → groups must be own.
     '/v2/operations/authorities/{id}/raProfiles/{id}/certificates/register',
-    // Platform: the v2 ADMIN create of a connector (interfaces v2/ConnectorController.java:105; core
-    // v2/ConnectorServiceImpl.java:319-322 `createNewConnector(request, CONNECTED)`): the same DTO family as
+    // Platform: the v2 ADMIN create of a connector (interfaces v2/ConnectorController; core
+    // v2/ConnectorServiceImpl `createNewConnector(request, CONNECTED)`): the same DTO family as
     // `/v1/connectors` (name, url, authType, attributes; `proxyUuid` stays probes-only). Approve / reconnect / connect
     // and `connector/register` stay on PLATFORM_DENY.
     '/v2/connectors',
-    // Platform: the v2 create of a compliance profile (interfaces v2/ComplianceProfileController.java:75;
-    // core service/v2/impl/ComplianceProfileServiceImpl.java:165 createComplianceProfile: a new profile row with its own
+    // Platform: the v2 create of a compliance profile (interfaces v2/ComplianceProfileController;
+    // core service/v2/impl/ComplianceProfileServiceImpl createComplianceProfile: a new profile row with its own
     // rule / group association rows; the referenced provider rules are read, never written). `internalRules` / `groups`
     // stay probes-only typed fields, `connectorUuid` a reference; the v1 create was allow-listed already.
     '/v2/complianceProfiles',

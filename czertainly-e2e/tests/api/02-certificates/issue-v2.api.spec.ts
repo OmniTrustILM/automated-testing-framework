@@ -183,17 +183,6 @@ test.describe('Certificate issue through the v2 API', { tag: tags.api }, () => {
                 clean(a.text, 'malformed JSON');
             });
 
-            await test.step('Wrong content type (text/plain) → the status the OpenAPI declares, else a 4xx (spec gap), never 5xx', async () => {
-                const a = await sendRaw(api, 'POST', create, '{"request": "bm90LWEtY3Ny", "format": "pkcs10", "attributes": []}', { headers: { 'Content-Type': 'text/plain' } });
-                own.probe('certificates', a, { name: runCommonName('api-neg'), note: 'text/plain issue accepted (API-CERT-02 negative)', parents });
-                expect(a.status, a.text.slice(0, 300)).toBeGreaterThanOrEqual(400);
-                // Robustness only: the operation declares no status for a wrong content type, so the oracle is "a 4xx, never 5xx".
-                expect(a.status).toBeLessThan(500);
-                // The v2 issue operation declares 200 / 400 / 422 / 500 only: a 415 is undeclared (spec gap, recorded).
-                testInfo.annotations.push({ type: 'spec-gap', description: `wrong content type answered ${a.status} (415 is not declared on the issue operation)` });
-                clean(a.text, 'text/plain');
-            });
-
             await test.step('`attributes` omitted (the spec marks it required) → the status pinned by this probe, never 5xx', async () => {
                 const a = await sendRaw(api, 'POST', create, { request: 'bm90LWEtY3Ny', format: 'pkcs10', customAttributes: [] });
                 own.probe('certificates', a, { name: runCommonName('api-neg'), note: 'issue without attributes accepted (API-CERT-02 probe)', parents });
@@ -202,6 +191,25 @@ test.describe('Certificate issue through the v2 API', { tag: tags.api }, () => {
                 testInfo.annotations.push({ type: 'pinned-status', description: `attributes omitted → ${a.status}` });
                 clean(a.text, 'attributes omitted');
             });
+        });
+
+    test('a wrong content type (text/plain) on the issue operation is a 4xx, never a 5xx',
+        testMeta({
+            id: 'API-CERT-02', row: 'text-plain-5xx', prio: 'P1', issue: 'ilm#429', bug: 'core#2140',
+            rule: ['the v2 issue operation declares 200 / 400 / 422 / 500 only: a 415 is undeclared (spec gap), so the oracle is a 4xx and never a 5xx; no stack trace, class name or SQL state in the body'],
+        }),
+        async ({ api, own, ownRaProfile }, testInfo) => {
+            const ra = ownRaProfile;
+            const create = `${opsBase(ra)}/certificates`;
+            const a = await sendRaw(api, 'POST', create, '{"request": "bm90LWEtY3Ny", "format": "pkcs10", "attributes": []}', { headers: { 'Content-Type': 'text/plain' } });
+            // Ledger before assertion: a negative the platform accepted made a certificate of this run.
+            own.probe('certificates', a, { name: runCommonName('api-neg'), note: 'text/plain issue accepted (API-CERT-02 negative)', parents: { raProfile: ra.uuid, authority: ra.authorityUuid } });
+            expect(a.status, a.text.slice(0, 300)).toBeGreaterThanOrEqual(400);
+            testInfo.annotations.push({ type: 'spec-gap', description: `wrong content type answered ${a.status} (415 is not declared on the issue operation)` });
+            expect(leaksIn(a.text), 'text/plain: no stack trace / class / SQL leak').toEqual([]);
+            // Known bug: the wrong content type answers 500 today.
+            test.fail(true, 'core#2140: a wrong content type on the v2 issue operation answers 500 instead of a 4xx');
+            expect(a.status, 'a wrong content type must not be a 5xx').toBeLessThan(500);
         });
 
     test('lifecycle endpoints answer 401 to an invalid bearer token',

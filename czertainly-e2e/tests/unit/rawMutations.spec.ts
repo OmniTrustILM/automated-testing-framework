@@ -13,6 +13,7 @@ import { test, expect } from '@playwright/test';
 import { RawMutationRule, rawMutations, rawMutationsWith } from '../../utils/regression/specLint/rawMutations';
 import { RULES, type Rule } from '../../utils/regression/specLint/rules';
 
+// The sources in this file are linted, never compiled: an `as any` inside one is lint input, not a cast of this file.
 const lint = (src: string, file = 'tests/api/X.spec.ts') => rawMutations(src, file).map((m) => `${m.line} ${m.rule}`);
 
 // deny by default: the api fixture, GuardedApi parameters and guard factories may mutate; raw contexts may only read
@@ -575,6 +576,7 @@ test('API-AUTH-02: claim', async ({ api, adminToken, restrictedToken }, testInfo
         'apiJson': { bad: "await apiJson(ctx, 'DELETE', '/api/v1/roles/1');", fine: "await apiJson(ctx, 'GET', '/api/v1/roles');" },
         'send-method': { bad: "await send(ctx, 'DELETE', '/api/v1/roles/1');", fine: "await send(ctx, 'GET', '/api/v1/roles');" },
         'raw-xhr': { bad: 'const x = new XMLHttpRequest();', fine: 'const x = new URLSearchParams();' },
+        'response-state': { bad: 'const all = res.allHeaders();', fine: "const type = res.headers()['content-type'];", specOnly: true },
         'live-forge': { bad: 'const handle = { type: "roles", ref } as LiveOwn<"roles">;', fine: 'const handle: LiveOwn<"roles"> = await live("roles", ref);' },
         'util-import': {
             bad: "import * as cu from '../../utils/certificateUtils';",
@@ -670,3 +672,48 @@ test('API-AUTH-02: claim', async ({ api, adminToken, restrictedToken }, testInfo
         expect(rawMutationsWith([everywhere], 'debugger;', 'utils/regression/x.ts', { spec: false }).map((m) => m.rule)).toEqual(['dynamic-code']);
     });
 }
+
+// a page object's own page is the same raw context as the page fixture: `<x>.page.request` is refused like `page.request`
+test('<x>.page.request is a raw context like page.request: passed on or aliased it is refused, a GET passes, a write is refused', () => {
+    const rules = (src: string): string[] => rawMutations(src, 'tests/regression/X.spec.ts').map((m) => m.rule);
+    expect(rules("test('x', async ({ signedIn }) => { const roles = new RolesPage(signedIn); await roles.page.request.get('/api/v1/roles'); });")).toEqual([]);
+    expect(rules("test('x', async ({ signedIn }) => { const roles = new RolesPage(signedIn); await roles.page.request.post('/api/v1/roles', { data: {} }); });")).toEqual(['raw-request-use']);
+    expect(rules("test('x', async ({ signedIn }) => { const roles = new RolesPage(signedIn); await helper(roles.page.request); });")).toEqual(['raw-request-use']);
+    expect(rules("test('x', async ({ signedIn }) => { const roles = new RolesPage(signedIn); const raw = roles.page.request; });")).toEqual(['raw-request-use']);
+    expect(rules("test('x', async ({ signedIn }) => { const roles = new RolesPage(signedIn); await roles.api.request.get('/x'); });")).toEqual([]);
+    // bracket and alias forms resolve like the dotted one
+    const po = "const po = new RolesPage(signedIn); ";
+    for (const body of ["await po['page'].request.post('/x');", "await po.page['request'].post('/x');", "const p = po.page; await p.request.post('/x');",
+        "const { page } = po; await page.request.post('/x');", "const { page: pg } = po; await pg.request.post('/x');", "const p = po.page; const q = p; await q['request'].post('/x');",
+        "const { request } = po.page; await request.post('/x');", "const raw = po['page']['request'];"]) {
+        expect(rules(`test('x', async ({ signedIn }) => { ${po}${body} });`), body).toEqual(['raw-request-use']);
+    }
+    for (const body of ["await po['page'].request.get('/x');", "const p = po.page; await p.request.get('/x');", "const { page } = po; await page['request'].get('/x');"]) {
+        expect(rules(`test('x', async ({ signedIn }) => { ${po}${body} });`), body).toEqual([]);
+    }
+});
+
+// cookies and storage state never reach a spec; a header assertion on a plain header, and the verdict helper's headers option, do
+test('response state: only a header assertion on a plain header or the verdict helper option may read response headers', () => {
+    const rules = (src: string): string[] => rawMutations(src, 'tests/api/X.api.spec.ts').map((m) => m.rule);
+    // allowed
+    expect(rules("test('x', async ({ api }) => { const res = await api.get('/v1/a'); expect(res.headers()['content-type']).toContain('json'); });")).toEqual([]);
+    expect(rules("test('x', async ({ api }) => { const res = await api.get('/v1/a'); const v = checkRefusedMethod({ status: res.status(), headers: res.headers(), bodyText: '' }); });")).toEqual([]);
+    // refused: a whole header map, a credential header, a computed name, storage state, another receiver, another helper
+    expect(rules("test('x', async ({ api }) => { const res = await api.get('/v1/a'); const h = res.headers(); });")).toEqual(['response-state']);
+    expect(rules("test('x', async ({ api }) => { const res = await api.get('/v1/a'); const c = res.headers()['set-cookie']; });")).toEqual(['response-state']);
+    expect(rules("test('x', async ({ api }) => { const res = await api.get('/v1/a'); const c = res.headers()[name]; });")).toEqual(['response-state']);
+    expect(rules("test('x', async ({ api }) => { const res = await api.get('/v1/a'); const h = await res.allHeaders(); });")).toEqual(['response-state']);
+    expect(rules("test('x', async ({ signedIn }) => { const s = await signedIn.context().storageState(); });")).toEqual(['response-state']);
+    expect(rules("test('x', async ({ api }) => { const res = await api.get('/v1/a'); log({ headers: res.headers() }); });")).toEqual(['response-state']);
+    // bracket keys, destructuring and call / apply / bind do not get around it
+    for (const body of ["const h = res['headers']();", "const h = await res['allHeaders']();", "const h = res['headersArray']();", "const s = await ctx['storageState']();",
+        "const c = res['headers']()['set-cookie'];", "const { headers } = res;", "const { allHeaders } = res;", "const { headersArray: list } = res;",
+        "const { storageState } = ctx;", "const { 'headers': h } = res;", "const h = res.headers.call(res);", "const h = res.headers.apply(res, []);",
+        "const f = res.headers.bind(res);", "const h = res['headers'].call(res);"]) {
+        expect(rules(`test('x', async ({ api }) => { const res = await api.get('/v1/a'); const ctx = res; ${body} });`), body).toEqual(['response-state']);
+    }
+    expect(rules("test('x', async ({ api }) => { const res = await api.get('/v1/a'); expect(res['headers']()['content-type']).toContain('json'); });")).toEqual([]);
+    // a helper file is not a spec: the rule applies to specs only
+    expect(rawMutations('const h = res.headers();', 'utils/regression/x.ts', { spec: false }).map((m) => m.rule)).toEqual([]);
+});

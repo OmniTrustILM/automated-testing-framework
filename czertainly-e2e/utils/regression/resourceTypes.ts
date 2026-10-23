@@ -120,7 +120,7 @@ export const RESOURCE_REGISTRY = defineResourceTypes([
     },
     {
         // One row per key ITEM (its name is the item's); grouped by wrapper, marked by keyMarksFromRows / keyMarksFromDetail.
-        // KeyDetailDto.creationTime (interfaces model/core/cryptography/key/KeyDetailDto.java:26-28) proves a key new.
+        // KeyDetailDto.creationTime (interfaces model/core/cryptography/key/KeyDetailDto) proves a key new.
         type: 'keys', ownDeletePath: '/api/v1/keys', teardown: { step: 5, handler: 'core' }, ownership: detail('/api/v1/keys/{uuid}'),
         snapshot: {
             def: {
@@ -132,8 +132,8 @@ export const RESOURCE_REGISTRY = defineResourceTypes([
     },
     {
         // A key item under its parent key (ledger `parents.key`; no parent → not readable → missing).
-        // `GET /v1/keys/{uuid}/items/{keyItemUuid}` (interfaces CryptographicKeyController.java:140) only reads
-        // (core CryptographicKeyServiceImpl.java:421-432); KeyItemDetailDto extends NameAndUuidDto: `name` is the key's name.
+        // `GET /v1/keys/{uuid}/items/{keyItemUuid}` (interfaces CryptographicKeyController) only reads
+        // (core CryptographicKeyServiceImpl); KeyItemDetailDto extends NameAndUuidDto: `name` is the key's name.
         type: 'keyItems', teardown: { step: 6, handler: 'core' }, ownership: { kind: 'parent', parent: 'key', url: '/api/v1/keys/{parent}/items/{uuid}' },
         snapshot: { coveredBy: 'keys: a key search lists one row per key item, so the keys total counts them' },
     },

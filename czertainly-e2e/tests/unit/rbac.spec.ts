@@ -3,6 +3,7 @@
  * shape, second-identity and local-Keycloak preflights, the anonymous target, the 401 leak check), authApi's permission body, and
  * permissionMatrix's decision table (fixture documents, the certificate and administration tables, consistency).
  */
+import { internalLeaks } from '../../utils/regression/errorContract';
 import { expect, test } from '@playwright/test';
 import { permissionBody } from '../../utils/regression/rbac/authApi';
 import { anonymousTarget, coreReplicas, rolesAfterSignInProblem, DOCUMENTATION_ADDRESS, isNotGrantableAction, keycloakLocalBlocker, leaksInternals, parseProfile, replicaBlocker, restrictedIdentity, SECOND_IDENTITY_REQUEST, secondIdentityBlocker } from '../../utils/regression/rbac/identities';
@@ -154,6 +155,21 @@ test('anonymousTarget: BASE_URL without extras on a shared tier; the core\'s own
         base: 'http://127.0.0.1:8080', headers: { 'X-Forwarded-For': DOCUMENTATION_ADDRESS, Accept: 'application/json' },
     });
     expect(DOCUMENTATION_ADDRESS).toMatch(/^192\.0\.2\./);
+});
+
+test('leaksInternals reads the suite-wide leak list: a bare exception name, an SQL state and a framework package count too', () => {
+    expect(leaksInternals('IllegalStateException happened')).toBe('an exception name');
+    expect(leaksInternals('SQLSTATE 23503')).toBe('an SQL state');
+    expect(leaksInternals('boom\\norg.hibernate.Foo')).toBe('a framework package');
+    expect(leaksInternals('x\\n\\tat com.example.Foo.bar')).toBe('a stack trace');
+    expect(leaksInternals('{"message":"Object of type \'RaProfile\' is not found."}')).toBeUndefined();
+});
+
+test('the shared error-body check also catches the default error page, a source reference and a nested-class frame', () => {
+    expect(internalLeaks('<h1>Whitelabel Error Page</h1>')).not.toEqual([]);
+    expect(internalLeaks('see Foo.java:42')).not.toEqual([]);
+    expect(internalLeaks('trace\n\tat com.x.Outer$Inner.run(Outer.java:9)')).not.toEqual([]);
+    expect(internalLeaks('java.lang.StackOverflowError')).not.toEqual([]);
 });
 
 test('leaksInternals: stack traces, exception classes, source references and the Whitelabel page are caught; a plain 401 body is not', () => {

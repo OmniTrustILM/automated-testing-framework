@@ -46,7 +46,7 @@
  *    teardownHandlers' own `keys` handler — exactly ONE handler for every own token key (protocols/protocolCa and platform/keys have none);
  *    approvals / approval profiles the platform
  *    retains (core never deletes an approval; an approval profile with approvals cannot be deleted,
- *    ApprovalProfileServiceImpl.java:119-127) may be answered `kept` by their handlers (a warning
+ *    ApprovalProfileServiceImpl) may be answered `kept` by their handlers (a warning
  *    and a kept-report line, REG_KEPT_STRICT=1 turns it red — the documented residue of a lifecycle run).
  *
  * Structure: `teardownRun` = `assertPreconditions` → `dryRunReport` | `keepReport` | `deleteAndProve` (delete through
@@ -106,20 +106,20 @@ export const DELETE_ORDER: Array<{ step: number; label: string; types: string[] 
  * pairs with a core citation; tests/unit/runTeardown.spec.ts asserts every pair against DELETE_ORDER.
  */
 export const REFERENCED_BY: ReadonlyArray<{ a: string; b: string; core: string }> = [
-    { a: 'executions', b: 'actions', core: 'service/impl/ActionServiceImpl.java:150-165 deleteExecution: 422 "Cannot delete execution … associated to following actions"' },
-    { a: 'actions', b: 'triggers', core: 'service/impl/ActionServiceImpl.java:412-427 deleteAction: 422 "Cannot delete action … associated to following triggers"' },
-    { a: 'rules', b: 'triggers', core: 'service/impl/RuleServiceImpl.java:295-305 deleteRule: 422 "Cannot delete rule … associated to following triggers"' },
-    { a: 'conditions', b: 'rules', core: 'service/impl/RuleServiceImpl.java:140-150 deleteCondition: 422 "Cannot delete condition … associated to following rules"' },
-    { a: 'triggers', b: 'eventAssociations', core: 'service/impl/TriggerServiceImpl.java:195-210 deleteTrigger: 422 "Cannot delete trigger. It has … event association(s)"' },
-    { a: 'notificationProfiles', b: 'executions', core: 'service/impl/NotificationProfileServiceImpl.java:178-184 deleteNotificationProfile: 422 "… execution(s) are referencing this notification profile"' },
-    { a: 'notificationInstances', b: 'notificationProfiles', core: 'service/impl/NotificationInstanceServiceImpl.java:334-343 removeNotificationInstance: 422 "Notification profile(s) referencing this notification instance"' },
+    { a: 'executions', b: 'actions', core: 'service/impl/ActionServiceImpl deleteExecution: 422 "Cannot delete execution … associated to following actions"' },
+    { a: 'actions', b: 'triggers', core: 'service/impl/ActionServiceImpl deleteAction: 422 "Cannot delete action … associated to following triggers"' },
+    { a: 'rules', b: 'triggers', core: 'service/impl/RuleServiceImpl deleteRule: 422 "Cannot delete rule … associated to following triggers"' },
+    { a: 'conditions', b: 'rules', core: 'service/impl/RuleServiceImpl deleteCondition: 422 "Cannot delete condition … associated to following rules"' },
+    { a: 'triggers', b: 'eventAssociations', core: 'service/impl/TriggerServiceImpl deleteTrigger: 422 "Cannot delete trigger. It has … event association(s)"' },
+    { a: 'notificationProfiles', b: 'executions', core: 'service/impl/NotificationProfileServiceImpl deleteNotificationProfile: 422 "… execution(s) are referencing this notification profile"' },
+    { a: 'notificationInstances', b: 'notificationProfiles', core: 'service/impl/NotificationInstanceServiceImpl removeNotificationInstance: 422 "Notification profile(s) referencing this notification instance"' },
     { a: 'certificates', b: 'discoveries', core: 'handler order: the discovery step records the onboarded certificates as derived lines, so it runs before the certificate step (3 before 4)' },
-    { a: 'keyItems', b: 'keys', core: 'key items go WITH their key (core deleteKey, CryptographicKeyServiceImpl.java:615-645, destroys and deletes the items): the item step follows the key step and only reports what remains' },
-    { a: 'approvalProfiles', b: 'approvals', core: 'service/impl/ApprovalProfileServiceImpl.java:119-127 deleteApprovalProfile: 422 "Unable to delete approval profile with existing approvals." (approvals are never deleted by core: the handler may answer kept)' },
-    { a: 'raProfiles', b: 'complianceProfiles', core: 'suspected defect: core\'s RaProfileServiceImpl removes no compliance_profile_association row, so a deleted RA profile leaves a dangling association and the compliance profile\'s non-force delete then answers 404 (v2 ComplianceProfileServiceImpl.java:565-577 resolves the deleted RA profile): the compliance profile (own RA associations removed) is deleted BEFORE the RA profile' },
+    { a: 'keyItems', b: 'keys', core: 'key items go WITH their key (core deleteKey, CryptographicKeyServiceImpl, destroys and deletes the items): the item step follows the key step and only reports what remains' },
+    { a: 'approvalProfiles', b: 'approvals', core: 'service/impl/ApprovalProfileServiceImpl deleteApprovalProfile: 422 "Unable to delete approval profile with existing approvals." (approvals are never deleted by core: the handler may answer kept)' },
+    { a: 'raProfiles', b: 'complianceProfiles', core: 'suspected defect: core\'s RaProfileServiceImpl removes no compliance_profile_association row, so a deleted RA profile leaves a dangling association and the compliance profile\'s non-force delete then answers 404 (v2 ComplianceProfileServiceImpl resolves the deleted RA profile): the compliance profile (own RA associations removed) is deleted BEFORE the RA profile' },
     { a: 'raProfiles', b: 'certificates', core: 'handler order: the certificate handler (teardownHandlers certificates) revokes an issued certificate through its RA profile, so the certificate step precedes the RA profile step (4 before 10)' },
-    { a: 'tokenProfiles', b: 'keys', core: 'service/writer/TokenProfileWriter.java:195-203 validateNoDependentObjects: "Cannot delete Token Profile … dependent Key(s)"' },
-    { a: 'tokens', b: 'tokenProfiles', core: 'service/impl/TokenInstanceServiceImpl.java:524-537 deleteTokenInstance: "Dependent Token Profiles: …"' },
+    { a: 'tokenProfiles', b: 'keys', core: 'service/writer/TokenProfileWriter validateNoDependentObjects: "Cannot delete Token Profile … dependent Key(s)"' },
+    { a: 'tokens', b: 'tokenProfiles', core: 'service/impl/TokenInstanceServiceImpl deleteTokenInstance: "Dependent Token Profiles: …"' },
     // The timestamping block's types (pairs and citations in utils/timestamping/resourceTypes.ts).
     ...TIMESTAMPING_REFERENCED_BY,
 ];

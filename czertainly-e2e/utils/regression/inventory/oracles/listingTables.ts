@@ -16,7 +16,7 @@ import { ListingSpec } from './listing';
 // ====================================================================================================================
 
 const KEY_ITEM = 'core CryptographicKeyItem.mapToSummaryDto (dao/entity/CryptographicKeyItem.java) → interfaces KeyItemDto';
-const DISCOVERY_ROW = 'core DiscoveryDtoMapper.toListDto (:91-104) → interfaces DiscoveryListDto';
+const DISCOVERY_ROW = 'core DiscoveryDtoMapper.toListDto → interfaces DiscoveryListDto';
 const AUDIT_ROW = 'core AuditLog.mapToDto (dao/entity/AuditLog.java) → interfaces AuditLogDto, LogRecord records';
 
 /** `POST /api/v1/keys`: the rows are KEY ITEMS (`cryptographicKeys[]`, CryptographicKeyServiceImpl.java). */
@@ -36,7 +36,7 @@ export const KEYS: ListingSpec = {
         { id: 'CKI_STATE', type: 'list', kind: 'list', shape: 'code', get: member('state'), sortable: true, sort: 'structure', evidence: `${KEY_ITEM}: state; FilterField.java` },
         { id: 'CKI_CRYPTOGRAPHIC_ALGORITHM', type: 'list', kind: 'list', shape: 'code', get: member('keyAlgorithm'), sortable: true, sort: 'structure', evidence: `${KEY_ITEM}: keyAlgorithm; FilterField.java` },
         // KeyUsage is a BitMaskEnum: EMPTY = bit mask 0 (FilterPredicatesBuilder.java), EQUALS = the bit is set; not sortable
-        // (SearchHelper.isBitMaskField :336-340).
+        // (SearchHelper.isBitMaskField).
         { id: 'CKI_USAGE', type: 'list', kind: 'list', shape: 'code', get: member('usage'), sortable: false, sort: 'none', evidence: `${KEY_ITEM}: usage (KeyUsage codes of the bit mask); FilterField.java` },
         { id: 'CKI_LENGTH', type: 'number', kind: 'number', shape: 'number', get: member('length'), sortable: true, sort: 'number', evidence: `${KEY_ITEM}: length (nullable Integer); FilterField.java` },
         { id: 'CKI_ENABLED', type: 'boolean', kind: 'boolean', shape: 'boolean', get: member('enabled'), sortable: true, sort: 'boolean', evidence: `${KEY_ITEM}: enabled (primitive; the column is primitive too, CryptographicKeyItem.java); FilterField.java` },
@@ -71,7 +71,7 @@ export const DISCOVERIES: ListingSpec = {
 
 /**
  * `POST /api/v1/auditLogs` (AuditLogServiceImpl.java): rows `items[]`, newest first (id desc), NO sort (any sort is refused).
- * The enum columns are stored by name and filtered by CODE (FilterPredicatesBuilder.findEnumByCustomValue :1167-1173).
+ * The enum columns are stored by name and filtered by CODE (FilterPredicatesBuilder.findEnumByCustomValue).
  */
 export const AUDIT_LOGS: ListingSpec = {
     name: 'auditLogs',
@@ -85,7 +85,7 @@ export const AUDIT_LOGS: ListingSpec = {
     fields: [
         { id: 'AUDIT_LOG_TIMESTAMP', type: 'datetime', kind: 'date', shape: 'datetime', get: member('timestamp'), sortable: false, sort: 'none', evidence: `${AUDIT_ROW}: timestamp; FilterField.java` },
         { id: 'AUDIT_LOG_MODULE', type: 'list', kind: 'list', shape: 'code', get: member('module'), sortable: false, sort: 'none', evidence: `${AUDIT_ROW}: module; FilterField.java` },
-        { id: 'AUDIT_LOG_ACTOR_TYPE', type: 'list', kind: 'list', shape: 'code', get: nested('actor', 'type'), sortable: false, sort: 'none', evidence: `${AUDIT_ROW}: actor.type (AuditLog.fromLogRecord :155); FilterField.java` },
+        { id: 'AUDIT_LOG_ACTOR_TYPE', type: 'list', kind: 'list', shape: 'code', get: nested('actor', 'type'), sortable: false, sort: 'none', evidence: `${AUDIT_ROW}: actor.type (AuditLog.fromLogRecord); FilterField.java` },
         { id: 'AUDIT_LOG_ACTOR_NAME', type: 'string', kind: 'string', shape: 'text', get: nested('actor', 'name'), sortable: false, sort: 'none', evidence: `${AUDIT_ROW}: actor.name; FilterField.java` },
         { id: 'AUDIT_LOG_ACTOR_AUTH_METHOD', type: 'list', kind: 'list', shape: 'code', get: nested('actor', 'authMethod'), sortable: false, sort: 'none', evidence: `${AUDIT_ROW}: actor.authMethod; FilterField.java` },
         { id: 'AUDIT_LOG_RESOURCE', type: 'list', kind: 'list', shape: 'code', get: nested('resource', 'type'), sortable: false, sort: 'none', evidence: `${AUDIT_ROW}: resource.type; FilterField.java` },
@@ -95,7 +95,7 @@ export const AUDIT_LOGS: ListingSpec = {
         { id: 'AUDIT_LOG_SOURCE_IP_ADDRESS', type: 'string', kind: 'string', shape: 'text', get: nested('source', 'ipAddress'), sortable: false, sort: 'none', evidence: `${AUDIT_ROW}: source.ipAddress (JSON path logRecord.source.ipAddress); FilterField.java` },
         { id: 'AUDIT_LOG_SOURCE_PATH', type: 'string', kind: 'string', shape: 'text', get: nested('source', 'path'), sortable: false, sort: 'none', evidence: `${AUDIT_ROW}: source.path (JSON path); FilterField.java` },
         { id: 'AUDIT_LOG_MESSAGE', type: 'string', kind: 'string', shape: 'text', get: member('message'), sortable: false, sort: 'none', evidence: `${AUDIT_ROW}: message; FilterField.java` },
-        { id: 'AUDIT_LOG_RESOURCE_UUID', type: 'string', kind: 'jsonArray', shape: 'code', get: elementsOf(['resource', 'objects'], 'uuid'), sortable: false, sort: 'none', evidence: `${AUDIT_ROW}: resource.objects[].uuid (JSON array path; EQUALS = array contains, EMPTY = [] / [null] / null, FilterPredicatesBuilder.java, :1151-1156); FilterField.java` },
+        { id: 'AUDIT_LOG_RESOURCE_UUID', type: 'string', kind: 'jsonArray', shape: 'code', get: elementsOf(['resource', 'objects'], 'uuid'), sortable: false, sort: 'none', evidence: `${AUDIT_ROW}: resource.objects[].uuid (JSON array path; EQUALS = array contains, EMPTY = [] / [null] / null, FilterPredicatesBuilder.java); FilterField.java` },
         { id: 'AUDIT_LOG_RESOURCE_NAME', type: 'string', kind: 'jsonArray', shape: 'code', get: elementsOf(['resource', 'objects'], 'name'), sortable: false, sort: 'none', evidence: `${AUDIT_ROW}: resource.objects[].name; FilterField.java` },
         { id: 'AUDIT_LOG_AFFILIATED_RESOURCE_UUID', type: 'string', kind: 'jsonArray', shape: 'code', get: elementsOf(['affiliatedResource', 'objects'], 'uuid'), sortable: false, sort: 'none', evidence: `${AUDIT_ROW}: affiliatedResource.objects[].uuid; FilterField.java` },
         { id: 'AUDIT_LOG_AFFILIATED_RESOURCE_NAME', type: 'string', kind: 'jsonArray', shape: 'code', get: elementsOf(['affiliatedResource', 'objects'], 'name'), sortable: false, sort: 'none', evidence: `${AUDIT_ROW}: affiliatedResource.objects[].name; FilterField.java` },

@@ -89,3 +89,9 @@ test('testMeta({ rule }) adds one `rule` annotation per cited rule after the led
     ]);
     expect(m.tag).toEqual(['@issue:ilm#448', '@issue:ilm#427', '@p1', '@bug:core#2297', '@REG-CFG-07.a']);
 });
+
+test('testMeta gives a parked row its reason as a fixme annotation, and none otherwise', () => {
+    const parked = testMeta({ id: 'REG-CFG-09', prio: 'P1', issue: 'ilm#427', parked: 'needs an account the suite cannot create' });
+    expect(parked.annotation).toContainEqual({ type: 'fixme', description: 'needs an account the suite cannot create' });
+    expect(testMeta({ id: 'REG-CFG-09', prio: 'P1', issue: 'ilm#427' }).annotation.some((a) => a.type === 'fixme')).toBe(false);
+});

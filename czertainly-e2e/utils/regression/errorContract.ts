@@ -71,24 +71,36 @@ export interface RefusedAnswer {
 }
 
 /**
- * Words an error body must never carry: a stack frame, an exception class name, a database state or a framework
- * package. The one list of the suite; `internalLeaks` reads it for every caller.
+ * Words an error body must never carry: a stack frame, an exception class name, a source file reference, the servlet
+ * container's default error page, a database state or a framework package. The one list of the suite, each entry with
+ * the reason it is given for; `internalLeaks` and `leaksInternals` read it for every caller. The more specific reasons
+ * come first, because `leaksInternals` names the first one that matches.
  *
  * A body is raw JSON text, so a stack trace in it has its line breaks and tabs written as `\n`, `\r` and `\t`: the
  * letter of the escape sits right against the next word (`\torg.hibernate`, `\nat com.x`), where a plain word boundary
  * finds none. The start of a word is therefore `(?:\b|(?<=\\[nrt]))`, a word boundary or that escape, so a joined form is
  * caught while a word that merely ends in the same letters (`Georg.springer`) is not.
  */
-export const INTERNAL_LEAK_WORDS: readonly RegExp[] = [
-    /(?:\b|(?<=\\[nrt]))at [a-z]+\.[A-Za-z.]+\(/,
-    /(?:\b|(?<=\\[nrt]))at com\.\w+/,
-    /Exception\b/,
-    /SQLState/i,
-    /(?:\b|(?<=\\[nrt]))org\.(spring|hibernate|postgresql)/,
+const LEAK_RULES: ReadonlyArray<{ word: RegExp; reason: string }> = [
+    { word: /Whitelabel/i, reason: 'the Whitelabel error page' },
+    { word: /\n\s+at\s+[\w.$<>]+\(/, reason: 'a stack trace' },
+    { word: /\bat\s+[\w.$]+\([\w.]+\.java:\d+\)/, reason: 'a stack trace' },
+    { word: /(?:\b|(?<=\\[nrt]))at [a-z]+\.[A-Za-z.]+\(/, reason: 'a stack trace' },
+    { word: /(?:\b|(?<=\\[nrt]))at com\.\w+/, reason: 'a stack trace' },
+    { word: /\b[a-z][\w]*(?:\.[a-z][\w]*)+\.[A-Z]\w*(?:Exception|Error)\b/, reason: 'a Java exception class' },
+    { word: /\.java:\d+/, reason: 'a source file reference' },
+    { word: /Exception\b/, reason: 'an exception name' },
+    { word: /SQLState/i, reason: 'an SQL state' },
+    { word: /(?:\b|(?<=\\[nrt]))org\.(spring|hibernate|postgresql)/, reason: 'a framework package' },
 ];
+
+export const INTERNAL_LEAK_WORDS: readonly RegExp[] = LEAK_RULES.map((r) => r.word);
 
 /** The leak words found in an error body, as text (empty = clean). */
 export const internalLeaks = (text: string): string[] => INTERNAL_LEAK_WORDS.filter((re) => re.test(text)).map(String);
+
+/** Why an error body leaks internals (the first matching reason of the list), or undefined when it is clean. */
+export const leakReason = (text: string): string | undefined => LEAK_RULES.find((r) => r.word.test(text))?.reason;
 
 /** How `expectRefused` reads the messages of the answer. */
 export interface RefusedRule {

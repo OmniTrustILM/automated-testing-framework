@@ -64,8 +64,8 @@ export const DOCUMENTATION_ADDRESS = '192.0.2.1';
 
 /**
  * The `X-Forwarded-For` an anonymous request carries, or undefined. A request with no credentials from a
- * LOOPBACK address authenticates as the `localhost` system user (core PlatformAuthenticationFilter.java:57, :142-152;
- * the address is read from `X-Forwarded-For` first, AuthHelper.java:304-326). So whenever BASE_URL's host is a
+ * LOOPBACK address authenticates as the `localhost` system user (core PlatformAuthenticationFilter;
+ * the address is read from `X-Forwarded-For` first, AuthHelper). So whenever BASE_URL's host is a
  * loopback / private LITERAL (also a shared tier reached through a port-forward) or the tier is local, the context
  * presents the documentation address; never to a public host. Context-level (`extraHTTPHeaders`): the guard's own
  * header rule still refuses a per-request `x-forwarded-for`.

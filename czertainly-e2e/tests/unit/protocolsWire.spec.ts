@@ -158,6 +158,7 @@ class ProtocolsCore extends BaseCore {
                 return { status: 204 };
             }
             if (path === '/api/v1/keys') {
+                // the bulk key delete sends a bare JSON array of uuids; the stand-in's request body type is an object
                 for (const u of body as unknown as string[]) this.store.delete(u);
                 return { status: 204 };
             }

@@ -54,6 +54,13 @@ const newServed = (html: string, patch: Partial<Served> = {}): Served => ({
 
 // ------------------------------------------------------------------ BrowserGuards
 
+/** The page the stand-in serves defines `run` on its window (the browser-side test hook). */
+declare global {
+    interface Window {
+        run(x: string): Promise<void>;
+    }
+}
+
 test('browserGuards (pure): classification, the allow-list, the console noise, write detection, the error texts, the list shapes', () => {
     const allow = [{ method: 'GET', path: /\/v1\/branding$/, status: 404, expected: 'x', reason: 'y' }, { path: /\/v1\/things$/, status: [403, 404], bug: 'core#1', reason: 'z' }];
     expect(classify(200, 'GET', '/api/v1/x', allow)).toBeUndefined();
@@ -123,7 +130,7 @@ test('BrowserGuards counts console errors, page errors, 5xx, unexpected 4xx, wri
         }).start();
         const run = async (label: string, what: string) => {
             guards.mark(label);
-            await page.evaluate((w) => (window as unknown as { run(x: string): Promise<void> }).run(w), what);
+            await page.evaluate((w) => window.run(w), what);
             await guards.settle(2_000);
         };
         await run('clean', 'ok');
@@ -135,7 +142,7 @@ test('BrowserGuards counts console errors, page errors, 5xx, unexpected 4xx, wri
         await run('pageerror', 'pageerror');
         await run('external', 'external');
         guards.mark('text');
-        await page.evaluate(() => (window as unknown as { run(x: string): Promise<void> }).run('text'));
+        await page.evaluate(() => window.run('text'));
         expect(await guards.scanText()).toEqual(['unexpected error', 'undefined']);
 
         expect(guards.counts('clean')).toMatchObject({ console: 0, pageerror: 0, server: 0, client: 0, failed: 0, text: 0, write: 0 });
@@ -158,8 +165,8 @@ test('BrowserGuards counts console errors, page errors, 5xx, unexpected 4xx, wri
         expect(await failsFast(Promise.resolve().then(() => guards.assertZero()))).toBe(true);
         guards.dispose();
         const before = guards.all().length;
-        await page.evaluate(() => (window as unknown as { run(x: string): Promise<void> }).run('client'));
-        await page.evaluate(() => (window as unknown as { run(x: string): Promise<void> }).run('console'));
+        await page.evaluate(() => window.run('client'));
+        await page.evaluate(() => window.run('console'));
         expect(guards.all().length, 'disposed: nothing more is counted').toBe(before);
     } finally {
         await context.close();

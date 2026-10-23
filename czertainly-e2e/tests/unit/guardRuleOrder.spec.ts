@@ -200,9 +200,11 @@ test('the read POSTs are allowed before the body and ownership rules (rule 2)', 
 // options and a Request object as the target. Each is refused (or absent), never forwarded.
 test('refused: saved view writes, HEAD, the options maxRedirects and maxRetries and a Request object; absent: onRequest and check', async () => {
     const calls: string[] = [];
+    // an observer option the public seams do not take: the cast is the point of the case
     const g = looseApi(guardApiWithSeams(raw, { lines, runId: RUN, tier: null, env: { BASE_URL }, onRequest: (m: string, u: string) => calls.push(`${m} ${u}`) } as never));
     await g.get('/api/v1/roles', { failOnStatusCode: false });
     expect(calls, 'the observer option is not read').toEqual([]);
+    // `check` is not a member of the guarded API: read through a record view to prove it is absent
     expect((g as unknown as Record<string, unknown>).check, 'the verdict-only method is gone').toBeUndefined();
     const viewBody = { name: `${RUN}-view`, resource: 'certificates', columns: [] };
     expect((await refusal(g.post('/api/v1/listViews', { data: viewBody }))).reason).toMatch(/^a mutation without a uuid in the path that is neither an allow-listed create/);

@@ -30,7 +30,7 @@ import { LIST_STATE_MS } from '../../../utils/regression/timeouts';
 test.describe('User with a role', { tag: tags.regression }, () => {
     test('a user created in the UI with the run role is enabled, has the role and is listed on it',
         testMeta({
-            id: 'REG-CFG-09', prio: 'P1', issue: 'ilm#427',
+            id: 'REG-CFG-09', row: 'created with the run role', prio: 'P1', issue: 'ilm#427',
             rule: ['create a user and assign the role (POST user, then PATCH its roles); user and role detail show each other'],
         }),
         async ({ signedIn: page, api, own }) => {
@@ -72,14 +72,14 @@ test.describe('User with a role', { tag: tags.regression }, () => {
             });
         });
 
+    // The reason is the `parked` annotation of the declaration: it reaches the report (a fixme body never runs).
     test.fixme('the new user can sign in when an identity-provider account exists for it',
         testMeta({
-            id: 'REG-CFG-09', prio: 'P1', issue: 'ilm#427',
+            id: 'REG-CFG-09', row: 'sign in as the new user', prio: 'P1', issue: 'ilm#427',
             rule: ['sign in as the new user (the username must match an identity-provider account)'],
+            parked: 'needs an identity-provider account whose username is the new user; the suite cannot create one',
         }),
-        async ({}, testInfo) => {
-            testInfo.annotations.push({ type: 'fixme', description: 'pending an identity-provider account whose username is the new user: the suite cannot create one, so the sign-in cannot be asserted yet' });
-        });
+        async () => {});
 
     test('editing a user keeps its locked username, and first name, last name and e-mail persist',
         testMeta({

@@ -163,15 +163,26 @@ test.describe('credential validation', { tag: tags.api }, () => {
         });
 
     test('a create without connectorUuid is a 4xx with the error-contract body',
-        testMeta({ id: 'API-GEN-18', row: 'connector-missing', prio: 'P1', issue: ISSUE, rule: ['connectorUuid missing (no written rule; inferred 500 from a null SecuredUUID)', '4xx, never 5xx, for bad input: the negative-testing oracle. Not a bug tag until the defect is confirmed (then test.fail() + the ticket)', 'never a 5xx (the first answer is annotated)'] }),
+        testMeta({ id: 'API-GEN-18', row: 'connector-missing', prio: 'P1', issue: ISSUE, rule: ['connectorUuid missing (no written rule; inferred 500 from a null SecuredUUID)', '4xx, never 5xx, for bad input: the negative-testing oracle. A confirmed defect: core#2585, marked as a known bug', 'never a 5xx (the first answer is annotated)'] }),
         async ({ api, own }, testInfo) => {
             const c = await credentialConnectorOrSkip(api);
             const probe = await probeCredential(api, own.spec, await basicBody(api, c, ownName('cred-noconnid'), { connectorUuid: undefined }), 'missing connectorUuid probe');
             testInfo.annotations.push({ type: 'observed', description: `status ${probe.status}: ${probe.text.slice(0, 120)}` });
             expect(probe.status, probe.text.slice(0, 300)).toBeGreaterThanOrEqual(400);
-            expect(probe.status, `a missing connectorUuid must not be a 5xx: ${probe.text.slice(0, 300)}`).toBeLessThan(500);
             if (probe.status === 422) expect422Messages(probe.text);
             else expectMessageObject(probe.text);
+        });
+
+    test('a create without connectorUuid is never a 5xx',
+        testMeta({ id: 'API-GEN-18', row: 'connector-missing-5xx', prio: 'P1', issue: ISSUE, bug: 'core#2585', rule: ['connectorUuid missing: 4xx, never 5xx, for bad input (the negative-testing oracle); core#2585: 500 today'] }),
+        async ({ api, own }, testInfo) => {
+            const c = await credentialConnectorOrSkip(api);
+            const probe = await probeCredential(api, own.spec, await basicBody(api, c, ownName('cred-noconnid5'), { connectorUuid: undefined }), 'missing connectorUuid probe (5xx check)');
+            testInfo.annotations.push({ type: 'observed', description: `status ${probe.status}: ${probe.text.slice(0, 120)}` });
+            expect(probe.status, probe.text.slice(0, 300)).toBeGreaterThanOrEqual(400);
+            // Known bug: a missing connectorUuid answers 500 today.
+            test.fail(true, 'core#2585: a credential create without connectorUuid answers 500 instead of a 4xx');
+            expect(probe.status, `a missing connectorUuid must not be a 5xx: ${probe.text.slice(0, 300)}`).toBeLessThan(500);
         });
 
     test('an empty-string password is accepted today (201)',

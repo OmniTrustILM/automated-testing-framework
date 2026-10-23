@@ -363,7 +363,7 @@ export function expectedOrderGroups(m: CertificateSeedPlan, field: SortField, di
 
 /**
  * The strict expected uuid order: the groups of `expectedOrderGroups`, each group's members by uuid ASCENDING. The uuid
- * tie-break is `asc` whatever the sort direction (core SortOrderBuilder.tieBreak, :253-259: `criteriaBuilder.asc(uuid)`;
+ * tie-break is `asc` whatever the sort direction (core SortOrderBuilder.tieBreak: `criteriaBuilder.asc(uuid)`;
  * "ordered nulls last in both directions, then by uuid", core#2394) — answered from the code. Postgres
  * orders uuids bytewise, which for lower-case canonical text equals string comparison.
  */

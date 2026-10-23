@@ -299,7 +299,7 @@ const identifierNamed = (...names: string[]): Rule['hits'] => (n, _b, ctx) => (c
 /** The receiver of a call: `x.m(...)` where `x` is the node. */
 const isReceiverOfCall = (ts: typeof TS, n: TS.Node): boolean => {
     const p = n.parent;
-    return ts.isPropertyAccessExpression(p) && p.expression === n && ts.isCallExpression(p.parent) && p.parent.expression === p;
+    return (ts.isPropertyAccessExpression(p) || ts.isElementAccessExpression(p)) && p.expression === n && ts.isCallExpression(p.parent) && p.parent.expression === p;
 };
 
 /** The `request` fixture of a test used as anything but the receiver of a call or an argument of a guard factory. */
@@ -313,7 +313,63 @@ function requestFixtureUseHits(n: TS.Node, b: Bindings, ctx: LintContext): Hits 
 
 /** `page.request` used as anything but the receiver of a call. */
 function pageRequestHits(n: TS.Node, b: Bindings, ctx: LintContext): Hits {
-    return ctx.ts.isPropertyAccessExpression(n) && b.isPageRequest(n) && !isReceiverOfCall(ctx.ts, n) ? [n] : NONE;
+    return (ctx.ts.isPropertyAccessExpression(n) || ctx.ts.isElementAccessExpression(n)) && b.isPageRequest(n) && !isReceiverOfCall(ctx.ts, n) ? [n] : NONE;
+}
+
+/** Response and context members that carry cookies or credentials. */
+const STATE_MEMBERS = new Set(['headers', 'allHeaders', 'headersArray', 'storageState']);
+/** Header names that carry a credential: never read in a spec. */
+const SECRET_HEADER = /^(set-cookie|cookie|authorization|proxy-authorization|x-api-key)$/i;
+/** The verdict helpers whose `headers` option a spec may fill from a response (they read the content type and Allow only). */
+/** Function members that call the function they hang on. */
+const INVOKERS = new Set(['call', 'apply', 'bind']);
+const HEADER_VERDICTS = new Set(['checkRefusedMethod']);
+
+/**
+ * `.headers()` / `.allHeaders()` / `.headersArray()` / `.storageState()` called in a spec, on any receiver (an APIResponse
+ * handed out under another name included): refused, except a header assertion, that is `x.headers()['content-type']` with a
+ * literal name that carries no credential, and the `headers` option of a verdict helper (`checkRefusedMethod({ headers:
+ * res.headers() })`). Cookies and storage state never belong in a spec.
+ */
+function responseStateHits(n: TS.Node, _b: Bindings, ctx: LintContext): Hits {
+    const { ts } = ctx;
+    // `const { headers } = res`, `{ headers: h }`, `{ 'storageState': s }`: the member is taken out as a function.
+    if (ts.isBindingElement(n) && ts.isObjectBindingPattern(n.parent)) {
+        const key = n.propertyName ?? n.name;
+        const text = ts.isIdentifier(key) || ts.isStringLiteralLike(key) ? key.text : undefined;
+        return text !== undefined && STATE_MEMBERS.has(text) ? [n] : NONE;
+    }
+    // `res.headers.call(res)` / `.apply` / `.bind` (also with brackets): the member is invoked without a direct call.
+    if (ts.isPropertyAccessExpression(n) || ts.isElementAccessExpression(n)) {
+        const member = ts.isPropertyAccessExpression(n) ? n.name.text : ts.isStringLiteralLike(n.argumentExpression) ? n.argumentExpression.text : undefined;
+        if (member === undefined || !STATE_MEMBERS.has(member)) return NONE;
+        const p = n.parent;
+        const via = ts.isPropertyAccessExpression(p) && p.expression === n ? p.name.text : ts.isElementAccessExpression(p) && p.expression === n && ts.isStringLiteralLike(p.argumentExpression) ? p.argumentExpression.text : undefined;
+        return via !== undefined && INVOKERS.has(via) ? [n] : NONE;
+    }
+    const pc = stateCallee(ts, n);
+    if (!pc) return NONE;
+    const name = pc.name;
+    if (name === 'storageState' || name === 'allHeaders') return [pc.call];
+    const parent = pc.call.parent;
+    if (ts.isElementAccessExpression(parent) && parent.expression === pc.call) {
+        const key = ts.isStringLiteralLike(parent.argumentExpression) ? parent.argumentExpression.text : undefined;
+        return key !== undefined && !SECRET_HEADER.test(key) ? NONE : [pc.call];
+    }
+    if (name === 'headers' && ts.isPropertyAssignment(parent) && parent.initializer === pc.call && ts.isIdentifier(parent.name) && parent.name.text === 'headers') {
+        const options = parent.parent;
+        const call = options.parent;
+        if (ts.isCallExpression(call) && call.arguments.includes(options as TS.Expression) && ts.isIdentifier(call.expression) && HEADER_VERDICTS.has(call.expression.text)) return NONE;
+    }
+    return [pc.call];
+}
+
+/** A call of a state member, by dot or by a literal bracket key: `x.headers()` / `x['headers']()`. */
+function stateCallee(ts: typeof TS, n: TS.Node): { call: TS.CallExpression; name: string } | undefined {
+    if (!ts.isCallExpression(n)) return undefined;
+    const c = n.expression;
+    const name = ts.isPropertyAccessExpression(c) ? c.name.text : ts.isElementAccessExpression(c) && ts.isStringLiteralLike(c.argumentExpression) ? c.argumentExpression.text : undefined;
+    return name !== undefined && STATE_MEMBERS.has(name) ? { call: n, name } : undefined;
 }
 
 /** `x.post` / `.put` / `.patch` / `.delete` / `.fetch` taken without calling it, on a receiver that is not guarded. */
@@ -558,6 +614,7 @@ export const RULES: readonly Rule[] = [
     { rule: 'raw-request-use', scope: 'all', hits: requestFixtureUseHits },
     { rule: 'raw-request-use', scope: 'spec', hits: pageRequestHits },
     { rule: 'method-extraction', scope: 'all', hits: methodExtractionHits },
+    { rule: 'response-state', scope: 'spec', hits: responseStateHits },
     { rule: 'dynamic-code', scope: 'spec', hits: dynamicCodeHits },
     { rule: 'env-write', scope: 'spec', hits: envWriteHits },
     {

@@ -32,6 +32,7 @@ import { readRunState } from './ledger/runState';
 import { registrationDefaults } from './lifecycle/preRegistration';
 import { noCryptoConnectorReason } from './platform/keyChain';
 import { findCryptoConnector } from './platform/tokens';
+import { CONNECTOR_SPECS, findRegisteredConnector, findVaultConnector, type ConnectorSpec } from './platform/connectorKinds';
 import { apiJson } from './apiReads';
 import { clusterProblem } from './kubernetesOwnObjects';
 import { pickHealthyAuthority } from './ownRaProfiles';
@@ -104,6 +105,10 @@ const notification = (kind: NotificationKind, label: string): Resolver => async 
     return connector.unhealthy ? `deploy gate: the ${label} notification connector ${connector.name} is not healthy (${connector.unhealthy})` : undefined;
 };
 
+/** A connector the tier must have registered (any state: a dead one is the row's finding, not a skip), found by what it offers. */
+const registered = (spec: ConnectorSpec, label: string, need: Needs): Resolver => async ({ api }) =>
+    (await findRegisteredConnector(api, spec)) ? undefined : `deploy gate: no ${label} is registered on this tier (@needs:${need})`;
+
 const tool = (name: Parameters<typeof requireTool>[0]): Resolver => async () => requireTool(name);
 
 /** One resolver per need; the record type makes a new `Needs` value fail to compile until it has one. */
@@ -122,6 +127,11 @@ const RESOLVERS: Record<Needs, Resolver> = {
     },
     'second-identity': async ({ env }) => secondIdentityBlocker(env.username),
     'keycloak-local': async ({ env }) => keycloakLocalBlocker(env.authMode),
+    'crypto-v1': async ({ api }) => ((await findCryptoConnector(api, 1)) ? undefined : noCryptoConnectorReason(1)),
+    'vault-connector': async ({ api }) =>
+        (await findVaultConnector(api)) ? undefined : 'deploy gate: no connected HashiCorp Vault connector with a secret interface is registered on this tier (@needs:vault-connector)',
+    'ejbca-connector': registered(CONNECTOR_SPECS.ejbca, 'EJBCA-NG connector', 'ejbca-connector'),
+    'adcs-connector': registered(CONNECTOR_SPECS['adcs-v2'], 'MS-ADCS-NG v2 connector', 'adcs-connector'),
     'crypto-v2': async ({ api }) => ((await findCryptoConnector(api, 2)) ? undefined : noCryptoConnectorReason(2)),
     'platform-triggers-free': ({ api, options }) => getPlatformTriggerGate(api, options?.events ?? Object.values(EVENT)),
     'metadata-field': async ({ api }) =>

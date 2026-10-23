@@ -4,31 +4,31 @@
  *
  * (a) `POST /v1/approvalProfiles` and `PUT /v1/approvalProfiles/{own}`: a step (`approvalSteps[i]`, a plain object) may
  *     name the CALLER as `userUuid` — the uuid `GET /v1/auth/profile` answers for the identity the request goes out as
- *     (core AuthServiceImpl.java:68-75: the logged-in user's detail, a read). Core stores the uuid on the own profile's
- *     step and writes nothing on the user (ApprovalProfileServiceImpl.java:322-340 `ApprovalStep.setUserUuid`;
- *     :343-366 only checks that one of user / role / group is set). Only that exact position is waived: the same uuid
+ *     (core AuthServiceImpl: the logged-in user's detail, a read). Core stores the uuid on the own profile's
+ *     step and writes nothing on the user (ApprovalProfileServiceImpl `ApprovalStep.setUserUuid`;
+ *     only checks that one of user / role / group is set). Only that exact position is waived: the same uuid
  *     anywhere else in the body, another user's uuid, a request with an identity header (another identity), a string
  *     body (the guard scans the caller's text as written) or an unreadable profile keep the refusal (BODY_FIELD_TYPES
  *     `userUuid` → users: own or a probe).
  * (b) An approval named as a mutation target (`approvals`, TARGET_TYPES) may only be DECIDED, as the run's own user:
- *     `PATCH /v1/approvals/{uuid}/approve | reject` (the override path, no body; core ApprovalServiceImpl.java:176-198)
+ *     `PATCH /v1/approvals/{uuid}/approve | reject` (the override path, no body; core ApprovalServiceImpl)
  *     and `PATCH /v1/approvals/{uuid}/approveRecipient | rejectRecipient` (the recipient path, `UserApprovalDto` =
- *     `{ comment }` only; :200-217, the caller must be a recipient of the pending step and not the creator, :272-311).
- *     A decision closes the approval and runs its action on the approval's object (:370-426): so the approval must belong
+ *     `{ comment }` only; the caller must be a recipient of the pending step and not the creator).
+ *     A decision closes the approval and runs its action on the approval's object: so the approval must belong
  *     to an OWN certificate and an OWN approval profile — its `approvals` ledger line of this run names both as parents
  *     (`certificate`, `approvalProfile`), each an own, non-derived ledger line of that type checked live, and the
  *     approval's live detail (`GET /v1/approvals/{uuid}`, ApprovalDto: `resource`, `objectUuid`, `approvalProfileUuid`;
- *     core Approval.java:91-106) names exactly those two. No identity header, no identityOverride. Every other mutation
+ *     core Approval) names exactly those two. No identity header, no identityOverride. Every other mutation
  *     whose path names an approval is refused. Probe uuids keep their 404 allowance.
  */
 import { IS_UUID, isCanonicalUuid, UUID } from './uuids';
 import { isPlainObject } from './targets';
 import type { BodyView } from './bodies';
 
-/** The four decision routes (interfaces ApprovalController.java:57-88), PATCH only. */
+/** The four decision routes (interfaces ApprovalController), PATCH only. */
 const APPROVAL_DECISION = new RegExp(`^/v1/approvals/(${UUID})/(approve|reject|approveRecipient|rejectRecipient)$`);
 
-/** The approval profile writes whose steps may name the caller (interfaces ApprovalProfileController.java:89, :102). */
+/** The approval profile writes whose steps may name the caller (interfaces ApprovalProfileController). */
 export function isApprovalProfileWrite(method: string, apiPath: string): boolean {
     return (method === 'POST' && apiPath === '/v1/approvalProfiles') || (method === 'PUT' && new RegExp(`^/v1/approvalProfiles/${UUID}$`).test(apiPath));
 }

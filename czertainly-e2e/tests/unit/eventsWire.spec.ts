@@ -312,7 +312,7 @@ test('getPlatformTriggerGate: names the occupied events, passes an empty list, a
     expect(gate).toMatch(/^platform-level trigger\(s\) already listen on Certificate action performed;/);
     expect(gate, 'an event the row does not use is not named').not.toMatch(/uploaded/i);
     expect(await getPlatformTriggerGate(api, [EVENT.statusChanged]), 'the occupied event is not one of the row\'s').toBeUndefined();
-    core.settings = undefined as unknown as Json;
+    core.settings = undefined as unknown as Json; // the stand-in's settings document, absent (the type has no undefined)
     core.settingsStatus = 403;
     await expect(getPlatformTriggerGate(api, [EVENT.actionPerformed]), 'a read error is a failure, never a skip').rejects.toThrow(/→ 403.*could not be read/);
     expect(server.mutations(), 'only reads').toEqual([]);

@@ -54,10 +54,10 @@ export const DEFAULT_MAX_REDIRECTS = 20;
  * never a type with any other parameter. Why only a read POST: Spring's FormContentFilter reads PUT / PATCH / DELETE
  * form fields as request parameters (a `_method` field could change the method), but a read POST cannot be turned into
  * a mutation by a body it does not parse — `POST /v1/certificates` takes only a JSON `@Valid @RequestBody`
- * (interfaces CertificateController.java:94-108), core declares no XML data format (`core/pom.xml`: jackson-dataformat-csv
+ * (interfaces CertificateController), core declares no XML data format (`core/pom.xml`: jackson-dataformat-csv
  * only) and no `hiddenmethod` / `formcontent` / `multipart` configuration (`application.yml`), so Spring answers
  * `HttpMediaTypeNotSupportedException` before any controller, which core has no handler for (the generic `Exception`
- * handler, api/ExceptionHandlingAdvice.java:734-739: the 500 of core#2140). Group 1 of the multipart form is the boundary.
+ * handler, api/ExceptionHandlingAdvice: the 500 of core#2140). Group 1 of the multipart form is the boundary.
  */
 const READ_POST_TYPES = /^(application\/xml|application\/octet-stream|multipart\/form-data;\s*boundary=([0-9A-Za-z'()+_,\-./:=?]{1,70}))$/i;
 /** The normalised read-POST content type of a header value, or undefined when it is not one. */

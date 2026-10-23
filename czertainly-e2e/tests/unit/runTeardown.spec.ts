@@ -393,7 +393,7 @@ test('the reference graph core enforces (REFERENCED_BY, each pair cited) is sati
     expect(REFERENCED_BY.length).toBeGreaterThanOrEqual(12);
     const wrong = REFERENCED_BY.filter((p) => !isDeletedBefore(p.b, p.a)).map((p) => `${p.b} must be deleted before ${p.a} (${p.core})`);
     expect(wrong).toEqual([]);
-    for (const p of REFERENCED_BY) expect(p.core, `${p.a} ← ${p.b} cites core or the handler order`).toMatch(/\.java:\d+|handler order/);
+    for (const p of REFERENCED_BY) expect(p.core, `${p.a} ← ${p.b} cites a core class or the handler order`).toMatch(/[A-Z]\w*(Impl|Writer|Service)\b|handler order/);
     // Every pair names types the table knows.
     const known = new Set(DELETE_ORDER.flatMap((s) => s.types));
     for (const p of REFERENCED_BY) expect(known.has(p.a) && known.has(p.b), `${p.a} / ${p.b} are in DELETE_ORDER`).toBe(true);

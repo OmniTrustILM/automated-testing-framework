@@ -119,6 +119,69 @@ On a shared tier the run proves that it changed nothing it did not create:
    resource types and uuids only. A violation is a finding; a person rules out concurrent activity on the tier before
    calling it a defect.
 
+## Folder layout
+
+```
+tests/regression/<NN-area>/<NN-behaviour>.spec.ts   release checklist and extension rows (REG-*)
+tests/api/<NN-area>/<behaviour>.api.spec.ts         API cases per area (API-*)
+tests/api/tier-snapshot.setup.ts                    run infrastructure, not an area: the guard proof and the before snapshot
+tests/api/tier-non-interference.api.spec.ts         run infrastructure, not an area: the after comparison
+tests/api/run-objects.setup.ts                      run infrastructure: the objects the regression specs build on
+tests/timestamping, tests/key-onboarding            the developers' blocks (@dev-tests), their own config
+tests/smoke                                         the smoke suite, unchanged
+tests/unit                                          the framework's own tests
+```
+
+Areas are numbered (`01-sign-in-and-access`, `02-certificates`, `03-configuration` ... `13-workflows-and-notifications`)
+and so are the specs inside them; the numbers keep the run order, because Playwright runs the files of a project in path
+order.
+
+**Main flow and secondary flow.** The main flow is what a release must pass first. It holds the eighteen release-checklist
+flows (Deployment `07-deployment/01` to `02`, Configuration `03-configuration/01` to `09`, Usage `12-main-usage/01` to
+`07`), the certificate lifecycle UI tests (`02-certificates/07`, `10`, `12`, `16`), the API tests of those features (the
+files of `tests/api` that cover them), the run infrastructure (snapshot, run-setup, non-interference), the smoke suite
+(default config) and the two developers' blocks (devblock config). The secondary flow is everything else on top: the
+extension rows of the other areas (certificate filters, sorting and paging, discovery, protocols, keys and tokens,
+workflows, compliance, secrets, sign-in) and the remaining API areas. Both live in this folder and run in the same
+configs, in area order; a branch that carries only the main flow simply has no spec in the other areas (the sign-out
+project then selects nothing).
+
+## Configs, commands and reports
+
+| Suite | Config | Command | Report written to `test-results/` |
+|---|---|---|---|
+| regression | `playwright.regression.config.ts` | `REG_ENV_FILE=<tier env file> npm run test:regression` | `regression-junit.xml` (HTML in `playwright-report/regression`) |
+| API | `playwright.api.config.ts` | `REG_ENV_FILE=<tier env file> npm run test:api` | `api-junit.xml` (HTML in `playwright-report/api`) |
+| developers' block | `playwright.devblock.config.ts` | `REG_ENV_FILE=<tier env file> DEV_BLOCK=timestamping \| key-onboarding npx playwright test -c playwright.devblock.config.ts` | `dev-<block>-junit.xml` (HTML in `playwright-report/dev-<block>`) |
+| smoke | `playwright.config.ts` | `npm run test:smoke` | `junit.xml` |
+| unit | `playwright.unit.config.ts` | `npm run test:unit` | none (line output) |
+
+The file names above are the contract with the Testkube workflows: do not rename a config, a report or a folder. A block
+(`DEV_BLOCK`) is `@local` only: on a shared tier it selects nothing and exits 0 with an empty report (add
+`--pass-with-no-tests`); see `tests/dev-blocks/README.md`.
+
+## The safety model in short
+
+The suites create, they do not change what they did not create. Five parts hold that, each proven by unit tests:
+
+1. **Create-only.** Read anything; create run-prefixed objects; change or delete only an object the live own-object check
+   passed (ledger line of this run plus a live name that carries the run prefix).
+2. **Ledger before assertion.** Every create is recorded from the answer of the call, before any assertion or other wait.
+3. **Guard.** Every context a spec uses is the deny-by-default guard; a request that names an object that is not this run's
+   never leaves the machine.
+4. **Teardown.** The run-end deletion of the run's own objects, each proven gone by a read-back.
+5. **Non-interference.** A before and after snapshot proves that no pre-existing object changed.
+
+**Where the spec lint applies.** `tests/unit/specGuards.spec.ts` lints every file under `tests/regression` and `tests/api`
+(spec rules), under `fixtures/areas` (spec rules) and under `utils/regression` and `utils/api` (helper rules; the rule table is
+`utils/regression/specLint/rules.ts`, the rule list in `rawMutations.ts`). It refuses raw contexts (also a page object's
+`page.request` used for anything but a GET), unguarded mutations, credential-carrying response state (`allHeaders()`,
+`storageState()`, a header map read outside a header assertion), env and file-system writes, imports outside the allow-list,
+sleeps and titles that break the title rules. A source file cited with a line number is refused in the specs, `pages`,
+`fixtures` and the helpers. The developers' blocks
+(`tests/timestamping`, `tests/key-onboarding`, `utils/timestamping`, `utils/keyOnboarding`, `utils/devBlocks`) are not
+scanned, by agreement: their own README says why, and they keep their own references.
+
 ## Running the suites locally
 
 Install once with `npm ci`. None of the scripts names a tier: the smoke suite reads `.env` in the repository folder, and

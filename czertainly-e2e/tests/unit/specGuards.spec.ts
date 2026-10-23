@@ -20,6 +20,7 @@ import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
 import { bugTagsWithoutFail, codeNames, onlyCalls, suiteTagProblems, testBlocks } from '../../utils/regression/specLint/parseSpec';
+import { sourceCitations } from '../../utils/regression/specLint/citations';
 import { LOGOUT_FILE } from '../../utils/regression/regressionProjects';
 import { RawMutation, rawMutations } from '../../utils/regression/specLint/rawMutations';
 import { PLAYWRIGHT_FIXTURES, areaFixtureProblems, fixtureNamesOf, playwrightFixtureNamesOf } from '../../utils/regression/specLint/areaFixtures';
@@ -393,4 +394,25 @@ test('no test.only, describe.only or test.describe.only is left in a spec or a u
     const unit = filesUnder('tests/unit').filter((rel) => !rel.includes('/fixtures/'));
     const offenders = [...specs, ...unit].flatMap((rel) => onlyCalls(source(rel), rel).map((line) => `${rel}:${line}`));
     expect(offenders, 'a stray .only silently skips every other test of the run').toEqual([]);
+});
+
+// product code is cited by component or symbol name: a line number goes stale with the next commit of the product
+/** The developers' blocks keep their own citations by agreement. */
+const CITATION_EXEMPT = ['tests/timestamping/', 'tests/key-onboarding/', 'utils/timestamping/', 'utils/keyOnboarding/', 'utils/devBlocks/'];
+
+test('no spec, page object or regression helper cites a source file with a line number', () => {
+    const files = [...specs, ...helpers, ...filesUnder('pages'), ...filesUnder('fixtures')].filter((rel) => !CITATION_EXEMPT.some((x) => rel.startsWith(x)));
+    expect(files.length).toBeGreaterThan(50);
+    const offenders = files.flatMap((rel) => sourceCitations(source(rel)).map((c) => `${rel}:${c.line}: ${c.text}`));
+    expect(offenders).toEqual([]);
+});
+
+test('the citation lint finds a file and line in a comment or a string and leaves names and numbers alone', () => {
+    for (const text of ['// see Foo.java:12', ' * (core Approval.java:91-106)', "proof: 'Controller.java:17,23'", 'at Component.tsx:454-462', 'dateUtil.ts:128']) {
+        expect(sourceCitations(text), text).toHaveLength(1);
+    }
+    for (const text of ['// ApprovalServiceImpl.decide', 'Component.tsx', 'const x = { a: 1 };', 'http://host:8443/path', 'id: 12:30', 'file.ts then :12']) {
+        expect(sourceCitations(text), text).toEqual([]);
+    }
+    expect(sourceCitations('a\nb Foo.java:3\nc')).toEqual([{ line: 2, text: 'b Foo.java:3' }]);
 });

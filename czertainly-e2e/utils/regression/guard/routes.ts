@@ -363,17 +363,17 @@ export interface NoHandlerProbe {
 
 /**
  * (method, path) pairs whose controller defines GET only, so Spring's handler mapping
- * answers `HttpRequestMethodNotSupportedException` (core ExceptionHandlingAdvice.java:141-146 → 400) before any
- * controller or service; the security chain authenticates first (SecurityConfig.java:101-114). The guard sends such a
+ * answers `HttpRequestMethodNotSupportedException` (core ExceptionHandlingAdvice → 400) before any
+ * controller or service; the security chain authenticates first (SecurityConfig). The guard sends such a
  * pair bodyless, without a query, without an identity header, as the run's own identity. Verified against `interfaces`
  * at INTERFACES_REVISION by `grep -n Mapping` of the controller named in `proof`; no `/**` catch-all handler exists
  * (grep of `"/**"` in core and interfaces finds only servlet filter registrations), and the only wildcard POST
- * (`CallbackController.java:59`, `/v1/{resource}/{parentObjectUuid}/callback`) needs three segments.
+ * (`CallbackController`, `/v1/{resource}/{parentObjectUuid}/callback`) needs three segments.
  * Re-verify when INTERFACES_REVISION moves (module header).
  */
 export const NO_HANDLER_PROBES: readonly NoHandlerProbe[] = [
-    { method: 'POST', path: '/v1/statistics', proof: 'StatisticsController.java:17,23,30,49 — @RequestMapping("/v1/statistics"), @GetMapping only' },
-    { method: 'DELETE', path: '/v1/info', proof: 'InfoController.java:20,30,43,48 — @RequestMapping("/v1"), @GetMapping("/info"), health GETs only' },
+    { method: 'POST', path: '/v1/statistics', proof: 'StatisticsController — @RequestMapping("/v1/statistics"), @GetMapping only' },
+    { method: 'DELETE', path: '/v1/info', proof: 'InfoController — @RequestMapping("/v1"), @GetMapping("/info"), health GETs only' },
 ];
 
 /** The NO_HANDLER_PROBES pair of a method and API path, or undefined. */
@@ -394,18 +394,18 @@ export interface MalformedUuidProbe {
 /**
  * The controller passes the path variable to `SecuredUUID.fromString(uuid)` as the
  * argument of the service call; the constructor throws `ValidationException("Invalid UUID … in the request")` on
- * `UUID.fromString` failure (core security/authz/SecuredUUID.java:18-24), answered as 422
- * (api/ExceptionHandlingAdvice.java:240-247) before any lookup, read or write. A literal that is not uuid-like cannot
+ * `UUID.fromString` failure (core security/authz/SecuredUUID), answered as 422
+ * (api/ExceptionHandlingAdvice) before any lookup, read or write. A literal that is not uuid-like cannot
  * name an object, and no other mapping under `/v1/groups/` or `/v1/credentials/` matches a one-segment literal other
- * than the `{uuid}` route (interfaces GroupController.java:46-91, CredentialController.java:50-112). Other controllers
+ * than the `{uuid}` route (interfaces GroupController, CredentialController). Other controllers
  * resolve name-like segments (`/v1/operations/{raProfileName}/…`): never listed here. Re-verify when
  * INTERFACES_REVISION moves (module header).
  */
 export const MALFORMED_UUID_PROBES: readonly MalformedUuidProbe[] = [
-    { method: 'PUT', template: '/v1/groups/{x}', literals: ['not-a-uuid'], proof: 'GroupControllerImpl.java:70-75 editGroup → SecuredUUID.fromString(uuid)' },
-    { method: 'DELETE', template: '/v1/groups/{x}', literals: ['not-a-uuid'], proof: 'GroupControllerImpl.java:77-81 deleteGroup → SecuredUUID.fromString(uuid)' },
-    { method: 'PUT', template: '/v1/credentials/{x}', literals: ['not-a-uuid'], proof: 'CredentialControllerImpl.java:72-78 editCredential → SecuredUUID.fromString(uuid)' },
-    { method: 'DELETE', template: '/v1/credentials/{x}', literals: ['not-a-uuid'], proof: 'CredentialControllerImpl.java:80-84 deleteCredential → SecuredUUID.fromString(uuid)' },
+    { method: 'PUT', template: '/v1/groups/{x}', literals: ['not-a-uuid'], proof: 'GroupControllerImpl editGroup → SecuredUUID.fromString(uuid)' },
+    { method: 'DELETE', template: '/v1/groups/{x}', literals: ['not-a-uuid'], proof: 'GroupControllerImpl deleteGroup → SecuredUUID.fromString(uuid)' },
+    { method: 'PUT', template: '/v1/credentials/{x}', literals: ['not-a-uuid'], proof: 'CredentialControllerImpl editCredential → SecuredUUID.fromString(uuid)' },
+    { method: 'DELETE', template: '/v1/credentials/{x}', literals: ['not-a-uuid'], proof: 'CredentialControllerImpl deleteCredential → SecuredUUID.fromString(uuid)' },
 ];
 
 /** The MALFORMED_UUID_PROBES entry a method and API path match EXACTLY (template with one listed literal), or undefined. */
@@ -429,19 +429,19 @@ export interface RouteFieldWaiver {
 
 /**
  * The provider-rule ruleUuid waiver on an own compliance profile: `PATCH /v2/complianceProfiles/{own}/rules` (interfaces
- * v2/ComplianceProfileController.java:194) with a canonical `connectorUuid` names a PROVIDER rule (`ruleUuid`): a catalogue entry of the
+ * v2/ComplianceProfileController) with a canonical `connectorUuid` names a PROVIDER rule (`ruleUuid`): a catalogue entry of the
  * compliance provider (`GET /v2/complianceProfiles/rules`), not an inventory object. Core
- * `ComplianceProfileServiceImpl.patchComplianceProfileRules` (service/v2/impl/ComplianceProfileServiceImpl.java:494-537) writes only the
+ * `ComplianceProfileServiceImpl.patchComplianceProfileRules` (service/v2/impl/ComplianceProfileServiceImpl) writes only the
  * OWN profile's `compliance_profile_rule` rows (delete + create of the association) after reading the rule from the connector
- * (`ruleHandler.getProviderRule`, :527-531); nothing is written on the connector or the rule. Without `connectorUuid` the rule is an
- * INTERNAL rule (:502-513): not waived (probes only, BODY_FIELD_TYPES `ruleUuid: null`). The path target (the profile) stays an own
+ * (`ruleHandler.getProviderRule`); nothing is written on the connector or the rule. Without `connectorUuid` the rule is an
+ * INTERNAL rule: not waived (probes only, BODY_FIELD_TYPES `ruleUuid: null`). The path target (the profile) stays an own
  * `complianceProfiles` line; the waiver covers the top-level string field only (a list or a nested key is scanned).
  */
 export const ROUTE_FIELD_WAIVERS: readonly RouteFieldWaiver[] = [
     {
         method: 'PATCH', path: '/v2/complianceProfiles/{id}/rules', field: 'ruleUuid',
         when: (body) => typeof body.connectorUuid === 'string' && IS_UUID.test(body.connectorUuid),
-        proof: 'ComplianceProfileServiceImpl.java:494-537 (v2): provider branch :515-535 writes compliance_profile_rule rows of the path profile only',
+        proof: 'ComplianceProfileServiceImpl (v2): provider branch writes compliance_profile_rule rows of the path profile only',
     },
 ];
 

@@ -22,7 +22,7 @@ const CERT_ACTIONS = ['List', 'Detail', 'Create', 'Issue'];
 test.describe('Role permissions', { tag: tags.regression }, () => {
     test('certificate and RA profile permissions saved in the editor are stored and shown after reload',
         testMeta({
-            id: 'REG-CFG-08', prio: 'P1', issue: 'ilm#427',
+            id: 'REG-CFG-08', row: 'saved in the editor', prio: 'P1', issue: 'ilm#427',
             rule: ['grant Certificates (List, Detail, Create, Issue) and RA Profiles (List) to the role; the API and the editor agree after a reload'],
         }),
         async ({ signedIn: page, api, own, live }, testInfo) => {
@@ -69,7 +69,7 @@ test.describe('Role permissions', { tag: tags.regression }, () => {
 
     test('an object-level permission stays on its object and is not granted on every RA profile',
         testMeta({
-            id: 'REG-CFG-08', prio: 'P1', issue: 'ilm#427', needs: 'ca',
+            id: 'REG-CFG-08', row: 'object-level permission', prio: 'P1', issue: 'ilm#427', needs: 'ca',
             rule: ['object-level actions apply to the object only; resource-level actions apply to every object of the resource (fe-administrator#2283: a new object took the resource-level list)'],
         }),
         async ({ signedIn: page, api, own, live, ownRaProfile }, testInfo) => {

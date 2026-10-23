@@ -26,7 +26,9 @@ export type Prio = 'P1' | 'P2' | 'P3';
  * Runner tools: `openssl`, `sscep`, `docker`, `cluster` (kubectl and a reachable cluster). Local-stack services: `keycloak-local`,
  * `smtp-catcher`, `webhook-receiver`. Connectors and identities the tier must offer: `ca` (a healthy certificate authority
  * with an enabled RA profile to copy), `ejbca-ng`, `pkcs11`, `v1-discovery`, `v2-discovery`, `email-provider`,
- * `webhook-provider`, `second-identity`, `crypto-v2` (a connected software cryptography connector of interface v2). A runner-hosted
+ * `webhook-provider`, `second-identity`, `crypto-v1` and `crypto-v2` (a connected software cryptography connector of interface v1 or v2),
+ * `vault-connector` (a connected HashiCorp Vault connector with a secret interface), `ejbca-connector` and `adcs-connector` (an EJBCA-NG or
+ * MS-ADCS-NG connector is registered, whatever its state). A runner-hosted
  * TLS listener: `scan-target`. A connector that must be online: `connector-online`. Tier settings and data the rows read first:
  * `platform-triggers-free` (no platform-level trigger on the events the row watches), `metadata-field` (the certificate filter
  * catalogue offers a metadata field), `registration-settings` (the platform settings can hold a challenge-protected registration),
@@ -38,7 +40,7 @@ export const NEEDS = [
     'ca', 'ejbca-ng', 'pkcs11', 'second-identity', 'keycloak-local', 'v1-discovery', 'v2-discovery', 'email-provider', 'webhook-provider',
     'smtp-catcher', 'webhook-receiver', 'scan-target', 'connector-online', 'openssl', 'sscep', 'docker', 'cluster',
     'crypto-v2', 'platform-triggers-free', 'metadata-field', 'scep-https', 'registration-settings', 'required-attributes-fillable',
-    'bearer-token', 'openapi-document', 'utils-service',
+    'bearer-token', 'openapi-document', 'utils-service', 'crypto-v1', 'vault-connector', 'ejbca-connector', 'adcs-connector',
 ] as const;
 
 /** One need of a row (a value of `NEEDS`). */
@@ -108,6 +110,8 @@ export interface Meta {
      * `row` annotation, so the title can spell the variant in words and the census still keys the test by (id, row).
      */
     row?: string;
+    /** Why a `test.fixme` row is parked: one `fixme` annotation on the declaration, so the report shows the reason (a fixme body never runs). */
+    parked?: string;
 }
 
 /** The tag `testMeta()` adds for its id (`@REG-USE-05`); `--grep` finds a test by it once titles lose the id (exact form: header). */
@@ -141,6 +145,7 @@ export function testMeta(m: Meta): { tag: string[]; annotation: Array<{ type: st
             { type: 'ledger-id', description: m.id },
             ...(m.row !== undefined ? [{ type: 'row', description: m.row }] : []),
             ...list(m.rule).map((description) => ({ type: 'rule', description })),
+            ...(m.parked !== undefined ? [{ type: 'fixme', description: m.parked }] : []),
         ],
     };
 }

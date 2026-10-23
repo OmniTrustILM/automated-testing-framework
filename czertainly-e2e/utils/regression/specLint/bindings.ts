@@ -83,6 +83,8 @@ export class Bindings {
     /** Functions imported from the suite's own modules (audited helpers: they may read a whole process.env). */
     private readonly suiteHelpers = new Set<TS.Symbol>();
     private readonly declarations: TS.VariableDeclaration[] = [];
+    /** `const { page, request } = <x>`: resolved in the fix-point (the holder may itself be an alias). */
+    private readonly destructurings: TS.VariableDeclaration[] = [];
 
     constructor(private readonly ctx: LintContext, private readonly checker: TS.TypeChecker) {
         this.ts = ctx.ts;
@@ -148,12 +150,26 @@ export class Bindings {
         return !!s && this.collections.has(s);
     }
 
+    /**
+     * A page: the `page` / `signedIn` fixture, an alias of one, or `<x>.page` / `<x>['page']` / a `page` destructured from any
+     * object (a page object's own page is the same raw context as the fixture's).
+     */
+    isPageRef(e: TS.Expression): boolean {
+        const ts = this.ts;
+        const x = this.unwrap(e);
+        if (ts.isPropertyAccessExpression(x)) return x.name.text === 'page';
+        if (ts.isElementAccessExpression(x)) return this.literal(x.argumentExpression) === 'page';
+        if (!ts.isIdentifier(x)) return false;
+        const s = this.sym(x);
+        return (!!s && this.pageFixture.has(s)) || x.text === 'page';
+    }
+
+    /** `<page>.request` or `<page>['request']`. */
     isPageRequest(e: TS.Expression): boolean {
         const ts = this.ts;
         const x = this.unwrap(e);
-        if (!ts.isPropertyAccessExpression(x) || x.name.text !== 'request' || !ts.isIdentifier(x.expression)) return false;
-        const s = this.sym(x.expression);
-        return (!!s && this.pageFixture.has(s)) || x.expression.text === 'page';
+        const member = ts.isPropertyAccessExpression(x) ? x.name.text : ts.isElementAccessExpression(x) ? this.literal(x.argumentExpression) : undefined;
+        return member === 'request' && this.isPageRef((x as TS.PropertyAccessExpression | TS.ElementAccessExpression).expression);
     }
 
     isRequestFixture(e: TS.Expression): boolean {
@@ -299,6 +315,7 @@ export class Bindings {
         this.collectFsImport(n);
         this.collectProcessAliases(n);
         this.collectEnvDestructuring(n);
+        if (this.ts.isVariableDeclaration(n) && this.ts.isObjectBindingPattern(n.name) && n.initializer) this.destructurings.push(n);
         this.collectSuiteHelper(n);
         this.collectApiJson(n);
         this.ts.forEachChild(n, (c) => this.collect(c));
@@ -418,6 +435,7 @@ export class Bindings {
                 const s = this.sym(d.name);
                 if (s && this.addAliases(d, s)) changed = true;
             }
+            for (const d of this.destructurings) if (this.addDestructured(d)) changed = true;
         }
     }
 
@@ -434,9 +452,30 @@ export class Bindings {
         add(this.fsBindings, this.isFsBinding(init));
         add(this.envAliases, this.isProcessEnv(init));
         add(this.processAliases, this.isProcessRef(init));
+        add(this.pageFixture, this.isPageRef(init));
         const unwrapped = this.unwrap(init);
         const from = this.ts.isIdentifier(unwrapped) ? this.sym(unwrapped) : undefined;
         add(this.apiJsonFns, !!from && this.apiJsonFns.has(from));
+        return changed;
+    }
+
+    /** `const { page } = po` / `{ page: p }` is a page; `const { request } = <page>` is a raw request context. */
+    private addDestructured(d: TS.VariableDeclaration): boolean {
+        const ts = this.ts;
+        const init = d.initializer!;
+        let changed = false;
+        for (const el of (d.name as TS.ObjectBindingPattern).elements) {
+            if (el.dotDotDotToken || !ts.isIdentifier(el.name)) continue;
+            const keyNode = el.propertyName ?? el.name;
+            const key = ts.isIdentifier(keyNode) ? keyNode.text : ts.isStringLiteralLike(keyNode) ? keyNode.text : undefined;
+            const s = this.sym(el.name);
+            if (!s) continue;
+            const target = key === 'page' ? this.pageFixture : key === 'request' && this.isPageRef(init) ? this.requestFixture : undefined;
+            if (target && !target.has(s)) {
+                target.add(s);
+                changed = true;
+            }
+        }
         return changed;
     }
 }
