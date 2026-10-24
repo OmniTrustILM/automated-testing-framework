@@ -2,6 +2,10 @@
 
 This is a framework for automated testing of CZERTAINLY.
 
+The [RFC 8693 delegation release gate](czertainly-e2e/delegation/README.md) covers real Keycloak
+delegation exchange, API/TSP enforcement and audit attribution/filter/export against a configurable
+disposable product deployment, with a separate local helper coverage suite and manual evidence recipe.
+
 CZERTAINLY platform is a microservice based application running in a Kubernetes cluster. The framework is designed to test the functionality of the platform by sending requests to the exposed endpoints of the microservices and checking the responses from outside of the cluster and inside of the cluster.
 
 For testing the [Testkube](https://testkube.io/) is utilized and used.
