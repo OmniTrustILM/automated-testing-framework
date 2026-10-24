@@ -1,0 +1,37 @@
+name: Delegation release gate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  delegation:
+    name: RFC8693 scenarios 1 and 3 to 9
+    runs-on: ubuntu-latest
+    environment: delegation-disposable
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: czertainly-e2e
+    env:
+      DELEGATION_DISPOSABLE: ${{ vars.DELEGATION_DISPOSABLE }}
+      DELEGATION_BASE_URL: ${{ vars.DELEGATION_BASE_URL }}
+      DELEGATION_ADMIN_TOKEN: ${{ secrets.DELEGATION_ADMIN_TOKEN }}
+      DELEGATION_USERNAME: ${{ vars.DELEGATION_USERNAME }}
+      DELEGATION_USER_UUID: ${{ vars.DELEGATION_USER_UUID }}
+      DELEGATION_API_PATH: ${{ vars.DELEGATION_API_PATH }}
+      DELEGATION_TSP_PATH: ${{ vars.DELEGATION_TSP_PATH }}
+      DELEGATION_KEYCLOAK_URL: ${{ vars.DELEGATION_KEYCLOAK_URL }}
+      DELEGATION_KEYCLOAK_ADMIN_USERNAME: ${{ secrets.DELEGATION_KEYCLOAK_ADMIN_USERNAME }}
+      DELEGATION_KEYCLOAK_ADMIN_PASSWORD: ${{ secrets.DELEGATION_KEYCLOAK_ADMIN_PASSWORD }}
+      DELEGATION_CSV_SEPARATOR: ${{ vars.DELEGATION_CSV_SEPARATOR }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The delegation runner uses Node's standard library and never records HTTP traces.
+      - name: Run release gate
+        run: npm run test:delegation
