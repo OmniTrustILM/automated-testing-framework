@@ -80,7 +80,8 @@ test.describe('@smoke discovery', () => {
 
         try {
           const connectors = await connectorUtils.getAllConnectors(apiRequest);
-          const foundConnector = connectors.find(c => c.url === env.smoke.discoveryProviderUrl);
+          const foundConnector = connectorUtils.connectorAt(
+            connectors, env.smoke.discoveryProviderUrl!, env.smoke.discoveryProviderName);
 
           if (!foundConnector) {
             logger.debug(`Available connectors: ${connectors.map(c => `${c.name} (${c.url})`).join(', ')}`);
@@ -128,7 +129,10 @@ test.describe('@smoke discovery', () => {
         value: env.smoke.discoveryProviderName!,
       });
 
-      const providerRow = main.getByRole('row', { name: env.smoke.discoveryProviderName! }).first();
+      // The "contains" filter also keeps "<name>-v2"; only the row whose name cell is exactly the
+      // provider's name is the one SMK-003 uses.
+      const providerRow = main.getByRole('row')
+        .filter({ has: page.getByText(env.smoke.discoveryProviderName!, { exact: true }) });
       await expect(providerRow, `Provider "${env.smoke.discoveryProviderName}" should be visible in Connectors list`).toBeVisible();
       await expect(providerRow).toContainText(/connected/i);
     });

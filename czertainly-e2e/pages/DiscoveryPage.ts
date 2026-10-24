@@ -131,6 +131,7 @@ export class DiscoveryPage {
         await this.nameInput.click({ force: true });
         await this.nameInput.fill(name);
 
+        // Exact (chooseOption matches a plain name exactly): a connector registered as v1 and v2 is listed as "<name>" and "<name>-v2".
         await chooseOption(this.page, this.providerTrigger, provider);
 
         await expect(this.modal.getByTestId('label-storeKindSelect')).toBeVisible();

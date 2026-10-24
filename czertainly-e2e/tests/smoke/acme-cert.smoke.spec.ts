@@ -10,8 +10,8 @@
  * is a separate exposed path from the REST issuance SMK-004 covers: its own account handling,
  * nonces, orders, challenge validation and finalize.
  *
- * HOW: the HTTP-01 challenge is answered by cert-manager's own solver Ingress in the runner's
- * namespace, on `smk005-<ts>.<ACME_SOLVER_DOMAIN>`. That works only when the platform resolves the
+ * HOW: the HTTP-01 challenge is answered by cert-manager's own solver in the runner's namespace, on
+ * `smk005-<ts>.<ACME_SOLVER_DOMAIN>`, routed by an Ingress or, with ACME_SOLVER_GATEWAY, an HTTPRoute. That works only when the platform resolves the
  * name to the ingress of the runner's cluster, which is why the domain defaults to the one BASE_URL
  * is served under. Everything the test creates — in the cluster and in the platform — is removed in
  * afterEach, and anything that will not go is recorded in the cleanup ledger, failing the run.
@@ -153,7 +153,7 @@ test.describe('@smoke acme', () => {
             startedAt: new Date(ts - 60_000),
         };
         run = thisRun;
-        logger.info(`ACME run: ${thisRun.dnsName}, ingress class ${env.smoke.acmeIngressClass}, namespace ${thisRun.namespace}`);
+        logger.info(`ACME run: ${thisRun.dnsName}, solver ${JSON.stringify(env.smoke.acmeSolver)}, namespace ${thisRun.namespace}`);
 
         const api = await getAuthenticatedApiContext(request, env);
         try {
@@ -172,7 +172,7 @@ test.describe('@smoke acme', () => {
                     name: thisRun.issuerName,
                     directoryUrl: thisRun.acmeProfile!.directoryUrl,
                     accountKeySecretName: thisRun.accountKeySecretName,
-                    ingressClassName: env.smoke.acmeIngressClass!,
+                    solver: env.smoke.acmeSolver,
                 });
                 await certManager.waitForIssuerReady(thisRun.namespace, thisRun.issuerName);
             });

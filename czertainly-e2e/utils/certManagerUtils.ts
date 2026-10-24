@@ -13,12 +13,13 @@
  * Readiness is polled from `status.conditions`. When a wait runs out, the error carries what
  * cert-manager said about the Order and the Challenge (acme.cert-manager.io), because "not Ready
  * after 3 minutes" alone does not say whether the platform refused, the solver was unreachable,
- * or the account never registered. The solver pod, service and ingress are cert-manager's own;
- * nothing here creates or needs permission for them.
+ * or the account never registered. The solver pod, service and its Ingress or HTTPRoute are
+ * cert-manager's own; nothing here creates or needs permission for them.
  */
 
 import { getCoreApi, getCustomObjectsApi } from './k8sClient';
 import { Logger } from './Logger';
+import { AcmeSolver } from './env';
 
 const logger = new Logger('CertManagerUtils');
 
@@ -48,7 +49,22 @@ export interface CreateIssuerOptions {
     directoryUrl: string;
     /** Secret cert-manager creates to hold the ACME account key. */
     accountKeySecretName: string;
-    ingressClassName: string;
+    solver: AcmeSolver;
+}
+
+/**
+ * The Issuer's HTTP-01 solver. A Gateway solver attaches cert-manager's HTTPRoute to the named
+ * Gateway in the Issuer's namespace, where the route is created.
+ */
+export function http01Solver(solver: AcmeSolver, namespace: string): Record<string, unknown> {
+    if (solver.kind === 'gateway') {
+        return {
+            gatewayHTTPRoute: {
+                parentRefs: [{ group: 'gateway.networking.k8s.io', kind: 'Gateway', name: solver.gatewayName, namespace }],
+            },
+        };
+    }
+    return { ingress: { ingressClassName: solver.ingressClassName } };
 }
 
 export async function createIssuer(options: CreateIssuerOptions): Promise<void> {
@@ -63,7 +79,7 @@ export async function createIssuer(options: CreateIssuerOptions): Promise<void> 
                 acme: {
                     server: options.directoryUrl,
                     privateKeySecretRef: { name: options.accountKeySecretName },
-                    solvers: [{ http01: { ingress: { ingressClassName: options.ingressClassName } } }],
+                    solvers: [{ http01: http01Solver(options.solver, options.namespace) }],
                 },
             },
         },

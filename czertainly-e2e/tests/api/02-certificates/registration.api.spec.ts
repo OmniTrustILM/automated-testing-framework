@@ -113,7 +113,7 @@ test.describe('Certificate pre-registration through the v2 API', { tag: tags.api
 
     test('the "Certificate registered" event fires for a challenge-protected registration',
         testMeta({
-            id: 'API-CERT-21', row: 'event-fires', prio: 'P1', issue: 'ilm#429',
+            id: 'API-CERT-21', row: 'event-fires', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: ['the "Certificate Registered" event fires with a challenge; observed through an own trigger on an own clone of the run RA profile; skipped while a platform-level trigger on the event would act on these certificates too'],
         }),
         async ({ api, own, needs }) => {
@@ -128,7 +128,7 @@ test.describe('Certificate pre-registration through the v2 API', { tag: tags.api
 
     test('a registration without a challenge fires no "Certificate registered" event',
         testMeta({
-            id: 'API-CERT-21', row: 'no-event-without-secret', prio: 'P1', issue: 'ilm#429',
+            id: 'API-CERT-21', row: 'no-event-without-secret', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: ['the "Certificate Registered" event fires only with a challenge; a registration without one fires nothing (checked after the observer has shown it fires for a challenge-protected one)'],
         }),
         async ({ api, own, needs }) => {
