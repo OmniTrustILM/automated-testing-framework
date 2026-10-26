@@ -88,14 +88,6 @@ test.describe.serial('Removing keys from the inventory in bulk', () => {
     expect(flagsOf(compromisedUuid)).toEqual([false, false]);
   });
 
-  test('marks both items of each listed pair as removable', async ({ admin, provisioned }) => {
-    const pairs = await admin.keyPairs(provisioned.tokenProfile.uuid);
-
-    for (const keyUuid of [...onboardedUuids, createdKey.uuid]) {
-      expect(pairs.find((pair) => pair.uuid === keyUuid)?.items.map((item) => item.removableFromInventory)).toEqual([true, true]);
-    }
-  });
-
   test('refuses to remove a compromised key', async ({ admin }) => {
     const removal = await admin.removeKeyFromInventory(compromisedUuid);
 

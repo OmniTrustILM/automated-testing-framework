@@ -148,11 +148,6 @@ export class AdminApi {
     }
   }
 
-  /** The active key pairs of the token profile. */
-  keyPairs(profileUuid: string): Promise<KeyPair[]> {
-    return this.get<KeyPair[]>(`/v1/keys/pairs?tokenProfileUuid=${profileUuid}`);
-  }
-
   removeKeyFromInventory(keyUuid: string): Promise<APIResponse> {
     return this.raw('PATCH', `/v1/keys/${keyUuid}/removeFromInventory`);
   }
@@ -264,11 +259,6 @@ export interface KeyItemSummary {
 export interface KeyItemPage {
   cryptographicKeys: KeyItemSummary[];
   totalPages: number;
-}
-
-export interface KeyPair {
-  uuid: string;
-  items: KeyItemSummary[];
 }
 
 export interface CertificateDetail {
