@@ -39,7 +39,7 @@
                   },
                   {
                     "type": "TextBlock",
-                    "text": "{{ .TestWorkflowExecution.Workflow.Name }}",
+                    "text": "{{ with index .TestWorkflowExecution.Tags "title" }}{{ . }}{{ else }}{{ .TestWorkflowExecution.Workflow.Name }}{{ end }}{{ with index .TestWorkflowExecution.Tags "purpose" }} · {{ . }}{{ end }}",
                     "spacing": "None",
                     "isSubtle": true
                   }
@@ -77,7 +77,7 @@
                     "width": "stretch",
                     "items": [
                       { "type": "TextBlock", "text": "Total", "isSubtle": true, "size": "Small" },
-                      { "type": "TextBlock", "text": "{{ (index .TestWorkflowExecution.Reports 0).Summary.Tests }}", "weight": "Bolder", "spacing": "None" }
+                      { "type": "TextBlock", "text": "{{ (index .TestWorkflowExecution.Reports 0).Summary.Tests }}{{ with index .TestWorkflowExecution.Tags "tests" }} ({{ . }} tests × {{ index $.TestWorkflowExecution.Tags "repeat" }} runs){{ end }}", "weight": "Bolder", "spacing": "None" }
                     ]
                   }
                 ]
