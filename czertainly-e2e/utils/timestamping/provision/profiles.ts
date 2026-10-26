@@ -92,7 +92,9 @@ export async function createMappedUser(ctx: SetupContext, username: string): Pro
 export async function createRole(ctx: SetupContext, name: string, user: OwnRef): Promise<OwnRef> {
     const created = await ctx.admin.request('POST', '/v1/roles', { name, description: 'TSP timestamping for the mapped user', customAttributes: [] });
     const role = recordOwn('roles', { uuid: uuidOf(created.body, `role '${name}'`), name }, 'timestamping role of the mapped user', undefined, created.serverAt);
-    await ctx.admin.request('PUT', `/v1/users/${user.uuid}/roles/${role.uuid}`);
+    // The user's whole role list (only this role): PUT /v1/users/{uuid}/roles/{roleUuid} declares a JSON body it never reads, so a
+    // body-less call has no Content-Type and Core answers 500 (core#2140); the authors' suite attaches the role the same way.
+    await ctx.admin.request('PATCH', `/v1/users/${user.uuid}/roles`, [role.uuid]);
     return role;
 }
 

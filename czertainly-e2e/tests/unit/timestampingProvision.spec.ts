@@ -131,7 +131,7 @@ function fakeCore(opts: FakeOptions = {}) {
         ['POST', /^\/v1\/timeQualityConfigurations$/, (_m, b) => [200, create({ name: b.name, accuracy: b.accuracy, ntpServers: b.ntpServers, maxClockDrift: b.maxClockDrift })]],
         ['POST', /^\/v1\/users$/, () => [200, create()]],
         ['POST', /^\/v1\/roles$/, () => [200, create()]],
-        ['PUT', new RegExp(`^/v1/users/${UUID}/roles/${UUID}$`), () => [200, {}]],
+        ['PATCH', new RegExp(`^/v1/users/${UUID}/roles$`), () => [200, {}]],
         ['GET', new RegExp(`^/v1/tokens/${UUID}/tokenProfiles/${UUID}/keys/keyPair/attributes$`), () => [200, [
             def('data_keyAlias', 'string'),
             def('data_keyAlgorithm', 'string', { content: [{ data: 'RSA', reference: 'RSA' }, { data: 'ML-DSA', reference: 'ML-DSA' }] }),
@@ -360,7 +360,7 @@ test('provisioning follows timestamping-setup.sh order and records every object 
     const expected = [
         'POST /v1/vaults/{id}/vaultProfiles', 'PATCH /v1/vaults/{id}/vaultProfiles/{id}/enable',
         'POST /v1/tokens', 'POST /v1/tokens/{id}/tokenProfiles', 'PATCH /v1/tokens/{id}/tokenProfiles/{id}/enable',
-        'POST /v1/timeQualityConfigurations', 'POST /v1/users', 'POST /v1/roles', 'PUT /v1/users/{id}/roles/{id}',
+        'POST /v1/timeQualityConfigurations', 'POST /v1/users', 'POST /v1/roles', 'PATCH /v1/users/{id}/roles',
         // The issuing CA is marked trusted once (it was not yet), between the first issuance and the first TSP profile.
         ...half.slice(0, 5), trust, ...half.slice(5), ...half, ...half, ...half,
     ];
