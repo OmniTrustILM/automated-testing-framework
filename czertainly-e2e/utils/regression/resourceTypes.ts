@@ -107,7 +107,7 @@ export const RESOURCE_REGISTRY = defineResourceTypes([
         },
     },
     // The timestamping block's four types, in delete order after `discoveries` (utils/timestamping/resourceTypes.ts); the
-    // handlers are in utils/timestamping/teardown.ts, every type is @local only.
+    // handlers are in utils/timestamping/teardown.ts; the block runs on a shared tier too (tests/timestamping/SHARED-TIER.md).
     ...TIMESTAMPING_REGISTRY_ENTRIES,
     {
         type: 'certificates', teardown: { step: 4, handler: 'core' }, ownership: detail('/api/v1/certificates/{uuid}', 'commonName'),

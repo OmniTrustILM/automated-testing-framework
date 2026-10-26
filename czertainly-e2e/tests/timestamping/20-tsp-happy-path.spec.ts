@@ -1,4 +1,3 @@
-import { describeLocalOnly } from '../../utils/regression/tier/localProof';
 import { waitFor } from '../../utils/timestamping/docker';
 import { expect, test } from '../../utils/timestamping/fixtures';
 import {
@@ -11,8 +10,6 @@ import {
 import { plannedSets, primaryFamily, setOrSkip } from '../../utils/timestamping/provisioning';
 import { devTests } from '../../utils/timestamping/tags';
 import { describeOutcome, requestTimestamp, TimestampOutcome, TspRoute } from '../../utils/timestamping/tsp';
-
-describeLocalOnly(test);
 
 /**
  * The core regression: a timestamp is issued, is cryptographically verifiable against the
@@ -82,7 +79,7 @@ test.describe('TSP happy path', devTests(), () => {
 
       const serial = outcome.reply!.serialNumberHex!;
       const records = await waitFor(
-        () => admin.listSigningRecords(),
+        () => admin.listSigningRecords(200, set.signingProfile.uuid),
         (all) => all.some((record) => record.timestampTokenSerialNumbers?.includes(serial)),
         60_000,
         2000,

@@ -16,10 +16,15 @@ export interface NamedUuid {
     uuid: string;
 }
 
-export interface BasicCredential {
+/** What the summary keeps of a Basic credential: no password (it is derived, utils/timestamping/secrets.ts). */
+export interface StoredBasicCredential {
     username: string;
-    password: string;
     uuid: string;
+}
+
+/** A Basic credential as a spec uses it: the stored part and the password derived from the run secret. */
+export interface BasicCredential extends StoredBasicCredential {
+    password: string;
 }
 
 /** One half of a family: the non-qualified or the qualified profile pair with everything it signs with. */
@@ -36,6 +41,11 @@ export interface TsaSet {
     signingProfile: NamedUuid;
 }
 
+/** A half as the summary stores it. */
+export interface StoredTsaSet extends Omit<TsaSet, 'keyAlgorithm' | 'basicCredential'> {
+    basicCredential: StoredBasicCredential;
+}
+
 /** One named set of the summary: a qualified / non-qualified pair on one token. */
 export interface SummarySet {
     cryptoProvider: string;
@@ -45,8 +55,8 @@ export interface SummarySet {
     keyAlgorithm: string;
     /** The family's name in test titles (e.g. `ML-DSA`); without it the specs use the key algorithm. */
     label?: string;
-    nonQualified: Omit<TsaSet, 'keyAlgorithm'>;
-    qualified: Omit<TsaSet, 'keyAlgorithm'>;
+    nonQualified: StoredTsaSet;
+    qualified: StoredTsaSet;
 }
 
 export interface Provisioning {
@@ -90,6 +100,6 @@ export type TimestampingSummary =
           status: 'unavailable';
           runId: string;
           at: string;
-          /** Why the tier cannot run the block (a missing connector, authority, profile, a shared tier). */
+          /** Why the tier cannot run the block (a missing connector, authority, profile, an untrusted issuing CA). */
           reason: string;
       };

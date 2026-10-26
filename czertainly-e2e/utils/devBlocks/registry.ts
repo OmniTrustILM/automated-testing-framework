@@ -8,7 +8,8 @@
  * or API reports. A block run has no snapshot, no run-setup and no non-interference check; the only thing it takes from
  * those is the local-backend proof, which the `-proof` project makes first.
  * HOW: pure functions (a unit test checks them without loading a config). The tier rules are folded in as in every other
- * config (utils/regression/projectFilters.ts): on a shared tier the `@local` invert leaves all four projects empty.
+ * config (utils/regression/projectFilters.ts): on a shared tier the `@local` invert leaves a block's `@local` rows out (all four
+ * projects of `key-onboarding` stay empty; `timestamping` keeps its rows for a shared tier).
  * `<block>-teardown` is the teardown project of `<block>-setup`, so it runs after the specs, failed or not.
  */
 import type { PlaywrightTestProject } from '@playwright/test';

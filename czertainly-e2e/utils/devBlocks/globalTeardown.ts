@@ -6,8 +6,9 @@
  * this run's local-backend proof.
  * WHY: a block run has no run-end teardown, no snapshot and no non-interference check; the block's teardown project
  * can have failed or been skipped (a failed setup), and an object it missed must not stay behind.
- * HOW: on a shared tier with no ledger line of the block nothing is read from the tier and nothing is sent (the blocks
- * are local-only, so a shared run holds no object). The tear-down error, if any, is rethrown after the proof is gone.
+ * HOW: on a shared tier with no ledger line of the block nothing is read from the tier and nothing is sent (a run that skipped
+ * every row, or a `key-onboarding` run, holds no object). With lines (the timestamping block on a shared tier) the block's own tear-down
+ * runs: own objects only, by ledger line, tier identity and live run-prefixed name. The tear-down error, if any, is rethrown after the proof is gone.
  */
 import { readLedger } from '../regression/ledger/ledger';
 import { currentRunId } from '../regression/run/runId';

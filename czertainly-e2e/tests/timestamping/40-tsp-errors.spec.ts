@@ -1,13 +1,11 @@
 import { randomBytes } from 'crypto';
 import { recordCreated } from '../../utils/regression/ledger/ledger';
-import { describeLocalOnly } from '../../utils/regression/tier/localProof';
+import { runName } from '../../utils/regression/ledger/runState';
 import { createOwnUser } from '../../utils/regression/ownUsers';
 import { expect, test } from '../../utils/timestamping/fixtures';
 import { ledgerSpec, primaryFamily } from '../../utils/timestamping/provisioning';
 import { devTests } from '../../utils/timestamping/tags';
 import { describeOutcome, requestTimestamp, TimestampOutcome } from '../../utils/timestamping/tsp';
-
-describeLocalOnly(test);
 
 /**
  * How the TSP endpoint behaves when the request is wrong. Two invariants matter beyond the
@@ -47,7 +45,8 @@ test.describe('TSP error paths', devTests(), () => {
     // authentication before any signing decision is made.
     const outcome = await requestTimestamp(tsp, {
       label: 'error-unknown-signing-profile',
-      profileName: 'tsa-does-not-exist',
+      // Run-prefixed: a name nobody on a shared tier owns (a bare `tsa-does-not-exist` could be somebody's profile).
+      profileName: runName('tsa-does-not-exist'),
     });
     expect(outcome.httpStatus, describeOutcome(outcome)).toBe(401);
     expect(outcome.responseLength, 'no token is returned').toBe(0);
@@ -56,7 +55,7 @@ test.describe('TSP error paths', devTests(), () => {
   test('an unknown TSP profile is refused the same way', devTests(), async ({ tsp }) => {
     const outcome = await requestTimestamp(tsp, {
       label: 'error-unknown-tsp-profile',
-      profileName: 'tsp-does-not-exist',
+      profileName: runName('tsp-does-not-exist'),
       route: 'tsp',
     });
     expect(outcome.httpStatus, describeOutcome(outcome)).toBe(401);

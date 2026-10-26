@@ -265,7 +265,7 @@ test('no docker daemon and a stopped sidecar are unavailable after docker alone 
     expect(JSON.stringify(stopped.summary), 'a reason names the variable, not the container').not.toContain(SIDECAR);
 });
 
-// The control: the same run through the same guard WITHOUT localStack is refused at its first request, so the full-run
+// The control: the same run through the same guard WITHOUT localStack is refused at its first request that needs it, so the full-run
 // tests below prove the guard lets every request of the setup through on a proven local stack.
 test('control: without localStack the guard refuses the setup (it is the real guard judging every request)', async ({}, testInfo) => {
     stateDir = testInfo.outputPath('state');
@@ -276,7 +276,9 @@ test('control: without localStack the guard refuses the setup (it is the real gu
         const api = guardApiWithSeams(core.api, { env, lines: [], runId: runId(), tier: null });
         await expect(provisionKeyOnboarding(api, { cfg: keyOnboardingConfig(env), env, poll: NO_POLL_PAUSE, docker: docker.runner, stamp: STAMP })).rejects.toThrow(OwnObjectViolation);
     });
-    expect(core.sent, 'the refused list POST never reached the core').toEqual([]);
+    // The lists, the form callbacks and the creates of an own vault are allowed for the guard now (the timestamping block needs them on a
+    // shared tier), so the setup goes on until its first request that needs localStack; that one never reached the core.
+    expect(core.sent.some((s) => s.method === 'PATCH' && /\/certificates\//.test(s.path)), 'the request localStack lifts was not sent').toBe(false);
     expect(scriptRuns(docker.calls), 'nothing planted').toEqual([]);
 });
 

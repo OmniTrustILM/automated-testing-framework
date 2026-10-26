@@ -16,9 +16,14 @@ import type { LiveOptions } from '../ledger/ownership';
 import type { APIRequestContext } from '@playwright/test';
 import type { GuardTestSeams } from './types';
 
+/** The state of every guarded context, for guard/callbackTargets.ts only (the lint's `callback-target` rule keeps everything else away from it). */
+export const STATES = new WeakMap<object, GuardState>();
+
 export class GuardState {
     /** Uuids `probeUuid()` handed out: accepted as mutation targets, they name no object. */
     readonly probes = new Set<string>();
+    /** The pre-existing objects a preflight registered as callback parents (guard/callbackTargets.ts), lower-cased uuids. */
+    readonly callbackTargets: Record<'authority' | 'connector', Set<string>> = { authority: new Set(), connector: new Set() };
     readonly env: NodeJS.ProcessEnv;
     private readonly localStack: boolean;
     /** The caller's own user uuid once read (approval profile steps). */

@@ -38,6 +38,7 @@ import { clusterProblem } from './kubernetesOwnObjects';
 import { pickHealthyAuthority } from './ownRaProfiles';
 import { keycloakLocalBlocker, secondIdentityBlocker } from './rbac/identities';
 import { requireTool } from './requireTool';
+import { timestampingNeedProblem } from '../timestamping/need';
 import { DEFAULT_EJBCA_CONNECTOR, settings } from './run/settings';
 import { NEEDS, type Needs } from './tags';
 
@@ -130,6 +131,7 @@ const RESOLVERS: Record<Needs, Resolver> = {
     'crypto-v1': async ({ api }) => ((await findCryptoConnector(api, 1)) ? undefined : noCryptoConnectorReason(1)),
     'vault-connector': async ({ api }) =>
         (await findVaultConnector(api)) ? undefined : 'deploy gate: no connected HashiCorp Vault connector with a secret interface is registered on this tier (@needs:vault-connector)',
+    timestamping: ({ api }) => timestampingNeedProblem(api),
     'ejbca-connector': registered(CONNECTOR_SPECS.ejbca, 'EJBCA-NG connector', 'ejbca-connector'),
     'adcs-connector': registered(CONNECTOR_SPECS['adcs-v2'], 'MS-ADCS-NG v2 connector', 'adcs-connector'),
     'crypto-v2': async ({ api }) => ((await findCryptoConnector(api, 2)) ? undefined : noCryptoConnectorReason(2)),

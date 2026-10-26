@@ -13,8 +13,11 @@ import { test } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { currentRunId } from '../regression/run/runId';
+import { isLocalTier } from '../regression/tier/kind';
+import { hasLocalProof } from '../regression/tier/localProof';
 import { PlannedFamily, plannedFamilies, summaryFile } from './config';
-import type { BasicCredential, NamedUuid, Provisioning, TimestampingSummary, TsaSet } from './types';
+import { basicPassword } from './secrets';
+import type { BasicCredential, NamedUuid, Provisioning, StoredTsaSet, TimestampingSummary, TsaSet } from './types';
 
 export type { BasicCredential, NamedUuid, Provisioning, TsaSet };
 
@@ -50,6 +53,15 @@ export function provisioningOrSkip(): Provisioning {
     return readySummaryOrSkip().provisioning;
 }
 
+/**
+ * The second guard of a `@local` row in a spec that also holds rows for a shared tier (`describeLocalOnly(test)` covers a whole file; a
+ * mixed file such as 00-environment skips per row): skipped unless TIER_KIND=local and this run holds its local-backend proof.
+ */
+export function skipUnlessLocalStack(env: NodeJS.ProcessEnv = process.env): void {
+    test.skip(!isLocalTier(env), 'local stack only (TIER_KIND=local)');
+    test.skip(!hasLocalProof(env), 'no authenticated local-backend proof for this run (the <block>-proof project)');
+}
+
 /** The ledger `spec` of the objects a timestamping spec creates: `timestamping/<file stem>` (the block teardown selects by the prefix). */
 export function ledgerSpec(testInfo: { file: string }): string {
     return `timestamping/${path.basename(testInfo.file).replace(/\.spec\.ts$/, '')}`;
@@ -67,6 +79,11 @@ export interface TsaFamily {
     qualified: TsaSet;
 }
 
+/** A stored half with its Basic password, derived from the run secret (never read from the summary file). */
+export const halfOf = (half: StoredTsaSet, keyAlgorithm: string, env: NodeJS.ProcessEnv = process.env): TsaSet => ({
+    ...half, keyAlgorithm, basicCredential: { ...half.basicCredential, password: basicPassword(half.tspProfile.uuid, half.basicCredential.username, env) },
+});
+
 function familyOf(name: string, p: Provisioning): TsaFamily {
     const set = p.sets[name];
     return {
@@ -75,8 +92,8 @@ function familyOf(name: string, p: Provisioning): TsaFamily {
         cryptoProvider: set.cryptoProvider,
         keyAlgorithm: set.keyAlgorithm,
         connector: set.connector,
-        nonQualified: { ...set.nonQualified, keyAlgorithm: set.keyAlgorithm },
-        qualified: { ...set.qualified, keyAlgorithm: set.keyAlgorithm },
+        nonQualified: halfOf(set.nonQualified, set.keyAlgorithm),
+        qualified: halfOf(set.qualified, set.keyAlgorithm),
     };
 }
 

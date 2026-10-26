@@ -13,7 +13,7 @@ import { assertSameOrigin, readPathProblem, resolveSentUrl } from '../../utils/r
 import { guardApiWithSeams } from '../../utils/regression/guard/createGuard';
 import { isUuidField, UUID_FIELD_NAME } from '../../utils/regression/guard/uuids';
 import { pathTargets } from '../../utils/regression/guard/targets';
-import { PLATFORM_DENY, platformDenied, POST_CREATE, POST_READ, postRouteKind } from '../../utils/regression/guard/allowLists';
+import { callbackParentOf, isRawPostRouteAllowed, PLATFORM_DENY, platformDenied, POST_CALLBACK, POST_CREATE, POST_READ, postRouteKind } from '../../utils/regression/guard/allowLists';
 import { ID_NAMED, LIVE_READS, OwnObjectViolation, RefusalKind } from '../../utils/regression/ledger/ownership';
 import { apiJson } from '../../utils/regression/apiReads';
 import { LedgerLine } from '../../utils/regression/ledger/ledger';
@@ -295,7 +295,7 @@ test('resource typing: unresolvable target or bulk route is refused for an own u
     const g = looseApi(guard());
     const RA = OWN.raProfiles;
     const unresolved = [
-        () => g.delete(`/api/v1/signingProfiles/${RA}`), () => g.put(`/api/v1/tspProfiles/${RA}`, { data: {} }), () => g.delete(`/api/v1/notifications/${RA}`),
+        () => g.delete(`/api/v1/signingRecords/${RA}`), () => g.delete(`/api/v1/notifications/${RA}`),
         () => g.delete(`/api/v1/comments/${RA}`),
         () => g.put(`/api/v2/complianceProfiles/rules/${RA}`, { data: {} }), () => g.post(`/api/v1/roles/${OWN.roles}/permissions/${RA}/objects`, { data: [] }),
         () => g.delete('/api/v1/signingRecords', { data: [RA] }),
@@ -315,10 +315,10 @@ test('resource typing: unresolvable target or bulk route is refused for an own u
     expect(A.mutations(), 'the own key may have been read live; nothing was sent').toEqual([]);
     A.reset();
     const p = g.probeUuid();
-    await g.delete(`/api/v1/signingProfiles/${p}`);
+    await g.delete(`/api/v1/signingRecords/${p}`);
     await g.patch('/api/v1/keys/items/disable', { data: [p] });
     await g.get(`/api/v1/proxies/${p}/instructions`, { failOnStatusCode: false });
-    expect(sentTo(A)).toEqual([`DELETE /api/v1/signingProfiles/${p}`, 'PATCH /api/v1/keys/items/disable', `GET /api/v1/proxies/${p}/instructions`]);
+    expect(sentTo(A)).toEqual([`DELETE /api/v1/signingRecords/${p}`, 'PATCH /api/v1/keys/items/disable', `GET /api/v1/proxies/${p}/instructions`]);
     // A side-effect GET checks the type as well: an own role is no certificate.
     A.reset();
     const got = await refusal(g.get(`/api/v1/certificates/${OWN.roles}/validate`));
@@ -370,9 +370,12 @@ test('resource typing: the route → ledger type resolver over the core routes w
         [`/v1/groups/${a}`, ['groups']], [`/v1/discoveries/${a}/stop`, ['discoveries']], [`/v1/keys/${a}/destroy`, ['keys']],
         [`/v1/notificationProfiles/${a}`, ['notificationProfiles']], [`/v1/notificationInstances/${a}`, ['notificationInstances']],
         [`/v1/roles/${a}`, ['roles']], [`/v1/secrets/${a}/enable`, ['secrets']], [`/v1/complianceProfiles/${a}/rules`, ['complianceProfiles']],
-        [`/v1/tspProfiles/${a}/basicCredentials/${b}`, [undefined, undefined]], [`/v1/signingProfiles/${a}`, [undefined]], [`/v1/signingRecords/${a}`, [undefined]],
+        // Timestamping (tests/timestamping/SHARED-TIER.md): typed since the block runs on a shared tier; a signing record has no ledger type.
+        [`/v1/tspProfiles/${a}/basicCredentials/${b}`, ['tspProfiles', 'tspBasicCredentials']], [`/v1/signingProfiles/${a}`, ['signingProfiles']],
+        [`/v1/tspProfiles/${a}`, ['tspProfiles']], [`/v1/signingProfiles/${a}/protocols/tsp/activate/${b}`, ['signingProfiles', 'tspProfiles']],
+        [`/v1/signingProfiles/${a}/protocols/tsp/deactivate`, ['signingProfiles']], [`/v1/signingRecords/${a}`, [undefined]],
         [`/v1/notifications/${a}`, [undefined]], [`/v1/proxies/${a}`, [undefined]], [`/v1/trustedCertificates/${a}`, [undefined]], [`/v1/cboms/${a}`, [undefined]],
-        [`/v1/timeQualityConfigurations/${a}`, [undefined]], [`/v1/attributes/metadata/${a}`, [undefined]],
+        [`/v1/timeQualityConfigurations/${a}`, ['timeQualityConfigurations']], [`/v1/attributes/metadata/${a}`, [undefined]],
     ];
     for (const [path, types] of rows) expect(pathTargets(path).map((t) => t.type), path).toEqual(types);
     expect(resourceTypeAt(['v1', 'raProfiles', a], 2)).toBe('raProfiles');
@@ -513,7 +516,6 @@ const EXPECTED_DENY: Array<[string, string, unknown, string]> = [
     ['POST', '/v1/workflows/events', { triggerUuids: [] }, 'a platform-level event trigger association (no canonical objectUuid: it fires for every object)'],
     ['DELETE', `/v1/trustedCertificates/${U(1)}`, undefined, 'the platform\'s trusted certificates'],
     ['PUT', `/v1/proxies/${U(1)}`, {}, 'connector proxies'],
-    ['PUT', `/v1/timeQualityConfigurations/${U(1)}`, {}, 'time-quality configurations'],
     ['PUT', `/v1/attributes/metadata/${U(1)}`, {}, 'global metadata definitions'],
     ['POST', '/v1/cboms/upload', {}, 'the CBOM repository (upload, delete, sync)'],
     ['PUT', `/v1/connectors/${U(1)}/approve`, undefined, 'connector approve / reconnect / connect'],
@@ -543,7 +545,7 @@ test('safety list: each PLATFORM_DENY example is denied by its own entry and ref
 
 // ------------------------------------------------------------------ typed body fields
 
-/** Every uuid-bearing request DTO field name of `interfaces` 2b7962c7 (45 fields): each must be classified. */
+/** Every uuid-bearing request DTO field name of `interfaces` 2b7962c7 (45 fields, plus the two of the timestamping workflow): each must be classified. */
 const UUID_BEARING_FIELDS = [
     'attributeDefinitionUuids', 'eabSecretUuids',
     'actionsUuids', 'altKeyUuid', 'altTokenProfileUuid', 'attributeUuid', 'authorityInstanceUuid', 'caCertificateUuid', 'certificateUuid',
@@ -552,6 +554,8 @@ const UUID_BEARING_FIELDS = [
     'notificationProfileUuid', 'objectUuid', 'ownerUuid', 'parentUuid', 'proxyUuid', 'raProfileUuid', 'raProfileUuids', 'recipientUuids', 'roleUuid',
     'ruleUuid', 'rulesUuids', 'signingCertificateUuid', 'sourceCertificateUuid', 'sourceVaultProfileUuid', 'tokenProfileUuid', 'triggerUuids',
     'triggers', 'userUuid', 'uuid', 'uuids', 'vaultProfileUuid',
+    // The polymorphic `workflow` subtype of a signing profile (TimestampingWorkflowRequestDto) hid these two from the generic derivation.
+    'signatureFormattingConnectorUuid', 'timeQualityConfigurationUuid',
 ];
 
 // typed body fields: every uuid-bearing request DTO field is typed (BODY_FIELD_TYPES), sibling-typed or listed as unmapped — exactly one
@@ -559,7 +563,7 @@ test('safety list: every uuid-bearing request DTO field is typed in BODY_FIELD_T
     const typed = Object.keys(BODY_FIELD_TYPES);
     const sibling = Object.keys(SIBLING_TYPED_FIELDS);
     const unmapped = Object.keys(UNMAPPED_UUID_FIELDS);
-    expect(UUID_BEARING_FIELDS).toHaveLength(45);
+    expect(UUID_BEARING_FIELDS).toHaveLength(47);
     expect([...typed, ...sibling, ...unmapped].sort()).toEqual([...UUID_BEARING_FIELDS].sort());
     expect(new Set([...typed, ...sibling, ...unmapped]).size, 'no name in two classes').toBe(typed.length + sibling.length + unmapped.length);
     expect(sibling).toEqual(['objectUuid']);
@@ -568,7 +572,7 @@ test('safety list: every uuid-bearing request DTO field is typed in BODY_FIELD_T
     const LEDGER_TYPES = new Set(TYPES);
     for (const [f, t] of Object.entries(BODY_FIELD_TYPES)) if (t !== null) expect(LEDGER_TYPES.has(t), f).toBe(true);
     expect(Object.entries(BODY_FIELD_TYPES).filter(([, t]) => t === null).map(([f]) => f).sort())
-        .toEqual(['defaultSigningProfileUuid', 'groups', 'internalRules', 'parentUuid', 'proxyUuid', 'ruleUuid']);
+        .toEqual(['groups', 'internalRules', 'parentUuid', 'proxyUuid', 'ruleUuid']);
     expect(BODY_FIELD_TYPES.groupUuids).toBe('groups');
 });
 
@@ -758,7 +762,8 @@ const EXPECTED_BODY_FIELDS: Record<string, string | null> = {
     notificationInstanceUuid: 'notificationInstances', notificationProfileUuid: 'notificationProfiles', ownerUuid: 'users', raProfileUuid: 'raProfiles', raProfileUuids: 'raProfiles',
     roleUuid: 'roles', rulesUuids: 'rules', signingCertificateUuid: 'certificates', sourceCertificateUuid: 'certificates', sourceVaultProfileUuid: 'vaultProfiles',
     tokenProfileUuid: 'tokenProfiles', triggerUuids: 'triggers', triggers: 'triggers', userUuid: 'users', vaultProfileUuid: 'vaultProfiles',
-    defaultSigningProfileUuid: null, groups: null, internalRules: null, ruleUuid: null, parentUuid: null,
+    defaultSigningProfileUuid: 'signingProfiles', timeQualityConfigurationUuid: 'timeQualityConfigurations', signatureFormattingConnectorUuid: 'connectors',
+    groups: null, internalRules: null, ruleUuid: null, parentUuid: null,
     proxyUuid: null,
 };
 /** RESOURCE_TYPES as a literal. */
@@ -838,6 +843,8 @@ const EXPECTED_CREATES = [
     // Inspections, certificate import, certificate register, POST /v2/connectors as a create (tests/unit/guardedApiAllowedRequests.spec.ts
     // has their limits).
     '/v1/inspections', '/v1/certificates/import', '/v2/operations/authorities/{id}/raProfiles/{id}/certificates/register', '/v2/connectors', '/v2/complianceProfiles',
+    // Timestamping: a time-quality configuration, a TSP profile and a signing profile (tests/unit/guardedApiTimestamping.spec.ts has the limits).
+    '/v1/timeQualityConfigurations', '/v1/tspProfiles', '/v1/signingProfiles',
 ];
 
 // literal tables: POST_CREATE entry by entry — every example is a create and is sent under foreign scope parents
@@ -904,7 +911,28 @@ const EXPECTED_READS: Array<[string, string[]]> = [
     ['/v1/({seg}/)*attributes(/{seg})?/validate', ['/v1/attributes/validate', '/v1/connectors/auth/attributes/basic/validate',
         `/v1/authorities/${FOREIGN}/attributes/raProfile/validate`, `/v1/entities/${FOREIGN}/attributes/location/validate`]],
     ['/v1/connectors/{id}/{seg}/{seg}/validate', [`/v1/connectors/${FOREIGN}/authorityProvider/ejbca/validate`]],
+    // Timestamping: lists (tests/unit/guardedApiTimestamping.spec.ts has the limits). The attribute callbacks are no reads: POST_CALLBACK.
+    ['/v2/connectors/list', ['/v2/connectors/list']],
+    ['/v1/signingProfiles/list', ['/v1/signingProfiles/list']],
+    ['/v1/tspProfiles/list', ['/v1/tspProfiles/list']],
+    ['/v1/timeQualityConfigurations/list', ['/v1/timeQualityConfigurations/list']],
+    ['/v1/signingRecords', ['/v1/signingRecords']],
+    ['/v1/signingProfiles/{id}/signingRecords', [`/v1/signingProfiles/${FOREIGN}/signingRecords`]],
 ];
+
+// literal table: POST_CALLBACK — three routes, each a kind of its own (not a read: no raw context may send them, the body is scanned)
+test('safety list: POST_CALLBACK is exactly the three form callbacks, each of kind callback and refused to a raw context', () => {
+    expect([...POST_CALLBACK]).toEqual(['/v1/raProfiles/{id}/callback', '/v1/keys/{id}/callback', '/v2/connectors/{id}/callback']);
+    for (const [path, parent] of [[`/v1/raProfiles/${FOREIGN}/callback`, 'authority'], [`/v1/keys/${FOREIGN}/callback`, 'tokenProfile'], [`/v2/connectors/${FOREIGN}/callback`, 'connector']] as const) {
+        expect(postRouteKind(path), path).toBe('callback');
+        expect(callbackParentOf(path), path).toEqual({ kind: parent, uuid: FOREIGN });
+        expect(isRawPostRouteAllowed(path), `${path}: a raw context may not send it`).toBe(false);
+    }
+    for (const other of [`/v1/tokens/${FOREIGN}/callback`, `/v1/connectors/${FOREIGN}/authorityProvider/ejbca/callback`, '/v1/raProfiles/not-a-uuid/callback']) {
+        expect(postRouteKind(other), other).toBeUndefined();
+        expect(callbackParentOf(other), other).toBeUndefined();
+    }
+});
 
 // literal tables: POST_READ entry by entry — every example is a read POST, sent with a body naming a foreign uuid (reads are not judged)
 test('safety list: POST_READ entry by entry, each example is a read POST sent with a foreign uuid', async () => {

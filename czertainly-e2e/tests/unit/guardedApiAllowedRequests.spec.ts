@@ -514,13 +514,20 @@ test('a provider rule uuid on an own compliance profile is waived; internal and 
 
 // ------------------------------------------------------------------ connector callbacks, POST /v2/connectors, certificate register
 
-// a callback on a pre-existing connector or object stays refused; POST /v2/connectors is a create, proxyUuid probes only,
-// connect / approve platform-level
-test('a callback on a pre-existing connector stays refused; POST /v2/connectors is a create', async () => {
+// the three form callbacks are a kind of their own (guard POST_CALLBACK, limits in guardedApiTimestamping.spec.ts): refused here, where the
+// preflight registered nothing; every other callback stays refused too; POST /v2/connectors is a create, proxyUuid probes only, connect / approve
+// platform-level
+test('a callback on anything the preflight did not register stays refused; POST /v2/connectors is a create', async () => {
     const g = guard();
-    expect(await outcome(g.post(`/api/v2/connectors/${PRE_CONNECTOR}/callback`, { data: { name: 'x' } }))).toBe('ownership');
+    expect(await outcome(g.post(`/api/v2/connectors/${PRE_CONNECTOR}/callback`, { data: { name: 'x' } })), 'a pre-existing connector nobody registered').toBe('request');
+    expect(await outcome(g.post(`/api/v1/raProfiles/${PRE_CONNECTOR}/callback`, { data: { name: 'x' } })), 'an authority nobody registered').toBe('request');
+    expect(await outcome(g.post(`/api/v1/keys/${PRE_CONNECTOR}/callback`, { data: { name: 'x' } })), 'a token profile that is not own').toBe('ownership');
     expect(await outcome(g.post(`/api/v1/connectors/${PRE_CONNECTOR}/authorityProvider/ejbca/callback`, { data: { name: 'x' } })), 'a connector KIND segment is name-keyed (rule 6a) before ownership').toBe('request');
     expect(await outcome(g.post(`/api/v1/certificates/${FOREIGN}/callback`, { data: { name: 'x' } }))).toBe('ownership');
+    expect(await outcome(g.post(`/api/v1/tokenProfiles/${FOREIGN}/callback`, { data: { name: 'x' } })), 'another resource callback').toBe('ownership');
+    expect(await outcome(g.post(`/api/v1/tokens/${FOREIGN}/callback`, { data: { name: 'x' } })), 'another resource callback').toBe('ownership');
+    expect(await outcome(g.put(`/api/v2/connectors/${PRE_CONNECTOR}/callback`, { data: { name: 'x' } })), 'only POST is a callback').toBe('ownership');
+    noMutationArrived();
     expect(postRouteKind('/v2/connectors')).toBe('create');
     expect(postRouteKind('/v2/complianceProfiles')).toBe('create');
     expect(await outcome(g.post('/api/v2/complianceProfiles', { data: { name: `${RUN}-cp`, description: 'x', customAttributes: [] } }))).toBe('sent');

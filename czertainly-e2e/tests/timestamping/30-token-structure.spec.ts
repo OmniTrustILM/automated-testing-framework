@@ -1,12 +1,9 @@
-import { describeLocalOnly } from '../../utils/regression/tier/localProof';
 import { plannedFamilies } from '../../utils/timestamping/config';
 import { expect, test } from '../../utils/timestamping/fixtures';
 import { isoDurationToMicroseconds, ReplyInfo } from '../../utils/timestamping/openssl';
 import { familyOrSkip, provisioningOrSkip } from '../../utils/timestamping/provisioning';
 import { devTests } from '../../utils/timestamping/tags';
 import { describeOutcome, requestTimestamp } from '../../utils/timestamping/tsp';
-
-describeLocalOnly(test);
 
 /**
  * What the two profiles of a family are supposed to differ on. The final test is the guard

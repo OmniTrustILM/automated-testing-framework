@@ -21,7 +21,6 @@
  */
 import { createdAfterMarker, OwnRef, recordDerived } from '../../regression/ledger/ledger';
 import { isOwnObject } from '../../regression/ledger/ownership';
-import { isLocalTier } from '../../regression/tier/kind';
 import type { CryptoProvider } from '../config';
 import { AttributeDef, attrUuid, chosenAttribute, groupUuid, keySpecAttributes, providerNames, RequestAttribute, requestAttribute, requestedKeySpec, signingOperationAttributes } from './attributes';
 import { generatedSecret, recordOwn, SETUP_LEDGER_SPEC, SetupContext, uuidOf } from './context';
@@ -42,12 +41,15 @@ async function softwareTokenAttributes(ctx: SetupContext, connector: CryptoConne
     const v1 = ctx.cfg.cryptoProvider === 'software-v1';
     const formPath = v1 ? `/v1/connectors/${connector.uuid}/attributes/cryptographyProvider/SOFT` : `/v1/tokens/${connector.uuid}/attributes`;
     const callbackPath = v1 ? `/v1/connectors/${connector.uuid}/cryptographyProvider/SOFT/callback` : `/v2/connectors/${connector.uuid}/callback`;
+    // The v1 callback names its connector kind (a name-keyed path): only the local-stack transport may send it (preflight.offlineBlocker).
+    const callbackAdmin = v1 ? ctx.localAdmin : ctx.admin;
+    if (!callbackAdmin) throw new TierError('the v1 software provider\'s token form is a name-keyed callback that a proven local stack alone may call');
     const defs = await ctx.admin.get<AttributeDef[]>(formPath);
     let createDefs = defs;
     let options: RequestAttribute | undefined;
     if (defs.some((d) => d.name === 'data_options' && d.type === 'data')) {
         const loadGroup = groupUuid(defs, 'group_loadToken');
-        createDefs = (await ctx.admin.request<AttributeDef[]>('POST', callbackPath, {
+        createDefs = (await callbackAdmin.request<AttributeDef[]>('POST', callbackPath, {
             uuid: loadGroup, name: 'group_loadToken', pathVariable: { option: 'new' }, requestParameter: {}, body: {},
         })).body ?? [];
         options = chosenAttribute(defs, 'data_options', 'new');
@@ -248,10 +250,11 @@ export async function trustChain(ctx: SetupContext, certificate: OwnRef): Promis
         throw new TierError('the top of the TSA certificate\'s chain is not self-signed: Core holds no certificate of its issuer');
     }
     if (root.trustedCa === false) {
-        // Design rule 1: the ONE change to a pre-existing object, on a local stack only.
-        if (!isLocalTier(ctx.env)) throw new TierError('the issuing CA is not trusted, and the setup marks it trusted on a local stack only');
+        // Design rule 1: the ONE change to a pre-existing object, on a proven local stack only (`localAdmin`, never the strict guard).
+        // A shared tier needs the root CA trusted beforehand: the block is unavailable with this reason otherwise.
+        if (!ctx.localAdmin) throw new TierError('the issuing CA is not trusted, and the setup marks it trusted on a proven local stack only (a shared tier needs the CA trusted beforehand)');
         ctx.log.warn(`marking the issuing root CA ${current} trusted (pre-existing object, local stack only: timestamping-setup.sh step 16)`);
-        await ctx.admin.request('PATCH', `/v1/certificates/${current}`, { trustedCa: true });
+        await ctx.localAdmin.request('PATCH', `/v1/certificates/${current}`, { trustedCa: true });
     } else if (root.trustedCa !== true) {
         // No trustedCa flag: Core does not hold it as a CA, and the PATCH would be refused.
         throw new TierError('the root of the TSA certificate\'s chain carries no trustedCa flag (not a CA certificate in Core)');

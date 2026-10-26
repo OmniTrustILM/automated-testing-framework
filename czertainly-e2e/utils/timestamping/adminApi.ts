@@ -14,7 +14,7 @@ import { artifactDir } from './provisioning';
 
 /**
  * Thin wrapper over the ILM admin API, now over the GUARDED api of the regression framework (the identity and the
- * ownership / platform rules are the guard's; the guard's `localStack` option (`localApi`) lifts ownership on a proven local stack only).
+ * ownership / platform rules are the guard's: strict on a shared tier and on a local stack alike).
  */
 export class AdminApi {
   constructor(private readonly request: GuardedApi) {}
@@ -87,9 +87,14 @@ export class AdminApi {
     return this.get<AttributeDefinition[]>(`/v1/signingProfiles/certificates/${certificateUuid}/signatureAttributes`);
   }
 
-  async listSigningRecords(itemsPerPage = 200): Promise<SigningRecordListItem[]> {
+  /**
+   * The first page of signing records: every record of the platform, or (with `signingProfileUuid`) those of that signing profile. On a
+   * shared tier the rows pass their own profile: other clients' records are not this suite's business, and a busy table cannot push the
+   * run's record off the first page.
+   */
+  async listSigningRecords(itemsPerPage = 200, signingProfileUuid?: string): Promise<SigningRecordListItem[]> {
     const response = await this.post<{ signingRecords?: SigningRecordListItem[]; items?: SigningRecordListItem[] }>(
-      '/v1/signingRecords',
+      signingProfileUuid ? `/v1/signingProfiles/${signingProfileUuid}/signingRecords` : '/v1/signingRecords',
       { itemsPerPage, pageNumber: 1, filters: [] },
     );
     return response.signingRecords ?? response.items ?? [];

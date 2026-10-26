@@ -396,7 +396,7 @@ test('the platform deny-list refuses platform-level endpoints on a shared tier, 
     const denied: Array<[string, string, unknown?]> = [
         ['PUT', '/api/v1/settings/platform', {}], ['PATCH', '/api/v1/settings/authentication', {}], ['POST', `/api/v1/scheduler/jobs/${OWN_ROLE}/enable`],
         ['PUT', '/api/v1/auth/profile', { firstName: 'x' }], ['POST', '/api/v1/workflows/events', { resource: 'certificates', event: 'x', triggerUuids: [OWN_TRIGGER] }],
-        ['POST', '/api/v1/trustedCertificates', {}], ['DELETE', `/api/v1/proxies/${OWN_ROLE}`], ['PUT', `/api/v1/timeQualityConfigurations/${OWN_ROLE}`, {}],
+        ['POST', '/api/v1/trustedCertificates', {}], ['DELETE', `/api/v1/proxies/${OWN_ROLE}`],
         ['POST', '/api/v1/attributes/metadata/promote', {}], ['POST', '/api/v1/cboms/sync'], ['PUT', `/api/v1/connectors/${OWN_ROLE}/approve`],
         ['PUT', '/api/v1/connectors/reconnect', [OWN_ROLE]], ['POST', '/api/v2/connectors/connect', {}], ['PUT', '/api/v1/connectors/connect', {}],
         ['PATCH', `/api/v2/connectors/${OWN_ROLE}/approve`], ['POST', '/api/v1/connector/register', {}], ['POST', '/api/v2/connector/register', {}],

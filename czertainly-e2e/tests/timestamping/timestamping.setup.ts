@@ -12,15 +12,17 @@
  * leaves an older `ready` file (with older credentials) behind. A tier without timestamping is not a failure: the test
  * passes with an annotation of the reason. It fails on a refused body or identity, a failure of the required RSA
  * family, a programming error or a guard refusal (the summary then says so, and the original error is rethrown). The
- * guarded API is built only after the offline checks passed, so a shared tier gets no request at all (not even the
- * token grant the `api` fixture would make); it is built like the fixture, with the guard's `localStack` option, which takes
- * effect only on a proven local stack.
+ * guarded API is built only after the offline checks passed; it is the STRICT guard, on a shared tier and on a local stack alike
+ * (tests/timestamping/SHARED-TIER.md), so a local green run exercises the rules a shared tier runs under. A second guard with the
+ * `localStack` option is built on a proven local stack only, for the two requests the strict one refuses (provision.ts `localApi`).
+ * A tier without the components ends in `unavailable` after reads only: the preflight creates nothing.
  */
 import { test as setup } from '../../fixtures/testFixtures';
 import { getAuthenticatedApiContext } from '../../utils/auth/apiContext';
 import { Logger } from '../../utils/Logger';
 import { guardApi } from '../../utils/regression/guard/createGuard';
-import { describeLocalOnly } from '../../utils/regression/tier/localProof';
+import { isLocalTier } from '../../utils/regression/tier/kind';
+import { hasLocalProof } from '../../utils/regression/tier/localProof';
 import { timestampingConfig } from '../../utils/timestamping/config';
 import { offlineBlocker, provisionTimestamping, SETUP_NOT_FINISHED, unavailableSummary, writeSummary } from '../../utils/timestamping/provision/provision';
 import { devTests } from '../../utils/timestamping/tags';
@@ -28,10 +30,8 @@ import type { TimestampingSummary } from '../../utils/timestamping/types';
 
 const logger = new Logger('TimestampingSetup');
 
-describeLocalOnly(setup);
-
-setup('the block provisions its timestamping objects, or records why the tier cannot', devTests(), async ({ request, env }, testInfo) => {
-    // Four sets, each with a certificate issuance and a chain validation, on a local stack.
+setup('the block provisions its timestamping objects, or records why the tier cannot', devTests({ infrastructure: true }), async ({ request, env }, testInfo) => {
+    // Four sets, each with a certificate issuance and a chain validation.
     setup.setTimeout(10 * 60_000);
     writeSummary(unavailableSummary(SETUP_NOT_FINISHED));
     let summary: TimestampingSummary;
@@ -41,11 +41,14 @@ setup('the block provisions its timestamping objects, or records why the tier ca
         if (blocked) {
             summary = unavailableSummary(blocked);
         } else {
-            const api = guardApi(await getAuthenticatedApiContext(request, env), { localStack: true });
+            const api = guardApi(await getAuthenticatedApiContext(request, env));
+            // The local-stack guard exists on a proven local stack only; a shared tier never builds it.
+            const localApi = isLocalTier() && hasLocalProof() ? guardApi(await getAuthenticatedApiContext(request, env), { localStack: true }) : undefined;
             try {
-                summary = await provisionTimestamping(api, { cfg });
+                summary = await provisionTimestamping(api, { cfg, ...(localApi ? { localApi } : {}) });
             } finally {
                 await api.dispose();
+                await localApi?.dispose();
             }
         }
     } catch (e) {

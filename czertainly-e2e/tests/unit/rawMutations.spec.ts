@@ -554,6 +554,7 @@ test('API-AUTH-02: claim', async ({ api, adminToken, restrictedToken }, testInfo
             fine: "test('x', async ({ request }) => { await request.get('/api/v1/roles'); });",
         },
         'unit-seam': { bad: 'const g = guardApiWithSeams(ctx, seams);', fine: 'const g = guardApi(ctx);' },
+        'callback-target': { bad: "registerCallbackTarget(api, 'connector', uuid);", fine: "const kinds = ['connector', 'authority'];" },
         'guard-internal': {
             bad: "import { checkAndSend } from '../../utils/regression/guard/sendRequest';",
             fine: "import { guardApi } from '../../utils/regression/guard/createGuard';",
@@ -646,6 +647,40 @@ test('API-AUTH-02: claim', async ({ api, adminToken, restrictedToken }, testInfo
         expect(refused("import { x } from '../other/claims';")).toEqual([]);
         // The unit-test verdict helper is a seam like guardApiWithSeams.
         expect(refused('await judgeWithSeams(api, {}, "GET", "/api/v1/roles");')).toEqual(['unit-seam']);
+    });
+
+    test('callback-target: the registration of a callback parent is reachable from the preflight, the guard and the unit tests only', () => {
+        const only = (src: string, file: string, spec = true) => [...new Set(rawMutations(src, file, { spec }).filter((m) => m.rule === 'callback-target').map((m) => m.rule))];
+        const SPEC = 'tests/timestamping/20-x.spec.ts';
+        // Every spelling in a spec (or any other file) is refused: the call, an alias, destructuring, a namespace, bracket access, require, import(),
+        // a re-export, a type position, a string naming the function or the module.
+        for (const bad of [
+            "registerCallbackTarget(api, 'connector', uuid);",
+            "import { registerCallbackTarget } from '../../utils/regression/guard/callbackTargets';",
+            "import { registerCallbackTarget as reg } from '../../utils/regression/guard/callbackTargets';\nreg(api, 'connector', uuid);",
+            "import * as cb from '../../utils/regression/guard/callbackTargets';\ncb.registerCallbackTarget(api, 'connector', uuid);",
+            "import * as cb from '../../utils/regression/guard/callbackTargets';\ncb['registerCallbackTarget'](api, 'connector', uuid);",
+            "import * as cb from '../../utils/regression/guard/callbackTargets';",
+            "const cb = require('../../utils/regression/guard/callbackTargets');",
+            "const cb = await import('../../utils/regression/guard/callbackTargets.ts');",
+            "export { registerCallbackTarget } from '../regression/guard/callbackTargets';",
+            "const { registerCallbackTarget: reg } = mod;",
+            "const f = mod[`registerCallbackTarget`];",
+            "const f = mod['registerCallbackTarget'];",
+            "type F = typeof registerCallbackTarget;",
+        ]) {
+            expect(only(bad, SPEC), `a spec: ${bad}`).toEqual(['callback-target']);
+            expect(only(bad, 'utils/timestamping/x.ts', false), `a helper: ${bad}`).toEqual(['callback-target']);
+        }
+        // Allowed: the preflight, the guard's folder, the unit tests; and names that merely look alike.
+        const use = "import { registerCallbackTarget } from '../../regression/guard/callbackTargets';\nregisterCallbackTarget(api, 'connector', uuid);";
+        for (const file of ['utils/timestamping/provision/preflight.ts', 'utils/regression/guard/callbackTargets.ts', 'utils/regression/guard/createGuard.ts', 'tests/unit/guardedApiTimestamping.spec.ts']) {
+            expect(only(use, file, false), file).toEqual([]);
+        }
+        expect(only(use, 'utils/timestamping/provision/provision.ts', false), 'not the other files of the same folder').toEqual(['callback-target']);
+        for (const fine of ["const registerCallbackTargets = [];", "const s = 'callbackTargetsList';", "import { x } from './myCallbackTargets';", "const o = { registerCallback: 1 };"]) {
+            expect(only(fine, SPEC), fine).toEqual([]);
+        }
     });
 
     test('the table names every rule and keeps findings of one node in table order', () => {

@@ -1,11 +1,8 @@
 import { plannedFamilies } from '../../utils/timestamping/config';
-import { describeLocalOnly } from '../../utils/regression/tier/localProof';
 import { CertificateDetail, SigningProfileDetail } from '../../utils/timestamping/adminApi';
 import { expect, test } from '../../utils/timestamping/fixtures';
 import { familyOrSkip, plannedSets, setOrSkip } from '../../utils/timestamping/provisioning';
 import { devTests } from '../../utils/timestamping/tags';
-
-describeLocalOnly(test);
 
 /**
  * Everything the TSP request path depends on, verified through the API rather than trusted

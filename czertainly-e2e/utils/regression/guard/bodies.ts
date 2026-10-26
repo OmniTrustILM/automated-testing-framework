@@ -104,7 +104,14 @@ export interface AssociationOptions {
      * typed; a non-canonical form is still refused; a list or nested key under the name is scanned as usual).
      */
     waive?: ReadonlySet<string>;
+    /** Route-scoped NESTED waivers (guard/routes.ts ROUTE_PATH_WAIVERS): key paths from the root whose string value is a reference. */
+    waivePaths?: ReadonlyArray<readonly string[]>;
+    /** Scan attribute subtrees too (an attribute callback: core expands the credentials and secrets named in them). */
+    scanAttributes?: boolean;
 }
+
+/** The marker `findUuidsInBody` puts in a key path for a list element (a waiver path names it explicitly). */
+export const LIST_ELEMENT = '\u0000list';
 
 /**
  * The uuids a JSON body names: every string outside attribute subtrees, keys included —
@@ -119,22 +126,24 @@ export function findUuidsInBody(json: unknown, opts: AssociationOptions = {}): F
      * or a SIBLING_TYPED_FIELDS field typed by its sibling `resource` code (unknown code: null = probes only);
      * undefined = not typed. An exact canonical uuid value under a typed field becomes a typed claim.
      */
-    const visit = (v: unknown, depth: number, reference: boolean, uuidKey: boolean, field?: string, fieldType?: string | null): void => {
+    const waivedPath = (path: readonly string[]): boolean => !!opts.waivePaths?.some((w) => w.length === path.length && w.every((k, i) => k === path[i]));
+    const visit = (v: unknown, depth: number, reference: boolean, uuidKey: boolean, field?: string, fieldType?: string | null, path: readonly string[] = []): void => {
         if (typeof v === 'string') {
             const f = findUuidsInString(v, { uuidKey });
             merge(out, reference ? { canonical: [], nonCanonical: f.nonCanonical } : f);
             if (!reference && field !== undefined && fieldType !== undefined && isCanonicalUuid(v)) (out.typed ??= []).push([v.toLowerCase(), fieldType, field]);
             return;
         }
-        if (Array.isArray(v)) return v.forEach((x) => visit(x, depth + 1, false, uuidKey, field, fieldType));
+        // A list element's key path carries LIST_ELEMENT, so a path waiver reaches a list element only when it names the marker.
+        if (Array.isArray(v)) return v.forEach((x) => visit(x, depth + 1, false, uuidKey, field, fieldType, [...path, LIST_ELEMENT]));
         if (!isPlainObject(v)) return;
         for (const [k, x] of Object.entries(v)) {
             merge(out, findUuidsInString(k, { uuidKey: false }));
-            if (ATTRIBUTE_KEY.test(k)) continue;
-            const reference = depth === 0 && typeof x === 'string' && ((!!opts.references && Object.hasOwn(REFERENCE_FIELDS, k)) || !!opts.waive?.has(k));
+            if (ATTRIBUTE_KEY.test(k) && !opts.scanAttributes) continue;
+            const reference = typeof x === 'string' && ((depth === 0 && ((!!opts.references && Object.hasOwn(REFERENCE_FIELDS, k)) || !!opts.waive?.has(k))) || waivedPath([...path, k]));
             const type = Object.hasOwn(BODY_FIELD_TYPES, k) ? BODY_FIELD_TYPES[k]
                 : Object.hasOwn(SIBLING_TYPED_FIELDS, k) ? (ledgerTypeOfResource(v[SIBLING_TYPED_FIELDS[k]]) ?? null) : undefined;
-            visit(x, depth + 1, reference, isUuidField(k), k, type);
+            visit(x, depth + 1, reference, isUuidField(k), k, type, [...path, k]);
         }
     };
     // The root: a top-level string, or a string of a top-level array (`List<UUID>` bodies), counts as uuid-keyed.

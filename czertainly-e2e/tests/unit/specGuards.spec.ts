@@ -76,6 +76,31 @@ function lintFile(rel: string): RawMutation[] {
     return isAreaFixture(rel) ? found.filter((m) => m.rule !== 'fixture-extend') : found;
 }
 
+/**
+ * The timestamping and key-onboarding blocks are outside the deny-by-default lint (see the header), but ONE rule reaches every file: `callback-target`.
+ * Whoever can call `registerCallbackTarget` (guard/callbackTargets.ts) can make the guard accept a callback on any pre-existing connector, so
+ * outside the guard, the lint, the unit tests and the timestamping preflight no .ts file of czertainly-e2e may name it or its module (a util that
+ * re-exported it under another name would name it, so it is found too). One test over every file (node_modules and the report folders left out);
+ * the allow-list is the rule's own (specLint/rules.ts CALLBACK_TARGET_ALLOWED).
+ */
+const NOT_SOURCE = new Set(['node_modules', 'test-results', 'playwright-report', '.git']);
+function everyTsFile(dir = ''): string[] {
+    return fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((e) => {
+        const rel = dir ? path.posix.join(dir, e.name) : e.name;
+        if (e.isDirectory()) return NOT_SOURCE.has(e.name) ? [] : everyTsFile(rel);
+        return e.name.endsWith('.ts') ? [rel] : [];
+    });
+}
+test('callback-target: no .ts file of the suite outside the guard, the lint, the unit tests and the preflight reaches the callback-parent registration', () => {
+    test.setTimeout(180_000);
+    const files = everyTsFile();
+    expect(files.length, 'the walk found the suite').toBeGreaterThan(300);
+    expect(files).toContain('pages/' + fs.readdirSync(path.join(ROOT, 'pages')).find((f) => f.endsWith('.ts'))!);
+    const hits = files.flatMap((rel) =>
+        rawMutations(source(rel), rel, { spec: rel.startsWith('tests/') || isAreaFixture(rel) }).filter((m) => m.rule === 'callback-target').map((m) => `${rel}:${m.line} ${m.text}`));
+    expect(hits).toEqual([]);
+});
+
 const FORBIDDEN = [
     { id: 'waitForTimeout', text: 'waitForTimeout', why: 'wait on API state, never on time' },
     { id: 'lucide', text: 'svg.lucide-', why: 'icon classes are not a contract: iconButton(widget, icon) / a test id' },

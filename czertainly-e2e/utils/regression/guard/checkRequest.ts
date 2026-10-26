@@ -25,6 +25,9 @@
  *      `^[A-Za-z0-9._~-]+$`, and the path lies under `/api/v1|v2`.
  *   2. A POST to the read-only allow-list (lists, searches, validations) or to client protocol traffic (ACME / SCEP /
  *      CMP) is allowed; the body is a query or a protocol message.
+ *   2c. An attribute callback (allowLists.ts POST_CALLBACK, kind `callback`) is not a read: it goes on through rules 3, 4 and 6 with its own
+ *      body scan (attribute subtrees included; only attribute definition uuids and the registered parent are not claimed) and a path id that
+ *      must be the authority / connector the preflight registered (`registerCallbackTarget`) or an own token profile.
  *   3. Uuid-like values: a path segment, query key / value or body string that a server parser could read as a uuid but
  *      is not canonical is refused, never canonicalised (padded, Java-lenient groups, `urn:uuid:`, padded base64; the
  *      unpadded 22-character form only under a uuid-typed key; see uuids.ts).
@@ -53,12 +56,12 @@
  */
 import { isCanonicalUuid, merge, findUuidsInString, unescapeJson, UUID_ANYWHERE, FoundUuids } from './uuids';
 import { apiPathOfPathname, nameSegmentProblem, NO_BASE, readApiPath, readPathProblem, structuralPathProblem, uuidSegmentProblem } from './urls';
-import { platformDenied, postRouteKind } from './allowLists';
+import { callbackParentOf, platformDenied, postRouteKind } from './allowLists';
 import { bulkRouteTargets, hasFiltersKey, jsonDepth, MAX_BODY_DEPTH, PathTarget, pathTargets } from './targets';
-import { BodyView, CREATE_BODY_SHAPES, findUuidsInBody, findUuidsInQuery } from './bodies';
+import { BodyView, CREATE_BODY_SHAPES, findUuidsInBody, findUuidsInQuery, LIST_ELEMENT } from './bodies';
 import { approvalDecisionProblem, isApprovalProfileWrite, stepUserUuids, withoutSelfSteps } from './approvals';
 import { IDENTITY_HEADERS, PROBE_METHODS } from './headers';
-import { bulkRoute, malformedUuidProbe, noHandlerProbe, routeFieldWaivers, sideEffectGet } from './routes';
+import { bulkRoute, malformedUuidProbe, noHandlerProbe, routeFieldWaivers, routePathWaivers, sideEffectGet } from './routes';
 import { assertOwnAll, assertOwnApprovalDecision, Claims } from './claims';
 import { Refuse, refuserFor } from './refuse';
 import { assertNotDryRun } from '../run/flags';
@@ -140,7 +143,7 @@ async function checkMutation(checked: Checked): Promise<void> {
     const body = checkBody(m, kind);
     const otherIdentity = hasIdentity(m.s);
     const scanned = await waiveSelfSteps(m, body, otherIdentity);
-    const findings = findUuids(m, body, scanned);
+    const findings = findUuids(m, body, scanned, kind);
     checkPlatformDeny(m, body);
     if (!m.provenLocal) await checkOwnership(m, { body, kind, findings, otherIdentity });
     checkDryRun(m);
@@ -207,7 +210,7 @@ async function waiveSelfSteps({ state, method, apiPath, provenLocal }: Mutation,
  * 4. Every uuid the request names, as written and as decoded. A non-canonical uuid form is refused here; the canonical
  * ones are claimed by rule 6.
  */
-function findUuids({ s, method, apiPath, refuse }: Mutation, { view, json }: MutationBody, scanned: unknown): FoundUuids {
+function findUuids({ s, method, apiPath, refuse }: Mutation, { view, json }: MutationBody, scanned: unknown, kind: PostKind): FoundUuids {
     const references = method !== 'DELETE';
     const findings: FoundUuids = { canonical: [], nonCanonical: [] };
     // Text the server does not read as JSON (a non-JSON Buffer on a create; a text/plain body): free text, as written
@@ -217,7 +220,9 @@ function findUuids({ s, method, apiPath, refuse }: Mutation, { view, json }: Mut
         merge(findings, findUuidsInString(unescapeJson(view.text), { free: true }));
     } else {
         // A route-scoped top-level field waiver (guard/routes.ts ROUTE_FIELD_WAIVERS), like REFERENCE_FIELDS.
-        merge(findings, findUuidsInBody(scanned, { references, waive: routeFieldWaivers(method, apiPath, json) }));
+        merge(findings, kind === 'callback'
+            ? findUuidsInBody(scanned, { references: false, scanAttributes: true, waivePaths: callbackWaivers(apiPath) })
+            : findUuidsInBody(scanned, { references, waive: routeFieldWaivers(method, apiPath, json), waivePaths: routePathWaivers(method, apiPath, json) }));
         // Caller-supplied text: every canonical uuid in it, as written and as decoded, must be own (no waivers).
         if (view.kind === 'json' && view.raw !== undefined) {
             for (const t of [view.raw, unescapeJson(view.raw)]) for (const found of t.matchAll(UUID_ANYWHERE)) merge(findings, { canonical: [found[0].toLowerCase()], nonCanonical: [] });
@@ -258,11 +263,16 @@ async function checkOwnership(m: Mutation, { body, kind, findings, otherIdentity
     const malformed = malformedUuidProbe(method, apiPath);
     const named = malformed ? undefined : nameSegmentProblem(apiPath);
     if (named) refuse(named);
-    const claims = new Claims(state, refuse, findings.canonical, view.kind === 'text' || view.kind === 'plain');
+    const callbackParent = kind === 'callback' ? callbackParentOf(apiPath) : undefined;
+    // An attribute callback: its path id must be what the preflight registered (or an own token profile), and the body may name that parent too.
+    if (kind === 'callback') checkCallbackParent(m, callbackParent);
+    const bodyUuids = callbackParent && callbackParent.kind !== 'tokenProfile' ? findings.canonical.filter((u) => u !== callbackParent.uuid) : findings.canonical;
+    const claims = new Claims(state, refuse, bodyUuids, view.kind === 'text' || view.kind === 'plain');
     claims.fields(findings.typed ?? []);
     // A top-level list body: typed by LIST_BODY_TYPES unless it is a bulk route's (no path target, not a create).
     if (Array.isArray(json) && (kind === 'create' || pathTargets(apiPath).length > 0)) claims.list(method, apiPath, json);
-    const targets = kind !== 'create' ? claimTargets(m, claims, body, !!malformed) : [];
+    if (callbackParent?.kind === 'tokenProfile') claims.add(callbackParent.uuid, 'tokenProfiles', 'the callback names its token profile');
+    const targets = kind !== 'create' && kind !== 'callback' ? claimTargets(m, claims, body, !!malformed) : [];
     // An approval in the path may only be decided, as the run's own user (route, identity, body first).
     const approvals = targets.filter((t) => t.type === 'approvals' && !state.probes.has(t.uuid)).map((t) => t.uuid);
     for (const approval of approvals) {
@@ -271,6 +281,32 @@ async function checkOwnership(m: Mutation, { body, kind, findings, otherIdentity
     }
     await assertOwnAll(state, claims, helper, refuse);
     for (const approval of approvals) await assertOwnApprovalDecision(state, approval, helper, refuse);
+}
+
+/**
+ * The key paths of an attribute callback's body that may hold a non-own uuid: the attribute DEFINITION the callback names (`uuid`, and the
+ * `uuid` of each `attributes[]` item, `interfaceUuid` the connector interface): core resolves them only among the path connector's own
+ * definitions (CallbackServiceImpl.getBaseAttributeFromExistingDefinition, the NG dispatch's interface check). Any other uuid, in `body`,
+ * `pathVariable`, `filter` or inside an attribute's content, is an object core would expand: it must be own or the registered parent.
+ */
+const CALLBACK_WAIVERS: ReadonlyArray<readonly string[]> = [['uuid'], ['interfaceUuid'], ['attributes', LIST_ELEMENT, 'uuid']];
+
+/**
+ * The waivers of one callback route. The RA-profile form's `pathVariable.authorityId` is the CONNECTOR-SIDE id of the authority instance
+ * (the static value of the attribute's callback mapping the preflight read: no ILM inventory object, core passes it on to the connector as
+ * a path variable and expands nothing for it), so it may be a uuid there and only there.
+ */
+function callbackWaivers(apiPath: string): ReadonlyArray<readonly string[]> {
+    return callbackParentOf(apiPath)?.kind === 'authority' ? [...CALLBACK_WAIVERS, ['pathVariable', 'authorityId']] : CALLBACK_WAIVERS;
+}
+
+/** The callback's path id: a registered authority / connector of this run, or (checked as a claim) an own token profile. */
+function checkCallbackParent({ state, refuse }: Mutation, parent: ReturnType<typeof callbackParentOf>): void {
+    if (!parent) refuse('an attribute callback on a path the guard does not know', 'request');
+    if (parent!.kind === 'tokenProfile') return;
+    if (!state.callbackTargets[parent!.kind].has(parent!.uuid)) {
+        refuse(`an attribute callback on a ${parent!.kind} the preflight did not discover for this run (guard registerCallbackTarget)`, 'request', { uuid: parent!.uuid });
+    }
 }
 
 /** The targets of a mutation that is not a create: those in the path, else those of an allow-listed bulk route. They join the claims. */

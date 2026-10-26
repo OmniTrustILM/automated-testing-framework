@@ -76,6 +76,24 @@ const REQUEST_OPTIONS = new Set(['data', 'params', 'headers', 'timeout', 'failOn
 const REQUEST_CALLS = new Set(['get', 'post', 'put', 'patch', 'delete', 'fetch']);
 /** The guard's inner modules: they read, check, claim and send, and only the guard may compose them (createGuard.ts). */
 const GUARD_INTERNAL = /(^|\/)utils\/regression\/guard\/(sendRequest|guardState|readRequest|checkRequest|claims)(\.ts|\.js)?$/;
+/** Files that may use the callback-target registration (guard/callbackTargets.ts): the guard's folder, the lint's own rules, the unit tests and the timestamping preflight. */
+const CALLBACK_TARGET_ALLOWED = /^(utils\/regression\/guard\/|utils\/regression\/specLint\/|tests\/unit\/|utils\/timestamping\/provision\/preflight\.ts$)/;
+/** The registration's name and its module, as a string (a bracket access, `require`, `import()`, `from '…'`, an alias spelled as text). */
+const CALLBACK_TARGET_TEXT = /^registerCallbackTarget$|(^|\/)callbackTargets(\.ts|\.js)?$/;
+
+/**
+ * `registerCallbackTarget` (the identifier in any form: call, alias, destructuring, named import, `ns.registerCallbackTarget`) and every string
+ * naming it or its module (`x['registerCallbackTarget']`, `require('…/guard/callbackTargets')`, `import * as m from`, `import()`), outside the files
+ * that may register a callback parent. Whoever can call it can make the guard accept a callback on any pre-existing connector.
+ */
+function callbackTargetHits(n: TS.Node, _b: Bindings, ctx: LintContext): Hits {
+    if (CALLBACK_TARGET_ALLOWED.test(ctx.fileName.replace(/\\/g, '/'))) return NONE;
+    const { ts } = ctx;
+    if (ts.isIdentifier(n)) return n.text === 'registerCallbackTarget' ? [n] : NONE;
+    if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) return CALLBACK_TARGET_TEXT.test(n.text) ? [n] : NONE;
+    return NONE;
+}
+
 /** Files that may import them: the guard's own folder and the unit tests. */
 const GUARD_INTERNAL_ALLOWED = /^(utils\/regression\/guard|tests\/unit)\//;
 /**
@@ -600,6 +618,7 @@ export const RULES: readonly Rule[] = [
     { rule: 'token-use', scope: 'spec', hits: tokenUseHits },
     { rule: 'raw-context', scope: 'all', hits: identifierNamed('getAuthenticatedApiContext', 'newAnonymousContext') },
     { rule: 'unit-seam', scope: 'all', hits: identifierNamed('guardApiWithSeams', 'judgeWithSeams') },
+    { rule: 'callback-target', scope: 'all', hits: callbackTargetHits },
     { rule: 'raw-xhr', scope: 'all', hits: identifierNamed('XMLHttpRequest') },
     { rule: 'spec-import', scope: 'spec', hits: (n, b, ctx) => [...identifierNamed('createRequire')(n, b, ctx), ...moduleHitsOf('spec-import')(n, b, ctx)] },
     { rule: 'fs-write', scope: 'spec', hits: (n, b, ctx) => [...moduleHitsOf('fs-write')(n, b, ctx), ...fsWriteNodeHits(n, b, ctx)] },

@@ -1,15 +1,14 @@
-import { describeLocalOnly } from '../../utils/regression/tier/localProof';
 import { containerState, DOCKER, dockerAvailable, listQueues } from '../../utils/timestamping/docker';
 import { expect, test } from '../../utils/timestamping/fixtures';
-import { cryptographyConnectors } from '../../utils/timestamping/provisioning';
+import { cryptographyConnectors, skipUnlessLocalStack } from '../../utils/timestamping/provisioning';
 import { timestampingConfig } from '../../utils/timestamping/config';
 import { devTests } from '../../utils/timestamping/tags';
-
-describeLocalOnly(test);
 
 /**
  * The environment itself, asserted before anything is blamed on the code under test.
  * A failure here means the stack is broken, not that timestamping regressed.
+ * Two rows read the local docker stack (container states, the broker's queues through `docker exec`): `@local`, skipped off a proven local
+ * stack. The other two read the API and run on a shared tier too.
  */
 const c = timestampingConfig().containers;
 test.describe('environment', devTests(), () => {
@@ -36,7 +35,8 @@ test.describe('environment', devTests(), () => {
     expect(readiness.status(), 'Core readiness').toBe(200);
   });
 
-  test('every dependency container is up', { tag: [...devTests().tag, DOCKER] }, () => {
+  test('every dependency container is up', { tag: [...devTests({ local: true }).tag, DOCKER] }, () => {
+    skipUnlessLocalStack();
     test.skip(!dockerAvailable(), 'docker is not available');
     const unhealthy = containers
       .map((name) => ({ name, state: containerState(name) }))
@@ -75,7 +75,8 @@ test.describe('environment', devTests(), () => {
     }
   });
 
-  test('Core is subscribed to the time-quality exchange', { tag: [...devTests().tag, DOCKER] }, () => {
+  test('Core is subscribed to the time-quality exchange', { tag: [...devTests({ local: true }).tag, DOCKER] }, () => {
+    skipUnlessLocalStack();
     test.skip(!dockerAvailable(), 'docker is not available');
     // 0 consumers on the config-request queue is the signature of a Core started without
     // MESSAGING_TIME_QUALITY_ENABLED — every qualified timestamp would fail later with

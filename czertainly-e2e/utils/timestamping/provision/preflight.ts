@@ -1,8 +1,9 @@
 /**
  * preflight — does this tier have what the timestamping block builds on? Read-only.
  *
- * WHAT: `offlineBlocker` decides without a single request (a shared tier, no local-backend proof for this run, a
- * cryptography provider the TypeScript setup does not provision); `preflight` then finds, by function group, interface
+ * WHAT: `offlineBlocker` decides without a single request (a cryptography provider this tier kind cannot provision); `discoverParents`
+ * finds the connectors, the authority instance and the vault instance (it is also what the `timestamping` need reads, see
+ * ../need.ts); `preflight` then finds, by function group, interface
  * and name, every pre-existing parent of the block: the credential-provider v1 connector (SoftKeyStore), the EJBCA
  * authority-provider connector, the TSA_CRYPTO_PROVIDER cryptography connector, the timestamp-formatting connector (v2),
  * the vault connector (credential-provider v2, `secret` interface), the EJBCA authority instance TSA_AUTHORITY_NAME, the
@@ -23,6 +24,8 @@ import type { PlannedFamily, TimestampingConfig } from '../config';
 import type { NamedUuid } from '../types';
 import { AttributeDef, attrUuid } from './attributes';
 import { Logger } from '../../Logger';
+import { registerCallbackTarget } from '../../regression/guard/callbackTargets';
+import type { GuardedApi } from '../../regression/guard/types';
 import { Admin, TierError } from './transport';
 
 type Json = Record<string, any>;
@@ -78,14 +81,13 @@ export type PreflightResult =
 
 /** Why the block cannot run here, decided without a request; undefined when the preflight may start reading. */
 export function offlineBlocker(cfg: TimestampingConfig, env: NodeJS.ProcessEnv = process.env): string | undefined {
-    if (!isLocalTier(env)) {
-        return 'not a local stack (TIER_KIND is not local): no shared tier has the timestamping connectors, and the guard has no create-only rules for the timestamping objects yet';
-    }
-    if (!hasLocalProof(env)) {
-        return 'no authenticated local-backend proof for this run (API-GEN-33[guard] in the snapshot project must run first): the setup\'s requests need localStack on a proven local stack';
-    }
     if (cfg.cryptoProvider === 'pkcs11') {
         return 'TSA_CRYPTO_PROVIDER=pkcs11 is not provisioned by the TypeScript setup yet (its token needs a PIN secret and a PKCS#11 profile / token label the block has no variables for); use software-v1 or software-v2';
+    }
+    // The v1 software provider's token form is a callback on `/v1/connectors/{id}/cryptographyProvider/SOFT/callback`: it names the connector
+    // KIND, a name-keyed path the guard refuses (rule 6a) unless `localStack` on a proven local stack.
+    if (cfg.cryptoProvider === 'software-v1' && !(isLocalTier(env) && hasLocalProof(env))) {
+        return 'TSA_CRYPTO_PROVIDER=software-v1 is provisioned on a proven local stack only (its token form is a name-keyed callback path the guard refuses elsewhere); use software-v2';
     }
     return undefined;
 }
@@ -107,7 +109,7 @@ function pickConnector(candidates: Json[], what: string): NamedUuid | string {
     const first = candidates[0];
     logger.warn(`the ${what} connector is '${first.name}' (${first.uuid}), status ${first.status}`);
     if (first.status === 'waitingForApproval') {
-        return `the ${what} connector is waiting for approval (the setup never approves a connector; approve it on the local stack and re-run)`;
+        return `the ${what} connector is waiting for approval (the setup never approves a connector; approve it in the platform and re-run)`;
     }
     return `the ${what} connector is ${first.status ?? 'in an unknown state'}, not connected`;
 }
@@ -131,70 +133,90 @@ const offered = (what: string, options: Json[]): string => {
     return 'the offered ones are in the setup log';
 };
 
+/** The pre-existing parents the block reads: connectors, the authority instance and the vault instance (no CA or profile lookups). */
+export type ParentsResult =
+    | { status: 'ok'; connectors: Prerequisites['connectors']; authority: NamedUuid; credential: NamedUuid; vaultInstance: NamedUuid; connectorHost: string }
+    | { status: 'unavailable'; reason: string };
+
+/**
+ * Steps 1, 3 and 4 of the script, read-only: the connected connectors by function group, interface and feature, the authority instance
+ * named by TSA_AUTHORITY_NAME and the vault instance named by TSA_VAULT_INSTANCE_NAME. A TierError of a read propagates (the callers turn
+ * it into their reason); a SetupError (a refused identity) always does.
+ */
+export async function discoverParents(admin: Admin, cfg: TimestampingConfig): Promise<ParentsResult> {
+    const unavailable = (reason: string): ParentsResult => ({ status: 'unavailable', reason });
+    // Step 1 of the script: v1 connectors by function group + kind, v2 connectors by interface (and feature).
+    const v1 = await admin.get<Json[]>('/v1/connectors');
+    const v2 = await admin.listItems<Json>('/v2/connectors/list');
+    const v2Version = new Map(v2.map((c) => [String(c.uuid), String(c.version ?? '')]));
+
+    const credentialProvider = pickConnector(v1.filter((c) => functionGroup(c, 'credentialProvider', 'SoftKeyStore')), 'credential-provider (SoftKeyStore)');
+    if (typeof credentialProvider === 'string') return unavailable(credentialProvider);
+    const ejbca = pickConnector(v1.filter((c) => functionGroup(c, 'authorityProvider', 'EJBCA')), 'authority-provider (EJBCA)');
+    if (typeof ejbca === 'string') return unavailable(ejbca);
+
+    let crypto: CryptoConnectorRef;
+    if (cfg.cryptoProvider === 'software-v1') {
+        const picked = pickConnector(v1.filter((c) => functionGroup(c, 'cryptographyProvider', 'SOFT') && v2Version.get(String(c.uuid)) !== 'v2'), 'cryptography-provider v1 (SOFT)');
+        if (typeof picked === 'string') return unavailable(picked);
+        crypto = { ...picked, version: 1 };
+    } else {
+        // The script matched http://<connector host>:<port> + v2; the block picks the software provider by interface.
+        const picked = pickConnector(
+            v2.filter((c) => c.version === 'v2' && hasInterface(c, 'cryptography') && !/pkcs11/i.test(`${c.name} ${c.url}`)),
+            'cryptography-provider v2 (software)',
+        );
+        if (typeof picked === 'string') return unavailable(picked);
+        crypto = { ...picked, version: 2 };
+    }
+    const timestampFormatting = pickConnector(v2.filter((c) => hasInterface(c, 'signatureFormatting', 'timestamping')), 'timestamp-formatting (signatureFormatting / timestamping)');
+    if (typeof timestampFormatting === 'string') return unavailable(timestampFormatting);
+
+    // Step 3: the EJBCA authority instance, by name (a parent only).
+    const authorities = await admin.get<Json[]>('/v1/authorities');
+    const authorityRow = authorities.find((a) => a.name === cfg.authorityName);
+    if (!authorityRow) return unavailable('no authority instance has the name TSA_AUTHORITY_NAME gives; the setup never creates one');
+    const authority: NamedUuid = { name: cfg.authorityName, uuid: String(authorityRow.uuid) };
+    const credential = await authorityCredential(admin, authorityRow);
+
+    // Step 4: the vault instance, by name; its connector is the vault connector of the summary.
+    const vaults = await admin.listItems<Json>('/v1/vaults/list');
+    const vaultRow = vaults.find((v) => v.name === cfg.vaultInstanceName);
+    if (!vaultRow) return unavailable('no vault instance has the name TSA_VAULT_INSTANCE_NAME gives; the setup never creates one');
+    const vaultInstance: NamedUuid = { name: cfg.vaultInstanceName, uuid: String(vaultRow.uuid) };
+    const vaultConnectorUuid = vaultRow.connector?.uuid ?? vaultRow.connectorUuid;
+    const secretConnectors = v2.filter((c) => hasInterface(c, 'secret') && (!vaultConnectorUuid || String(c.uuid) === String(vaultConnectorUuid)));
+    const vault = pickConnector(secretConnectors, `vault (credential-provider v2, secret interface${vaultConnectorUuid ? ', of the vault instance TSA_VAULT_INSTANCE_NAME names' : ''})`);
+    if (typeof vault === 'string') return unavailable(vault);
+
+    const v1Credential = v1.find((c) => String(c.uuid) === credentialProvider.uuid);
+    const connectorHost = hostOf(v1Credential?.url) || hostOf(v2.find((c) => String(c.uuid) === credentialProvider.uuid)?.url);
+    return { status: 'ok', connectors: { credentialProvider, ejbca, crypto, timestampFormatting, vault }, authority, credential, vaultInstance, connectorHost };
+}
+
 /** The read-only preflight; see the file header. */
-export async function preflight(admin: Admin, cfg: TimestampingConfig, env: NodeJS.ProcessEnv = process.env): Promise<PreflightResult> {
+export async function preflight(admin: Admin, cfg: TimestampingConfig, env: NodeJS.ProcessEnv, api: GuardedApi): Promise<PreflightResult> {
     const blocked = offlineBlocker(cfg, env);
     if (blocked) return { status: 'unavailable', reason: blocked };
     const unavailable = (reason: string): PreflightResult => ({ status: 'unavailable', reason });
     try {
-        // Step 1 of the script: v1 connectors by function group + kind, v2 connectors by interface (and feature).
-        const v1 = await admin.get<Json[]>('/v1/connectors');
-        const v2 = await admin.listItems<Json>('/v2/connectors/list');
-        const v2Version = new Map(v2.map((c) => [String(c.uuid), String(c.version ?? '')]));
-
-        const credentialProvider = pickConnector(v1.filter((c) => functionGroup(c, 'credentialProvider', 'SoftKeyStore')), 'credential-provider (SoftKeyStore)');
-        if (typeof credentialProvider === 'string') return unavailable(credentialProvider);
-        const ejbca = pickConnector(v1.filter((c) => functionGroup(c, 'authorityProvider', 'EJBCA')), 'authority-provider (EJBCA)');
-        if (typeof ejbca === 'string') return unavailable(ejbca);
-
-        let crypto: CryptoConnectorRef;
-        if (cfg.cryptoProvider === 'software-v1') {
-            const picked = pickConnector(v1.filter((c) => functionGroup(c, 'cryptographyProvider', 'SOFT') && v2Version.get(String(c.uuid)) !== 'v2'), 'cryptography-provider v1 (SOFT)');
-            if (typeof picked === 'string') return unavailable(picked);
-            crypto = { ...picked, version: 1 };
-        } else {
-            // The script matched http://<connector host>:<port> + v2; the block picks the software provider by interface.
-            const picked = pickConnector(
-                v2.filter((c) => c.version === 'v2' && hasInterface(c, 'cryptography') && !/pkcs11/i.test(`${c.name} ${c.url}`)),
-                'cryptography-provider v2 (software)',
-            );
-            if (typeof picked === 'string') return unavailable(picked);
-            crypto = { ...picked, version: 2 };
-        }
-        const timestampFormatting = pickConnector(v2.filter((c) => hasInterface(c, 'signatureFormatting', 'timestamping')), 'timestamp-formatting (signatureFormatting / timestamping)');
-        if (typeof timestampFormatting === 'string') return unavailable(timestampFormatting);
-
-        // Step 3: the EJBCA authority instance, by name (a parent only).
-        const authorities = await admin.get<Json[]>('/v1/authorities');
-        const authorityRow = authorities.find((a) => a.name === cfg.authorityName);
-        if (!authorityRow) return unavailable('no authority instance has the name TSA_AUTHORITY_NAME gives; the setup never creates one');
-        const authority: NamedUuid = { name: cfg.authorityName, uuid: String(authorityRow.uuid) };
-        const credential = await authorityCredential(admin, authorityRow);
-
-        // Step 4: the vault instance, by name; its connector is the vault connector of the summary.
-        const vaults = await admin.listItems<Json>('/v1/vaults/list');
-        const vaultRow = vaults.find((v) => v.name === cfg.vaultInstanceName);
-        if (!vaultRow) return unavailable('no vault instance has the name TSA_VAULT_INSTANCE_NAME gives; the setup never creates one');
-        const vaultInstance: NamedUuid = { name: cfg.vaultInstanceName, uuid: String(vaultRow.uuid) };
-        const vaultConnectorUuid = vaultRow.connector?.uuid ?? vaultRow.connectorUuid;
-        const secretConnectors = v2.filter((c) => hasInterface(c, 'secret') && (!vaultConnectorUuid || String(c.uuid) === String(vaultConnectorUuid)));
-        const vault = pickConnector(secretConnectors, `vault (credential-provider v2, secret interface${vaultConnectorUuid ? ', of the vault instance TSA_VAULT_INSTANCE_NAME names' : ''})`);
-        if (typeof vault === 'string') return unavailable(vault);
-
+        const parents = await discoverParents(admin, cfg);
+        if (parents.status === 'unavailable') return unavailable(parents.reason);
+        // The only pre-existing objects an attribute callback of this setup may name: what was just discovered (the guard's POST_CALLBACK rule).
+        // A tier without the components never gets here: no callback is sent before the connectors, the authority and the vault are found.
+        registerCallbackTarget(api, 'authority', parents.authority.uuid);
+        registerCallbackTarget(api, 'connector', parents.connectors.crypto.uuid);
         // Step 13's resolution, once for every planned family.
-        const ra = await raPlans(admin, authority, cfg);
+        const ra = await raPlans(admin, parents.authority, cfg);
         if ('reason' in ra) return unavailable(ra.reason);
-
-        const v1Credential = v1.find((c) => String(c.uuid) === credentialProvider.uuid);
-        const connectorHost = hostOf(v1Credential?.url) || hostOf(v2.find((c) => String(c.uuid) === credentialProvider.uuid)?.url);
         return {
             status: 'ok',
             prerequisites: {
-                connectorHost,
-                connectors: { credentialProvider, ejbca, crypto, timestampFormatting, vault },
-                authority,
-                credential,
-                vaultInstance,
+                connectorHost: parents.connectorHost,
+                connectors: parents.connectors,
+                authority: parents.authority,
+                credential: parents.credential,
+                vaultInstance: parents.vaultInstance,
                 raPlans: ra.plans,
             },
             missingFamilies: ra.missingFamilies,

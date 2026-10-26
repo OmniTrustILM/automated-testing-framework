@@ -24,7 +24,7 @@
  * `guardApiWithSeams` and `judgeWithSeams` only (the spec lint refuses those names outside tests/unit).
  */
 import { getAuthenticatedApiContext } from '../../auth/apiContext';
-import { GuardState } from './guardState';
+import { GuardState, STATES } from './guardState';
 import { Entry, readRequest } from './readRequest';
 import { checkRequest } from './checkRequest';
 import { checkAndSend } from './sendRequest';
@@ -60,6 +60,7 @@ function createGuard(api: APIRequestContext, options: GuardOptions, seams: Guard
         },
     };
     GUARDED.add(guarded);
+    STATES.set(guarded, state);
     return guarded as unknown as GuardedApi;
 }
 

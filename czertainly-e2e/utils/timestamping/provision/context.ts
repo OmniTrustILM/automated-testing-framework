@@ -4,7 +4,7 @@
  *
  * WHAT: `SETUP_LEDGER_SPEC` (the `spec` of every ledger line the setup writes), `SetupContext`, `recordOwn` (the
  * ledger line of a create, written right after the create answered), `objectName` (run-prefixed names, unique per
- * setup attempt), `generatedSecret` (per-run passwords and token codes) and `step` (a TierError names its step).
+ * setup attempt), `generatedSecret` (the token code) and `step` (a TierError names its step).
  * WHY: the block teardown selects exactly the lines whose spec starts with `timestamping/`; the run-end teardown's
  * live-name check accepts only `<run id>-…` names; a Playwright retry of the setup project must never reuse a name of
  * its first attempt (EJBCA binds a key and an end-entity name once, the username follows the CN).
@@ -22,7 +22,13 @@ import type { Admin, PollSettings } from './transport';
 export const SETUP_LEDGER_SPEC = 'timestamping/setup';
 
 export interface SetupContext {
+    /** The strict guarded transport: every request of the setup goes through it, on a shared tier and on a local stack alike. */
     admin: Admin;
+    /**
+     * The same transport over a `localStack` guard, present only on a proven local stack. The two requests that need it: marking the
+     * issuing root CA trusted (a pre-existing object) and the v1 software provider's name-keyed token callback.
+     */
+    localAdmin?: Admin;
     cfg: TimestampingConfig;
     env: NodeJS.ProcessEnv;
     poll: PollSettings;
@@ -33,7 +39,7 @@ export interface SetupContext {
 
 export { newStamp, objectName, step };
 
-/** A generated secret (Basic credential password, token code): never a literal in the source, kept only in the summary. */
+/** A generated secret (the token code): never a literal in the source, never stored. The Basic-credential passwords are derived (../secrets.ts). */
 export const generatedSecret = (): string => `Ts${crypto.randomBytes(18).toString('base64url')}`;
 
 /**

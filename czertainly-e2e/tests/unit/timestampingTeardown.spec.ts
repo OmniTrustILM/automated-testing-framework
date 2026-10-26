@@ -666,6 +666,22 @@ test('a foreign object (live name without the run prefix) is refused, nothing is
     expect(core.writes()).toEqual([]);
 });
 
+// on a shared tier a ledger line may point at an object somebody else owns (a wrong uuid, a renamed object): the live name decides, for each type
+test('a pre-existing signing profile or time-quality configuration (live name without the run prefix) is refused too: nothing is sent', async () => {
+    const signing = fullCore();
+    signing.signing.get(SIGNING)!.name = 'production-signing';
+    const a = await run(signing, 'signingProfiles');
+    expect(String(a.error)).toMatch(/refusing to touch|live name/);
+    expect(signing.writes()).toEqual([]);
+    const tqc = fullCore();
+    tqc.tqc.get(TQC)!.name = 'qualified-time-source';
+    tqc.tqc.get(TQC)!.usedBy = [];
+    const b = await run(tqc, 'timeQualityConfigurations');
+    expect(String(b.error)).toMatch(/refusing to touch|live name/);
+    expect(tqc.writes()).toEqual([]);
+    expect(tqc.tqc.has(TQC), 'the pre-existing configuration is still there').toBe(true);
+});
+
 // idempotent: a second run for an object that is gone ends in "route or object missing" with no request but reads
 test('a second call for an object that is already gone sends no mutation', async () => {
     const core = fullCore();
@@ -902,6 +918,6 @@ test('the registry-shaped entries agree with the descriptor: order, step 3, hand
         const filled = entry.ownership.url.replace('{uuid}', uuid).replace('{parent}', parent);
         expect(filled, entry.type).toBe(d.liveRead.detailUrl(uuid, entry.ownership.kind === 'parent' ? { [entry.ownership.parent]: parent } : undefined));
         expect('nameField' in entry.ownership ? entry.ownership.nameField : 'name', entry.type).toBe(d.liveRead.nameField);
-        expect(entry.snapshot.gap).toMatch(/^@local only/);
+        expect(entry.snapshot.gap).toMatch(/^timestamping block: its own run has no snapshot/);
     }
 });

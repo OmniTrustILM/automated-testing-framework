@@ -1,6 +1,5 @@
 import { recordCreated } from '../../utils/regression/ledger/ledger';
 import { runName } from '../../utils/regression/ledger/runState';
-import { describeLocalOnly } from '../../utils/regression/tier/localProof';
 import { plannedFamilies, timestampingConfig } from '../../utils/timestamping/config';
 import { AdminApi, AttributeDefinition, attributeValues } from '../../utils/timestamping/adminApi';
 import { expect, test } from '../../utils/timestamping/fixtures';
@@ -9,8 +8,6 @@ import { familyOrSkip, ledgerSpec, plannedSets, provisionedFamilies, Provisionin
 import { expectedSignature, postQuantumOffer, signatureField, V2_OFFER } from '../../utils/timestamping/signatureOptions';
 import { devTests } from '../../utils/timestamping/tags';
 import { describeOutcome, requestTimestamp } from '../../utils/timestamping/tsp';
-
-describeLocalOnly(test);
 
 /** Values outside the v2 offer, which Core must refuse rather than store. */
 const REFUSED_ON_RSA: Array<[string, string]> = [

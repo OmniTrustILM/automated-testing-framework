@@ -4,7 +4,7 @@
  * WHAT: `provisionTimestamping(api)` returns the run's `TimestampingSummary`: `unavailable` with the reason when the
  * tier lacks a prerequisite (preflight.ts) or a shared step fails at the tier, else `ready` with every set that could be
  * provisioned and `missingFamilies` for the others. `writeSummary` stores it at `summaryFile()` (mode 0600: it holds
- * the generated Basic-credential passwords). `SETUP_LEDGER_SPEC` is the `spec` of every ledger line written here.
+ * no password: those are derived from the run secret). `SETUP_LEDGER_SPEC` is the `spec` of every ledger line written here.
  * WHY: replaces development-environment `scripts/timestamping-setup.sh` for the block: instead of reusing and changing
  * fixed-name objects, each run creates its own (run-prefixed names, a ledger line per object right after its create), and
  * the block teardown, then the run-end teardown, delete them.
@@ -15,7 +15,9 @@
  * in `missingFamilies` with the step and the status; what it created stays in the ledger. The RSA family is required by
  * the plan (the protocol and canary specs run on it): its failure mid-way fails the setup test. Only a TierError becomes
  * a reason: a SetupError (a refused body, a refused identity), a programming error or a guard refusal propagates and
- * fails the setup test.
+ * fails the setup test. Shared tier or local stack, the same strict guard judges the setup (tests/timestamping/SHARED-TIER.md): the one
+ * request it cannot send, marking a not-yet-trusted issuing root CA trusted, needs `opts.localApi` (a proven local stack), else the tier
+ * is `unavailable` with that reason.
  */
 import * as fs from 'fs';
 import { writeJsonAtomic } from '../../devBlocks/provision/summaryFile';
@@ -26,6 +28,7 @@ import type { OwnRef } from '../../regression/ledger/ledger';
 import { runId } from '../../regression/ledger/runState';
 import { PlannedFamily, summaryFile, TimestampingConfig, timestampingConfig } from '../config';
 import type { Provisioning, SummarySet, TimestampingSummary } from '../types';
+import { clearBaseline, takeBaseline } from '../inventory';
 import { newStamp, objectName, SETUP_LEDGER_SPEC, SetupContext, step } from './context';
 import { Prerequisites, preflight } from './preflight';
 import { createKeyPair, createRaProfile, createToken, createTokenProfile, issueCertificate, trustChain, waitIssued } from './pki';
@@ -38,6 +41,11 @@ export { offlineBlocker } from './preflight';
 const logger = new Logger('TimestampingSetup');
 
 export interface ProvisionOptions {
+    /**
+     * A `localStack` guarded context, given only on a proven local stack (the setup test builds it): the two requests the strict `api`
+     * cannot send (SetupContext.localAdmin). Without it the setup never changes or calls a pre-existing object.
+     */
+    localApi?: GuardedApi;
     cfg?: TimestampingConfig;
     env?: NodeJS.ProcessEnv;
     /** The waits (unit tests: 0 ms pauses). */
@@ -71,19 +79,30 @@ export function unavailableSummary(reason: string): TimestampingSummary {
     return { status: 'unavailable', runId: runId(), at: new Date().toISOString(), reason };
 }
 
-/** Preflight, then provisioning; see the file header. Every admin request goes through the guarded `api`. */
+/**
+ * Preflight, then provisioning; see the file header. Every admin request goes through the guarded `api` (the strict guard, shared tier
+ * or local); `opts.localApi` serves the two requests only a proven local stack may make.
+ */
 export async function provisionTimestamping(api: GuardedApi, opts: ProvisionOptions = {}): Promise<TimestampingSummary> {
     const env = opts.env ?? process.env;
+    clearBaseline(env);
     const cfg = opts.cfg ?? timestampingConfig(env);
     const admin = new Admin(api);
-    const found = await preflight(admin, cfg, env);
+    const found = await preflight(admin, cfg, env, api);
     if (found.status === 'unavailable') {
         logger.warn(`timestamping unavailable: ${found.reason}`);
         return unavailableSummary(found.reason);
     }
-    const ctx: SetupContext = { admin, cfg, env, poll: { ...DEFAULT_POLL, ...opts.poll }, stamp: opts.stamp ?? newStamp(), log: logger };
+    const ctx: SetupContext = {
+        admin, ...(opts.localApi ? { localAdmin: new Admin(opts.localApi) } : {}), cfg, env, poll: { ...DEFAULT_POLL, ...opts.poll }, stamp: opts.stamp ?? newStamp(), log: logger,
+    };
     const missingFamilies: Record<string, string> = { ...found.missingFamilies };
     for (const [name, why] of Object.entries(missingFamilies)) logger.warn(`family ${name} skipped: ${why}`);
+
+    // Before anything is created: what the tier holds of the three resources the block adds to (utils/timestamping/inventory.ts). Read-only;
+    // a tier that cannot list them is a skipped check, never a failure.
+    const baseline = await takeBaseline(admin, env);
+    if (baseline.status === 'skipped') logger.warn(`inventory check skipped: ${baseline.reason}`);
 
     admin.markProvisioningStart();
     let shared: Shared;
@@ -207,7 +226,7 @@ function provisioningOf(ctx: SetupContext, s: Shared, sets: Record<string, Summa
 
 /**
  * Writes the summary at `summaryFile()` with mode 0600 (directory created): a temp file in the same directory, chmod,
- * rename, so a reader never sees half a file and the passwords never sit in a wider-mode file.
+ * rename, so a reader never sees half a file. It holds no secret (the Basic passwords are derived, utils/timestamping/secrets.ts).
  */
 export function writeSummary(summary: TimestampingSummary, env: NodeJS.ProcessEnv = process.env): string {
     const file = summaryFile(env);

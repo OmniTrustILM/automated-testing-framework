@@ -34,13 +34,15 @@ export type Prio = 'P1' | 'P2' | 'P3';
  * catalogue offers a metadata field), `registration-settings` (the platform settings can hold a challenge-protected registration),
  * `required-attributes-fillable` (every required custom attribute the suite creates objects with is one it can fill), `scep-https`
  * (the SCEP URL is not https: classic sscep speaks plain HTTP), `bearer-token` (the admin identity signs in with a bearer token:
- * not a header-mode stack) and `openapi-document` (REG_OPENAPI_FILE names a readable OpenAPI document).
+ * not a header-mode stack) and `openapi-document` (REG_OPENAPI_FILE names a readable OpenAPI document). `timestamping`: the tier has
+ * what the developers' timestamping block builds on (OpenSSL 3 on the runner, a connected credential-provider, EJBCA, software
+ * cryptography v2, timestamp-formatting and vault connector, the named authority and vault instance; utils/timestamping/need.ts).
  */
 export const NEEDS = [
     'ca', 'ejbca-ng', 'pkcs11', 'second-identity', 'keycloak-local', 'v1-discovery', 'v2-discovery', 'email-provider', 'webhook-provider',
     'smtp-catcher', 'webhook-receiver', 'scan-target', 'connector-online', 'openssl', 'sscep', 'docker', 'cluster',
     'crypto-v2', 'platform-triggers-free', 'metadata-field', 'scep-https', 'registration-settings', 'required-attributes-fillable',
-    'bearer-token', 'openapi-document', 'utils-service', 'crypto-v1', 'vault-connector', 'ejbca-connector', 'adcs-connector',
+    'bearer-token', 'openapi-document', 'utils-service', 'crypto-v1', 'vault-connector', 'ejbca-connector', 'adcs-connector', 'timestamping',
 ] as const;
 
 /** One need of a row (a value of `NEEDS`). */

@@ -11,8 +11,9 @@
  * - BULK_ROUTES: the mutations without a `{…uuid}` path variable whose body is a uuid list (`List<String>` / `List<UUID>`) or a bulk DTO
  *   with one (`uuids`, `certificateUuids`), on collection routes ending in enable / disable / delete / force / forceDelete / compromise /
  *   destroy / usages / archive / unarchive / revoke, plus DELETE on the collection paths that take a uuid list. LEFT OUT on purpose
- *   (refused by the guard): the platform-level ones (global metadata, CBOMs, OIDs, time-quality configurations, connector approve /
- *   reconnect: PLATFORM_DENY), compliance re-evaluations (`/v1/certificates/compliance`, `/v1/complianceProfiles/compliance`,
+ *   (refused by the guard): the platform-level ones (global metadata, CBOMs, OIDs, connector approve /
+ *   reconnect: PLATFORM_DENY), the bulk delete of time-quality configurations (`DELETE /v1/timeQualityConfigurations`: no ledger
+ *   bulk type; a single own one is deleted by uuid), compliance re-evaluations (`/v1/certificates/compliance`, `/v1/complianceProfiles/compliance`,
  *   `/v1/raProfiles/compliance`, `/v2/compliance[/{resource}]`: no listed verb; the per-object `POST /v2/compliance/{resource}/{uuid}`
  *   stays available through ownership), `PATCH /v1/notifications` (mark as read: per-user state, not a listed verb), audit-log export /
  *   purge, and every other path-less POST that is not a create (`/v1/certificates/create`, `/v1/acmeProfiles/eabKeys`, …). Moved to
@@ -153,7 +154,7 @@ const IS_UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0
  * The ledger type of a uuid path variable, keyed by the literal segment before it (`raProfiles`) or the two before it
  * (`attributes/custom`, `acme/activate`), from every core route with a uuid path variable (interfaces at
  * INTERFACES_REVISION). The values are the suite's ledger types (ledger/ownership.ts LIVE_READS and ID_NAMED). A segment that
- * is not here (`tspProfiles`, `signingProfiles`, `notifications`, `comments`, `permissions`,
+ * is not here (`signingRecords`, `notifications`, `comments`, `permissions`,
  * `complianceProfiles/rules`, `cboms`, `proxies`, …) names a resource the suite has no ledger type for: unresolvable.
  * `items`: the key items of `/v1/keys/{uuid}/items/{keyItemUuid}` and of
  * `/v1/operations/tokens/{t}/tokenProfiles/{p}/keys/{k}/items/{i}/sign|verify|encrypt|decrypt` — ledger type `keyItems`.
@@ -175,6 +176,11 @@ export const TARGET_TYPES: Readonly<Record<string, string>> = {
     // `/v1/secrets/{uuid}/syncVaultProfiles/{vaultProfileUuid}`, `…/protocols/{acme|scep|cmp}/activate/{profileUuid}`.
     raprofile: 'raProfiles', relations: 'certificates', syncVaultProfiles: 'vaultProfiles',
     'acme/activate': 'acmeProfiles', 'cmp/activate': 'cmpProfiles', 'scep/activate': 'scepProfiles',
+    // Timestamping (tests/timestamping/SHARED-TIER.md): `/v1/signingProfiles/{uuid}`, `/v1/tspProfiles/{uuid}`,
+    // `/v1/timeQualityConfigurations/{uuid}`, `/v1/tspProfiles/{tsp}/basicCredentials/{uuid}` and
+    // `/v1/signingProfiles/{uuid}/protocols/tsp/activate/{tspProfileUuid}`. `signingRecords` stays unmapped (a record has no ledger type).
+    signingProfiles: 'signingProfiles', tspProfiles: 'tspProfiles', timeQualityConfigurations: 'timeQualityConfigurations',
+    basicCredentials: 'tspBasicCredentials', 'tsp/activate': 'tspProfiles',
 };
 
 /**
@@ -246,7 +252,7 @@ export const UUID_TYPED_FIELDS: ReadonlySet<string> = new Set([
  * controller interfaces and every model class reachable from them) typed `UUID` / `List|Set<UUID>`, or `String` / `List|Set<String>` with
  * `uuid` in its name — 45 names (generics included, see above); the field's `@Schema` description decides the resource. A canonical uuid
  * that is the whole string value of such a field (directly or in its list) must be own WITH a ledger line of exactly this type, or a probe;
- * `null` = a resource the suite has no ledger type for (signing profiles, compliance provider groups and rules, comments, proxies): probes
+ * `null` = a resource the suite has no ledger type for (compliance provider groups and rules, comments, proxies): probes
  * only (fail-closed, like an unresolvable path target). The REFERENCE_FIELDS waiver (`connectorUuid`, `interfaceUuid`, `raProfileUuid` as a
  * top-level string of an own create / update) is applied first and unchanged. `objectUuid` is typed by its sibling `resource`
  * (SIBLING_TYPED_FIELDS); every other uuid-bearing field is in UNMAPPED_UUID_FIELDS.
@@ -282,8 +288,13 @@ export const BODY_FIELD_TYPES: Readonly<Record<string, string | null>> = {
     triggers: 'triggers', // DiscoveryDto: workflow triggers after the discovery
     userUuid: 'users', // ApprovalStepRequestDto
     vaultProfileUuid: 'vaultProfiles', // TspProfileRequestDto
+    defaultSigningProfileUuid: 'signingProfiles', // TspProfileRequestDto: the TSP profile's default signing profile
+    // The two fields of the timestamping workflow DTO (TimestampingWorkflowRequestDto) a signing profile create / update names; the
+    // generic derivation missed them (a polymorphic `workflow` subtype). The time-quality configuration must be own; the formatting
+    // connector must be own too, except where a route waives it (ROUTE_PATH_WAIVERS).
+    timeQualityConfigurationUuid: 'timeQualityConfigurations',
+    signatureFormattingConnectorUuid: 'connectors', // TimestampingWorkflowRequestDto, ContentSigningWorkflowRequestDto
     // No ledger type (probes only until the batch that first creates them adds the type and its teardown handler):
-    defaultSigningProfileUuid: null, // TspProfileRequestDto: a signing profile
     groups: null, // ProviderComplianceRulesRequestDto: compliance PROVIDER groups (not ILM groups)
     internalRules: null, // ComplianceProfileUpdateRequestDto: compliance internal rules
     ruleUuid: null, // ComplianceProfileRulesPatchRequestDto, ComplianceRule{Addition,Deletion}RequestDto: compliance rules
@@ -455,6 +466,47 @@ export function routeFieldWaivers(method: string, apiPath: string, body: unknown
         if (w.method === method && re.test(apiPath) && w.when(body as Record<string, unknown>)) out.add(w.field);
     }
     return out;
+}
+
+export interface RoutePathWaiver {
+    method: BulkMethod;
+    /** The API path with `{id}` for each uuid path variable (exact). */
+    path: string;
+    /** The key path from the body's root to the string field, e.g. `['workflow', 'signatureFormattingConnectorUuid']` (objects only, no list). */
+    keyPath: readonly string[];
+    /** The body condition under which the waiver applies. */
+    when: (body: Record<string, unknown>) => boolean;
+    /** Core proof: what the request writes, and that it writes nothing on the referenced object. */
+    proof: string;
+}
+
+/**
+ * Route-scoped waivers of a NESTED reference field (the sibling of ROUTE_FIELD_WAIVERS, whose fields are top-level): the string at
+ * `keyPath` may name a non-own object on this route and is neither claimed nor typed (a non-canonical form is still refused; the same
+ * field anywhere else, or as a list, is judged as usual).
+ * - `POST /v1/signingProfiles`, `workflow.signatureFormattingConnectorUuid` of a timestamping or content-signing workflow
+ *   (TimestampingWorkflowRequestDto, ContentSigningWorkflowRequestDto): core `SigningProfileServiceImpl` resolves the connector
+ *   (`getConnectorEntity`, read), checks its feature flag (`validateFormattingConnectorFeature`) and stores the reference on the NEW
+ *   profile version (`setSignatureFormattingConnector`) and the attribute values under (connector, new profile)
+ *   (`persistSignatureFormattingConnectorAttributes`); nothing is written on the connector. The profile's own certificate and
+ *   time-quality configuration stay typed and must be own.
+ */
+export const ROUTE_PATH_WAIVERS: readonly RoutePathWaiver[] = [
+    {
+        method: 'POST', path: '/v1/signingProfiles', keyPath: ['workflow', 'signatureFormattingConnectorUuid'],
+        when: (body) => isPlainObject(body.workflow) && (body.workflow.type === 'timestamping' || body.workflow.type === 'content_signing'),
+        proof: 'SigningProfileServiceImpl: reads the connector entity, stores a reference and attribute values on the new profile only',
+    },
+];
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+    return !!v && typeof v === 'object' && !Array.isArray(v);
+}
+
+/** The key paths waived for a method, API path and (plain object) body: empty for anything else. */
+export function routePathWaivers(method: string, apiPath: string, body: unknown): ReadonlyArray<readonly string[]> {
+    if (!isPlainObject(body)) return [];
+    return ROUTE_PATH_WAIVERS.filter((w) => w.method === method && w.path === apiPath && w.when(body)).map((w) => w.keyPath);
 }
 
 const LIST_BODY_RES = LIST_BODY_TYPES.map((r) => ({ r, re: new RegExp(`^${r.path.replace(/\{id\}/g, '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}')}$`) }));

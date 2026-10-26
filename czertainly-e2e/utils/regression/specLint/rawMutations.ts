@@ -25,6 +25,9 @@ import { RULES, type Rule } from './rules';
  * - raw-request-use    the `request` fixture or `page.request` used for anything but a GET / HEAD (passed on, aliased,
  *                      any other method); as the argument of `getGuardedApiContext` / `guardApi` it is fine;
  * - unit-seam          `guardApiWithSeams` and `judgeWithSeams` outside tests/unit;
+ * - callback-target    `registerCallbackTarget` (any reference: call, alias, destructuring, import, `ns.x`) and any string naming it or its module
+ *                      `guard/callbackTargets` (bracket access, `require`, `import()`, `from`), outside utils/regression/guard/, utils/regression/specLint/,
+ *                      tests/unit/ and utils/timestamping/provision/preflight.ts: only a preflight may say which pre-existing connector an attribute callback may name;
  * - guard-internal     an import (static, `import x = require()`, `require`, `import()`, `export … from`) of the guard's inner
  *                      modules `guard/sendRequest`, `guard/guardState`, `guard/readRequest`, `guard/checkRequest` or
  *                      `guard/claims` outside utils/regression/guard/ and tests/unit/: only createGuard composes them (check,
@@ -107,7 +110,7 @@ export type RawMutationRule =
     | 'raw-context' | 'raw-request-use' | 'unit-seam' | 'guarded-cast' | 'guarded-reassign' | 'context-method' | 'fetch-method'
     | 'dynamic-method' | 'method-extraction' | 'apiJson' | 'send-method' | 'raw-xhr' | 'util-import' | 'raw-process'
     | 'test-import' | 'fixture-extend' | 'route-method' | 'raw-network' | 'spec-import' | 'env-write' | 'fs-write'
-    | 'dynamic-code' | 'request-option' | 'token-use' | 'guard-internal' | 'live-forge' | 'response-state';
+    | 'dynamic-code' | 'request-option' | 'token-use' | 'guard-internal' | 'live-forge' | 'response-state' | 'callback-target';
 
 export interface RawMutation {
     line: number;

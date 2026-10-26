@@ -1,18 +1,20 @@
 # Developers' test blocks (`@dev-tests`)
 
 Two blocks, each its own run with its own report: `timestamping` (tests/timestamping) and `key-onboarding`
-(tests/key-onboarding). They are written by the developers and ported by QA; every test is `@local`, so on a shared tier
-a block selects nothing. They are not part of the regression or the API config.
+(tests/key-onboarding). They are written by the developers and ported by QA. Every `key-onboarding` test is `@local`, so on a shared tier
+that block selects nothing; `timestamping` runs create-only on a shared tier too (its rows carry `@needs:timestamping`, only the docker-bound
+and disruptive ones are `@local`: tests/timestamping/SHARED-TIER.md). They are not part of the regression or the API config.
 
 ## Commands
 
 One config, `playwright.devblock.config.ts`; `DEV_BLOCK` picks the block (unset or unknown stops with an error before
 anything is listed).
 
-Shared tier (selects nothing, exits 0, still writes the empty report):
+Shared tier. `timestamping` runs the rows without `@local` (a tier without the components skips each with a named reason, exit 0);
+`key-onboarding` selects nothing, exits 0 and still writes the empty report:
 
 ```
-REG_ENV_FILE=<tier env file> DEV_BLOCK=timestamping   npx playwright test -c playwright.devblock.config.ts --pass-with-no-tests
+REG_ENV_FILE=<tier env file> DEV_BLOCK=timestamping   npx playwright test -c playwright.devblock.config.ts
 REG_ENV_FILE=<tier env file> DEV_BLOCK=key-onboarding npx playwright test -c playwright.devblock.config.ts --pass-with-no-tests
 ```
 

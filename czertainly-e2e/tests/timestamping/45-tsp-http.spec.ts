@@ -1,11 +1,9 @@
 import { randomBytes } from 'crypto';
-import { describeLocalOnly } from '../../utils/regression/tier/localProof';
+import { runName } from '../../utils/regression/ledger/runState';
 import { expect, test } from '../../utils/timestamping/fixtures';
 import { primaryFamily } from '../../utils/timestamping/provisioning';
 import { devTests } from '../../utils/timestamping/tags';
 import { describeOutcome, requestTimestamp, TimestampOutcome, TspRoute } from '../../utils/timestamping/tsp';
-
-describeLocalOnly(test);
 
 /**
  * The TSP endpoints as HTTP resources: authentication challenges, cookies, media types, content
@@ -71,7 +69,7 @@ test.describe('TSP over HTTP', devTests(), () => {
     // A challenge would name the realm, and so confirm which profiles exist.
     const outcome = await requestTimestamp(tsp, {
       label: 'http-unknown-profile-no-challenge',
-      profileName: 'tsa-does-not-exist',
+      profileName: runName('tsa-does-not-exist'),
     });
     expect(outcome.httpStatus, describeOutcome(outcome)).toBe(401);
     expect(outcome.headers['www-authenticate'], 'no realm is disclosed').toBeUndefined();

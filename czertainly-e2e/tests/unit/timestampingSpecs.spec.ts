@@ -1,10 +1,12 @@
 /**
  * timestampingSpecs — static checks over tests/timestamping/*.spec.ts (the `@dev-tests` block).
  *
- * WHAT: every spec calls describeLocalOnly; every test and describe carries devTests(…); no provisioning reader runs at
- * module scope; no password-like literal; every spec that stops a container tags its tests disruptive.
+ * WHAT: the two disruptive specs call describeLocalOnly (the others must not: they run on a shared tier); every test and describe
+ * carries devTests(…); a test that reads docker or stops a container is tagged local; a local row skips itself off a proven local
+ * stack; no provisioning reader runs at module scope; no password-like literal; every spec that stops a container tags its tests disruptive.
  * WHY: Playwright lists the tests before the setup project writes the summary (a module-scope read would throw or give
- * wrong titles), the block must never run off the local stack, and fixed passwords in source would be guessable.
+ * wrong titles), the docker-bound rows must never run off the local stack, a shared-tier row must not carry a file-wide local skip,
+ * and fixed passwords in source would be guessable.
  * HOW: a small string- and template-aware scanner finds the argument span of each call; a reader call must lie inside
  * a test or hook body, or a plain function declaration (helpers).
  */
@@ -77,13 +79,33 @@ test('the block has its ten specs, in file order', () => {
     expect(specs.map((s) => s.slice(0, 2))).toEqual(['00', '10', '20', '30', '40', '45', '50', '55', '60', '70']);
 });
 
+/** The specs whose every row stops a container: the whole file is local-only. */
+const LOCAL_ONLY_SPECS = ['50-time-quality.spec.ts', '55-connector-outage.spec.ts'];
+/** What reads or drives the local docker stack (utils/timestamping/docker.ts). */
+const DOCKER_USES = /\b(dockerAvailable|containerState|listQueues|stopContainer|startContainer|waitForContainerState)\(/;
+
 for (const spec of specs) {
     const src = fs.readFileSync(path.join(DIR, spec), 'utf8');
 
-    test(`${spec}: calls describeLocalOnly(test) before any test`, () => {
-        const at = src.indexOf('describeLocalOnly(test)');
-        expect(at, 'describeLocalOnly(test) is called').toBeGreaterThan(-1);
-        expect(at, "before the first test or describe").toBeLessThan(src.search(/(?<![.\w])test(\.describe)?\(/));
+    if (LOCAL_ONLY_SPECS.includes(spec)) {
+        test(`${spec}: calls describeLocalOnly(test) before any test`, () => {
+            const at = src.indexOf('describeLocalOnly(test)');
+            expect(at, 'describeLocalOnly(test) is called').toBeGreaterThan(-1);
+            expect(at, "before the first test or describe").toBeLessThan(src.search(/(?<![.\w])test(\.describe)?\(/));
+        });
+    } else {
+        test(`${spec}: has no file-wide describeLocalOnly (its rows run on a shared tier); a local row skips itself`, () => {
+            expect(src, 'a file-wide local skip would keep the shared-tier rows off a shared tier').not.toContain('describeLocalOnly(');
+            const localRows = calls(src, TEST_CALLS).filter((c) => c.name === 'test' && /\blocal:\s*true|disruptive:\s*true/.test(HEADER(c)));
+            for (const row of localRows) expect(row.args, `${row.args.slice(0, 60)}… skips itself off a proven local stack`).toContain('skipUnlessLocalStack()');
+        });
+    }
+
+    test(`${spec}: a test that reads docker or stops a container is a local row`, () => {
+        const rows = calls(src, TEST_CALLS).filter((c) => c.name === 'test');
+        const unlabelled = rows.filter((c) => DOCKER_USES.test(c.args) && !/\blocal:\s*true|disruptive:\s*true/.test(HEADER(c))).map((c) => src.slice(c.start, c.start + 80).split('\n')[0]);
+        expect(unlabelled).toEqual([]);
+        if (LOCAL_ONLY_SPECS.includes(spec)) expect(rows.every((c) => /disruptive:\s*true|local:\s*true/.test(HEADER(c))), 'every row of a local-only spec is a local row').toBe(true);
     });
 
     test(`${spec}: every test and describe carries devTests(…)`, () => {

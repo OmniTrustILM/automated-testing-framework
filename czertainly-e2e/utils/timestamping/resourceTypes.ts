@@ -207,24 +207,24 @@ export const TIMESTAMPING_REGISTRY_ENTRIES = [
         type: 'tspBasicCredentials',
         teardown: { step: 3, handler: 'timestamping' },
         ownership: { kind: 'parent', parent: 'tspProfile', url: '/api/v1/tspProfiles/{parent}/basicCredentials/{uuid}', nameField: 'username' },
-        snapshot: { gap: '@local only: no shared tier has the timestamping connectors' },
+        snapshot: { gap: 'timestamping block: its own run has no snapshot, and the regression snapshot does not list this resource (the guard and the ledger prove ownership)' },
     },
     {
         type: 'tspProfiles',
         teardown: { step: 3, handler: 'timestamping' },
         ownership: { kind: 'detail', url: '/api/v1/tspProfiles/{uuid}' },
-        snapshot: { gap: '@local only: no shared tier has the timestamping connectors' },
+        snapshot: { gap: 'timestamping block: its own run has no snapshot, and the regression snapshot does not list this resource (the guard and the ledger prove ownership)' },
     },
     {
         type: 'signingProfiles',
         teardown: { step: 3, handler: 'timestamping' },
         ownership: { kind: 'detail', url: '/api/v1/signingProfiles/{uuid}' },
-        snapshot: { gap: '@local only: no shared tier has the timestamping connectors' },
+        snapshot: { gap: 'timestamping block: its own run has no snapshot, and the regression snapshot does not list this resource (the guard and the ledger prove ownership)' },
     },
     {
         type: 'timeQualityConfigurations',
         teardown: { step: 3, handler: 'timestamping' },
         ownership: { kind: 'detail', url: '/api/v1/timeQualityConfigurations/{uuid}' },
-        snapshot: { gap: '@local only: no shared tier has the timestamping connectors' },
+        snapshot: { gap: 'timestamping block: its own run has no snapshot, and the regression snapshot does not list this resource (the guard and the ledger prove ownership)' },
     },
 ] as const;

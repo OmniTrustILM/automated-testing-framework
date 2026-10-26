@@ -96,7 +96,7 @@ export async function teardownBlock(block: DevBlock, deps: BlockTeardownDeps = {
     };
     let result: ExecuteResult;
     try {
-        // The blocks are local-only; still, prove the backend before the first delete, as the run-end teardown does.
+        // On a local stack prove the backend before the first delete, as the run-end teardown does (a shared tier has no such proof).
         if (isLocalTier(env)) await assertLocalBackend(await newApi(), env);
         logger.info(`deleting the ${block.prefix} block's ${plan.length} object(s) of run ${runId}`);
         result = await executeTeardown({

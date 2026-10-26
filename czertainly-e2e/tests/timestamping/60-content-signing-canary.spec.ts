@@ -1,14 +1,11 @@
 import { recordCreated } from '../../utils/regression/ledger/ledger';
 import { runName } from '../../utils/regression/ledger/runState';
-import { describeLocalOnly } from '../../utils/regression/tier/localProof';
 import { SigningRecordListItem } from '../../utils/timestamping/adminApi';
 import { waitFor } from '../../utils/timestamping/docker';
 import { expect, test } from '../../utils/timestamping/fixtures';
 import { ledgerSpec, primaryFamily, runStartedAt } from '../../utils/timestamping/provisioning';
 import { devTests } from '../../utils/timestamping/tags';
 import { describeOutcome, requestTimestamp } from '../../utils/timestamping/tsp';
-
-describeLocalOnly(test);
 
 /**
  * Content signing and timestamping share the signing engine and the signing-record subsystem,
@@ -30,7 +27,7 @@ test.describe('content-signing canary', devTests(), () => {
     // The record policy defaults to DEFERRED_DURABLE, so the write lands shortly after the
     // response the client already has.
     const records = await waitFor(
-      () => admin.listSigningRecords(),
+      () => admin.listSigningRecords(200, set.signingProfile.uuid),
       (all) => all.some((record) => record.timestampTokenSerialNumbers?.includes(serial)),
       60_000,
       2000,
@@ -141,8 +138,9 @@ test.describe('content-signing canary', devTests(), () => {
       issued.push(outcome.reply!.serialNumberHex!);
     }
 
+    // The records of the run's own signing profiles: on a shared tier the table holds other clients' records too.
     const records: SigningRecordListItem[] = await waitFor(
-      () => admin.listSigningRecords(1000),
+      async () => (await Promise.all(sets.map((set) => admin.listSigningRecords(1000, set.signingProfile.uuid)))).flat(),
       (all) => issued.every((serial) => all.some((record) => record.timestampTokenSerialNumbers?.includes(serial))),
       60_000,
       2000,

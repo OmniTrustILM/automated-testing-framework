@@ -27,6 +27,7 @@ const CREATED_TYPES: Record<string, string | readonly string[] | null> = {
     '/v2/operations/authorities/{id}/raProfiles/{id}/certificates': 'certificates', '/v1/workflows/events': 'eventAssociations',
     '/v1/inspections': null, '/v1/certificates/import': 'certificates', '/v2/operations/authorities/{id}/raProfiles/{id}/certificates/register': 'certificates',
     '/v2/connectors': 'connectors', '/v2/complianceProfiles': 'complianceProfiles',
+    '/v1/timeQualityConfigurations': 'timeQualityConfigurations', '/v1/tspProfiles': 'tspProfiles', '/v1/signingProfiles': 'signingProfiles',
 };
 
 test('every ledger type the guard names is a registry type with a teardown step and a proof of ownership', () => {

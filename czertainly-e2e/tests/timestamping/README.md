@@ -4,28 +4,34 @@
 
 The developers' RFC 3161 timestamping suite (automated-testing-framework#41, branch `feat/timestamping-regression`),
 ported by QA (#113) as its own block, run by its own config (`playwright.devblock.config.ts`, tests/dev-blocks/README.md): ten specs (`00-environment` … `70-signature-options`,
-same numbers and titles as the source, file order kept), every test tagged `@dev-tests @timestamping @local` and
-`@issue:automated-testing-framework#41`; the stop-a-container tests also `@slow @disruptive`. Test bodies, assertions
-and titles are the developers'; only the plumbing, the plan-driven titles and a few safety fixes changed.
+same numbers and titles as the source, file order kept), every test tagged `@dev-tests @timestamping @needs:timestamping` and
+`@issue:automated-testing-framework#41`; the rows that read docker or stop a container (two of `00`, all of `50` and `55`) are also
+`@local`, and the stop-a-container ones `@slow @disruptive`. Test bodies, assertions and titles are the developers'; only the plumbing,
+the plan-driven titles and a few safety fixes changed. The block runs create-only on a shared tier too: SHARED-TIER.md (design, per object).
 
 ## WHY
 
 The source suite provisioned with a bash script (fixed names, reuse and modify, state files) and read admin
 credentials from the environment. In the regression framework every object is created per run, named
 `<run id>-…`, written to the ledger right after its create and deleted by the run-end teardown; admin calls go through
-the guard. For now the block runs on a proven local stack only: no shared tier has the timestamping connectors, and the guard
-has no create-only rules for signing / TSP profiles yet.
+the guard. The guard now has create-only rules for the timestamping objects (time-quality configurations are per object, not platform-wide),
+so the block runs on a shared tier that has the components, and on a proven local stack; the docker-bound rows stay local.
 
 ## HOW
 
 - Setup (`timestamping.setup.ts`, another project) preflights, provisions the run's objects and writes
   `<REG_STATE_DIR>/<run id>.timestamping.json`. Specs only READ it, lazily inside tests (`utils/timestamping/provisioning.ts`).
+  The summary holds ids and names, no secret: the Basic-credential passwords are derived from `TSA_RUN_SECRET`, a value the config generates per run
+  in the process environment only (`utils/timestamping/secrets.ts`), so a published state directory leaks none. The setup also stores a count + hash
+  baseline of the signing profiles, TSP profiles and time-quality configurations it did not create; the teardown compares it (`utils/timestamping/inventory.ts`,
+  skipped with a reason where the tier cannot list them).
 - Titles come from the plan (`TSA_FAMILIES`), because Playwright lists tests before the setup runs. The primary RSA
   family is unprefixed (`non-qualified`), others carry their label (`ML-DSA non-qualified`). A test skips with the
   reason when its family is missing or the summary is `unavailable`.
 - Fixtures (`utils/timestamping/fixtures.ts`): `admin` (AdminApi over the guarded `api`), `tsp` (plain context,
   protocol traffic, `TSA_TSP_BASE_URL` or BASE_URL), `ts` (the ready provisioning; the source's `env.<object>`).
-- Every spec calls `describeLocalOnly(test)`; the block's `api` fixture is the framework's `localApi` (guard with `localStack`).
+- The two disruptive specs call `describeLocalOnly(test)`; the docker rows of `00` skip themselves (`skipUnlessLocalStack`). The block's `api`
+  fixture is the framework's strict guarded context on every tier; the local-stack guard serves the setup's one trust request only.
 - Artifacts (queries, replies, chains) go to the test's own output dir, never a shared fixed name.
 
 ### One tear-up, one tear-down
@@ -39,8 +45,9 @@ green). The config's global teardown runs the block's tear-down once more and re
   missing piece makes the summary `unavailable` with the reason, and every test skips. Then every object the block needs
   is created for this run (vault profile, token, token profile, time-quality configuration, mapped user, role; per family
   and half: key, RA profile, TSA certificate, TSP profile, signing profile, Basic credential, permissions), named
-  `<run id>-…` and written to the ledger right after its create. The one change to a pre-existing object: on a local
-  stack, a self-signed issuing root that is not trusted yet is marked trusted (logged).
+  `<run id>-…` and written to the ledger right after its create. The one change to a pre-existing object: on a proven local
+  stack, a self-signed issuing root that is not trusted yet is marked trusted (logged), through a second guard with `localStack`;
+  on a shared tier the root must already be trusted, else the RSA family (and so the setup test) fails with that reason.
 - A refusal of OUR request (400 / 422 on a create or update, 401 / 403 anywhere) or a failed RSA family fails the
   setup test: a broken body or login must never turn into a quietly skipped block. An ML-DSA family that fails becomes
   `missingFamilies` (its tests skip). Reasons carry method, path pattern and status only; answer texts go to the log.
@@ -57,12 +64,16 @@ green). The config's global teardown runs the block's tear-down once more and re
 ### Run
 
 ```
+# a shared tier (Testkube): the rows without @local; a tier without the components skips every row with a named reason
+REG_ENV_FILE=<tier env file> DEV_BLOCK=timestamping npx playwright test -c playwright.devblock.config.ts
+
+# a proven local stack: all rows
 REG_ENV_FILE=<local-stack env file> TIER_KIND=local DEV_BLOCK=timestamping \
   npx playwright test -c playwright.devblock.config.ts
 ```
 
 The regression config holds no `@dev-tests` test. Disruptive tests (`@disruptive`: 50, 55) skip
-unless `TSA_ALLOW_DISRUPTION=true`, and skip without a docker daemon.
+unless `TSA_ALLOW_DISRUPTION=true`, and skip without a docker daemon (they are `@local`: a shared tier never lists them).
 
 ### Environment (utils/timestamping/config.ts)
 
@@ -88,13 +99,16 @@ unless `TSA_ALLOW_DISRUPTION=true`, and skip without a docker daemon.
 | TSA_ALLOW_DISRUPTION | false (`true` enables the tests that stop containers) |
 | TSA_CONTAINER_CORE / _NTP / _TIME_QUALITY_MONITOR / _CRYPTOGRAPHY_PROVIDER / _TIMESTAMP_FORMATTING / _RABBITMQ | core / ntp / time-quality-monitor / software-cryptography-provider / timestamp-formatting-connector / rabbitmq |
 
-### Running on a shared tier (not done yet)
+### Running on a shared tier
 
-Running the block create-only on a shared tier needs: guard rules for the timestamping types (signing profiles, TSP
-profiles and their Basic credentials, time-quality configurations), and a shared tier that has the timestamping
-connectors (Helm: `timestampFormattingConnector`, `timeQualityMonitor`, `messaging.timeQuality` enabled), an EJBCA
-authority with the TSA profiles, a vault and a cryptography provider. The two docker-reading tests of `00` would then
-need a replacement signal.
+Design and per-object verdicts: SHARED-TIER.md. In short: the rows without `@local` (everything but the docker rows of `00`, and `50` /
+`55`) carry `@needs:timestamping`, resolved from reads before the row creates anything (OpenSSL 3 on the runner; connected
+credential-provider SoftKeyStore, EJBCA, software cryptography v2, timestamp-formatting and vault connectors; the authority and vault instance
+the `TSA_*` variables name). A tier without them skips each row with a `deploy gate` reason; the setup preflight then checks the EJBCA
+profiles and CAs and writes `unavailable` with the reason. What the tier needs (DevOps): `timestampFormattingConnector`,
+`timeQualityMonitor` + NTP (`TSA_NTP_SERVERS` = the tier's own NTP: the monitor polls every configuration's servers), `messaging.timeQuality`
+on core, an EJBCA authority with the TSA end-entity / certificate profiles and a CA whose root is already trusted in the inventory, a vault
+instance and a software cryptography provider v2. `TSA_CRYPTO_PROVIDER=software-v1` and `pkcs11` are not provisioned on a shared tier.
 
 ## Changes against the source
 
@@ -121,4 +135,5 @@ profile, but it is now the run's own, with the `finally` re-enable.
 
 The block is outside the spec lint (tests/unit/specGuards.spec.ts) by design: its TSP requests use a plain context with
 Basic auth and deliberately odd media types and methods, and openssl / docker run as child processes. Its safety rests on
-`@local` on every test, `describeLocalOnly`, the guarded admin API with the local-stack proof, and the ledger.
+the strict guarded admin API (create-only rules, ownership = ledger + live run-prefixed name), the ledger, `@local` + the local proof
+for the docker rows, and tests/unit/timestampingSpecs.spec.ts, which keeps every docker-bound row local.

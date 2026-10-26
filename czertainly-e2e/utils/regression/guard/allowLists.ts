@@ -45,6 +45,18 @@ export const POST_CREATE: readonly string[] = [
     // rule / group association rows; the referenced provider rules are read, never written). `internalRules` / `groups`
     // stay probes-only typed fields, `connectorUuid` a reference; the v1 create was allow-listed already.
     '/v2/complianceProfiles',
+    // Timestamping (utils/timestamping, tests/timestamping/SHARED-TIER.md): three creates of the block, each a new row of its
+    // own and nothing else (core @ integration/spring-boot-4.1):
+    // - `POST /v1/timeQualityConfigurations` (TimeQualityConfigurationServiceImpl.createTimeQualityConfiguration): a new
+    //   configuration row with its own uuid and a unique name; the register, the cache and the monitor's check cycle are all
+    //   keyed per configuration uuid, so it is a per-object resource, not a platform setting (removed from PLATFORM_DENY). Update
+    //   and delete are judged like every own object (ledger type `timeQualityConfigurations`).
+    // - `POST /v1/tspProfiles` (TspProfileServiceImpl): a new TSP profile row; `vaultProfileUuid` must be an own vault profile
+    //   (BODY_FIELD_TYPES), `defaultSigningProfileUuid` an own signing profile.
+    // - `POST /v1/signingProfiles` (SigningProfileServiceImpl.createSigningProfile): a new profile (+ first version) row; the
+    //   certificate and time-quality configuration it names must be own (typed fields); the formatting connector it names is
+    //   only referenced (ROUTE_PATH_WAIVERS).
+    '/v1/timeQualityConfigurations', '/v1/tspProfiles', '/v1/signingProfiles',
 ];
 
 /**
@@ -58,16 +70,59 @@ export const POST_READ: readonly string[] = [
     '/v1/vaults/list', '/v1/vaultProfiles/list', '/v1/auditLogs', '/v1/oids/list', '/v1/users/identify',
     '/v1/certificates/content', '/v1/workflows/events/{seg}/history', '/v1/workflows/events/{seg}/{seg}/{id}/history',
     '/v1/({seg}/)*attributes(/{seg})?/validate', '/v1/connectors/{id}/{seg}/{seg}/validate',
+    // Lists of the timestamping block (interfaces ConnectorController v2 `POST /v2/connectors/list`, SigningProfileController /
+    // TspProfileController `POST …/list`, SigningRecordController `POST /v1/signingRecords`, SigningProfileController
+    // `POST /v1/signingProfiles/{uuid}/signingRecords`: paginated searches, `@PostMapping` with a SearchRequestDto body).
+    // Deleting signing records stays a bulk route with no ledger type (refused here, done by the teardown handler per own profile).
+    '/v2/connectors/list', '/v1/signingProfiles/list', '/v1/tspProfiles/list', '/v1/timeQualityConfigurations/list', '/v1/signingRecords',
+    '/v1/signingProfiles/{id}/signingRecords',
 ];
 
 /** Client protocol traffic (ACME / SCEP / CMP endpoints): authenticated by the protocol, bodies are protocol messages. */
 export const POST_PROTOCOL: readonly string[] = ['/v[12]/protocols(/{seg})+'];
 
 
-export type PostRouteKind = 'create' | 'read' | 'protocol';
+/**
+ * Attribute callbacks of the forms the timestamping setup fills (interfaces CallbackController): the authority's RA-profile options
+ * (`/v1/raProfiles/{authority}/callback`), a token profile's key-spec group (`/v1/keys/{OWN token profile}/callback`: the id of the `keys` resource
+ * callback is a TOKEN PROFILE, CallbackServiceImpl.resourceCallback CRYPTOGRAPHIC_KEY) and a v2 connector's token form
+ * (`/v2/connectors/{connector}/callback`). They are NOT plain reads, so they have a kind of their own (`callback`):
+ * - core authorises `/v2/connectors/{id}/callback` as CONNECTOR **ANY** and the resource callbacks as CONNECTOR LIST;
+ * - every callback writes an audit-log row, and a GROUP answer is upserted into the attribute DEFINITIONS of the (pre-existing) connector
+ *   (CallbackServiceImpl.getCallbackObject → processGroupAttributes → AttributeEngine): the same cache write the UI's forms cause,
+ *   accepted and documented in tests/timestamping/SHARED-TIER.md; nothing of an inventory object or of the connector's settings is changed;
+ * - core expands credentials / secrets named in the body or in its `attributes` (loadFullCredentialData, AttributeReferenceExpander) and sends
+ *   them to the connector, so the body is judged like a create's, `attributes` included: every canonical uuid in it must be an own object
+ *   or the callback's registered parent, except the attribute DEFINITION uuids (`uuid`, `attributes[].uuid`; core resolves them only among the
+ *   path connector's own definitions);
+ * - the path id must be exactly what the preflight discovered for this run (`registerCallbackTarget`, guard/callbackTargets.ts: the authority instance, the connector) or an
+ *   own token profile; a RAW context may not send any of them (not a read, `isRawPostRouteAllowed`).
+ * The v1 `/v1/connectors/{id}/{functionGroup}/{kind}/callback` names its kind (rule 6a) and stays refused, as does every other resource.
+ */
+export const POST_CALLBACK: readonly string[] = ['/v1/raProfiles/{id}/callback', '/v1/keys/{id}/callback', '/v2/connectors/{id}/callback'];
+
+/** What the id in a callback's path must be. */
+export type CallbackParent = 'authority' | 'connector' | 'tokenProfile';
+
+const CALLBACK_PARENTS: ReadonlyArray<[RegExp, CallbackParent]> = [
+    [new RegExp(`^/v1/raProfiles/(${UUID})/callback$`), 'authority'],
+    [new RegExp(`^/v1/keys/(${UUID})/callback$`), 'tokenProfile'],
+    [new RegExp(`^/v2/connectors/(${UUID})/callback$`), 'connector'],
+];
+
+/** The parent a callback path names (kind and lower-cased uuid), or undefined for any other path. */
+export function callbackParentOf(apiPath: string): { kind: CallbackParent; uuid: string } | undefined {
+    for (const [re, kind] of CALLBACK_PARENTS) {
+        const m = re.exec(apiPath);
+        if (m) return { kind, uuid: m[1].toLowerCase() };
+    }
+    return undefined;
+}
+
+export type PostRouteKind = 'create' | 'read' | 'protocol' | 'callback';
 
 const compile = (list: readonly string[]) => list.map((p) => new RegExp(`^${p.replace(/\{id\}/g, UUID).replace(/\{seg\}/g, SEG)}$`));
-const POST_KINDS: Array<[PostRouteKind, RegExp[]]> = [['protocol', compile(POST_PROTOCOL)], ['read', compile(POST_READ)], ['create', compile(POST_CREATE)]];
+const POST_KINDS: Array<[PostRouteKind, RegExp[]]> = [['protocol', compile(POST_PROTOCOL)], ['read', compile(POST_READ)], ['callback', compile(POST_CALLBACK)], ['create', compile(POST_CREATE)]];
 
 /** Which allow-listed POST an API path is, or undefined (a POST elsewhere is a mutation). */
 export function postRouteKind(apiPath: string): PostRouteKind | undefined {
@@ -150,7 +205,6 @@ export const PLATFORM_DENY: ReadonlyArray<{ path: RegExp; why: string; when?: (b
     },
     { path: deny('trustedCertificates'), why: 'the platform\'s trusted certificates' },
     { path: deny('proxies'), why: 'connector proxies' },
-    { path: deny('timeQualityConfigurations'), why: 'time-quality configurations' },
     { path: deny('attributes/metadata'), why: 'global metadata definitions' },
     { path: deny('cboms'), why: 'the CBOM repository (upload, delete, sync)' },
     { path: denyExact(`connectors/(?:approve|reconnect|connect|${UUID}/(?:approve|reconnect))`), why: 'connector approve / reconnect / connect' },

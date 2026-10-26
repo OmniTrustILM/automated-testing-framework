@@ -15,9 +15,10 @@
  * TSP profile (TspProfile.basicCredentials cascade + orphanRemoval; their vault secrets via deleteSecretsForProfile).
  */
 import { OwnRef } from '../../regression/ledger/ledger';
-import type { BasicCredential, NamedUuid } from '../types';
+import { basicPassword } from '../secrets';
+import type { NamedUuid, StoredBasicCredential } from '../types';
 import { AttributeDef, signingOperationAttributes } from './attributes';
-import { generatedSecret, recordOwn, SetupContext, uuidOf } from './context';
+import { recordOwn, SetupContext, uuidOf } from './context';
 
 type Json = Record<string, any>;
 
@@ -170,11 +171,14 @@ export async function linkProfiles(ctx: SetupContext, tspProfile: OwnRef, signin
     await ctx.admin.request('PATCH', `/v1/signingProfiles/${signingProfile.uuid}/protocols/tsp/activate/${tspProfile.uuid}`);
 }
 
-/** `setup_tsp_basic_credential` (create branch): the mapped user's username with a generated password. */
-export async function createBasicCredential(ctx: SetupContext, tspProfile: OwnRef, user: OwnRef): Promise<BasicCredential> {
-    const password = generatedSecret();
+/**
+ * `setup_tsp_basic_credential` (create branch): the mapped user's username with a password derived from the run secret (secrets.ts); the
+ * summary keeps the username and the uuid only.
+ */
+export async function createBasicCredential(ctx: SetupContext, tspProfile: OwnRef, user: OwnRef): Promise<StoredBasicCredential> {
+    const password = basicPassword(tspProfile.uuid, user.name, ctx.env);
     const created = await ctx.admin.request('POST', `/v1/tspProfiles/${tspProfile.uuid}/basicCredentials`, { username: user.name, password, mappedUserUuid: user.uuid });
-    return { username: user.name, password, uuid: uuidOf(created.body, `Basic credential on TSP profile ${tspProfile.name}`) };
+    return { username: user.name, uuid: uuidOf(created.body, `Basic credential on TSP profile ${tspProfile.name}`) };
 }
 
 // ------------------------------------------------------------------ step 21: object-scoped grants
