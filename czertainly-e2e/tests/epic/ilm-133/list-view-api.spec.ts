@@ -58,7 +58,7 @@ test.describe('@epic-133 list views API', () => {
 
             const views = await listViewUtils.listViews(api, CERTIFICATES);
             expect(views.find((v) => v.uuid === second.uuid)?.defaultView).toBe(true);
-            expect(views.find((v) => v.uuid === first.uuid)?.defaultView).toBe(true);
+            expect(views.find((v) => v.uuid === first.uuid)?.defaultView).toBe(false);
         } finally {
             await api.dispose();
         }
