@@ -1,15 +1,15 @@
 {
   "username": "Testkube QA Automation",
-  "content": "**Workflow:**: `{{ .TestWorkflowExecution.Workflow.Name }}`",
+  "content": "**Workflow:** `{{ with index .TestWorkflowExecution.Tags "title" }}{{ . }}{{ else }}{{ .TestWorkflowExecution.Workflow.Name }}{{ end }}`{{ with index .TestWorkflowExecution.Tags "purpose" }} · {{ . }}{{ end }}",
   "embeds": [
     {
-      "title": "Smoke result: {{ .TestWorkflowExecution.Result.Status | testworkflowstatustostring }}",
+      "title": "{{ if index .TestWorkflowExecution.Tags "title" }}Result{{ else }}Smoke result{{ end }}: {{ .TestWorkflowExecution.Result.Status | testworkflowstatustostring }}",
       "url": "{{ .ExecutionURL }}",
       "color": {{ if eq (.TestWorkflowExecution.Result.Status | testworkflowstatustostring) "passed" }}65280{{ else }}16711680{{ end }},
       "fields": [
         { "name": "Run #:", "value": "`{{ .TestWorkflowExecution.Number }}` ", "inline": true},
         { "name": "Duration", "value": "{{ .TestWorkflowExecution.Result.Duration }}", "inline": true},
-        { "name": "Total tests", "value": "{{ (index .TestWorkflowExecution.Reports 0).Summary.Tests }}", "inline": true},
+        { "name": "Total tests", "value": "{{ (index .TestWorkflowExecution.Reports 0).Summary.Tests }}{{ with index .TestWorkflowExecution.Tags "tests" }} ({{ . }} tests × {{ index $.TestWorkflowExecution.Tags "repeat" }} runs){{ end }}", "inline": true},
         { "name": "Passed", "value": "{{ (index .TestWorkflowExecution.Reports 0).Summary.Passed }}", "inline": true},
         { "name": "Failed", "value": "{{ (index .TestWorkflowExecution.Reports 0).Summary.Failed }}", "inline": true},
         { "name": "Skipped", "value": "{{ (index .TestWorkflowExecution.Reports 0).Summary.Skipped }}", "inline": true}
