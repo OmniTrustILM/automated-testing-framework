@@ -82,7 +82,7 @@ test.describe('@epic-133 list views API', () => {
                 const body = await duplicate.json() as listViewUtils.ListViewDto;
                 created.push({ uuid: body.uuid, name: body.name });
             }
-            expect(duplicate.status()).toBe(200);
+            expect(duplicate.status()).toBe(409);
 
             const named = (await listViewUtils.listViews(api, CERTIFICATES)).filter((v) => v.name === name);
             expect(named).toHaveLength(1);
@@ -104,7 +104,7 @@ test.describe('@epic-133 list views API', () => {
             expect(forKeys.map((v) => v.uuid)).toContain(view.uuid);
 
             const forCertificates = await listViewUtils.listViews(api, CERTIFICATES);
-            expect(forCertificates.map((v) => v.uuid)).toContain(view.uuid);
+            expect(forCertificates.map((v) => v.uuid)).not.toContain(view.uuid);
         } finally {
             await api.dispose();
         }
