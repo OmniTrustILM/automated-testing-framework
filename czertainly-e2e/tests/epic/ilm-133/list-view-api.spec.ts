@@ -8,6 +8,8 @@
  * WHY: these rules live in core and are not visible in the UI: at most one default per user and
  * resource, a name unique per user and resource, and the resource fixed for the life of a view.
  *
+ * S8 is tagged @exclusive (the default flag is shared state of the test user) and runs in the nightly window.
+ *
  * HOW: each test creates its views through the API under a unique prefix and records every uuid;
  * afterEach deletes them, and what will not go is recorded in the cleanup ledger. Column fields
  * come from the inventory's searchable-fields operation, not from guesses.
@@ -40,7 +42,8 @@ test.describe('@epic-133 list views API', () => {
         }
     });
 
-    test('S8: marking a second view default clears the first', { tag: ['@epic-133'] }, async ({ request, env }) => {
+    // Marks defaults: one flag per user and inventory, shared with every other test of that user, so it must not run in parallel with them.
+    test('S8: marking a second view default clears the first', { tag: ['@epic-133', '@exclusive'] }, async ({ request, env }) => {
         const api = await getAuthenticatedApiContext(request, env);
         try {
             const column = await listViewUtils.getDisplayablePropertyColumn(api, '/api/v1/certificates/search');
