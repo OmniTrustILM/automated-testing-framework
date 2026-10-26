@@ -138,6 +138,21 @@ export class AdminApi {
     await this.patch<void>(`/v1/keys/${keyUuid}/enable`, WHOLE_KEY);
   }
 
+  /** Every key item in the inventory, read page by page. */
+  async allKeyItems(): Promise<KeyItemSummary[]> {
+    const items: KeyItemSummary[] = [];
+    for (let pageNumber = 1; ; pageNumber++) {
+      const page = await this.post<KeyItemPage>('/v1/keys', { itemsPerPage: LIST_PAGE_SIZE, pageNumber, filters: [] });
+      items.push(...page.cryptographicKeys);
+      if (pageNumber >= page.totalPages) return items;
+    }
+  }
+
+  /** The active key pairs of the token profile. */
+  keyPairs(profileUuid: string): Promise<KeyPair[]> {
+    return this.get<KeyPair[]>(`/v1/keys/pairs?tokenProfileUuid=${profileUuid}`);
+  }
+
   removeKeyFromInventory(keyUuid: string): Promise<APIResponse> {
     return this.raw('PATCH', `/v1/keys/${keyUuid}/removeFromInventory`);
   }
@@ -237,6 +252,23 @@ export interface KeyDetail {
   tokenProfileUuid?: string;
   items: KeyItem[];
   customAttributes?: Array<{ name: string; content?: Array<{ data: unknown }> }>;
+  removableFromInventory: boolean;
+}
+
+export interface KeyItemSummary {
+  uuid: string;
+  keyWrapperUuid: string;
+  removableFromInventory: boolean;
+}
+
+export interface KeyItemPage {
+  cryptographicKeys: KeyItemSummary[];
+  totalPages: number;
+}
+
+export interface KeyPair {
+  uuid: string;
+  items: KeyItemSummary[];
 }
 
 export interface CertificateDetail {

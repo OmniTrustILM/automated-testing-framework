@@ -71,6 +71,31 @@ test.describe.serial('Removing keys from the inventory in bulk', () => {
     await admin.compromiseKey(compromisedUuid);
   });
 
+  test('reports in each key detail whether the key can be removed', async ({ admin }) => {
+    const details = await Promise.all([...onboardedUuids, compromisedUuid].map((uuid) => admin.get<KeyDetail>(`/v1/keys/${uuid}`)));
+
+    expect(createdKey.removableFromInventory).toBe(true);
+    expect(details.map((key) => key.removableFromInventory)).toEqual([...onboardedUuids.map(() => true), false]);
+  });
+
+  test('marks each row of the key listing with whether its key can be removed', async ({ admin }) => {
+    const rows = await admin.allKeyItems();
+
+    const flagsOf = (keyUuid: string) => rows.filter((row) => row.keyWrapperUuid === keyUuid).map((row) => row.removableFromInventory);
+    for (const keyUuid of [...onboardedUuids, createdKey.uuid]) {
+      expect(flagsOf(keyUuid)).toEqual([true, true]);
+    }
+    expect(flagsOf(compromisedUuid)).toEqual([false, false]);
+  });
+
+  test('marks both items of each listed pair as removable', async ({ admin, provisioned }) => {
+    const pairs = await admin.keyPairs(provisioned.tokenProfile.uuid);
+
+    for (const keyUuid of [...onboardedUuids, createdKey.uuid]) {
+      expect(pairs.find((pair) => pair.uuid === keyUuid)?.items.map((item) => item.removableFromInventory)).toEqual([true, true]);
+    }
+  });
+
   test('refuses to remove a compromised key', async ({ admin }) => {
     const removal = await admin.removeKeyFromInventory(compromisedUuid);
 
