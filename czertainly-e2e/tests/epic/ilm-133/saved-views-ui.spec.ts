@@ -69,6 +69,11 @@ test.describe('@epic-133 saved views UI', () => {
         await expect(views.tab(name)).toHaveAttribute('aria-selected', 'true');
         await expect(views.columnHeader(ADDED_COLUMN)).toHaveCount(1);
         await expect(views.columnHeader(REMOVED_COLUMN)).toHaveCount(0);
+
+        // What the platform stored, not the table as it was edited: reload, open the view again.
+        await views.reloadAndSelect(name);
+        await expect(views.columnHeader(ADDED_COLUMN)).toHaveCount(1);
+        await expect(views.columnHeader(REMOVED_COLUMN)).toHaveCount(0);
     });
 
     test('S2: switching from a view to Standard brings back the platform column set', { tag: ['@epic-133'] }, async ({ page }) => {
@@ -80,6 +85,9 @@ test.describe('@epic-133 saved views UI', () => {
         await expect(views.columnHeader(ADDED_COLUMN)).toHaveCount(0);
         await expect(views.columnHeader(REMOVED_COLUMN)).toHaveCount(1);
         await views.expectStandardColumns();
+        for (const column of ['State', 'Common Name', 'Serial number', 'Archived']) {
+            await expect(views.columnHeader(column)).toHaveCount(1);
+        }
         await expect(views.tab(name)).toHaveAttribute('aria-selected', 'false');
     });
 
@@ -118,7 +126,8 @@ test.describe('@epic-133 saved views UI', () => {
         await views.setColumn(ADDED_COLUMN, false);
         await views.saveToActiveView();
 
-        await views.selectTab(name);
+        // Read both from the platform, not from what the page still holds.
+        await views.reloadAndSelect(name);
         await expect(views.columnHeader(ADDED_COLUMN)).toHaveCount(1);
         await views.selectTab(copy);
         await expect(views.columnHeader(ADDED_COLUMN)).toHaveCount(0);
@@ -132,8 +141,8 @@ test.describe('@epic-133 saved views UI', () => {
         await views.rename(name, renamed);
 
         await expect(views.tab(name)).toHaveCount(0);
-        await views.selectTab('Standard');
-        await views.selectTab(renamed);
+        await views.reloadAndSelect(renamed);
+        await expect(views.tab(name)).toHaveCount(0);
         await expect(views.columnHeader(ADDED_COLUMN)).toHaveCount(1);
         await expect(views.columnHeader(REMOVED_COLUMN)).toHaveCount(0);
     });
@@ -147,6 +156,10 @@ test.describe('@epic-133 saved views UI', () => {
         await expect(views.tab('Standard')).toHaveAttribute('aria-selected', 'true');
         await expect(views.columnHeader(ADDED_COLUMN)).toHaveCount(0);
         await views.expectStandardColumns();
+
+        // Gone on the platform too, not only on the page.
+        await views.reload();
+        await expect(views.tab(name)).toHaveCount(0);
     });
 
     // Marks a default: the user's default view is shared with every other test of that user.
@@ -169,6 +182,8 @@ test.describe('@epic-133 saved views UI', () => {
         const views = new CertificateViewsPage(page);
         const name = await createColumnView(views);
         await views.setDefault(name, true);
+        // Leave the view, so the page cannot simply restore the tab it was on.
+        await views.selectTab('Standard');
 
         await views.reload();
 
@@ -196,8 +211,7 @@ test.describe('@epic-133 saved views UI', () => {
 
         await views.openActions('Standard');
 
-        await expect(views.menuItem('Duplicate')).toBeVisible();
-        await expect(views.menuItem('Rename…')).toHaveCount(0);
-        await expect(views.menuItem('Delete view')).toHaveCount(0);
+        // The whole menu, so no variant of rename or delete can slip in under another label.
+        await expect(page.getByRole('menuitem')).toHaveText(['Duplicate']);
     });
 });

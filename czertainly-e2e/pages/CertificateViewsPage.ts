@@ -76,6 +76,12 @@ export class CertificateViewsPage {
         await expect(this.page.getByTestId('view-tabs-tab-standard')).toBeVisible();
     }
 
+    /** Reloads the page and opens the named view's tab, so what is shown comes from the platform. */
+    async reloadAndSelect(name: string): Promise<void> {
+        await this.reload();
+        await this.selectTab(name);
+    }
+
     async selectTab(name: string): Promise<void> {
         await this.tab(name).click();
         await expect(this.tab(name)).toHaveAttribute('aria-selected', 'true');
