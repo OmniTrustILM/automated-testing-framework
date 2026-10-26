@@ -46,12 +46,15 @@ test.describe('@epic-133 list views API', () => {
             const column = await listViewUtils.getDisplayablePropertyColumn(api, '/api/v1/certificates/search');
             const prefix = uniqueName('atf-s8');
 
-            const first = await listViewUtils.createView(api, { name: `${prefix}-a`, resource: CERTIFICATES, columns: [column], defaultView: true });
+            const first = await listViewUtils.createView(api, { name: `${prefix}-a`, resource: CERTIFICATES, columns: [column] });
             created.push({ uuid: first.uuid, name: first.name });
-            expect(first.defaultView).toBe(true);
-
-            const second = await listViewUtils.createView(api, { name: `${prefix}-b`, resource: CERTIFICATES, columns: [column], defaultView: true });
+            const second = await listViewUtils.createView(api, { name: `${prefix}-b`, resource: CERTIFICATES, columns: [column] });
             created.push({ uuid: second.uuid, name: second.name });
+
+            // Mark the first default, then the second.
+            const marked = await listViewUtils.editView(api, first.uuid, { name: first.name, columns: [column], defaultView: true });
+            expect(marked.defaultView).toBe(true);
+            await listViewUtils.editView(api, second.uuid, { name: second.name, columns: [column], defaultView: true });
 
             const views = await listViewUtils.listViews(api, CERTIFICATES);
             expect(views.find((v) => v.uuid === second.uuid)?.defaultView).toBe(true);
