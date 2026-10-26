@@ -46,8 +46,9 @@ export class CertificateViewsPage {
         return this.page.getByRole('tablist', { name: 'Saved views' }).getByRole('tab', { name: pattern });
     }
 
+    /** A column header by its label. Standard and a stored view spell some labels differently ("Serial number" / "Serial Number"), so case is ignored. */
     columnHeader(label: string): Locator {
-        return this.main.getByRole('columnheader', { name: label, exact: true });
+        return this.main.getByRole('columnheader', { name: new RegExp(`^${escapeRegExp(label)}$`, 'i') });
     }
 
     pin(tabName: string): Locator {
@@ -119,10 +120,12 @@ export class CertificateViewsPage {
         await expect(this.tab(name)).toHaveAttribute('aria-selected', 'true');
     }
 
-    /** Writes the table's changes into the active stored view ("Save to view"). */
+    /** Writes the table's changes into the active stored view ("Save to view") and waits for the platform to accept them. */
     async saveToActiveView(): Promise<void> {
+        const saved = this.page.waitForResponse((resp) =>
+            resp.request().method() === 'PUT' && resp.url().includes('/api/v1/listViews/'));
         await this.page.getByTestId('view-tabs-summary-save').click();
-        await expect(this.page.getByTestId('view-tabs-summary-unsaved')).toBeHidden();
+        expect((await saved).ok()).toBe(true);
     }
 
     async openActions(tabName: string): Promise<void> {
