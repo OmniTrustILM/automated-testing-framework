@@ -11,6 +11,7 @@ import * as path from 'path';
 import {
     attemptCleanup,
     clearCleanupFailures,
+    cleanupLedgerFile,
     formatCleanupReport,
     isDependencyRefusal,
     readCleanupFailures,
@@ -102,4 +103,33 @@ test('the report separates root causes from what follows them', () => {
     expect(report).toContain('1 root cause(s)');
     expect(report).toContain('smoke-raprofile-1');
     expect(report).toContain('still referenced by raProfile r-1');
+});
+
+test('an error that names its own blocker keeps it, whatever its status', async () => {
+    await attemptCleanup(
+        { resource: 'certificate', uuid: 'c-4' },
+        async () => { throw Object.assign(new Error('revoke refused: 503 - connector unavailable'), { blockedBy: 'authority a-9' }); },
+        { retryDelayMs: 10 },
+    );
+
+    expect(readCleanupFailures()[0]).toMatchObject({ resource: 'certificate', uuid: 'c-4', status: 503, blockedBy: 'authority a-9' });
+});
+
+test('CLEANUP_LEDGER_FILE moves the ledger out of the clone', async ({}, testInfo) => {
+    const elsewhere = testInfo.outputPath('state', 'run-1.cleanup.jsonl');
+    const saved = process.env.CLEANUP_LEDGER_FILE;
+    process.env.CLEANUP_LEDGER_FILE = elsewhere;
+    try {
+        expect(cleanupLedgerFile()).toBe(elsewhere);
+        recordCleanupFailure({ resource: 'role', uuid: 'r-9', message: 'boom' });
+        expect(fs.existsSync(elsewhere), 'written to the override, its folder created').toBe(true);
+        expect(fs.existsSync(LEDGER), 'the default ledger stays untouched').toBe(false);
+        expect(readCleanupFailures().map((f) => f.uuid)).toEqual(['r-9']);
+        clearCleanupFailures();
+        expect(fs.existsSync(elsewhere)).toBe(false);
+    } finally {
+        if (saved === undefined) delete process.env.CLEANUP_LEDGER_FILE;
+        else process.env.CLEANUP_LEDGER_FILE = saved;
+    }
+    expect(cleanupLedgerFile()).toBe(LEDGER);
 });

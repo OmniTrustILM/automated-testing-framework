@@ -1,0 +1,29 @@
+# Editor settings for new and edited files. Existing files keep their indentation: nothing is reformatted in bulk.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{ts,js,mjs,cjs}]
+indent_style = space
+indent_size = 4
+
+# Files that use 2 spaces keep them.
+[{fixtures/testFixtures.ts,pages/LoginPage.ts,pages/Navigation.ts,playwright.config.ts,utils/attributeTypes.ts,utils/auth/accessToken.ts,utils/auth/apiContext.ts,utils/authorityUtils.ts,utils/credentialUtils.ts,utils/env.ts,utils/names.ts,utils/raProfileUtils.ts,utils/smokeState.ts}]
+indent_size = 2
+
+# The smoke suite never changes here: let the editor keep what each file has.
+[tests/smoke/**]
+indent_size = unset
+trim_trailing_whitespace = unset
+insert_final_newline = unset
+
+[*.{json,yml,yaml}]
+indent_style = space
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false

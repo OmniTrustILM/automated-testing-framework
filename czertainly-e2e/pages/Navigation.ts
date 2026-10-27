@@ -1,3 +1,11 @@
+/**
+ * Navigation — the sidebar navigation.
+ *
+ * WHAT: the sidebar: expanding a parent group and opening a page by its link.
+ * WHY: SMK-002 and REG-CERT-60 open every page the way a user does; the certificate pages open the list through it too.
+ * HOW: the sidebar by test id; a top-level link scoped to the first-level items so a nested link of the same name
+ *       never matches; the URL hint is awaited together with the click.
+ */
 import { Locator, Page, expect } from '@playwright/test';
 
 export class Navigation {
