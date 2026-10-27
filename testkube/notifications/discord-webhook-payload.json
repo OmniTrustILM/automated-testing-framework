@@ -9,7 +9,7 @@
       "fields": [
         { "name": "Run #:", "value": "`{{ .TestWorkflowExecution.Number }}` ", "inline": true},
         { "name": "Duration", "value": "{{ .TestWorkflowExecution.Result.Duration }}", "inline": true},
-        { "name": "Total tests", "value": "{{ (index .TestWorkflowExecution.Reports 0).Summary.Tests }}{{ with index .TestWorkflowExecution.Tags "tests" }} ({{ . }} tests × {{ index $.TestWorkflowExecution.Tags "repeat" }} runs){{ end }}", "inline": true},
+        { "name": "Total tests", "value": "{{ (index .TestWorkflowExecution.Reports 0).Summary.Tests }}{{ with index .TestWorkflowExecution.Tags "tests" }}{{ if ne (index $.TestWorkflowExecution.Tags "repeat") "1" }} = {{ . }} × {{ index $.TestWorkflowExecution.Tags "repeat" }}{{ end }}{{ end }}", "inline": true},
         { "name": "Passed", "value": "{{ (index .TestWorkflowExecution.Reports 0).Summary.Passed }}", "inline": true},
         { "name": "Failed", "value": "{{ (index .TestWorkflowExecution.Reports 0).Summary.Failed }}", "inline": true},
         { "name": "Skipped", "value": "{{ (index .TestWorkflowExecution.Reports 0).Summary.Skipped }}", "inline": true}
