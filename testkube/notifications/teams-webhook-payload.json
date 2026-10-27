@@ -72,7 +72,7 @@
                     "width": "stretch",
                     "items": [
                       { "type": "TextBlock", "text": "Total", "isSubtle": true, "size": "Small" },
-                      { "type": "TextBlock", "text": "{{ (index .TestWorkflowExecution.Reports 0).Summary.Tests }}{{ with index .TestWorkflowExecution.Tags "tests" }} ({{ . }} tests × {{ index $.TestWorkflowExecution.Tags "repeat" }} runs){{ end }}", "wrap": true, "weight": "Bolder", "spacing": "None" }
+                      { "type": "TextBlock", "text": "{{ (index .TestWorkflowExecution.Reports 0).Summary.Tests }}{{ with index .TestWorkflowExecution.Tags "tests" }}{{ if ne (index $.TestWorkflowExecution.Tags "repeat") "1" }} = {{ . }} × {{ index $.TestWorkflowExecution.Tags "repeat" }}{{ end }}{{ end }}", "wrap": true, "weight": "Bolder", "spacing": "None" }
                     ]
                   }
                 ]
