@@ -121,6 +121,9 @@ async function deactivateTsp(ctx: TeardownContext, signingProfileUuid: string): 
  * bulk `DELETE /v1/signingRecords` with the page's uuids (core answers a `BulkActionMessageDto` per record it could not
  * delete). Ends on an empty first page (the absence proof) or a 404 of the listing (the profile is gone). A record that
  * stays — a message, a non-2xx answer, or still there after `rounds` rounds — is a failure.
+ *
+ * Each listed row must prove association with this signing profile (`signingProfile.uuid`) before any bulk delete.
+ * The unscoped DELETE would otherwise wipe foreign records if the path-scoped listing ever returned a mixed page.
  */
 export async function emptySigningRecords(ctx: TeardownContext, signingProfileUuid: string, rounds: number = SIGNING_RECORD_ROUNDS): Promise<void> {
     assertNotDryRun(`teardown.timestamping signing records of ${signingProfileUuid}`);
@@ -131,8 +134,19 @@ export async function emptySigningRecords(ctx: TeardownContext, signingProfileUu
         if (!list.ok()) throw new Error(`signing profile ${signingProfileUuid}: listing its signing records answered ${list.status()} - ${await brief(list)}`);
         const items = (((await list.json()) as Json).items ?? []) as Json[];
         if (!items.length) return;
-        const uuids = items.map((r) => r?.uuid).filter((u): u is string => typeof u === 'string');
-        if (uuids.length !== items.length) throw new Error(`signing profile ${signingProfileUuid}: its signing record list holds rows without a uuid; not deleting blindly`);
+        const uuids: string[] = [];
+        for (const row of items) {
+            if (typeof row?.uuid !== 'string') {
+                throw new Error(`signing profile ${signingProfileUuid}: its signing record list holds rows without a uuid; not deleting blindly`);
+            }
+            const owner = row?.signingProfile?.uuid;
+            if (owner !== signingProfileUuid) {
+                throw new Error(
+                    `signing profile ${signingProfileUuid}: listing returned record ${row.uuid} owned by ${typeof owner === 'string' ? owner : 'no signingProfile.uuid'}; not deleting blindly`,
+                );
+            }
+            uuids.push(row.uuid);
+        }
         const del = await ctx.api.delete('/api/v1/signingRecords', { data: uuids });
         if (!del.ok()) throw new Error(`signing profile ${signingProfileUuid}: deleting ${uuids.length} signing record(s) answered ${del.status()} - ${await brief(del)}`);
         const messages = (await del.json().catch(() => [])) as Json[] | null;

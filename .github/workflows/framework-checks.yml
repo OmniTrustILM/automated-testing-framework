@@ -1,6 +1,7 @@
-# Fast checks on the framework's own code. No environment, no secrets, no browser: these must stay
-# quick and green so that a red run means something, which is why the smoke suite - which needs a
-# live platform and credentials - is not run from here.
+# Fast checks on the framework's own code. No environment, no secrets: these must stay quick and
+# green so that a red run means something, which is why the smoke suite - which needs a live
+# platform and credentials - is not run from here. Chromium is installed only for page-object
+# stand-in unit tests that use Playwright's `page` fixture; nothing talks to a real browser UI.
 name: Framework checks
 
 on:
@@ -42,6 +43,11 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # Page-object stand-in unit tests launch Chromium via the `page` fixture. Without this step
+      # those tests fail with "Executable doesn't exist" and the --list steps below never run.
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
 
       - name: Type check
         run: npx tsc --noEmit
