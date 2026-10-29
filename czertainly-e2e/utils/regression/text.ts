@@ -7,7 +7,7 @@
  * WHY: Every module used to carry its own copy of these helpers, and four generators of a unique name part.
  * HOW: Pure functions; `uniqueSuffix` is nine base-36 characters from a counter, random digits and the clock.
  */
-import { randomBytes } from 'crypto';
+import { randomInt } from 'crypto';
 
 /** The text with every regular-expression metacharacter escaped, for `new RegExp(...)` around a literal. */
 export const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -30,7 +30,7 @@ export const UNIQUE_SUFFIX_LENGTH = 9;
  */
 export const uniqueSuffix = (): string => {
     const counter = (uniqueCounter++ % 46656).toString(36).padStart(3, '0');
-    const random = randomBytes(4).readUInt32BE(0) % 1679616;
+    const random = randomInt(1679616); // 36^4, without the bias of a modulo
     const clock = (Date.now() % 1296).toString(36).padStart(2, '0');
     return `${counter}${random.toString(36).padStart(4, '0')}${clock}`;
 };

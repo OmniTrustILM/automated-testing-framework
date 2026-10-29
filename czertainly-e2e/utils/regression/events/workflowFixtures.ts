@@ -23,6 +23,7 @@ import { requiredCustomAttributes, OwnCustomAttribute } from '../customAttribute
 import { OwnRef, recordCreated } from '../ledger/ledger';
 import { isOk, sendJson } from './workflowRequests';
 import { ownName, ownCommonName } from '../ledger/runState';
+import { randomBytes } from 'crypto';
 import { uniqueSuffix } from '../text';
 import { ApiAnswer } from '../apiReads';
 import type { CertificateDetail } from '../apiReads';
@@ -45,7 +46,7 @@ export async function registerPlaceholder(api: GuardedApi, spec: string, ra: Own
     const commonName = ownCommonName(suffix);
     const sent = await sendJson(api, 'POST', `/api/v2/operations/authorities/${ra.authorityUuid}/raProfiles/${ra.uuid}/certificates/register`, {
         subjectDn: `CN=${commonName}`,
-        authorizationSecret: `s${Math.random().toString(36).slice(2, 12)}${uniqueSuffix()}`,
+        authorizationSecret: `s${randomBytes(5).toString('hex')}${uniqueSuffix()}`,
         attributes: [],
         customAttributes: await requiredCustomAttributes(api, 'certificates', ownName('ca')),
         ...(opts.ownerUuid ? { ownerUuid: opts.ownerUuid } : {}),

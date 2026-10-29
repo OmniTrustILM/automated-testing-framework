@@ -21,6 +21,7 @@ import { runId } from '../ledger/runState';
 import { opsBase } from './certificateLabels';
 import { certificateName } from '../ownCertificates';
 import { createdAfterOfAnswer, sendRaw } from './rawAnswers';
+import { randomBytes } from 'crypto';
 import { uniqueSuffix } from '../text';
 
 const logger = new Logger('Lifecycle');
@@ -44,7 +45,7 @@ interface PlatformCertificateSettings {
 // ------------------------------------------------------------------ register and complete (pre-registration)
 
 /** A challenge secret: 12–255 printable ASCII; run-prefixed so a log line never looks like a real secret. */
-export const newChallenge = (): string => `${runId()}-s-${Math.random().toString(36).slice(2, 10)}${uniqueSuffix()}`;
+export const newChallenge = (): string => `${runId()}-s-${randomBytes(4).toString('hex')}${uniqueSuffix()}`;
 
 /** The platform default CN definition (core `CsrAttributes`, a fixed uuid). */
 export const DEFAULT_CN_DEFINITION: Readonly<AttributeDefinitionRef> = { uuid: '9abaeba0-973d-11ed-a8fc-0242ac120002', name: 'commonName', contentType: 'string', version: 'v3' };

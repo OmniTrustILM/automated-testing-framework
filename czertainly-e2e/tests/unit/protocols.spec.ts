@@ -196,7 +196,7 @@ test.describe('ACME / HTTP readers', () => {
 
 test.describe('protocol CA fixture decisions', () => {
     test('the provider token name follows the provider alphabet; a shared secret is URL-safe', () => {
-        for (let i = 0; i < 20; i++) expect(providerTokenName()).toMatch(/^[a-zA-Z](?:_?[a-zA-Z0-9]+)*$/);
+        for (let i = 0; i < 20; i++) expect(providerTokenName()).toMatch(/^[a-zA-Z][a-zA-Z0-9]*(?:_[a-zA-Z0-9]+)*$/);
         expect(randomSecret()).toMatch(/^[A-Za-z0-9_-]{20,}$/);
     });
 
