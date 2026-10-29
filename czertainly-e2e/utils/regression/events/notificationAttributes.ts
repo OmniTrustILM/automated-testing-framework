@@ -8,7 +8,6 @@
  * HOW: Pure builders over the live definition list; the only run-specific part is the unique name inside a reserved sender or URL.
  */
 
-import * as crypto from 'crypto';
 import { checkedDnsName, ownName } from '../ledger/runState';
 import type { JsonObject } from '../json';
 import { objectOf, rowsOf } from '../json';
@@ -44,27 +43,28 @@ export function emailAttributes(defs: JsonObject[], v: Partial<EmailAttributeVal
     return out;
 }
 
-/** Java's `UUID.nameUUIDFromBytes` (MD5, version 3). */
-export function nameUuidFromBytes(bytes: Buffer): string {
-    const h = crypto.createHash('md5').update(bytes).digest();
-    h[6] = (h[6] & 0x0f) | 0x30;
-    h[8] = (h[8] & 0x3f) | 0x80;
-    const hex = h.toString('hex');
-    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
-
-export const WEBHOOK_TEMPLATE_UUID = '1b247b77-e9c0-45b9-8114-06377cbeedc7';
 const WEBHOOK_CODE: Record<WebhookContentType, { code: string; language: string }> = {
     RAW_JSON: { code: 'raw_json', language: 'json' },
     JSON: { code: 'json', language: 'json' },
     XML: { code: 'xml', language: 'xml' },
 };
 
+/**
+ * The template attribute's uuid per content type, as the webhook connector derives it (`Attributes.java`):
+ * `UUID.nameUUIDFromBytes(("1b247b77-e9c0-45b9-8114-06377cbeedc7" + code).getBytes())`, a version-3 (MD5) uuid. Kept as
+ * fixed values, so the suite computes no MD5.
+ */
+const WEBHOOK_TEMPLATE_ATTRIBUTE_UUID: Record<WebhookContentType, string> = {
+    RAW_JSON: '07ea053b-3515-3ce8-a8a5-acfca3d4ed15',
+    JSON: '77ddf598-724a-31d4-943b-79ee71c854c5',
+    XML: '610ed4fa-0b1f-33a9-9a31-0be332673a58',
+};
+
 /** The derived template attribute of a webhook content type (uuid and name per content type, webhook `Attributes.java`). */
 export function webhookTemplateAttribute(contentType: WebhookContentType, template: string): JsonObject {
     const { code, language } = WEBHOOK_CODE[contentType];
     return {
-        uuid: nameUuidFromBytes(Buffer.from(WEBHOOK_TEMPLATE_UUID + code)),
+        uuid: WEBHOOK_TEMPLATE_ATTRIBUTE_UUID[contentType],
         name: `data_contentTemplate_${code}`,
         contentType: 'codeblock',
         content: [{ data: codeBlock(language, template) }],

@@ -45,6 +45,10 @@ export interface TlsTarget {
     ports: number[];
     /** The certificate (chain) served on each port, in port order. */
     served: ServedCertificate[][];
+    /** The root that issues the intermediate, PEM. No listener serves it: a client that verifies the target trusts it. */
+    rootPem: string;
+    /** The intermediate that issues every leaf, PEM; served only when `withIntermediate`. */
+    intermediatePem: string;
     /** Distinct certificates over all ports (leaves and the intermediate). */
     distinct(): ServedCertificate[];
     servedFingerprints(): string[];
@@ -189,6 +193,8 @@ export async function startTlsTarget(opts: TlsTargetOptions = {}): Promise<TlsTa
         host: scanHost(env),
         ports,
         served,
+        rootPem: forge.pki.certificateToPem(root),
+        intermediatePem: interPem,
         distinct: distinctServed,
         servedFingerprints: () => distinctServed().map((c) => c.fingerprint).sort(),
         ipAttribute: () => scanHost(env),

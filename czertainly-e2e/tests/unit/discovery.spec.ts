@@ -8,6 +8,7 @@ import { expect, test } from '@playwright/test';
 import * as tls from 'tls';
 import * as crypto from 'crypto';
 import { DiscoveryConnector, discoveryBody, fingerprintSet, isSubsequence, v1Attributes, v2Attributes } from '../../utils/regression/discovery/discoveryApi';
+import type { TlsTarget } from '../../utils/regression/discovery/tlsTarget';
 import { scanHost, scanTargetProblem, startTlsTarget } from '../../utils/regression/discovery/tlsTarget';
 import { runName } from '../../utils/regression/ledger/runState';
 import { contentOf } from './helpers/contentOf';
@@ -80,10 +81,14 @@ test('startTlsTarget without a scan host refuses with the deploy gate text and o
     await expect(startTlsTarget({ env: {} })).rejects.toThrow(/deploy gate: no scan target/);
 });
 
-/** The chain a listener really serves: a TLS handshake on loopback, certificates read from the socket (no verification). */
-async function servedOn(port: number): Promise<string[]> {
+/**
+ * The chain listener `index` serves, read over a verified TLS handshake on loopback: the client trusts `ca` (default: the root
+ * alone, which no listener serves) and checks the leaf's name. Node appends the issuers it finds in `ca`, so the served
+ * certificates come first.
+ */
+async function servedOn(target: TlsTarget, index: number, ca: string[] = [target.rootPem]): Promise<string[]> {
     return new Promise((resolve, reject) => {
-        const socket = tls.connect({ host: '127.0.0.1', port, rejectUnauthorized: false }, () => {
+        const socket = tls.connect({ host: '127.0.0.1', port: target.ports[index], ca, servername: target.served[index][0].commonName }, () => {
             const out: string[] = [];
             let c: tls.DetailedPeerCertificate | undefined = socket.getPeerCertificate(true);
             const seen = new Set<string>();
@@ -105,7 +110,8 @@ test('a target with an intermediate serves leaf + intermediate; its own fingerpr
         expect(target.ports).toHaveLength(1);
         expect(target.host).toBe('127.0.0.1');
         expect(target.served[0].map((c) => c.role)).toEqual(['leaf', 'intermediate']);
-        const read = await servedOn(target.ports[0]);
+        // trusting the root alone, the handshake succeeds only because the listener sends its intermediate
+        const read = await servedOn(target, 0);
         expect(read.slice(0, 2).sort()).toEqual(target.servedFingerprints());
         expect(target.served[0][0].commonName.startsWith(runName(''))).toBe(true);
         expect(target.portsAttribute()).toBe(String(target.ports[0]));
@@ -126,7 +132,10 @@ test('distinct leaves: 3 listeners / 2 distinct leaves repeat leaf 1; no interme
         expect(new Set(leafPrints).size).toBe(2);
         expect(leafPrints[2]).toBe(leafPrints[0]);
         expect(target.distinct()).toHaveLength(2);
-        expect(await servedOn(target.ports[1])).toEqual([leafPrints[1]]);
+        // the leaf alone: trusting only the root, a client cannot verify it (OpenSSL's code for a one-certificate chain whose
+        // issuer is missing); trusting the intermediate too, it reads this listener's leaf
+        await expect(servedOn(target, 1)).rejects.toMatchObject({ code: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' });
+        expect((await servedOn(target, 1, [target.rootPem, target.intermediatePem]))[0]).toBe(leafPrints[1]);
     } finally {
         await target.close();
     }
@@ -134,7 +143,6 @@ test('distinct leaves: 3 listeners / 2 distinct leaves repeat leaf 1; no interme
 
 test('a client cannot reach a closed target (the listeners are gone after close)', async () => {
     const target = await startTlsTarget({ env: { REG_SCAN_HOST: '127.0.0.1', REG_SCAN_BIND: '127.0.0.1' } });
-    const port = target.ports[0];
     await target.close();
-    await expect(servedOn(port)).rejects.toThrow();
+    await expect(servedOn(target, 0)).rejects.toMatchObject({ code: 'ECONNREFUSED' });
 });
