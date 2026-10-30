@@ -1,22 +1,10 @@
 /**
- * API-CERT-34 — The audit trail of each legal certificate state transition. ilm#429.
+ * API-CERT-34 — The audit trail of each legal certificate state transition (ilm#429).
  *
- * WHAT: 1. Issue → final state issued; history ISSUE SUCCESS.
- *       2. Revoke an issued certificate → revoked; history ISSUE then REVOKE SUCCESS.
- *       3. Issue under an approval profile, approved or rejected → history APPROVAL_REQUEST, APPROVAL_CLOSE and ISSUE (approved) or
- *          UPDATE_STATE FAILED "Certificate state changed from Pending approval to Rejected." (rejected).
- *       4. Revoke under an approval profile: reject → issued again ("Revocation approval was rejected; certificate restored to Issued."),
- *          approve → revoked.
- *       5. Register then complete → history UPDATE_STATE SUCCESS then ISSUE SUCCESS.
- *       6. Complete under an approval profile: reject → registered with the authorization still active, approve → issued.
- * WHY: each of the 25 legal transitions of the certificate state machine writes an audit event with a status (core#1599, core#1605); a
- *      rejected revoke restores issued (core#1553) and a rejected completion restores registered (ilm#284). Presence and order only,
- *      never counts, and no 5xx anywhere. A red test means a transition was not audited or was audited in the wrong order.
- * HOW: all certificates are own objects recorded in the ledger before the assertions. The approval walks run on an own RA profile clone
- *      that is gated only while needed and released at the end; the revoke walks issue on the clone before the approval profile is
- *      associated. Rows written by independent asynchronous paths are asserted present, not in a fixed order. The registration walks
- *      skip when the tier's registration settings cannot hold a challenge-protected registration, and use a register call without a
- *      path that the guard does not list yet.
+ * Each of the 25 legal transitions writes an audit event with a status (core#1599, core#1605); a rejected revoke restores
+ * issued (core#1553), a rejected completion registered (ilm#284). Presence and order only, never counts, no 5xx.
+ * Approval walks use an own RA profile clone. The approved / rejected completion walk skips when the tier's registration
+ * settings cannot hold a challenge.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { decideApproval, findApproval, openApprovalGate } from '../../../utils/regression/lifecycle/approvals';

@@ -1,16 +1,11 @@
 /**
  * entityScreens — the list, dialogs and detail of one entity page, as one value.
  *
- * WHAT: for an entity whose pages follow the admin UI's pattern (a searchable list with a plus button, a detail widget
- *       with edit and delete icons, `Create <X>` / `Edit <X>` / `Delete <X>` dialogs) it returns the list widget, the
- *       three dialogs, the detail widget and the acts `goToList`, `reloadList`, `goToDetail`, `openCreateDialog`,
- *       `openEditDialog`, `deleteFromDetail` and `assertNotListed`.
- * WHY: the role and user pages (and the notification pages) had the same orchestration written twice, including the
- *       rule learnt on a live tier that a hash-only `goto` is no navigation. Composition, not a base class: the pages keep
- *       their own forms and assertions, and an entity with a split create flow is not forced into a shape.
- * HOW: one spec of five names (`route`, `listTitle`, `detailTitle`, `caption`) builds everything; `reloadList` loads the
- *       hash route, reloads, and only then waits for the widget, because waiting first would wait on the old render;
- *       `deleteFromDetail` returns the answer of the delete request the caller names.
+ * For an entity whose pages follow the admin UI's pattern (searchable list, `Create <X>` / `Edit <X>` / `Delete <X>`
+ * dialogs, detail widget) it returns those parts and the acts `goToList`, `goToDetail`, `openCreateDialog` and so on.
+ * It is composition, not a base class, so a page keeps its own forms and assertions.
+ *
+ * `reloadList` reloads and only then waits for the widget, because waiting first would wait on the old render.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { ApiAnswer } from '../../utils/regression/apiReads';
@@ -57,7 +52,7 @@ export function entityScreens(page: Page, spec: EntityScreensSpec): EntityScreen
     const editDialog = new FormDialog(page, `Edit ${spec.caption}`);
     const deleteDialog = new ConfirmDeleteDialog(page, `Delete ${spec.caption}`);
     const detailsWidget = widgetTitled(page.locator('main'), spec.detailTitle);
-    const listUrl = `administrator/#/${spec.route}`;
+    const listUrl = `/administrator/#/${spec.route}`;
     return {
         list,
         createDialog,

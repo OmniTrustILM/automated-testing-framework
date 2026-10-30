@@ -1,11 +1,11 @@
 /**
  * keys — the run's own keys on the software cryptography provider and their lifecycle.
  *
- * WHAT: Builds the create-key request from the live definitions, creates own keys and records their items, reads key detail and item
+ * Builds the create-key request from the live definitions, creates own keys and records their items, reads key detail and item
  * history, and enables, disables, compromises, destroys, changes usages of and deletes own keys.
- * WHY: Key creation and lifecycle change for key reasons only, apart from the token form and the item operations.
- * HOW: Creates and key items are recorded right after the create; every change first passes the live own-object check; the run-end teardown
- * removes keys before profiles and tokens.
+ *
+ * Creates and key items are recorded right after the create; every change first passes the live own-object check; the
+ * run-end teardown removes keys before profiles and tokens.
  */
 
 import type { APIRequestContext, APIResponse } from '@playwright/test';

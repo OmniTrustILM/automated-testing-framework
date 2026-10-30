@@ -1,13 +1,10 @@
 /**
- * localStack — docker compose control of the local stack.
+ * localStack — docker compose control of the local stack, for the local-only rows.
  *
- * WHAT: docker compose control of the local stack (stop, start, restart, down -v, logs, psql inside the
- *       database container) for the local-only rows. Every call refuses unless TIER_KIND=local and BASE_URL is loopback; the
- *       docker binary comes from `tools.requireTool('docker')` (a fake under the unit tests); compose file, project and
- *       service names come from the environment, never from code.
- * WHY: Restart, stop and database rows can only run against a stack the suite owns.
- * HOW: Each call refuses unless `TIER_KIND=local` and BASE_URL is loopback; the docker binary comes from `requireTool('docker')`; compose
- * file, project and services come from the environment.
+ * Stop, start, restart, `down -v`, logs, and psql inside the database container. Restart, stop and database rows can only run
+ * against a stack the suite owns, so every call refuses unless TIER_KIND=local and BASE_URL is loopback. The docker binary
+ * comes from `tools.requireTool('docker')` (a fake under the unit tests); compose file, project and service names come from
+ * the environment, never from code.
  */
 import { execFileSync, spawnSync } from 'child_process';
 import { Logger } from '../../Logger';

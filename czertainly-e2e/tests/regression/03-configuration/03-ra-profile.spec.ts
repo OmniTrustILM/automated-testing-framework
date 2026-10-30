@@ -1,16 +1,12 @@
 /**
- * REG-CFG-03 — An RA profile on the run's MS ADCS authority created through the UI (release checklist: Configuration 3). ilm#436.
+ * REG-CFG-03 — An RA profile on the run's MS ADCS authority created through the UI (release checklist: Configuration 3; ilm#436).
  *
- * WHAT: 1. RA Profiles → + → Create RA Profile: name, the run's authority, a certificate template loaded from the CA.
- *       2. Create → the detail page opens; the profile is Disabled.
- *       3. Enable → Enabled.
- *       4. The API shows it enabled, on the run authority, with the chosen template.
- *       5. The detail tabs Protocols, Attributes, Validation and Events open without an error.
- * WHY: an RA profile is the unit every issuance goes through; profiles are created disabled and must be enabled from the detail.
- * HOW: create-only: only the RA profile this test created is enabled; nothing is deleted. The authority is the run's own (created
- *      if needed); the template is read from the CA. The test needs a connected MS ADCS authority whose connector answers its
- *      live health, otherwise it skips with the named blocker. The create answer is put in the ledger (`own.record`) before
- *      the redirect is waited for.
+ * Creates the profile (Disabled), enables it, and checks in the API that it is enabled, on the run authority, with the chosen
+ * template. The detail tabs Protocols, Attributes, Validation and Events open without an error.
+ *
+ * Create-only: only the RA profile this test created is enabled; nothing is deleted. Needs a connected MS ADCS authority
+ * whose connector answers its live health, otherwise it skips with the named blocker. The create answer is put in the
+ * ledger before the redirect is waited for.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { RaProfilePage } from '../../../pages/RaProfilePage';

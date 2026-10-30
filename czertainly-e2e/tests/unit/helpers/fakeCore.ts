@@ -1,15 +1,9 @@
 /**
  * fakeCore — the base of the stateful fake cores of the wire tests.
  *
- * WHAT: `FakeCore` keeps a store of detail URL → object, hands out sequential uuids (`next()`), seeds objects (`seed()`) and has
- * generic routes: GET of a stored detail (404 otherwise), DELETE of a stored detail (204, or 404 when it is not there), and a
- * POST to one of its `collections`, which stores `{ uuid, name }` and answers with `createStatus` and the new object. A
- * subclass has two ways to answer: override `route` to add its own rules and fall through (return undefined) to the generic
- * ones, or override `respond` to answer every request itself.
- * WHY: the stateful fake cores each re-implemented the store, the sequence and the uuid format with small drifts. The base keeps
- * them once. The area cores override `respond` on purpose: that keeps their exact answers (their status codes, bodies and
- * knobs), which their tests pin; only the ownCrud core uses the generic routes.
- * HOW: pure in-memory; used with `registerFakeCore` and a loopback server. A test may wrap `core.answer`.
+ * Keeps a store of detail URL to object, hands out sequential uuids and has generic routes: GET and DELETE of a stored detail,
+ * and POST to one of its `collections`. A subclass adds its own rules in `route` or answers everything in `respond`; only the
+ * ownCrud core uses the generic routes. In memory only; used with `registerFakeCore` and a loopback server.
  */
 import type { Answer, Arrived } from './loopbackServer';
 

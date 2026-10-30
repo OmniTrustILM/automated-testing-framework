@@ -1,12 +1,9 @@
 /**
  * areaFixtureLint — the shape rule of an area fixture (utils/regression/specLint/areaFixtures.ts).
  *
- * WHAT: inline area fixture sources: the accepted shape (one extend that adds new names, worker and test scope), and every
- * way found to hand a spec something under a trusted name: a redefined guarded or Playwright fixture, a spread or computed
- * key, a second extend in either access form, an extend without an object literal, a `.use(…)` call.
- * WHY: the spec lint trusts `api`, `own`, `signedIn` … by name; this rule is what keeps an area fixture from redefining
- * them. A case that stops failing is a hole.
- * HOW: pure unit cases over `areaFixtureProblems` and `fixtureNamesOf` (the real folder is checked by specGuards.spec.ts).
+ * Checks inline fixture sources: the accepted shape (one extend that adds new names), and every way found to hand a spec
+ * something under a trusted name (a redefined fixture, a spread or computed key, a second extend, an extend without an object
+ * literal, a `.use(...)` call). The spec lint trusts `api`, `own`, `signedIn` by name; a case that stops failing is a hole.
  */
 import * as fs from 'fs';
 import * as path from 'path';

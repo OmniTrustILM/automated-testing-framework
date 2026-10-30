@@ -1,11 +1,9 @@
 /**
- * fakeAnswer — an `ApiAnswer` built from a status and a body text, for the unit tests of the error readers and the
- * helpers that take an answer.
+ * fakeAnswer — an `ApiAnswer` built from a status and a body text, for unit tests of the error readers and of helpers
+ * that take an answer.
  *
- * WHAT: `fakeAnswer(status, text, extra?)` is a complete answer: JSON content type, empty headers, the body parsed when it
+ * `fakeAnswer(status, text, extra?)` is a complete answer: JSON content type, empty headers, the body parsed when it
  * parses, a fixed start instant and one millisecond elapsed; `extra` overrides any member.
- * WHY: every unit file used to write its own partial answer object; one complete one keeps them in step with the type.
- * HOW: pure; no I/O.
  */
 import type { ApiAnswer } from '../../../utils/regression/apiReads';
 

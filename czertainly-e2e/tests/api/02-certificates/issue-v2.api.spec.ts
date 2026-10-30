@@ -1,20 +1,11 @@
 /**
- * API-CERT-01, API-CERT-02 — Issuing a certificate through the v2 API: the happy path and the error contract. ilm#429.
+ * API-CERT-01, API-CERT-02 — Issuing a certificate through the v2 API: the happy path and the error contract (ilm#429).
  *
- * WHAT: 1. An external CSR (CN, one DNS and one IP SAN) is issued: the answer is exactly certificateData "", uuid and
- *          requestAttributeWarnings; the observed states are a subsequence of requested, pending_issue, issued; the detail shows the CN,
- *          the run RA profile, the SAN set and the CSR's public key; the history says "Issued using RA Profile <name>"; the raw PEM
- *          carries the same key.
- *       2. Lifecycle endpoints refuse bad input with a message and never a 5xx: neither CSR nor key, a CSR that is not a CSR, an unknown RA
- *          profile (404), a malformed uuid, malformed JSON, a wrong content type, a missing `attributes`.
- *       3. An invalid bearer token → 401 on issue, issue-existing, renew, rekey, revoke, approve and reject (not on a local stack).
- * WHY: issuance is asynchronous and tracked through the state; a validation error is a 422 string array and a malformed request a 400
- *      {message}, and that split must survive the platform migration (ilm#424); no stack trace, class name or SQL state may appear in an
- *      error body. Whitelist warnings travel in requestAttributeWarnings and are not a refusal.
- * HOW: one own certificate on the run RA profile is recorded in the ledger before any assertion; negatives target the create path, an own
- *      object or a probe uuid, and a request the platform accepts by mistake is recorded too. The SAN oracle depends on the CA connector
- *      (exact set on EJBCA NG, DNS values on others). The 401 row skips on a local stack, where a proxy or the localhost identity may
- *      authenticate the call.
+ * A validation error is a 422 string array, a malformed request a 400 {message}; that split must survive the migration
+ * (ilm#424). No stack trace, class name or SQL state in an error body. The SAN oracle depends on the CA connector.
+ * Known bug core#2140: a text/plain content type on the issue answers 500 instead of a 4xx (test.fail). The invalid-bearer
+ * row skips on a local stack, where a proxy or the localhost identity may authenticate the call.
+ * One own certificate is ledgered before any assertion; so is a request accepted by mistake.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { expectMessageObject } from '../../../utils/regression/errorContract';

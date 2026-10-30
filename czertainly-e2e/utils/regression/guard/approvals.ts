@@ -1,25 +1,11 @@
 /**
- * The run's own user as the approver of its own approval profile, deciding the approvals of its own
- * certificates. Everything else about approvals stays refused on a shared tier.
+ * approvals — lets the run's own user approve its own certificates; everything else about approvals stays refused.
  *
- * (a) `POST /v1/approvalProfiles` and `PUT /v1/approvalProfiles/{own}`: a step (`approvalSteps[i]`, a plain object) may
- *     name the CALLER as `userUuid` — the uuid `GET /v1/auth/profile` answers for the identity the request goes out as
- *     (core AuthServiceImpl: the logged-in user's detail, a read). Core stores the uuid on the own profile's
- *     step and writes nothing on the user (ApprovalProfileServiceImpl `ApprovalStep.setUserUuid`;
- *     only checks that one of user / role / group is set). Only that exact position is waived: the same uuid
- *     anywhere else in the body, another user's uuid, a request with an identity header (another identity), a string
- *     body (the guard scans the caller's text as written) or an unreadable profile keep the refusal (BODY_FIELD_TYPES
- *     `userUuid` → users: own or a probe).
- * (b) An approval named as a mutation target (`approvals`, TARGET_TYPES) may only be DECIDED, as the run's own user:
- *     `PATCH /v1/approvals/{uuid}/approve | reject` (the override path, no body; core ApprovalServiceImpl)
- *     and `PATCH /v1/approvals/{uuid}/approveRecipient | rejectRecipient` (the recipient path, `UserApprovalDto` =
- *     `{ comment }` only; the caller must be a recipient of the pending step and not the creator).
- *     A decision closes the approval and runs its action on the approval's object: so the approval must belong
- *     to an OWN certificate and an OWN approval profile — its `approvals` ledger line of this run names both as parents
- *     (`certificate`, `approvalProfile`), each an own, non-derived ledger line of that type checked live, and the
- *     approval's live detail (`GET /v1/approvals/{uuid}`, ApprovalDto: `resource`, `objectUuid`, `approvalProfileUuid`;
- *     core Approval) names exactly those two. No identity header, no identityOverride. Every other mutation
- *     whose path names an approval is refused. Probe uuids keep their 404 allowance.
+ *   - An approval profile step may name the CALLER as `userUuid`, and only that exact position is waived.
+ *   - An approval may only be DECIDED (PATCH approve / reject / approveRecipient / rejectRecipient), by the run's own
+ *     user, and only when this run's ledger line names an own certificate and an own approval profile for it, checked
+ *     live. Probe uuids keep their 404 allowance.
+ *   - Every other mutation whose path names an approval is refused.
  */
 import { IS_UUID, isCanonicalUuid, UUID } from './uuids';
 import { isPlainObject } from './targets';

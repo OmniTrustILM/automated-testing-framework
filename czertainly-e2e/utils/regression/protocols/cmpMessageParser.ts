@@ -1,11 +1,9 @@
 /**
  * cmpMessageParser — a reader of CMP PKIMessages.
  *
- * WHAT: reads a CMP PKIMessage (RFC 4210 §5.1) from DER: the body type and, for an `error` body, the
- *       PKIStatusInfo (status, status strings, PKIFailureInfo bit names). A reader only: the suite sends CMP requests through
- *       `openssl cmp`; the builder here makes error messages for the unit tests of the reader.
- * WHY: An error body of a CMP answer carries the status the test must assert.
- * HOW: Reads the DER (RFC 4210) body type and, for an error body, the PKIStatusInfo; the builder exists for the unit tests of the reader.
+ * Reads a CMP PKIMessage (RFC 4210 §5.1) from DER: the body type and, for an `error` body, the PKIStatusInfo (status, status
+ * strings, PKIFailureInfo bit names), which is the status a test must assert. A reader only: the suite sends CMP requests
+ * through `openssl cmp`; the builder here makes error messages for the unit tests of the reader.
  */
 import * as forge from 'node-forge';
 

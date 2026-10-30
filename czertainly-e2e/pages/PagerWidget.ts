@@ -1,12 +1,12 @@
 /**
- * PagerWidget — the paging controls of every list table.
+ * PagerWidget — the paging controls of every list table (REG-CERT-50; REG-WFL-15 through EventHistoryWidget).
  *
- * WHAT: the paging controls of every list table: the page-size select, the page buttons with Previous / Next and
- *       the "Showing a to b items of n" line.
- * WHY: REG-CERT-50 checks sizes, pages and the summary (REG-WFL-15 through EventHistoryWidget); the widget only
- *       acts and reads — a page that needs the list request a click caused wraps the call itself.
- * HOW: controls by test id inside the scope it is given; the page size is shown only while there are rows, the
- *       pager only with more than one page.
+ * Encapsulates:
+ *   - the page-size select and the page buttons with Previous / Next
+ *   - the "Showing a to b items of n" line
+ *
+ * The widget only acts and reads: a page that needs the list request a click caused wraps the call itself. The page size
+ * is shown only while there are rows, the pager only with more than one page.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { collapse } from '../utils/regression/text';

@@ -1,12 +1,11 @@
 /**
  * configProbes — shared steps of the credential, group and RA-profile API specs.
  *
- * WHAT: Shared steps of the credential, group and RA-profile API specs: the refusal shapes of the error contract (a 422
- *       message list, a single message), the credential connector or a named skip, a valid Basic body, and the delete of an
- *       own object followed by its 404 read-back and the `deleted` ledger line.
- * WHY: The three specs repeat the same refusal checks and the same delete-and-prove step; one copy keeps them equal.
- * HOW: The refusal readers delegate to the error contract; `deleteOwnAndProveGone` deletes an own object, reads back the 404 and writes the
- * `deleted` ledger line.
+ * Provides:
+ *   - the refusal shapes of the error contract (a 422 message list, a single message)
+ *   - the credential connector, or a named skip
+ *   - a valid Basic body
+ *   - `deleteOwnAndProveGone`: deletes an own object, reads back the 404 and writes the `deleted` ledger line
  */
 import { expect, test } from '../../../fixtures/testFixtures';
 import { expect422Messages, expectMessageObject } from '../errorContract';

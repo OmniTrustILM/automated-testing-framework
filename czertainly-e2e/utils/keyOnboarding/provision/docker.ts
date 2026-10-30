@@ -1,17 +1,12 @@
 /**
  * docker — the docker CLI calls of the key onboarding block, behind one injectable seam.
  *
- * WHAT: `DockerRunner` (args + extra environment → exit code and output), the default runner over the real CLI,
- * `dockerAvailable` (a daemon answers), `sidecarRunning` (the SoftHSM sidecar is up), `sidecarFacts` (its image, the
- * owner of its token files, its SOFTHSM2_CONF) and `passThrough` (the `-e NAME` flags that make docker copy a variable
- * from its own environment).
- * WHY: planting and removing key pairs on the token runs a throwaway container from the sidecar's image with the
- * sidecar's volumes; the PIN must never be on a command line (`ps` shows argv to every user of the runner), so every
- * value goes through the environment and argv carries only the variable names. The unit tests replace the runner and
- * never start docker.
- * HOW: the default runner resolves the binary through `dockerBin` (REG_DOCKER_BIN, else `docker`; under the unit tests
- * the real CLI is refused there), runs it without a shell and never throws on a non-zero exit: the caller decides what
- * an exit code means.
+ * Provides a `DockerRunner` and a default runner over the real CLI, plus checks that a daemon answers and the SoftHSM sidecar
+ * is up. Planting and removing key pairs runs a throwaway container from the sidecar's image.
+ *
+ * The PIN must never be on a command line (`ps` shows it to every user of the runner): every value goes through the
+ * environment and argv carries only the variable names. The runner uses no shell and never throws on a non-zero exit. The
+ * unit tests replace it and never start docker.
  */
 import { spawn } from 'child_process';
 import { dockerBin } from '../../regression/requireTool';

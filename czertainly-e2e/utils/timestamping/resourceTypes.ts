@@ -1,38 +1,11 @@
 /**
- * resourceTypes — data-only descriptor of the four ledger types the timestamping block adds: `tspProfiles`,
- * `signingProfiles`, `timeQualityConfigurations`, `tspBasicCredentials`.
+ * resourceTypes — data-only descriptor of the four ledger types the timestamping block adds: `tspProfiles`, `signingProfiles`,
+ * `timeQualityConfigurations`, `tspBasicCredentials`.
  *
- * WHAT: one entry per type with everything the framework needs to know about it besides the handler code: how its live
- * object is read (detail URL, the field that must carry the run prefix), which ledger types are deleted before / after
- * it, the reference pairs core enforces (each with a file:line citation and what core refuses), and the module that
- * holds its teardown handler. Core read: `integration/spring-boot-4.1` @ 569e853c563a (paths under
- * src/main/java/com/otilm/core/ unless a migration is named; migrations under src/main/resources/db/migration/).
- * WHY: runTeardown keeps three parallel tables (HANDLER_MODULES, DELETE_ORDER + REFERENCED_BY) and ownership.ts a
- * fourth (LIVE_READS). The refactor replaces them with one registry (`utils/regression/resourceTypes.ts`: type →
- * teardown step, handler module, ownership kind, snapshot definition). This file is shaped so each entry maps 1:1 onto
- * one registry entry (`liveRead` → the ownership kind `named` + its read, `handlerModule` → handler module,
- * `deleteAfter` / `referencedBy` → the teardown step); the registry spreads `TIMESTAMPING_REGISTRY_ENTRIES` below.
- * HOW: plain data, no imports from the framework. tests/unit/timestampingTeardown.spec.ts checks the descriptor against
- * the handler module (every type has a handler, the handler reads the same detail URL) and against the integrated
- * DELETE_ORDER (every `referencedBy` pair is satisfied; `deleteAfter` / `deleteBefore` agree with the pairs).
- *
- * Direction of a pair `{ a, b }`: core refuses to delete `a` while an object of type `b` still references it, so `b` is
- * deleted before `a`. `deleteAfter` of a type lists the types it is deleted AFTER (they go first); `deleteBefore` lists
- * the types it is deleted BEFORE (it goes first). Both derive from `referencedBy`; the test keeps them in step.
- * Each pair is listed once, in the entry of its `b` side (the type that holds the reference).
- *
- * WHERE THE FRAMEWORK USES IT (until the registry exists):
- *   1. DELETE_ORDER (runTeardown.ts): the four types join step 3 after `discoveries` (no renumbering), so they go before
- *      step 4 `certificates` and step 5 `keys` (a signing profile pins its certificate, token profile and time-quality
- *      configuration). The order inside the step is load-bearing: tspBasicCredentials first (before the profile that owns
- *      them and before `users`, a later step), then tspProfiles (it removes the activation and, holding the default
- *      signing profile, goes before it), then signingProfiles, then timeQualityConfigurations (refused while any signing
- *      profile references it). Within `signingProfiles` the teardown deletes the newest line first (planTeardown), so a
- *      signing profile that names another one as its timestamp source (content-signing canary) must be RECORDED after
- *      the one it names.
- *   2. The handler module: the registry entries below name it by the key `timestamping`, which runTeardown imports.
- *   3. LIVE_READS (ledger/ownership.ts): one entry per type with the `liveRead` below.
- *   4. REFERENCED_BY (runTeardown.ts): spreads `TIMESTAMPING_REFERENCED_BY`.
+ * Per type: how its live object is read, the reference pairs core enforces (core refuses to delete `a` while a `b` references
+ * it, so `b` goes first), and the module with its teardown handler. The order inside DELETE_ORDER step 3 is load-bearing:
+ * tspBasicCredentials, tspProfiles, signingProfiles, then timeQualityConfigurations. A signing profile that names another as its
+ * timestamp source must be RECORDED after it. tests/unit/timestampingTeardown.spec.ts checks it against the handlers.
  */
 
 type Parents = Record<string, string | string[]> | undefined;

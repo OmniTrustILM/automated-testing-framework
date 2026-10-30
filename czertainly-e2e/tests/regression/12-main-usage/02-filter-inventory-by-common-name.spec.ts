@@ -1,14 +1,11 @@
 /**
- * REG-USE-02 — The certificate inventory filtered by Common Name (release checklist: Usage 2). ilm#428.
+ * REG-USE-02 — The certificate inventory filtered by Common Name (release checklist: Usage 2; ilm#428).
  *
- * WHAT: 1. Upload a self-signed certificate named after the run.
- *       2. Inventory → Property / Common Name / contains <run id> → the badge shows.
- *       3. Every row matches and the row count equals the API search.
- *       4. Open the certificate: Details names it and the Validation, History and Event History tabs load without an error.
- *       5. Back to the list, remove the badge → the filter is gone.
- * WHY: the inventory filter is the everyday way to find a certificate; the badge, the rows and the API must agree.
- * HOW: the certificate is own, uploaded through the API and recorded from the upload answer before anything is asserted; the filter value
- *      is the run id, so only objects of this run match. Nothing else is changed.
+ * Filters the inventory by Common Name containing the run id: the badge shows, every row matches and the row count equals the
+ * API search. The certificate's Validation, History and Event History tabs load; removing the badge removes the filter.
+ *
+ * The certificate is own, uploaded through the API and recorded from the upload answer before anything is asserted. The
+ * filter value is the run id, so only objects of this run match. Nothing else is changed.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { CertificateListPage } from '../../../pages/CertificateListPage';
@@ -62,7 +59,7 @@ test.describe('Certificate inventory filter', { tag: tags.regression }, () => {
                 await live('certificates', uploaded);
                 await certPage.openCertificateFromList(cn);
                 await certPage.assertUploadedCertificateDetails(cn);
-                await certPage.assertTabsOpenWithoutError(['Validation', 'History', 'Event History']);
+                await certPage.verifyOtherTabsOpenWithoutError(['Validation', 'History', 'Event History']);
             });
 
             await test.step('Back to the list, remove the badge → the filter is gone', async () => {

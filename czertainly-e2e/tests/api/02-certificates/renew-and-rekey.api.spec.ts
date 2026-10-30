@@ -1,16 +1,8 @@
 /**
- * API-CERT-04, API-CERT-05 — Renew and rekey of an own issued certificate through the v2 API. ilm#429.
+ * API-CERT-04, API-CERT-05 — Renew and rekey of an own issued certificate through the v2 API (ilm#429).
  *
- * WHAT: 1. Renew with a CSR on the same key → 200 with the successor's uuid; the successor is issued with the same public key, subject
- *          DN and SAN set and a different serial; the original stays issued; the relation is renewal; the histories say "Renewed using RA
- *          Profile <name>" and "Issued using RA Profile <name>".
- *       2. Rekey with a new key and the same subject → 200; the successor is issued with the new key, the same DN and SANs; the original
- *          stays issued; the relation is rekey and the history says "Rekeyed using RA Profile <name>".
- * WHY: renew keeps the key, rekey replaces it, both only from the issued state, one successor per call, related to the original. A
- *      supplied CSR must carry the certificate's key (renew) or a different key (rekey) and the issued subject. MS ADCS NG cannot renew
- *      without a PKCS#10, so a CSR is always sent.
- * HOW: certificate A is an own certificate issued from an external CSR on the run RA profile; the successor is recorded in the ledger right
- *      after the call (with its derived key) and deleted by the run-end teardown. Two issuances of up to 180 s each plus the reads.
+ * Renew keeps the key, rekey replaces it, both only from the issued state. MS ADCS NG cannot renew without a PKCS#10, so
+ * a CSR is always sent. The successor is ledgered right after the call (with its derived key).
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { historyMessages, historyOf, relationsOf } from '../../../utils/regression/lifecycle/certificateHistory';

@@ -1,13 +1,11 @@
 /**
  * teardownHandlers — every teardown handler of utils/regression/teardown/teardownHandlers.ts, as runTeardown loads it.
  *
- * WHAT: each handler behind the guard against a fake core: live read first, foreign objects refused, a delete counts only
- *       when a read afterwards answers 404, derived objects kept when adopted; plus the certificate-key safety net and the
- *       compliance-profile removal. The role / user detail-500 workaround (core#2511) decides by the full list only. Without a
- *       server time the objects a discovery onboarded and the certKey_ key of an own certificate are recorded with the keeping
- *       bound and land in the kept report; with one they are deleted; a foreign object is never recorded, kept or deleted.
- * WHY: the teardown is the only code that deletes; each of its rules must be proven to hold and to refuse.
- * HOW: a fake core answers the reads and records the writes; each test asserts the requests sent and the ledger lines left.
+ * Each handler runs behind the guard against a fake core: live read first, foreign objects refused, a delete counts only
+ * when a read afterwards answers 404, derived objects kept when adopted. Also the certificate-key safety net, the
+ * compliance-profile removal, and the role / user detail-500 workaround (core#2511, decided by the full list). Without a
+ * server time, discovery-onboarded objects and an own certificate's certKey_ key are kept with the keeping bound; with one they
+ * are deleted. A foreign object is never recorded, kept or deleted. The teardown is the only code that deletes.
  */
 import { randomUUID } from 'node:crypto';
 import { APIRequestContext, test, expect } from '@playwright/test';

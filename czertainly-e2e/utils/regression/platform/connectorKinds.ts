@@ -1,15 +1,9 @@
 /**
  * connectorKinds — which connectors a tier has, found by what they offer, and the shape of their detail.
  *
- * WHAT: `ConnectorSpec` names a connector by what it offers (interface version, function groups and kinds, v2 interfaces, an optional
- *       name hint); `findRegisteredConnector` reads the registry and returns the first registered connector that matches, whatever its
- *       state; `findVaultConnector` returns the connected HashiCorp Vault connector with a secret interface. `CONNECTOR_SPECS` holds the
- *       connectors of the platform the suite knows. The pure readers `groupsOf`, `interfaceCodes`, `featuresByInterface`, `detailShapeProblems`,
- *       `infoShapeProblems` and `inventoryLine` describe a connector detail without touching the tier.
- * WHY: the connector rows, the needs that skip a row when a connector is absent and the read-only probe of the main flow must all decide
- *      from the same answer, and a connector is never recognised by a hard-coded registration name alone.
- * HOW: every call is a GET (`GET /v1/connectors`, `GET /v2/connectors/{uuid}`); nothing is created or changed. A read that does not answer
- *      2xx is an error of the test, not a missing connector: only an answer that lists no matching connector means "absent".
+ * A connector is found by what it offers (interface version, function groups and kinds), never by a hard-coded registration
+ * name alone. Every call is a GET; nothing is created or changed. A read that does not answer 2xx is an error of the test,
+ * not a missing connector: only an answer that lists no matching connector means "absent".
  */
 import type { APIRequestContext } from '@playwright/test';
 import { apiJson } from '../apiReads';

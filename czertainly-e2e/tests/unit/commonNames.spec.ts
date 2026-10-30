@@ -1,13 +1,9 @@
 /**
- * Unit tests of the unique name suffix and of the certificate common name builders.
+ * commonNames — unit tests of the unique name suffix and of the certificate common name builders.
  *
- * WHAT: the suffix is short, base 36 and unique over many calls; a common name built from a run-prefixed name is refused
- *       when it is longer than 64 characters or has a DNS label longer than 63; a DNS name is refused above 253 characters
- *       or with a label above 63; every name the specs and helpers build through a common name builder (found by a scan of
- *       the sources, placeholders expanded over the rows of their table) stays inside the limits with room to spare.
- * WHY: a certificate name that the CA refuses for its length fails a live test for a reason that has nothing to do with the
- *      behaviour under test; the guard fails it at the builder with the limit named.
- * HOW: pure calls, no I/O.
+ * Checks the suffix is short, base 36 and unique; a common name over 64 characters or with a DNS label over 63, and a DNS
+ * name over 253, is refused; every name the specs and helpers build through a builder (found by scanning the sources) stays
+ * inside the limits. A name the CA refuses for length would fail a live test for the wrong reason. Pure calls.
  */
 import { expect, test } from '@playwright/test';
 import * as fs from 'fs';

@@ -1,20 +1,12 @@
 /**
- * REG-CERT-12, REG-CERT-13 — Pre-register a certificate and complete it (release checklist: Certificates 12 and 13). ilm#429.
+ * REG-CERT-12, REG-CERT-13 — Pre-register a certificate and complete it (release checklist: Certificates 12 and 13; ilm#429).
  *
- * WHAT: 1. Add Certificate → Pre-register (REG-CERT-12) → key source and CSR are hidden; Challenge and Issuance window are shown.
- *       2. Common name and a 12+ character challenge, Create → a Registered certificate with an Active registration, 0 failed
- *          attempts, an expiry of now plus the default window, and Complete enabled.
- *       3. The challenge appears nowhere: not on the page, not in the detail JSON, not in the history.
- *       4. Pre-register without a challenge → Registered, no Registration widget.
- *       5. Complete with a wrong secret (REG-CERT-13) → "The certificate registration challenge is invalid.", 1 failed attempt, still
- *          Registered.
- *       6. Complete with the right secret and a CSR → Issued, 0 failed attempts, the public key is the CSR's.
- * WHY: pre-registration lets an operator reserve a certificate and let someone else complete it with a secret; the secret must
- *      never be shown, and a wrong one must be counted and refused.
- * HOW: the registration settings are read, never set. Every certificate is recorded in the ledger from the answer of the Create
- *      request, before the page waits for its redirect or anything is asserted (by common name when the answer names no
- *      object); the platform-made key after the issuance. The
- *      authority is the run's own RA profile; the Complete dialog acts only after the live ownership check.
+ * Pre-register with and without a challenge, then complete: a wrong secret is refused and the certificate stays Registered;
+ * the right secret and a CSR issue it with the CSR's public key. The challenge appears nowhere: not on the page, not in the
+ * detail JSON, not in the history.
+ *
+ * The registration settings are read, never set. Every certificate is recorded in the ledger from the Create answer, before
+ * anything is asserted. The authority is the run's own RA profile; the Complete dialog acts only after the live check.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { CertificateAddPage } from '../../../pages/CertificateAddPage';

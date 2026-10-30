@@ -1,10 +1,9 @@
 /**
  * waitForResponse — act, then wait for the API answer.
  *
- * WHAT: act, then wait for the API answer: the one place that runs an action and returns the response it caused.
- * WHY: the wait is registered before the action, so a fast answer is never missed.
- * HOW: method and path of the call match the response; `UUID` is the shared pattern for an id in a path; `answerFrom` reads
- *       a response into the one `ApiAnswer` shape.
+ * The one place that runs an action and returns the response it caused. The wait is registered before the action, so a
+ * fast answer is never missed. Provides `UUID`, the shared pattern for an id in a path, and `answerFrom`, which reads
+ * a response into the one `ApiAnswer` shape.
  */
 import type { Page, Response } from '@playwright/test';
 import { ApiAnswer, answerOf } from '../../utils/regression/apiReads';

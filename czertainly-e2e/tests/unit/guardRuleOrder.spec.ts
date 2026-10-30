@@ -1,16 +1,9 @@
 /**
- * The guard's refusal messages, one row per named rule, and the order of the rules.
+ * guardRuleOrder — unit tests of the guard's refusal messages, one row per named rule, and the order of the rules.
  *
- * WHAT: every step of the guard that refuses (readRequest.ts: readOptions … readForwarded; checkRequest.ts:
- * checkProbeRead … checkDryRun) has a row here: a request that breaks that rule and the message the guard refuses it
- * with. The two steps that are not plain refusals are pinned elsewhere: the waiver of the caller's own user in an own
- * approval profile (waiveSelfSteps) and the approval-decision proofs (approvalDecisionProblem, assertOwnApprovalDecision)
- * in guardedApiApprovalsAndOidTeardown.spec.ts. A second test sends requests that break a rule AND every rule that
- * comes after it and expects the message of the first.
- * WHY: the order of the rules is part of the guard's specification; a request that breaks two rules is refused with the
- * message of the earlier one. If the rules are reordered the failing row is named after the rule that moved.
- * HOW: a real Playwright context against a loopback fake core, like the other guard unit files; every refused request
- * must leave the core untouched.
+ * Each rule that refuses has a row: a request that breaks it and the message it is refused with. A second test breaks a rule
+ * and every rule after it, and expects the message of the first, so a reordered rule shows up by name. Runs against a
+ * loopback fake core, which every refused request must leave untouched.
  */
 import { APIRequestContext, expect, test } from '@playwright/test';
 import { guardApiWithSeams } from '../../utils/regression/guard/createGuard';

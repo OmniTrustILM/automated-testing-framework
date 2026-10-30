@@ -1,21 +1,15 @@
 /**
- * transport — the admin requests of a block's setup and the two kinds of failure it tells apart.
+ * transport — the admin requests of a block's setup, and the two kinds of failure it tells apart.
  *
- * WHAT: `Admin` sends every admin request of a preflight and a provisioner through the GUARDED context (`/api` is
- * prefixed here, callers write `/v1/...`), remembers the server's Date header of the first response after
- * `markProvisioningStart()`, and polls with attempt counts instead of fixed sleeps.
- * - `TierError`: the TIER cannot provide what a step needs (a 404 or 5xx answer, an attribute or profile the connector
- *   does not offer, a wait that runs out). It becomes the summary's `unavailable` reason or a family's entry in
- *   `missingFamilies`, and the setup test passes.
- * - `SetupError`: the setup itself is wrong (401 / 403 on any request: the admin identity is broken; 400 / 422 on a
- *   POST, PUT or PATCH: the setup sent a body core refuses). It propagates, and the setup test fails.
- * WHY: a refused body or a broken identity must never pass green as "this tier lacks the feature"; the development
- * blocks (timestamping, key onboarding) share one transport instead of importing each other's.
- * HOW: GET goes through `api.get`, every other method through `api.fetch` of the guarded context (the guard judges and
- * sends it; on a proven local stack `localStack` lifts the ownership rule and the platform deny-list only). A reason
- * carries the method, the path with every uuid replaced by `{id}` and the status, never the answer's body (it may echo
- * fragments of the request); the body goes to the log only. The logger name and the label the guard check reports
- * are constructor options, so each block's warnings carry its own name.
+ * `Admin` sends every request of a preflight and a provisioner through the GUARDED context; on a proven local stack
+ * `localStack` lifts the ownership rule and the platform deny-list only.
+ *   - `TierError`: the tier cannot provide what a step needs. It becomes the summary's `unavailable` reason, and the
+ *     setup passes.
+ *   - `SetupError`: the setup itself is wrong (401 / 403, or 400 / 422 on a write). It propagates, and the setup fails.
+ *
+ * A broken identity or a refused body must never pass green as "this tier lacks the feature". A reason carries the
+ * method, the
+ * path with uuids replaced by `{id}` and the status, never the answer's body.
  */
 import type { APIResponse } from '@playwright/test';
 import { Logger } from '../../Logger';

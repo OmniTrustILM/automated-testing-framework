@@ -1,12 +1,12 @@
 /**
- * TokenProfilePage — the Token Profiles list, dialog and detail.
+ * TokenProfilePage — Page Object Model for token profiles (REG-KEY-03).
  *
- * WHAT: the Token Profiles list, the Create Token Profile dialog (name, enable switch, token, usages) and the
- *       profile detail with its toolbar.
- * WHY: REG-KEY-03 creates a profile with the switch off, enables it from the detail and checks that Create Key
- *       offers enabled profiles only.
- * HOW: the usages multi-select through the helper; the enable switch is a hidden input, so its label is clicked;
- *       the create answer carries the new profile's uuid, recorded by the spec before the dialog closes.
+ * Encapsulates:
+ *   - the Token Profiles list and the Create Token Profile dialog
+ *   - the profile detail with its toolbar
+ *
+ * The enable switch is a hidden input, so its label is clicked. The spec records the new profile's uuid before the
+ * dialog closes.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { Logger } from '../utils/Logger';

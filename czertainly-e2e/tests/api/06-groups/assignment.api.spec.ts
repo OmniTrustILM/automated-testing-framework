@@ -1,21 +1,9 @@
 /**
- * API-GEN-20 — Group assignment on a certificate replaces the set. ilm#428.
+ * API-GEN-20 — Group assignment on a certificate replaces the set (ilm#428).
  *
- * WHAT: 1. PATCH groupUuids [g1, g2] gives both; omitted or null keeps them; [g3] leaves only g3; [] removes all; each answers 204 with no
- *          body and the history reads "<old> -> <new>" for the three real changes only.
- *       2. [g1, g1] gives one membership; assigning the identical set answers 204 and writes no new history event.
- *       3. groupUuids ["not-a-uuid"] → 400 "The request could not be processed." and the groups stay; an owner-only PATCH leaves the groups
- *          alone.
- *       4. An archived own certificate refuses a group change with 422 "Certificate with UUID <uuid> is archived and its groups cannot be
- *          updated." and keeps its groups.
- *       5. Local stack only, parked with `test.fixme`: an unknown group uuid → 404 and the previous groups survive.
- * WHY: non-empty replaces the set, [] removes all, omitted or null is no change (core#683, core#630; archived: core#1098, ilm#71); an
- *      identical set is a no-op that returns before the history event. The unknown-group row is unconfirmed: the assignment may delete the
- *      previous groups before the checked NotFoundException (the mechanism of core#2449 and core#2512), so the row has never run; there is
- *      no observed answer to assert and no defect to report yet.
- * HOW: every test builds an own self-signed certificate and own groups (run-prefixed, recorded in the ledger before the first assertion)
- *      and reads the final set back from the detail. The unknown-group row is local-stack only and sends only the own certificate and a
- *      probe uuid.
+ * Rules: core#683, core#630; archived: core#1098, ilm#71. The unknown-group row is `test.fixme` and local stack only: the
+ * assignment may delete the previous groups before the NotFoundException (core#2449, core#2512), so it has never run.
+ * Every test builds an own self-signed certificate and own groups, ledgered before the first assertion.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { refused422, refusedWith } from '../../../utils/regression/inventory/configProbes';

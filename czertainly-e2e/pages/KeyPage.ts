@@ -1,14 +1,20 @@
 /**
- * KeyPage — the Key inventory and the key detail.
+ * KeyPage — Page Object for the Key Inventory: the Create Key modal and the key detail page.
  *
- * WHAT: the Key inventory: the Create Key dialog ("Generate new" for every key family) and the key detail with two
- *       toolbars: the Key Details widget and the shown item's toolbar.
- * WHY: SMK-006 generates an RSA key and checks the detail; REG-KEY-04 … 09 create per family, enable / disable,
- *       compromise and destroy. The size / curve / level select appears only after the algorithm is chosen, so the
- *       order of the steps lives here. Sign and Verify are `KeyOperationsDialog`.
- * HOW: test ids as the admin UI renders them; selects through their trigger buttons; key rows inside the Key
- *       Details widget (items reuse row ids); the item toolbar has no hook of its own yet (fe-administrator#2325),
- *       so the last tab layout stands in.
+ * WHAT: opens Create Key, fills the "Generate new" form (name, Token Profile, key type and the
+ * connector's attributes: alias, algorithm, RSA size), submits it, and reads the detail page the
+ * platform lands on: the key's own rows, its attributes, and the rows of each key item.
+ *
+ * WHY: SMK-006 drives the form a user fills in. The connector attributes are rendered from the
+ * provider's definitions, and the RSA size only appears once RSA is chosen, so the order of the
+ * steps matters and lives here rather than in the test.
+ *
+ * HOW: test ids as the FE renders them. Selects are driven through their `-trigger` button, not
+ * the hidden native <select>, and text inputs are clicked before fill (both see
+ * reference_ilm_fe_playwright_patterns). The list is opened by URL, not through the sidebar.
+ *
+ * Also used by REG-KEY-04 … 09 (all key families). The item toolbar uses the `key-item-actions` hook when the admin UI
+ * has it (fe-administrator#2325), else the last `tab-layout`.
  */
 
 import { Locator, Page, Request, expect } from '@playwright/test';
@@ -97,15 +103,10 @@ export class KeyPage {
         await expect(this.main.getByTestId('plus-button')).toBeVisible();
     }
 
-    async openCreateDialog(): Promise<void> {
+    async openCreateModal(): Promise<void> {
         logger.info('Opening Create Key');
         await this.main.getByTestId('plus-button').click();
         await expect(this.dialog.getByTestId('text-input-name')).toBeVisible();
-    }
-
-    /** The smoke suite's name of `openCreateDialog`. */
-    async openCreateModal(): Promise<void> {
-        await this.openCreateDialog();
     }
 
     private async type(testId: string, value: string): Promise<void> {
@@ -200,13 +201,8 @@ export class KeyPage {
      * A row of the Key Details table, by the admin UI's `data-id`. Key items reuse ids such as `name`, so the lookup
      * stays inside the Key Details widget.
      */
-    private keyDetailRow(dataId: string): Locator {
-        return this.keyDetails.locator(`tr[data-id="${dataId}"]`);
-    }
-
-    /** The former name of `keyDetailRow` (the smoke test uses it). */
     row(dataId: string): Locator {
-        return this.keyDetailRow(dataId);
+        return this.keyDetails.locator(`tr[data-id="${dataId}"]`);
     }
 
     /** Switches the key-item tabs to "Public key" or "Private key". */
@@ -217,13 +213,8 @@ export class KeyPage {
     }
 
     /** A row of the key item shown in the active tab. Both items' tables may stay in the DOM, so only the visible one counts. */
-    private itemDetailRow(dataId: string): Locator {
-        return this.main.locator(`tr[data-id="${dataId}"]:visible`);
-    }
-
-    /** The former name of `itemDetailRow` (the smoke test uses it). */
     itemRow(dataId: string): Locator {
-        return this.itemDetailRow(dataId);
+        return this.main.locator(`tr[data-id="${dataId}"]:visible`);
     }
 
     keyButton(button: KeyToolbarButton): Locator {
@@ -255,24 +246,24 @@ export class KeyPage {
 
     /** The state badge of the shown item (`Active`, `Compromised`, `Destroyed Compromised`, …). */
     async assertItemState(label: RegExp): Promise<void> {
-        await expect(this.itemDetailRow('state')).toContainText(label);
+        await expect(this.itemRow('state')).toContainText(label);
     }
 
     /** The Enabled row's badge: `Enabled` or `Disabled` as a whole word (`/Enabled/` would also match "Disabled"). */
     async assertItemEnabled(enabled: boolean): Promise<void> {
         // The badge CELL, not the row: the row's label reads "Enabled" whatever the badge says.
-        await expect(this.itemDetailRow('enabled').locator('td').last()).toHaveText(enabled ? /^\s*Enabled\s*$/ : /^\s*Disabled\s*$/);
+        await expect(this.itemRow('enabled').locator('td').last()).toHaveText(enabled ? /^\s*Enabled\s*$/ : /^\s*Disabled\s*$/);
     }
 
     /** The item's algorithm row. */
     async assertItemAlgorithm(algorithm: RegExp): Promise<void> {
-        await expect(this.itemDetailRow('keyAlgorithm')).toContainText(algorithm);
+        await expect(this.itemRow('keyAlgorithm')).toContainText(algorithm);
     }
 
     /** The usages badges of the shown item (lower-case codes as rendered: sign, verify, …). */
     async readItemUsages(): Promise<string[]> {
         // One badge per usage (inline elements: a joined innerText would read "signdecrypt"): read each element's text.
-        const texts = await this.itemDetailRow('Usages').locator('td').last().locator('span, div, a').allInnerTexts();
+        const texts = await this.itemRow('Usages').locator('td').last().locator('span, div, a').allInnerTexts();
         return texts.map((t) => t.trim().toLowerCase()).filter((t) => /^(sign|verify|encrypt|decrypt|wrap|unwrap)$/.test(t));
     }
 

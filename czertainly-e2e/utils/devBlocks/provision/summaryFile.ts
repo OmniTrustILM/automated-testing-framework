@@ -1,10 +1,8 @@
 /**
  * summaryFile — the one way a development block stores its setup summary.
  *
- * WHAT: `writeJsonAtomic(file, data)` writes `data` as indented JSON with mode 0600 and returns `file`.
- * WHY: the summary may hold generated secrets, and a reader must never see a half-written file.
- * HOW: create the folder, write a temp file next to the target (mode 0600, enforced again with chmod), rename it over
- * the target.
+ * `writeJsonAtomic(file, data)` writes indented JSON with mode 0600 and returns `file`. The summary may hold generated
+ * secrets, and a reader must never see a half-written file: it writes a temp file next to the target, then renames it.
  */
 import * as fs from 'fs';
 import * as path from 'path';

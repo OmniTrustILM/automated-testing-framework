@@ -1,20 +1,12 @@
 /**
- * REG-USE-07 — A certificate issued through the v2 API (release checklist: Usage 7). ilm#429.
+ * REG-USE-07 — A certificate issued through the v2 API (release checklist: Usage 7; ilm#429).
  *
- * WHAT: 1. GET the issue attributes of the run RA profile; POST the v2 issue of an external CSR → 200 with a uuid and empty
- *          certificateData.
- *       2. Poll until issued; the detail (subject, RA profile, public key), the history (issue events) and the raw PEM download match the
- *          CSR.
- *       3. (REG-USE-07.1) A CSR with DNS and IP SANs → 200 with exactly certificateData "", uuid and requestAttributeWarnings (a list);
- *          issued with the CSR's SANs and key; the history says "Issued using RA Profile <name>".
- *       4. (REG-USE-07.1) A garbage CSR → 400 with a {message} starting "Failed to submit certificate request" (a test of its own).
- *       5. A read without credentials → 401 and no certificate data (a test of its own, not on a local stack).
- * WHY: the v2 operations API is what automation uses; the answer must never carry the signed certificate, a lenient request-attribute
- *      policy answers warnings with 200, and an unauthenticated read must leak nothing.
- * HOW: the RA profile is the run's own. Every certificate is recorded in the ledger right after the issue call, before any assertion, with
- *      the key core links at request time, and is deleted by the run-end teardown; a garbage CSR the platform accepted is recorded too.
- *      The SAN oracle is CA-aware (exact on EJBCA-NG, DNS values elsewhere); the IP SAN is a documentation address (RFC 5737). The 401 read
- *      asks for the run's own certificate, so a body that leaked its name or content would be caught; it is not asserted on a local stack.
+ * Posts the v2 issue of an external CSR: 200 with a uuid, and the issued certificate matches the CSR. (.1) A CSR with DNS and
+ * IP SANs also answers requestAttributeWarnings; a garbage CSR gives 400. A read without credentials gives 401 and no
+ * certificate data (not on a local stack).
+ *
+ * The RA profile is the run's own. Every certificate is recorded in the ledger right after the issue call, before any
+ * assertion, and deleted by the run-end teardown; a garbage CSR the platform accepted is recorded too.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { ACCEPT_JSON } from '../../../utils/regression/platform/connectorApi';

@@ -1,15 +1,11 @@
 /**
- * context — what every provisioning step shares: the admin transport, the configuration, the waits, the run's names
- * and the one way a step records what it created.
+ * context — what every provisioning step shares: the admin transport, the configuration, the waits, the run's names and the
+ * one way a step records what it created.
  *
- * WHAT: `SETUP_LEDGER_SPEC` (the `spec` of every ledger line the setup writes), `SetupContext`, `recordOwn` (the
- * ledger line of a create, written right after the create answered), `objectName` (run-prefixed names, unique per
- * setup attempt), `generatedSecret` (the token code) and `step` (a TierError names its step).
- * WHY: the block teardown selects exactly the lines whose spec starts with `timestamping/`; the run-end teardown's
- * live-name check accepts only `<run id>-…` names; a Playwright retry of the setup project must never reuse a name of
- * its first attempt (EJBCA binds a key and an end-entity name once, the username follows the CN).
- * HOW: plain helpers, no requests. `objectName`, `newStamp` and `step` are re-exported from `utils/devBlocks/provision/names.ts`;
- * `uuidOf` binds its logger name.
+ * Provides `SETUP_LEDGER_SPEC`, `SetupContext`, `recordOwn` (the ledger line, written right after the create answered),
+ * `objectName` (run-prefixed, unique per setup attempt) and `step`. It sends no requests.
+ * The block teardown selects the lines whose spec starts with `timestamping/`. A Playwright retry of the setup must never
+ * reuse a name of its first attempt (EJBCA binds a key and an end-entity name once).
  */
 import * as crypto from 'crypto';
 import { newStamp, objectName, step, uuidOf as sharedUuidOf } from '../../devBlocks/provision/names';

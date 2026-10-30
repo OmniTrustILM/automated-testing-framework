@@ -1,21 +1,14 @@
 /**
  * REG-CERT-16, REG-CERT-17 — Issue under an approval profile, then approve or reject by override (release checklist:
- * Certificates 16 and 17). ilm#429.
+ * Certificates 16 and 17; ilm#429).
  *
- * WHAT: 1. Add Certificate on an RA profile with an approval profile (REG-CERT-16) → the certificate waits as Pending approval;
- *          its Approvals tab shows the approval as Pending.
- *       2. Approvals → List of Approvals → the row → Approve (override) → status Approved.
- *       3. The certificate becomes Issued; the History tab says "Approval for action issue with approval profile <name> closed
- *          with status Approved"; the approval detail shows Approved and the override comment "Approval flow overridden".
- *       4. The same flow rejected (REG-CERT-17) → override Reject → the certificate is Rejected, its history says "closed with
- *          status Rejected", the Request tab still opens, and Issue, Renew, Rekey and Revoke are disabled.
- * WHY: an approval gate must hold a request until it is decided; an approved one issues, a rejected one is terminal and
- *      keeps its request. A red test means the gate leaks, the override does not act, or a rejected certificate can still act.
- * HOW: the approval profile is tied to an own clone of the run's RA profile only and released at the end (also on failure).
- *      Certificates and approvals are recorded in the ledger before any assertion (the certificate from the answer of the Create
- *      request, before the redirect wait, by common name when the answer names no object), and the key core links at request
- *      time is recorded as derived; the live ownership check runs on the approval
- *      before the toolbar acts. Without a CA the tests skip with the reason.
+ * A certificate issued on an RA profile with an approval profile waits as Pending approval. Override Approve issues it;
+ * override Reject makes it Rejected, keeps its Request tab, and leaves Issue, Renew, Rekey and Revoke disabled.
+ *
+ * The approval profile is tied to an own clone of the run's RA profile only, and released at the end (also on failure).
+ * Certificates and approvals are recorded in the ledger before any assertion; the live check runs before the toolbar
+ * acts.
+ * Without a CA the tests skip with the reason.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { ApprovalsPage } from '../../../pages/ApprovalsPage';

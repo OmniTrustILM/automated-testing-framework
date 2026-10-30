@@ -1,11 +1,10 @@
 /**
  * protocols — unit tests of the pure protocol helpers.
  *
- * WHAT: the sscep and openssl cmp output parsers, the CMP PKIMessage reader, the degenerate PKCS#7 and GetCACaps readers,
- *       the ACME problem and stack-text readers, fixed garbage and the protocol CA fixture's pure decisions.
- * WHY: the protocol specs judge what a client tool or a server printed; a reader that misparses an answer would turn a
- *      real refusal into a pass or a pass into a refusal, so each reader is pinned on known output, good and bad.
- * HOW: pure calls on literal output and built messages; no network, no external client, no file.
+ * Checks the sscep and openssl cmp output parsers, the CMP PKIMessage reader, the degenerate PKCS#7 and GetCACaps readers,
+ * the ACME problem and stack-text readers, fixed garbage, and the protocol CA fixture's pure decisions. The protocol specs
+ * judge what a client tool or a server printed; a reader that misparses an answer would turn a refusal into a pass or the
+ * reverse, so each is pinned on known good and bad output. Pure calls on literal output; no network, client or file.
  */
 import { expect, test } from '@playwright/test';
 import * as crypto from 'crypto';

@@ -1,19 +1,13 @@
 /**
- * REG-DEP-01 — The QA post-install check of a new ILM deployment (release checklist: Deployment 1). ilm#425.
+ * REG-DEP-01 — The QA post-install check of a new ILM deployment (release checklist: Deployment 1; ilm#425).
  *
- * WHAT: 1. Core version (GET /api/v1/info), the required connectors registered and the Version Info dialog (core, frontend and
- *          database versions); then (REG-DEP-01, row connector-detail-pages) each required connector's detail page.
- *       2. (REG-DEP-01.a) Anonymous liveness and readiness answer 200 with exactly {"status":"UP"} within the latency budget.
- *       3. (REG-DEP-01.b) Anonymous /health answers 200 with the status UP and the liveness and readiness groups only.
- *       4. (REG-DEP-01.c) /info answers an authenticated caller exactly app, build and db with the documented fields; an
- *          anonymous caller gets 401 and no app document (not asserted on a local stack).
- *       5. (REG-DEP-01.d) Every required connector is alive: stored as connected, answers its live health by interface version
- *          and one read-only attribute call; not only the stored `connected`.
- * WHY: the release check must not pass on a stored flag while a connector answers 503; the probes and /info are the contract
- *      the compose healthchecks and the Version Info dialog rely on (core#2461).
- * HOW: read-only. Env: REG_REQUIRED_CONNECTORS, REG_BLOCKED_CONNECTORS (`name:reason;…`, a blocked connector skips with its
- *      reason), REG_EXPECTED_CORE_VERSION, REG_EXPECTED_FE_VERSION, REG_STRICT_VERSIONS=true. The latency budget (5 s) is
- *      measured from the runner, which adds DNS, TLS and the ingress round trip; the measured time is annotated on every run.
+ * Checks the core version, the required connectors, the Version Info dialog and each connector's detail page. Rows: (.a)
+ * anonymous liveness and readiness; (.b) anonymous /health; (.c) /info for an authenticated caller, 401 for an anonymous
+ * one (not asserted on a local stack); (.d) every required connector answers its live health, not only the stored
+ * `connected` (core#2461).
+ *
+ * Read-only. Settings: the REG_* connector and version settings (see .env.example); a connector named as blocked skips
+ * with its reason. The 5 s latency budget is measured from the runner, which adds DNS, TLS and ingress time.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { ACCEPT_JSON, blockedConnectors, describeHealth, findConnector, healthByVersion, listConnectors, PROBE_PATHS, probeAttributes, requiredConnectors } from '../../../utils/regression/platform/connectorApi';
@@ -99,7 +93,7 @@ test.describe('Post-install check', { tag: tags.regression }, () => {
             const connectorUuids = await registeredRequired(api);
             for (const name of required) {
                 await test.step(`Detail page of ${name}`, async () => {
-                    await page.goto(`administrator/#/connectors/detail/${connectorUuids[name]}`);
+                    await page.goto(`/administrator/#/connectors/detail/${connectorUuids[name]}`);
                     await expect(page.locator('main'), `the detail page names ${name}`).toContainText(name);
                 });
             }

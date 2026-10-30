@@ -1,26 +1,11 @@
 /**
  * specLint/rules — the rule table of the deny-by-default lint.
  *
- * WHAT: `RULES` lists every rule of the lint as one entry `{ rule, scope, hits }`: `hits(node, bindings, context)`
- * returns the nodes of ONE syntax node that break the rule (usually none). The rule names and what each one forbids are
- * described in the header of rawMutations.ts. The five module-specifier checks (spec-import, raw-process, raw-network,
- * test-import, util-import) are written once in `moduleRules` and used by every import form: `import`, `import x =
- * require()`, `require()`, `import()` and `export ... from`.
- * WHY: a rule is one small, separately testable function, and adding one is a one-entry change instead of another
- * branch inside a 400-line visitor. The order of the table is the order in which findings of one node are reported;
- * the unit cases and the lint of the real tree depend on it, so a new entry goes at the end unless it must come first.
- * HOW: `rawMutations` visits every node once and asks each active entry (scope 'spec' only for files linted as
- * specs). Entries with `allow` are skipped for the files named there.
+ * `RULES` lists every rule as `{ rule, scope, hits }`; what each rule forbids is described in rawMutations.ts. A rule with
+ * `allow` skips the files named there. A new entry goes at the end unless it must be first.
  *
- * Adding a rule (with a temporary allow-list while the code is cleaned up):
- *   1. add the name to `RawMutationRule` (rawMutations.ts) and describe it in that file's header;
- *   2. append `{ rule: 'new-rule', scope: 'spec', allow: ['tests/regression/01-x/01-y.spec.ts', ...], hits }` to
- *      RULES, with `allow` listing every file that violates it today (paths relative to czertainly-e2e);
- *   3. add a positive and a negative case in tests/unit/rawMutations.spec.ts (the allow-list needs no case of its
- *      own: rawMutations.spec.ts proves it with a stand-in rule);
- *   4. clean one file, delete its line from `allow`; when `allow` is empty remove the field.
- * The allow-list only ever shrinks. specGuards.spec.ts lints the whole tree with the table, so a violation outside the
- * list fails the unit run at once.
+ * Adding a rule: add its name to `RawMutationRule`, append the entry with an `allow` list of today's violators, add a
+ * positive and a negative case in tests/unit/rawMutations.spec.ts, then shrink `allow`. It only ever shrinks.
  */
 import type * as TS from 'typescript';
 import { Bindings, GUARD_FACTORIES, builtinName, isFsModule, type LintContext } from './bindings';

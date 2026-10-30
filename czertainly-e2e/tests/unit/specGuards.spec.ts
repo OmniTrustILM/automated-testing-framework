@@ -1,17 +1,12 @@
 /**
- * Static rules over the REG and API specs and the regression helpers (run by `npm run test:unit` and by CI): `@local`
- * specs call describeLocalOnly, every @bug sits in a test that calls test.fail(), one suite tag per test, every testMeta() id in
- * one file, deny by default (the rules of utils/regression/specLint/rawMutations.ts; exemptions in LINT_EXEMPT with their
- * reasons) and no sleeps, icon classes or raw row locators outside pages/ (a counted allow-list that may only shrink).
- * The area fixtures (`fixtures/areas/*.ts`, the per-folder setups a spec may take `test` from) are linted like specs, and
- * their shape by utils/regression/specLint/areaFixtures.ts: one extend that only adds fixtures, never redefines one.
+ * specGuards — static rules over the REG and API specs and the regression helpers (run by `npm run test:unit` and by CI).
  *
- * The developers' timestamping and key onboarding blocks (`tests/timestamping`, `utils/timestamping`, `tests/key-onboarding`,
- * `utils/keyOnboarding`) are NOT scanned, by agreement. The timestamping block's reason: its TSP protocol
- * requests use a plain context with Basic auth and deliberate odd media types and methods, and openssl / docker run as child
- * processes, which these rules would refuse. Its safety rests on `@local` + describeLocalOnly (a shared tier selects nothing),
- * the guarded admin API (`localApi`) with the local-stack proof, and the ledger (tests/timestamping/README.md). The key onboarding block
- * rests on the same four and runs docker for the token's key pairs (tests/key-onboarding/README.md).
+ * Rules: `@local` specs call describeLocalOnly; every @bug sits in a test that calls test.fail(); one suite tag per test;
+ * deny by default for raw mutations; no sleeps, icon classes or raw row locators outside pages/ (a counted allow-list that may
+ * only shrink). The area fixtures are linted like specs.
+ *
+ * The timestamping and key onboarding blocks are NOT scanned, by agreement: they use plain contexts and child processes these
+ * rules would refuse. Their safety rests on `@local` + describeLocalOnly, the guarded admin API and the ledger.
  */
 import { test, expect } from '@playwright/test';
 import { listedTitleProblems, titleProblems } from '../../utils/regression/specLint/titleLint';

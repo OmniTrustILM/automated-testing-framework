@@ -1,10 +1,7 @@
 /**
- * timeouts — the named time budgets of the tests.
+ * timeouts — the named time budgets of the regression and API tests (`test.setTimeout(ISSUE_MS)`).
  *
- * WHAT: the named time budgets of the regression and API tests (`test.setTimeout(ISSUE_MS)`), so the reason for a
- *       budget is written once here instead of in a comment next to a number. Pure, no I/O.
- * WHY: A budget should carry its reason once instead of a comment next to a number.
- * HOW: Constants such as ISSUE_MS used by `test.setTimeout`; pure, no I/O.
+ * Each budget carries its reason once here, instead of a comment next to a number. Constants only, no I/O.
  */
 
 const MINUTE_MS = 60_000;

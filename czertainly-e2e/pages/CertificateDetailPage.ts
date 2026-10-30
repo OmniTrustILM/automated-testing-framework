@@ -1,12 +1,12 @@
 /**
- * CertificateDetailPage — the detail page of one certificate.
+ * CertificateDetailPage — the detail page of one certificate (REG-CERT-07, 10, 12, 16).
  *
- * WHAT: the detail page of one certificate: the properties widget and its toolbar, the state badge, the
- *       Registration widget and the rows of the Related Certificates and Approvals tabs.
- * WHY: REG-CERT-07 / 10 / 12 / 16 read the state and the toolbar decision table after each lifecycle action. Asserts never navigate: the
- *       spec opens the page or tab first. The dialogs the toolbar opens are their own classes.
- * HOW: tabs by URL slug (no click race); `openFresh` reloads the Details tab because the page a create leaves open does not
- *       poll; the widget by its heading; toolbar buttons through the shared icon map; rows by data id.
+ * Encapsulates:
+ *   - the properties widget and its toolbar, and the state badge
+ *   - the Registration widget and the rows of the Related Certificates and Approvals tabs
+ *
+ * Asserts never navigate: the spec opens the page or tab first. The dialogs the toolbar opens are their own classes.
+ * `openFresh` reloads the Details tab, because the page a create leaves open does not poll.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { Logger } from '../utils/Logger';

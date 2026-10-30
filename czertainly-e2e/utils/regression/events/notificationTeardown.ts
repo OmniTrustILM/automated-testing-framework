@@ -1,17 +1,11 @@
 /**
- * notificationTeardown — how the run-end teardown removes the notification objects the events area creates (own objects only, deleted at
- * run end).
+ * notificationTeardown — the run-end teardown of the notification objects the events area creates (own objects only).
  *
- * WHAT: the teardown handlers of the ledger types `notificationProfiles` and `notificationInstances`. The resource-type
- * registry names this module for them, and runTeardown wraps each handler with `wrapHandlerWithGuard` (dry-run check, then
- * `assertOwnLive`: ledger line of this run on this tier and a live run-prefixed name). Spec-facing helpers live in
- * utils/regression/events/notificationInstances.ts and notificationProfiles.ts.
+ * Handles the ledger types `notificationProfiles` and `notificationInstances`. An object is deleted only after the own-object
+ * check (a ledger line of this run and a live run-prefixed name), and its absence is proven by a read.
  *
- * WHY: a notification object is deleted only after the live check proved it this run's, and its absence is proven by a read.
- *
- * HOW: order (teardown step 9): profiles before instances. Core refuses to delete an instance a profile's CURRENT version
- * still uses ("Cannot delete notification instance. Notification profile(s) referencing this notification instance: …")
- * and a profile an execution still uses (executions are removed in step 8, before this step).
+ * Profiles go before instances (teardown step 9): core refuses to delete an instance a profile still uses, and a profile an
+ * execution still uses (executions go in step 8).
  */
 import type { LedgerLine } from '../ledger/ledger';
 import type { TeardownContext, TeardownHandler } from '../teardown/teardownTypes';

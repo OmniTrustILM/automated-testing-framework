@@ -1,11 +1,10 @@
 /**
  * permissionMatrix — the permission fixture roles and the answers each one must get (pure data).
  *
- * WHAT: Defines the fixture roles F0 to F6 as permission documents, the expected status of each certificate, RA-profile, role and user call
- * per fixture, the deny nuances, and the contract of an access-denied body.
- * WHY: A reader wants to read the decision table without the live code around it, and the table must stay rule-derived: a mismatch is a
- * finding to confirm, never an oracle to adjust.
- * HOW: Plain constants and pure functions; nothing here reads the environment or calls the server.
+ * Defines the fixture roles F0 to F6 as permission documents, the expected status of each certificate, RA-profile, role and
+ * user call per fixture, the deny nuances, and the contract of an access-denied body. The table stays rule-derived: a mismatch
+ * is a finding to confirm, never an oracle to adjust. Plain constants and pure functions; nothing reads the environment or
+ * calls the server.
  */
 
 import { PermissionDocument } from './authApi';

@@ -1,14 +1,12 @@
 /**
  * snapshotModel — what a tier snapshot is made of: its shapes, the resource definitions and the marks.
  *
- * WHAT: `TierSnapshot` / `ResourceSnapshot` / `ItemMark`, the shape of a resource definition (`ResourceDef`: how a
- * resource is read and marked; the definitions themselves are in the registry, utils/regression/resourceTypes.ts), the pure
- * name and mark helpers (`isRunNamed`, the key marks) and `canonicalJson`.
+ * Provides `TierSnapshot` / `ResourceSnapshot` / `ItemMark`, the shape of a resource definition (`ResourceDef`: how a resource
+ * is read and marked; the definitions themselves are in the registry, utils/regression/resourceTypes.ts), the pure name and mark
+ * helpers (`isRunNamed`, the key marks) and `canonicalJson`.
  *
- * WHY: the proof that a run touched nothing foreign compares two snapshots; the definitions and marks are the vocabulary
- * both the reads (snapshot.ts) and the comparison (compare.ts) share, so they live in one module without any I/O.
- *
- * HOW: pure data and functions. The long description of the whole proof is the header of nonInterference.ts.
+ * The reads (snapshot.ts) and the comparison (compare.ts) share this vocabulary, so it lives in one module without any I/O. The
+ * long description of the whole proof is the header of nonInterference.ts.
  */
 import { hasRunFamilyPrefix } from '../run/runId';
 

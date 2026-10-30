@@ -1,15 +1,11 @@
 /**
- * regressionProjects — the project tables of playwright.regression.config.ts and playwright.api.config.ts as pure functions, so a unit test
- * can check what each config selects without loading it (a config calls `prepareRun` at import).
+ * regressionProjects — the project tables of playwright.regression.config.ts and playwright.api.config.ts as pure functions,
+ * so a unit test can check what each config selects.
  *
- * Logout runs last: `01-sign-in-and-access/99-sign-out.spec.ts` (REG-AUTH-03, the identity-provider sign-out of the suite's admin browser
- * session) must run after EVERY other regression row. Playwright runs the files of a project alphabetically, so inside `regression` the
- * files of the later area folders would follow it. It therefore gets its own project `logout`, the TEARDOWN project of `regression`:
- * Playwright runs a teardown project after its setup project and all of that project's dependents, failed or not, and a teardown project
- * may not have dependencies. A `dependencies: ['regression']` project would instead be SKIPPED whenever any regression test is not ok:
- * never use `dependencies` for it (tests/unit/regressionProjects.spec.ts pins this, because a Playwright minor could change it). `logout`
- * is not infrastructure: the `@local` invert and the `@phaseB` grep apply to it like to any row project. Order: regression rows → logout →
- * non-interference (the teardown of `snapshot`, whose dependents' closure includes `logout`) → the global runTeardown.
+ * Logout (REG-AUTH-03) must run after EVERY other regression row, so it is the TEARDOWN project of `regression`: it runs
+ * after all dependents, failed or not. Never use `dependencies: ['regression']` for it: it would be SKIPPED whenever any
+ * test is not ok (tests/unit/regressionProjects.spec.ts pins this).
+ * Order: regression rows, logout, non-interference, the global runTeardown.
  */
 import { devices, PlaywrightTestProject } from '@playwright/test';
 import { withTierFilters } from './projectFilters';

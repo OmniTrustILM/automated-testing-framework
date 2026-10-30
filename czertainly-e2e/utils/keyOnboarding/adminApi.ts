@@ -1,13 +1,12 @@
 /**
  * adminApi — the admin API of the key onboarding specs.
  *
- * WHAT: `AdminApi` (raw / get / post / patch, token key listing, onboarding, key creation and removal, certificate upload,
- * the key custom attribute) and the response types the specs read.
- * WHY: the specs were written against this class; keeping its method names keeps their bodies unchanged.
- * HOW: ported from the developers' suite; it wraps `GuardedApi` instead of a client-certificate context (the framework
- * authenticates, and the guard judges ownership). Objects the platform creates are recorded by the caller right after
- * the answer: `keyCustomAttribute` hands the new attribute's uuid to `onCreated`, `uploadCertificate` records through
- * the framework's own-certificate helper.
+ * `AdminApi` covers token key listing, onboarding, key creation and removal, certificate upload and the key custom attribute.
+ * Ported from the developers' suite with its method names kept. It wraps `GuardedApi`: the framework authenticates, and the
+ * guard judges ownership.
+ *
+ * Objects the platform creates are recorded by the caller right after the answer (`onCreated`, and the own-certificate
+ * helper for `uploadCertificate`).
  */
 import type { APIResponse } from '@playwright/test';
 import type { GuardedApi } from '../regression/guard/types';

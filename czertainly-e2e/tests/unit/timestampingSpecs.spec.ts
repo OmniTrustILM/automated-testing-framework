@@ -1,14 +1,11 @@
 /**
  * timestampingSpecs — static checks over tests/timestamping/*.spec.ts (the `@dev-tests` block).
  *
- * WHAT: the two disruptive specs call describeLocalOnly (the others must not: they run on a shared tier); every test and describe
- * carries devTests(…); a test that reads docker or stops a container is tagged local; a local row skips itself off a proven local
- * stack; no provisioning reader runs at module scope; no password-like literal; every spec that stops a container tags its tests disruptive.
- * WHY: Playwright lists the tests before the setup project writes the summary (a module-scope read would throw or give
- * wrong titles), the docker-bound rows must never run off the local stack, a shared-tier row must not carry a file-wide local skip,
- * and fixed passwords in source would be guessable.
- * HOW: a small string- and template-aware scanner finds the argument span of each call; a reader call must lie inside
- * a test or hook body, or a plain function declaration (helpers).
+ * Checks the two disruptive specs call describeLocalOnly (the others run on a shared tier and must not); every test and
+ * describe carries devTests(...); a test that reads docker or stops a container is tagged local and skips itself off a
+ * proven local stack; a spec stops containers only in tests tagged disruptive and gated by TSA_ALLOW_DISRUPTION; no
+ * provisioning reader runs at module scope
+ * (Playwright lists tests before the setup writes the summary); no password-like literal.
  */
 import { expect, test } from '@playwright/test';
 import * as fs from 'fs';

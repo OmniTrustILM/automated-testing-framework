@@ -1,14 +1,10 @@
 /**
  * certificateFormCreate — the ledger line of a certificate the Add Certificate form created.
  *
- * WHAT: `submitFormCreateRecorded(form, own, kind, { cn, note, ra })` clicks Create on the form (Issue now or Pre-register) and writes the
- *       `created` ledger line from the answer's uuid, or by run-prefixed common name when the answer names no object or never arrives.
- * WHY: the certificate is on the tier from the moment the platform accepts the request, so its line must exist before the spec waits
- *      for the redirect or asserts anything; a timeout after a successful create must not leave a certificate the teardown cannot
- *      name. A page object never writes a ledger line, so the step lives here, next to the other ledger helpers.
- * HOW: `form.submitCreate` returns the answer (wait registered before the click); when it throws, every run-named certificate of the
- *      common name is recorded and the error continues. A refused answer that carries a uuid is recorded by `own.record`, which then
- *      throws. The spec calls `form.waitForCreatedCertificate` afterwards.
+ * `submitFormCreateRecorded` clicks Create (Issue now or Pre-register) and writes the `created` line from the answer's uuid,
+ * or by run-prefixed common name when the answer names no object or never arrives. The certificate is on the tier once the
+ * platform accepts the request, so the line must exist before the spec waits for the redirect or asserts anything.
+ * A page object never writes a ledger line, so the step lives here.
  */
 import type { CertificateAddPage, FormCreate } from '../../../pages/CertificateAddPage';
 import type { CreateAnswer } from '../../../pages/ui/createAnswer';

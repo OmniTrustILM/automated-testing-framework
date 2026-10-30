@@ -1,11 +1,8 @@
 /**
- * protocolHttp — anonymous HTTP to the protocol endpoints.
+ * protocolHttp — anonymous HTTP to the protocol endpoints (ACME, SCEP, CMP) for request-level tests.
  *
- * WHAT: anonymous HTTP to the protocol endpoints (ACME, SCEP, CMP) for request-level tests: GETs to the URL
- *       as given, POSTs only through `allowedRawPost` (protocol paths only), no credentials, no redirects followed, bodies
- *       kept as bytes (SCEP and CMP answer DER).
- * WHY: Request-level protocol tests send no credentials.
- * HOW: GETs to the URL as given, POSTs only through `allowedRawPost` on protocol paths, no redirects, bodies kept as bytes.
+ * Sends no credentials and follows no redirects. GETs go to the URL as given; POSTs only through `allowedRawPost`, on protocol
+ * paths only. Bodies are kept as bytes (SCEP and CMP answer DER).
  */
 import * as crypto from 'crypto';
 import { allowedRawPost } from '../guard/rawPost';

@@ -1,14 +1,13 @@
 /**
- * UserPage — the Users list, the user detail and the Create / Edit / Delete User dialogs.
+ * UserPage — Page Object Model for users (REG-CFG-09).
  *
- * WHAT: the Users list, the user detail and the Create / Edit / Delete User dialogs, with the "Assigned User Roles" table of the
- *       create dialog; actions return the platform's answers and assert no status.
- * WHY: REG-CFG-09 creates a user with the run role (Create sends the user, then its roles), edits with the username locked and
- *      deletes. `createUser` returns the create answer (with the new uuid) as soon as it arrives, and the roles answer later, so
- *      the spec writes the ledger line before it waits for the roles request. Edit and Delete are only called on a user the run
- *      created, which the spec proves first with the live own-object check.
- * HOW: composed like `RolePage` from `entityScreens`; a role is ticked by its row's own checkbox, no forced click; the edit
- *      dialog is used only after its custom-attribute editor holds the stored values.
+ * Encapsulates:
+ *   - the Users list and the user detail
+ *   - the Create / Edit / Delete User dialogs
+ *
+ * Actions return the platform's answers; the spec asserts. `createUser` returns the create answer as soon as it arrives,
+ * so the spec writes the ledger line before it waits for the roles request. Edit and Delete are used only on users this
+ * run created.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { Logger } from '../utils/Logger';

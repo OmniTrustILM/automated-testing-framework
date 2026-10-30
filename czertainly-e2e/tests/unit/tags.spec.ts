@@ -2,11 +2,10 @@
  * tags — the tag builders and `testMeta()`: every tag spelled in utils/regression/tags.ts, the tag rules enforced when a
  * test's details are built, the `rule` annotations and the @slow tag as the AST reader sees it.
  *
- * WHAT: spells every tag with its builder, refuses malformed references, builds the Playwright details of one ledger
- * row (tags and annotations) and checks that `testBlocks` reads the same id and tags back.
- * WHY: the run filters, the ledger and the reports are keyed by these tags; a misspelled or missing tag silently drops
- * a test from a filter.
- * HOW: pure unit cases over `tags` / `testMeta`; the spec sources are inline strings.
+ * Spells every tag with its builder, refuses malformed references, builds the Playwright details of one ledger row (tags
+ * and annotations) and checks that `testBlocks` reads the same id and tags back. The run filters, the ledger and the
+ * reports are keyed by these tags, so a misspelled or missing tag silently drops a test from a filter. Pure unit cases;
+ * the spec sources are inline strings.
  */
 import { test, expect } from '@playwright/test';
 import { testBlocks } from '../../utils/regression/specLint/parseSpec';

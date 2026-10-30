@@ -1,25 +1,12 @@
 /**
- * readRequest — turns what a caller handed to the guard into one snapshot of plain data.
+ * readRequest — turns what a caller handed to the guard into one snapshot of plain data (first half of every request).
  *
- * WHAT: the first half of every guarded request. It reads each input exactly once (the options, the URL string, the
- * method, each `params` entry, each header, the body) in steps — readOptions, readMethodAndUrl,
- * readIdentityOverride, readParams, readQuery, readHeaders, readBody, readForwarded and readRedirects — and refuses anything the
- * guard does not forward. The rules it applies, for every method (a refused request is never sent):
- *   a. Options: only `data`, `params`, `headers`, `timeout`, `failOnStatusCode`, `ignoreHTTPSErrors` (and `method` for
- *      `fetch`; `identityOverride` is the guard's own switch and is never forwarded).
- *   b. Headers: `content-type` (`application/json`; protocol media types on a protocol POST; `text/plain` with an
- *      optional `charset=utf-8` on a non-GET with a string or Buffer body and no identity header; the read-POST types of
- *      headers.ts), `accept`, `if-*`. Identity headers only with `identityOverride: true` (401 / 403 negatives). A
- *      method-override header and everything else is refused.
- *   c. URL: written as `/...` or `<scheme>://`, printable ASCII only, resolving exactly like Playwright's
- *      `new URL(url, BASE_URL)` to http(s) without user info on BASE_URL's origin.
- *   d. A `_method` query parameter is refused, in the URL and in `params`.
- * WHY: the guard judges what is SENT and sends what it judged. A getter, `toJSON`, a Proxy or a stateful `toString` read
- * twice could show the judge one thing and Playwright another, so nothing is read twice and nothing but the snapshot
- * goes on to the checks and the wire.
- * HOW: each step is a small function that either returns plain data or calls `refuse`. The refusal label has three
- * stages — before the URL is known, after the method is known, and once the path is known (`guardedApi <METHOD> <path>`)
- * — each built once by `refuserFor`. The order of the steps is the order of the refusals.
+ * Each input is read exactly once and anything the guard does not forward is refused, so the judge and Playwright cannot be
+ * shown different things. A refused request is never sent. Rules for every method:
+ *   a. only known options; `identityOverride` is the guard's own switch and is never forwarded
+ *   b. only known headers; identity headers only with `identityOverride: true` (401 / 403 negatives)
+ *   c. the URL must resolve to http(s) on BASE_URL's origin, without user info
+ *   d. a `_method` query parameter is refused
  */
 import { apiPathOfPathname, hasMethodParam, resolveSentUrl, SentUrl } from './urls';
 import { postRouteKind } from './allowLists';

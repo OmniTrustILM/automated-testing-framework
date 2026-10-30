@@ -1,12 +1,10 @@
 /**
- * KeyOperationsDialog — the Sign Data and Verify Signature dialogs of a key item.
+ * KeyOperationsDialog — the Sign Data and Verify Signature dialogs of a key item (REG-KEY-06).
  *
- * WHAT: the Sign Data and Verify Signature dialogs of a key item.
- * WHY: REG-KEY-06 signs with the private item and verifies with the public one; the UI answers with downloads,
- *       returned as they are — the spec reads and judges them, nothing is written to disk here.
- * HOW: opened from the item toolbar buttons the key page hands in; the data textarea (`data__fileUpload__fileContent`)
- *       and the signature file input (`signature__fileUpload__file`) by their ids; any still-empty select gets an option
- *       (the signature algorithm, when the connector asks).
+ * REG-KEY-06 signs with the private item and verifies with the public one. The UI answers with downloads, returned as
+ * they are: the spec reads and judges them, and nothing is written to disk here. The dialogs are opened from the item
+ * toolbar buttons the key page hands in. Any still-empty select gets an option (the signature algorithm, when the
+ * connector asks).
  */
 import { Download, Locator, Page } from '@playwright/test';
 import { chooseOption } from './ui/select';

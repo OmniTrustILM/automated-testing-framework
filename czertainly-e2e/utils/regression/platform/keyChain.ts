@@ -1,12 +1,9 @@
 /**
  * keyChain — the run's token, enabled profile and key, created once and reused.
  *
- * WHAT: Provides ensureKeyChain, which returns the run's own token, enabled token profile and key (or a named skip reason when the tier has
- * no cryptography connector of the wanted version).
- * WHY: Many specs need a working key and must not each create a token and profile; one chain per run keeps the tier clean and the ledger
- * short.
- * HOW: Idempotent through the run state (token, tokenProfile, key); a second call with another family or suffix adds one more key on the
- * same token and profile.
+ * `ensureKeyChain` returns the run's own token, enabled token profile and key, or a named skip reason when the tier has no
+ * cryptography connector of the wanted version. It is idempotent through the run state (token, tokenProfile, key); a second
+ * call with another family or suffix adds one more key on the same token and profile.
  */
 
 import { Family, PROFILE_USAGES, Usage } from './cryptoAlgorithmCases';

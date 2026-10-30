@@ -1,11 +1,8 @@
 /**
  * text — small string helpers and the one unique suffix.
  *
- * WHAT: small string helpers every module used to carry its own copy of: regex escaping, whitespace collapsing,
- *       base64url, and the one unique suffix (`uniqueSuffix`) that makes an object name unique per run.
- *       Pure, no I/O.
- * WHY: Every module used to carry its own copy of these helpers, and four generators of a unique name part.
- * HOW: Pure functions; `uniqueSuffix` is nine base-36 characters from a counter, random digits and the clock.
+ * Provides regex escaping, whitespace collapsing, base64url, and `uniqueSuffix`, which makes an object name unique per run (nine
+ * base-36 characters from a counter, random digits and the clock). Pure, no I/O.
  */
 import { randomInt } from 'crypto';
 

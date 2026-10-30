@@ -1,16 +1,11 @@
 /**
  * registry — the developers' test blocks (`@dev-tests`) as data, and the Playwright projects of one block.
  *
- * WHAT: one entry per block (timestamping, key-onboarding): its folder, its setup and teardown files, the name of its
- * JUnit report (`dev-<block>`) and its timeouts. `devBlockProjects()` turns an entry into the four projects of a block
- * run: `<block>-proof` → `<block>-setup` → `<block>` → `<block>-teardown`.
- * WHY: a block reports on its own (one config, one command, one JUnit file per block) and is not part of the regression
- * or API reports. A block run has no snapshot, no run-setup and no non-interference check; the only thing it takes from
- * those is the local-backend proof, which the `-proof` project makes first.
- * HOW: pure functions (a unit test checks them without loading a config). The tier rules are folded in as in every other
- * config (utils/regression/projectFilters.ts): on a shared tier the `@local` invert leaves a block's `@local` rows out (all four
- * projects of `key-onboarding` stay empty; `timestamping` keeps its rows for a shared tier).
- * `<block>-teardown` is the teardown project of `<block>-setup`, so it runs after the specs, failed or not.
+ * One entry per block (timestamping, key-onboarding): its folder, setup and teardown files, JUnit report name and timeouts.
+ * `devBlockProjects()` turns an entry into four projects: `<block>-proof` → `<block>-setup` → `<block>` → `<block>-teardown`.
+ *
+ * A block reports on its own and has no snapshot, run-setup or non-interference check; it takes only the local-backend proof.
+ * On a shared tier the `@local` rows are left out: all four projects of `key-onboarding` stay empty.
  */
 import type { PlaywrightTestProject } from '@playwright/test';
 import { withTierFilters } from '../regression/projectFilters';

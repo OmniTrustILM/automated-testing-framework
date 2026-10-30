@@ -1,13 +1,12 @@
 /**
- * RaProfilePage — the RA profile list and detail.
+ * RaProfilePage — Page Object Model for RA profiles (REG-CFG-03, 05; REG-CERT-68).
  *
- * WHAT: the RA profile list, its Create dialog (returned as `CreateRaProfileDialog`) and the detail with its status row, its
- *       tabs and the Available Protocols widget (activate a protocol with a profile, read whether a row is active).
- * WHY: REG-CFG-03 creates an RA profile through the dialog, enables it and opens its tabs; REG-CFG-05 activates ACME on an own RA
- *      profile and checks the row and the refusal toast of a name with a space; REG-CERT-68 proves the form validation. A method
- *      that changes an RA profile is only called on one the run created, which the spec proves first.
- * HOW: tabs by URL or by their name; protocol rows by data id inside the widget, each with a status badge and one progress
- *      button; the refusal is read from the toast; an `assert…` method never navigates and never clicks a tab.
+ * Encapsulates:
+ *   - the RA profile list, its Create dialog (`CreateRaProfileDialog`) and the detail with its tabs
+ *   - the Available Protocols widget: activate a protocol with a profile, read whether a row is active
+ *
+ * A method that changes an RA profile is called only on one the run created, which the spec proves first. An `assert…`
+ * method never navigates and never clicks a tab.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { Logger } from '../utils/Logger';
@@ -44,7 +43,7 @@ export class RaProfilePage {
     }
 
     async goToList(): Promise<void> {
-        await this.page.goto('administrator/#/raprofiles');
+        await this.page.goto('/administrator/#/raprofiles');
         await expect(this.main).toBeVisible();
     }
 
@@ -61,7 +60,7 @@ export class RaProfilePage {
     async goToDetail(authorityUuid: string, raProfileUuid: string, tab?: RaProfileTab): Promise<void> {
         const query = tab ? `?tab=${tab.toLowerCase()}` : '';
         logger.info(`Opening RA profile ${raProfileUuid}${tab ? ` (${tab})` : ''}`);
-        await this.page.goto(`administrator/#/raprofiles/detail/${authorityUuid}/${raProfileUuid}${query}`);
+        await this.page.goto(`/administrator/#/raprofiles/detail/${authorityUuid}/${raProfileUuid}${query}`);
         await expect(this.main).toBeVisible();
     }
 

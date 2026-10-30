@@ -1,21 +1,10 @@
 /**
- * values — values of a DTO member and the row-level filter predicates.
+ * values — values of a DTO member and the row-level filter predicates of the listing oracles.
  *
- * WHAT: Values of a DTO member and the row-level filter predicates of the listing oracles: scalar extraction, instants and
- *       datetime literals copied from the server's own text, `satisfiesFilter` (only for fields whose DTO mapping is known),
- *       the expected row set of an exact condition, and the sampled values a field oracle probes with.
- * WHY: Every oracle must read a field's values and evaluate a filter the same way.
- * HOW: Scalar extraction, instants and datetime literals copied from the server's text, `satisfiesFilter` (the one home of the filter
- * semantics), the expected row set of an exact condition and the sampled probe values.
- *
- *       Ordering (GREATER, GREATER_OR_EQUAL, LESSER, LESSER_OR_EQUAL) and the COUNT_* conditions read both sides as NUMBERS,
- *       also when a value is a numeric-looking string: "999" is less than "1000". Core publishes the ordering conditions only
- *       for number and datetime fields (the field's `shape` here: `number`, `datetime`), and compares numbers as numbers, so
- *       the numeric reading is the one that matches the server; a text order would put "999" after "1000". Datetimes are
- *       compared by the callers as instants (`instantMs`), never through this function as text. A value that is not a
- *       number never satisfies an ordering; a wanted value that is not a number is refused ("does not model").
- *       A condition that takes one value (everything except EQUALS, NOT_EQUALS, EMPTY and NOT_EMPTY) given several wanted
- *       values is refused the same way, instead of silently using the first.
+ * `satisfiesFilter` is the one home of the filter semantics, only for fields whose DTO mapping is known.
+ * Ordering conditions (GREATER ... LESSER_OR_EQUAL) and COUNT_* read both sides as NUMBERS, also for a numeric-looking string
+ * ("999" is less than "1000"), because core compares them that way. A value that is not a number never satisfies an ordering,
+ * and a condition that takes one value is refused when given several.
  */
 import type { CatalogueField } from '../searchApi';
 import type { ListRow } from '../listInvariants';

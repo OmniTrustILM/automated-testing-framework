@@ -1,13 +1,12 @@
 /**
- * FilterWidget — the list filter widget.
+ * FilterWidget — the list filter widget (REG-CERT-40 … 43, REG-WFL-01).
  *
- * WHAT: the list filter widget: Source / Field / Condition selects, the value control of the chosen condition
- *       (text, duration, list, boolean or the date picker), Add / Update and the badges.
- * WHY: REG-CERT-40 … 43 and REG-WFL-01 check what the widget offers, what it sends and what it shows; every action
- *       that changes the list returns the list request it caused (observed, never mocked); labels and badge texts
- *       are computed in `fieldLabels.ts`.
- * HOW: selects by id through the Select helper; the date picker is a portal found by its calendar (no test id yet,
- *       FE test-id request); the host page passes its "list loaded" wait and its list request matcher.
+ * Encapsulates:
+ *   - the Source / Field / Condition selects and the value control of the chosen condition
+ *   - Add / Update and the badges
+ *
+ * Every action that changes the list returns the list request it caused (observed, never mocked). The date picker is a
+ * portal found by its calendar (no test id yet; FE test-id request). The host page passes its "list loaded" wait.
  */
 import { expect, Locator, Page, Request } from '@playwright/test';
 import { Logger } from '../utils/Logger';

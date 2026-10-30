@@ -1,19 +1,10 @@
 /**
- * settings — the one typed reader of the environment variables the regression and API suites read.
+ * settings — the one typed reader of the REG_* and API_* settings (see .env.example).
  *
- * WHAT: `settings(env)` returns an object with one lazily evaluated member per variable (`settings(env).adcsConnector`,
- * `.composeProject`, ...). Each default is written here once; a member returns the raw text, a trimmed text or the default,
- * exactly as the module that used to read the variable did, and the modules keep their `env` seam (`env = process.env`)
- * and pass it in. Where two spellings of one variable exist (`LOCAL_COMPOSE_*` and `REG_LOCAL_COMPOSE_*`), the member reads
- * both and the first one set wins; `LOCAL_COMPOSE_*` is the documented spelling (the first of the two), `REG_LOCAL_COMPOSE_*` the alias.
- * WHY: a default written in three modules drifts, and a variable one module reads under a name another module ignores
- * (the container proof read only `REG_LOCAL_COMPOSE_PROJECT` while the stack helpers read both) makes a documented
- * setting work in one place only. `tests/unit/settings.spec.ts` diffs the names this file reads against `.env.example`, so
- * a new variable without documentation fails the unit run.
- * HOW: members are getters over `env`, so nothing is read until it is used and a test's injected `env` is honoured. The
- * variable names are the Testkube contract and do not change. The internal pins (`INTERNAL_PINS`) are written by the run
- * (`prepareRun`, the local proof), never set by a user. `utils/env.ts` (the smoke reader) is not touched. The switch
- * parsers (`parseFlag`) stay with their callers: a member returns the raw text of a switch.
+ * `settings(env)` returns an object with one lazily read member per variable; each default is written here once, and a
+ * test's injected `env` is honoured. The variable names are the Testkube contract and do not change. The internal pins are
+ * written by the run, never by a user. `tests/unit/settings.spec.ts` diffs the names read here against `.env.example`,
+ * so an undocumented variable fails the unit run.
  */
 
 /** The unset default of each variable that has one, written once. */

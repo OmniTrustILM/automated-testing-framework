@@ -1,16 +1,13 @@
 /**
- * ledger — the created-objects ledger of the REG-* and API-* suites and the references it hands out.
+ * ledger — the created-objects ledger of the REG-* and API-* suites (<REG_STATE_DIR>/created-objects.jsonl).
  *
- * - Ledger (<REG_STATE_DIR>/created-objects.jsonl): one `created` line per object the run made, written right after the
- *   create call and before any assertion, and one `deleted` line when the run-end teardown removed it. The ledger is
- *   the only proof of ownership (`ledger/ownership.ts`): a helper that changes or deletes an object needs its `created` line
- *   of this run. Every line carries `tier`, a hash of BASE_URL's host: the teardown refuses lines recorded
- *   on another tier. Objects the platform made on the run's behalf (a `certKey_<CN>` key, a certificate a discovery
- *   onboarded as new) are `derived` lines with `createdAfter`, taken from the SERVER's clock (`createdAfterMarker`: the
- *   Date header of the create response, or a server timestamp, minus a margin); they are deleted only when
- *   the platform's creation time is not earlier.
- * - Ref kinds: `recordCreated` returns an `OwnRef`; the RA profile / authority of REG_RA_PROFILE_NAME (local stack) are `CreateOnlyRef`s.
- *   Mutation helpers accept only `OwnRef` (a compile-time aid; the runtime guard `assertOwnLive` decides).
+ *   - one `created` line per object the run made, written right after the create call and before any assertion
+ *   - one `deleted` line when the run-end teardown removed it
+ *   - Every line carries a tier hash; the teardown refuses lines recorded on another tier.
+ *
+ * The ledger is the only proof of ownership (ledger/ownership.ts). Objects the platform made for the run are `derived` lines
+ * with `createdAfter` from the SERVER's clock; they are deleted only when the platform's creation time is not earlier.
+ * Mutation helpers accept only an `OwnRef`.
  */
 import * as crypto from 'crypto';
 import * as fs from 'fs';

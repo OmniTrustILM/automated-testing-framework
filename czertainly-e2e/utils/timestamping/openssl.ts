@@ -1,9 +1,9 @@
 /**
  * openssl — the OpenSSL wrapper of the timestamping block (query building, reply parsing, token verification).
  *
- * WHAT: the OpenSSL wrapper of the timestamping block (query building, reply parsing, token verification).
- * WHY: the specs judge a token with the same tool a client uses; ported unchanged from the developers' suite (automated-testing-framework#41).
- * HOW: every function shells out to `openssl` with OPENSSL_CONF=/dev/null and works on files under a directory the caller passes (the test's output dir).
+ * The specs judge a token with the same tool a client uses (ported from the developers' suite, automated-testing-framework#41).
+ * Every function shells out to `openssl` with OPENSSL_CONF=/dev/null and works on files under a directory the caller
+ * passes (the test's output dir).
  */
 import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';

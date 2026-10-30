@@ -1,12 +1,10 @@
 /**
  * upgradeRunner — the local upgrade test.
  *
- * WHAT: the local upgrade test: seed on the old core image, snapshot, upgrade on the same database, snapshot
- *       again and diff. The snapshot diff and the schema-history checks are pure; the live half reads through the API and
- *       `PlatformStack.psql`. The upgrade is one way: an older target than the source image is refused.
- * WHY: An upgrade must keep every object and every migration drift must show.
- * HOW: Seed on the old image, snapshot, upgrade on the same database, snapshot again and diff; the diff and schema-history checks are pure
- * and the upgrade is one way.
+ * Seeds on the old core image, takes a snapshot, upgrades on the same database, takes a snapshot again and diffs. An upgrade
+ * must keep every object, and every migration drift must show. The snapshot diff and the schema-history checks are pure; the
+ * live half reads through the API and `PlatformStack.psql`. The upgrade is one way: a target older than the source image is
+ * refused.
  */
 import type { APIRequestContext } from '@playwright/test';
 import { apiJson } from '../apiReads';

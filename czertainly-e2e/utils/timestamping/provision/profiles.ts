@@ -1,18 +1,11 @@
 /**
- * profiles — the vault profile, the time-quality configuration, the mapped user and its role, and per set the TSP
- * profile, the signing profile, their link, the Basic credential and the role's object-scoped grants
- * (timestamping-setup.sh steps 5, 8–10 and 17–21).
+ * profiles — the vault profile, the time-quality configuration, the mapped user and its role, and per set the TSP profile,
+ * the signing profile, their link, the Basic credential and the role's grants (timestamping-setup.sh steps 5, 8-10 and 17-21).
  *
- * WHAT: each create sends the script's body under a run-prefixed name and is recorded right after it answered:
- * `vaultProfiles` ← vault, `timeQualityConfigurations`, `users`, `roles`, `tspProfiles` ← vaultProfile,
- * `signingProfiles` ← tspProfile + certificate + token (+ timeQualityConfiguration on a qualified set).
- * WHY: the script reused a fixed user `f.jednicka` with a fixed password and merged grants into a fixed role; the block
- * makes a password-less user, a role and generated Basic-credential passwords per run, so nothing outside the run is read
- * or changed and no password is a literal.
- * HOW: a `tspProfiles` line cannot name its signing profile: the TSP profile is created first (step 17) and the signing
- * profile only then (step 18); the pair is recorded on the `signingProfiles` line (`parents.tspProfile`) and is in the
- * TSP profile's live detail (`defaultSigningProfile`). Basic credentials are not recorded: core deletes them with their
- * TSP profile (TspProfile.basicCredentials cascade + orphanRemoval; their vault secrets via deleteSecretsForProfile).
+ * Each create sends the script's body under a run-prefixed name and is recorded right after it answered. The user is
+ * password-less and the Basic-credential passwords are generated per run, so nothing outside the run is read or changed.
+ * A `tspProfiles` line cannot name its signing profile (created second); the pair is on the `signingProfiles` line. Basic
+ * credentials are not recorded: core deletes them with their TSP profile.
  */
 import { OwnRef } from '../../regression/ledger/ledger';
 import { basicPassword } from '../secrets';

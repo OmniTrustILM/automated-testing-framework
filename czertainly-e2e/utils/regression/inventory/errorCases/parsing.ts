@@ -1,11 +1,9 @@
 /**
  * parsing — the request-parsing rows of the error-contract spec.
  *
- * WHAT: The request-parsing rows of the error-contract spec: the JSON parsing battery, the content-type and Accept rows,
- *       TRACE, and the wrong-method rows (with the ones the guard refuses before sending).
- * WHY: Malformed bodies, content types and methods are where a framework migration changes behaviour first.
- * HOW: Data rows for the JSON parsing battery, content-type and Accept, TRACE and wrong-method cases, marking the ones the guard refuses
- * before sending.
+ * Data rows for the JSON parsing battery, the content-type and Accept rows, TRACE, and the wrong-method rows (marking
+ * the ones the guard refuses before sending). Malformed bodies, content types and methods are where a framework
+ * migration changes behaviour first.
  */
 import { ERROR_MESSAGES, searchBody } from './cases';
 import { Answer, Expectation, JSON_TYPE, findLeaks, parsed, preview, shapeProblems } from './checks';

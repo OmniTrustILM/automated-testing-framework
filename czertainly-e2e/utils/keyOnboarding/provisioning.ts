@@ -1,12 +1,12 @@
 /**
- * provisioning — the specs' view of the run's provisioning summary (replaces the source's env.ts reader).
+ * provisioning — the specs' view of the run's provisioning summary.
  *
- * WHAT: reads the summary the `key-onboarding-setup` project wrote (`summaryFile()`) and hands the ready provisioning to
- * the specs; names the ledger `spec` of the objects a spec creates.
- * WHY: Playwright lists tests BEFORE the setup project runs, so the summary is read lazily INSIDE tests and hooks, and a
- * test skips with the reason when the tier is unavailable. Module-scope reads are forbidden
- * (tests/unit/keyOnboardingSpecs.spec.ts).
- * HOW: `readSummary()` reads and caches a ready summary; `provisioningOrSkip()` skips the running test with the setup's reason.
+ * Reads the summary the `key-onboarding-setup` project wrote (`summaryFile()`) and hands the ready provisioning to the
+ * specs; names the ledger `spec` of the objects a spec creates. `readSummary()` reads and caches a ready summary;
+ * `provisioningOrSkip()` skips the running test with the setup's reason.
+ *
+ * Playwright lists tests BEFORE the setup project runs, so the summary is read lazily INSIDE tests and hooks.
+ * Module-scope reads are forbidden (tests/unit/keyOnboardingSpecs.spec.ts).
  */
 import { test } from '@playwright/test';
 import * as fs from 'fs';

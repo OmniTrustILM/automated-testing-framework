@@ -1,10 +1,8 @@
 /**
  * uploads — the upload rows of the error-contract spec.
  *
- * WHAT: The upload rows of the error-contract spec: the size limit of an upload, the upload routes, the placeholder entry
- *       and garbage bytes, and the size rows with their expected refusals.
- * WHY: Upload size limits and placeholder entries are refused by the platform with exact texts that must stay stable.
- * HOW: Data rows for the size limit, the upload routes, the placeholder entry and garbage bytes, with the expected refusals.
+ * Data rows for the upload size limit, the upload routes, the placeholder entry and garbage bytes, with the expected
+ * refusals. The platform refuses these with exact texts that must stay stable.
  */
 import { ERROR_MESSAGES } from './cases';
 import { Answer, Expectation, checkResponse } from './checks';

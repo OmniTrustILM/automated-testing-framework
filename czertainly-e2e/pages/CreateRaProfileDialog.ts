@@ -1,13 +1,9 @@
 /**
- * CreateRaProfileDialog — the "Create RA Profile" dialog.
+ * CreateRaProfileDialog — the "Create RA Profile" dialog (REG-CFG-03, REG-CERT-68).
  *
- * WHAT: the "Create RA Profile" dialog: name, authority, the authority's connector attributes (the certificate template of a
- *       CA that offers one), the required custom attributes and Create.
- * WHY: REG-CFG-03 creates through it and gets the create answer back before the page redirects; REG-CERT-68 proves client-side validation:
- *      Create stays disabled while a required attribute is empty, an input shows the message once left, a refusal that reaches core shows
- *      the 422 text in a toast. `submitIfEnabled` returns the response so an accidental create is recorded first.
- * HOW: opened by `RaProfilePage.openCreateDialog`; fields by test id, required attributes by the label that ends in an
- *      asterisk; the template select by its id or, when the tier renders no id, by its label.
+ * REG-CFG-03 gets the create answer back before the page redirects. REG-CERT-68 proves client-side validation: Create
+ * stays disabled while a required attribute is empty, an input shows its message once left, and a refusal from core shows
+ * the 422 text in a toast. `submitIfEnabled` returns the response, so an accidental create is recorded first.
  */
 import { expect, Locator, Page, Response } from '@playwright/test';
 import { Logger } from '../utils/Logger';

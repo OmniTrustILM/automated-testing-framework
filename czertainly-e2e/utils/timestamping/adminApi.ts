@@ -1,9 +1,8 @@
 /**
  * adminApi — the admin API of the timestamping specs.
  *
- * WHAT: `AdminApi` (raw / get / post / patch, list helpers, trust files) and the response types the specs read.
- * WHY: the specs were written against this class; keeping its method names keeps their bodies unchanged.
- * HOW: ported from the developers' suite; it wraps `GuardedApi` instead of a raw context, and chain files are written
+ * `AdminApi` (raw / get / post / patch, list helpers, trust files) and the response types the specs read. Ported from
+ * the developers' suite with its method names; it wraps `GuardedApi` instead of a raw context. Chain files are written
  * per test, so two tests never write the same file.
  */
 import type { APIResponse } from '@playwright/test';

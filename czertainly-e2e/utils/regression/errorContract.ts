@@ -1,19 +1,14 @@
 /**
- * errorContract — the shape of an ILM core error body and the one refusal check.
+ * errorContract — the shape of an ILM core error body and the one refusal check (REG-USE-07.1, REG-DEP-01.c, API-
+ * GEN-32; the full battery is API-GEN-01).
  *
- * WHAT: the shape of an ILM core error body, as one pure reader (REG-USE-07.1, REG-DEP-01.c, the
- *       API-GEN-32 error sentinel; the full battery is API-GEN-01).
+ * A 422 is a JSON array of non-empty strings; every other core error (400, 404, 409, 500) is an object with exactly
+ * one string
+ * member `message`. An API negative asserts the status AND this shape, never the status alone.
  *
- *       The rule (the error contract of the inventory API, ExceptionHandlingAdvice + ErrorMessageDto, unchanged by the Spring 7
- *       migration): a 422 is a JSON ARRAY of non-empty strings; every other core error (400, 404, 409, 500) is an OBJECT
- *       with exactly one string member `message`. An API negative asserts the status AND this shape (spec-authoring hard
- *       rule 8), never the status alone.
- * WHY: An API negative that asserts only the status hides a wrong body; the error contract is one rule and belongs in one reader.
- * HOW: `errorShape` classifies a raw body, `expect422Messages` / `expectMessageObject` / `expectRefused` assert it, and
- *       `checkRefusedMethod` tells core's answer to a refused method from an ingress answer. `expectRefused` is as strict as the strictest
- *       check the specs wrote by hand: JSON content type, the shape of the status, exactly one message and exactly the text. The looser
- *       readings are explicit options (`among`, `prefix`, `contentTypeNotChecked` with its reason). `INTERNAL_LEAK_WORDS` is the one list
- *       of what a body must never carry (a stack frame, an exception class, an SQL state, a framework package); `internalLeaks` reads it.
+ * `expectRefused` is strict: JSON content type, the shape, one message, exactly the text; looser readings are explicit
+ * options.
+ * `internalLeaks` finds what a body must never carry (a stack frame, an exception class, an SQL state).
  */
 
 import { expect } from '@playwright/test';

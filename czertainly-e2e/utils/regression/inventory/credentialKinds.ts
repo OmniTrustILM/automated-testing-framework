@@ -1,16 +1,12 @@
 /**
  * credentialKinds — own credentials of the kinds ApiKey and SoftKeyStore, built from the connector's live attribute definitions.
  *
- * WHAT: finds the connected v1 credential connector that offers a kind and reads that kind's attribute definitions; builds the request
- *       attributes of an ApiKey credential (every secret attribute gets a generated value, every other required one a placeholder or its
- *       first listed option) and of a SoftKeyStore credential (the PKCS#12 keystore, its password and its type); drops one attribute to
- *       make a request that must be refused; creates an own credential of the kind.
- * WHY: the Basic kind has helpers and tests; the other two kinds of the credential provider had none, and a kind that cannot be created
- *      or loses its secret masking is a defect the Basic rows would not show.
- * HOW: attribute names and uuids come from `GET /v1/connectors/{uuid}/attributes/credentialProvider/{kind}`, never from constants of the
- *      suite beyond the SoftKeyStore attribute names the connector documents. Secrets and the keystore are generated per call and are in
- *      no log. The create is recorded in the ledger before any assertion (`createOwn`); a refused create is a probe whose accepted answer is
- *      recorded (`probeCredential`). Pure builders return `{ problem }` instead of throwing, so a spec can skip with the reason before it writes.
+ * Finds the connected v1 credential connector that offers a kind and reads its attribute definitions; names and uuids come
+ * from there, not from constants. Also builds a request with one attribute dropped, which must be refused.
+ *
+ * Secrets and the keystore are generated per call and are in no log. The create is recorded in the ledger before any
+ * assertion; a create that should be refused goes through `probeCredential` of credentialsApi.ts, which records an accepted
+ * one too. Builders return `{ problem }` instead of throwing, so a spec can skip with the reason before it writes.
  */
 import type { APIRequestContext } from '@playwright/test';
 import { fileAttr, secretAttr, stringAttr, type AttributeRequest } from '../../attributeTypes';

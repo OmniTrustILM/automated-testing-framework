@@ -1,11 +1,10 @@
 /**
  * catalogueContract — the searchable-fields catalogue contract of a listing.
  *
- * WHAT: the condition kinds, the absolute condition set of every field type, the catalogue JSON schema, the `FIELD_RULES`
- *       table and `catalogueProblems` (shape, condition sets, unique identifiers, non-empty labels, sortable / displayable
- *       consistency, the known fields of the listing).
- * WHY: one new catalogue rule should be one new table entry, not an edit inside a sixty-line function whose branches share local state.
- * HOW: three steps, all pure: the schema check, the group and field rules in table order, and the known-field diff.
+ * Provides the condition kinds, the absolute condition set of every field type, the catalogue JSON schema, the
+ * `FIELD_RULES` table and `catalogueProblems` (shape, condition sets, unique identifiers, non-empty labels, sortable /
+ * displayable consistency, the known fields of the listing). All pure: the schema check, the group and field rules in
+ * table order, and the known-field diff. A new catalogue rule is one new table entry.
  */
 import Ajv from 'ajv';
 import { ALL_CONDITIONS, CONDITION_KINDS, CONDITION_SETS, sameSet } from '../searchApi';

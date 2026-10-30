@@ -1,13 +1,13 @@
 /**
- * CredentialPage — the Credentials list and the Create Credential dialog.
+ * CredentialPage — Page Object Model for credentials (REG-CFG-01).
  *
- * WHAT: the Credentials list, the Create Credential dialog for a Basic credential (name, provider connector, kind, user name,
- *       password, required custom attributes) and the credential detail page.
- * WHY: REG-CFG-01 creates a Basic credential in the form, proves that the password is shown nowhere and that the same name is
- *      refused the second time; the create answer goes back to the spec before the dialog closes so that the credential is on
- *      the ledger even when the list never refreshes.
- * HOW: the dialog by its accessible name; the selects through their trigger buttons; the user name and password inputs by the
- *      suffix of their id (`.username`, `.password`), because the connector builds the form; a refusal is read from the toast.
+ * Encapsulates:
+ *   - the Credentials list and the credential detail
+ *   - the Create Credential dialog for a Basic credential
+ *
+ * The create answer goes back to the spec before the dialog closes, so the credential is on the ledger even when the list
+ * never refreshes. The user name and password inputs are found by the suffix of their id, because the connector builds
+ * the form.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { FormDialog } from './FormDialog';
@@ -38,13 +38,13 @@ export class CredentialPage {
     }
 
     async goToList(): Promise<void> {
-        await this.page.goto('administrator/#/credentials');
+        await this.page.goto('/administrator/#/credentials');
         await expect(this.main).toBeVisible();
     }
 
     /** The detail page of one credential. */
     async goToDetail(uuid: string): Promise<void> {
-        await this.page.goto(`administrator/#/credentials/detail/${uuid}`);
+        await this.page.goto(`/administrator/#/credentials/detail/${uuid}`);
         await expect(this.main).toBeVisible();
     }
 

@@ -1,14 +1,11 @@
 /**
- * createAnswer — what a create form's request answered, read from the RESPONSE before the page does anything else.
+ * createAnswer — what a create form's request answered, read from the response before the page does anything else.
  *
- * WHAT: `createAnswerFrom` registers the wait for a create request's answer, runs the click and returns `{ status, uuid,
- *       text, request, body, answer }`; `createAnswerOf` reads the same from a response already in hand. The scope-based
- *       `submitCreate` and the later wait for the redirect are in `detailRoute.ts`.
- * WHY: a create that succeeded must reach the run ledger even when the redirect never comes (a slow tier, a changed route):
- *       the object is on a shared tier, and the teardown can only remove what the ledger names. So the form's answer, not the
- *       URL, is the first thing a spec sees; the spec writes the ledger line from it and only then waits for the route.
- * HOW: the answer's JSON `uuid` is the new object's id (`undefined` when the platform refused or sent none); a page object
- *       returns this from its `submit…` method and never writes a ledger line itself (the README rule).
+ * Provides `createAnswerFrom` (runs the click and returns status, uuid, body and more) and `createAnswerOf` (the same
+ * from a response in hand).
+ *
+ * A create that succeeded must reach the run ledger even when the redirect never comes, because the teardown removes
+ * only what the ledger names. A page object returns this from `submit…` and never writes a ledger line itself.
  */
 import type { Page, Request, Response } from '@playwright/test';
 import type { ApiAnswer } from '../../utils/regression/apiReads';

@@ -1,11 +1,8 @@
 /**
- * seedRows — runs the filter row tables against a tier.
+ * seedRows — runs the filter row tables (searchTables.ts) against a tier.
  *
- * WHAT: Runs the filter row tables (searchTables.ts) against a tier through the guarded `api`, over the run's own full
- *       certificate seed with the Common Name prefix filter: the exact row-set checks of the certificate search specs.
- * WHY: The certificate search specs need exact row-set checks over the run's own seed.
- * HOW: Each row of `searchTables.ts` is sent through the guarded `api` with the Common Name prefix filter and compared with its expected
- * ids.
+ * Each row is sent through the guarded `api` over the run's own full certificate seed with the Common Name prefix
+ * filter, and compared with its expected ids: the exact row-set checks of the certificate search specs.
  */
 import type { GuardedApi } from '../guard/types';
 import { Filter, readJsonOk, rowsOf, searchRaw, uuidSet } from './searchApi';

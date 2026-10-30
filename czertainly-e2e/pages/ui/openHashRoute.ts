@@ -1,10 +1,9 @@
 /**
  * openHashRoute — open a hash route of the admin UI, loading it again when the page is already on it.
  *
- * WHAT: opens `administrator/#/<route>`; when the page is already on exactly that hash, reloads the page instead.
- * WHY: a navigation to the hash the page is on is no document load and sends no request, so a wait for the API answer of the
- *      load would wait for ever. A reload makes the page load its data again and keeps that wait strict.
- * HOW: compares the hash of the current URL with the target; `goto` for a different one, `reload` for the same one.
+ * Opens `/administrator/#/<route>`; when the page is already on exactly that hash, it reloads instead. A navigation to
+ * the hash the page is on is no document load and sends no request, so a wait for the API answer of the load would
+ * wait for ever.
  */
 import type { Page } from '@playwright/test';
 
@@ -20,5 +19,5 @@ export async function openHashRoute(page: Page, route: string): Promise<void> {
         await page.reload();
         return;
     }
-    await page.goto(`administrator/${hash}`);
+    await page.goto(`/administrator/${hash}`);
 }

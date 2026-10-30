@@ -1,12 +1,9 @@
 /**
  * importFixtures — in-memory builders of the import, inspection and upload files.
  *
- * WHAT: In-memory builders of the files the import, inspection and upload rows send (certificates, PKCS#7, PKCS#12, PEM
- *       bundles, CSRs, garbage bytes) and the exact refusal texts core answers for them. No network, no file system, no ledger:
- *       a builder returns bytes and the reference values a test recomputes; names are run-prefixed (`importCn`).
- * WHY: Import rows need many shapes of certificate container and the exact refusal text core answers for each, with no file on disk.
- * HOW: Builders return bytes and the reference values a test recomputes; no network, no file system, no ledger; names are run-prefixed
- * through `importCn`.
+ * Builds the files the import, inspection and upload rows send (certificates, PKCS#7, PKCS#12, PEM bundles, CSRs,
+ * garbage bytes) and the exact refusal texts core answers for them. No network, no file system, no ledger: a builder
+ * returns bytes and the reference values a test recomputes. Names are run-prefixed (`importCn`).
  */
 import { expectRefused, type RefusedAnswer } from '../errorContract';
 import * as crypto from 'crypto';

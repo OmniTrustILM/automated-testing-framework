@@ -1,13 +1,12 @@
 /**
- * CertificateListPage — the certificate list.
+ * CertificateListPage — the certificate list (REG-CERT-40 … 51).
  *
- * WHAT: the certificate list: the filter widget host, the table (headers, rows, cells), header sorting, row
- *       selection with the bulk toolbar and the Include archived switch.
- * WHY: REG-CERT-40 … 51 check filters, sorting, paging and the Standard columns against the request the page sends
- *       and the API; nothing here changes the list.
- * HOW: columns by the header's data id, never by position; rows by data id and by the Common Name link in its own
- *       column (a CA's name is also the issuer link of every row); paging is `PagerWidget`, the column menu
- *       `ColumnHeaderMenuWidget`; what a cell must show is computed in `certificateListOracle.ts`.
+ * Encapsulates:
+ *   - the filter widget host, the table and header sorting
+ *   - row selection with the bulk toolbar, and the Include archived switch
+ *
+ * Nothing here changes the list. Columns are found by the header's data id, never by position. A row is found by the
+ * Common Name link in its own column, because a CA's name is also the issuer link of every row.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { ApiRecorder } from '../utils/network/apiRecorder';

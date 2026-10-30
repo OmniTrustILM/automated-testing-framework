@@ -1,11 +1,10 @@
 /**
- * ColumnHeaderMenuWidget — the options menu of one table column.
+ * ColumnHeaderMenuWidget — the options menu of one table column (REG-CERT-49).
  *
- * WHAT: the options menu of one table column (a portal outside the table) with its two sort items.
- * WHY: REG-CERT-49 proves that a column the catalogue marks as not sortable shows both items disabled with the
- *       reason and that pressing one is inert.
- * HOW: menu and items by test id with the column id; closed with Escape like every popover; the inert press needs a
- *       forced click because Playwright would wait for the disabled item.
+ * The menu is a portal outside the table, with two sort items found by test id with the column id. REG-CERT-49 proves
+ * that a column the catalogue marks as not sortable shows both items disabled with the reason, and that pressing one
+ * is inert. The inert press needs a forced click, because Playwright would wait for the disabled item. Closed with
+ * Escape.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { closePopover } from './ui/select';

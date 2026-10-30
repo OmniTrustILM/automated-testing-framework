@@ -1,62 +1,17 @@
 /**
- * runTeardown — globalTeardown of the REG-* and API-* configs: deletes the run's own objects and proves
- * afterwards that nothing else was touched.
+ * runTeardown — globalTeardown of the REG-* and API-* configs: deletes the run's own objects, then proves nothing
+ * else changed.
  *
- * WHAT
- * 1. Refuses to run under an adhoc run id (`qa-reg-adhoc`, `qa-api-adhoc`) or when API_RUN_ID differs from REG_RUN_ID:
- *    without one real run id it cannot tell its objects from anyone else's. Re-runs the tier assertion of the
- *    configs (TIER_KIND frozen, local proof, header auth, BASE_URL unchanged). BASE_URL unset fails the run:
- *    a run without a tier tested nothing and must never end green.
- * 2. Rebuilds the object list from the ledger alone (workers and the runner share no memory): `created` lines of THIS
- *    run without a later `deleted` line, each checked with the own-object guard (ledger line + name prefix; derived
- *    objects through createdAfter) and recorded on THIS tier (tier identity). Anything that fails is refused and
- *    reported, never deleted. Refused lines are reported by type and uuid only.
- * 3. API_TEARDOWN_DRY_RUN on (parsed switch) prints the plan (step, type, uuid, name, action, parents, refusals)
- *    and stops: no request, no authentication. The dry run is ALSO checked at the top of executeTeardown,
- *    removeOwnObject and every handler entry (`wrapHandlerWithGuard`), so no path deletes under it.
- *    API_DELETE_OWN off keeps the objects and prints the ledger path.
- * 4. Walks DELETE_ORDER; every delete goes through attemptCleanup (one retry, cascade reporting) and appends a `deleted` ledger line. Every
- *    object gets a FRESH authenticated context (a long revoke wait cannot outlive the token) and its own `seen` set. The handlers of each
- *    type come from the module that creates the objects (the registry in resourceTypes.ts names it, `HANDLER_SOURCES` imports it) and are
- *    wrapped by `wrapHandlerWithGuard`: dry-run check, then `assertOwnLive` (ledger + live run-prefixed name) before the handler sees the
- *    object; a type without a registry entry is reported as "no handler (type X)", but only when such ledger lines exist. A handler that
- *    answers "kept" (a derived object provably older than the run, or adopted) is a WARNING, not a failure; the kept objects are written to
- *    `<state dir>/<run id>.kept.json` (type, uuid, reasons) and REG_KEPT_STRICT=1 fails the run on a non-empty list. A derived object whose
- *    creation time is unknown is not "kept": its handler fails (red). FINAL PASS: after the last step, every object whose delete FAILED in
- *    this teardown (attempted: not refused, not without a handler, not kept, not "route or object missing", not a guard refusal) gets
- *    exactly one more attempt through the same wrapped handler, oldest failure first: an object a later step still referenced (a revoked
- *    certificate its own SCEP profile names, step 4 before step 7) goes then. A success appends the `deleted` line (note: final pass), then
- *    drops its failure; a failure stays one failure whose message names both attempts. One summary line: "final pass: N retried, M
- *    deleted".
- * 5. Deletion rule: a delete counts only when a GET afterwards proves the object absent; a DELETE answering 404
- *    counts as done only if the same object was read with 200 earlier in its step; otherwise the step fails with
- *    "route or object missing".
- * 6. On a shared tier, takes a second snapshot after the deletes (with a context that re-authenticates once on 401) and
- *    re-runs compareSnapshots against the "before" snapshot the `snapshot` project stored: a wrong delete would otherwise
- *    pass the API-GEN-33 proof, which runs before this teardown. A missing before snapshot on a shared tier, a
- *    violation or any cleanup failure fails the run (non-zero exit): cleanup is part of the result.
- * 7. Under TIER_KIND=local, before the first delete: the authenticated local-backend check (tier/localProof.ts
- *    `assertLocalBackend`). At the very end (every path) the run's local-backend proof file is removed.
- * 8. Roles and users whose detail answers 5xx after the delete (known bug core#2511) are confirmed gone through their
- *    full list only; the workaround is logged and listed under `knownBugs` in `<run id>.kept.json`.
- * 9. DELETE_ORDER follows core's reference refusals (REFERENCED_BY: actions
- *    before executions, the notification steps after the workflow step); step hooks (PRE_STEPS:
- *    own RA profiles are dissociated from own approval profiles before the certificate step, so a crashed spec cannot
- *    leave the revoke gated); `keyItems` go with their key (`goneWith`); own token keys are removed by
- *    teardownHandlers' own `keys` handler — exactly ONE handler for every own token key (protocols/protocolCa and platform/keys have none);
- *    approvals / approval profiles the platform
- *    retains (core never deletes an approval; an approval profile with approvals cannot be deleted,
- *    ApprovalProfileServiceImpl) may be answered `kept` by their handlers (a warning
- *    and a kept-report line, REG_KEPT_STRICT=1 turns it red — the documented residue of a lifecycle run).
- *
- * Structure: `teardownRun` = `assertPreconditions` → `dryRunReport` | `keepReport` | `deleteAndProve` (delete through
- * `TeardownRun`, report the kept objects, `proveNonInterference`). `TeardownRun` holds the state its phases share (the result,
- * the warnings of the object being removed, the failures the final pass retries): `prepSteps` → `deleteStep` / `deleteItem` per
- * step → `finalPass`. The tables (DELETE_ORDER, HANDLER_MODULES) are derived from the registry.
- *
- * Kubernetes objects (`k8s:<kind>` ledger lines, REG-USE-06 / REG-PROT-19…21) are never deleted here. Contract: the
- * spec removes them in its own `afterAll` (attemptCleanup) and appends `recordDeleted('k8s:<kind>', ref, spec)` for each
- * one it removed; a `k8s:` line without its `deleted` line is listed below as a leftover and fails the run.
+ *   - Refuses an adhoc run id, a differing API_RUN_ID, or an unset BASE_URL.
+ *   - Deletes only objects with a `created` line of this run and tier that pass the own-object check; anything else
+ *     is refused and reported by type and uuid, never deleted.
+ *   - API_TEARDOWN_DRY_RUN prints the plan and sends nothing; API_DELETE_OWN off keeps everything.
+ *   - A delete counts only when a GET proves the object absent. Kept objects warn; REG_KEPT_STRICT=1 fails.
+ *   - On a shared tier, a second snapshot is compared with the first; a difference fails the run.
+ *   - Under TIER_KIND=local, `assertLocalBackend` runs before the first delete.
+ *   - `k8s:<kind>` objects are removed by their spec, which records `deleted`; a `k8s:` line without it is a leftover
+ *     that fails the run. A missing before-snapshot on a shared tier fails the run too.
+ *   - core#2511: deleted roles and users still answer 5xx (absence is read from the list).
  */
 import { getAuthenticatedApiContext } from '../../auth/apiContext';
 import { APIRequestContext, FullConfig, request as playwrightRequest } from '@playwright/test';

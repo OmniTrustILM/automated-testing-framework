@@ -1,12 +1,12 @@
 /**
  * credentialKinds — the request builders for credentials of the kinds ApiKey and SoftKeyStore.
  *
- * WHAT: `dataDefinitions`, `requiredNames`, `apiKeyAttributes` (a generated value for every secret attribute, placeholders for the other
- *       required ones, a problem for a type the suite cannot fill), `softKeyStoreAttributes` (type, password and the PKCS#12 file; a
- *       missing definition is a problem), `withoutAttribute` and `omittableRequired`.
- * WHY: the rows build their requests from the connector's live definitions and skip with the reason before they write; a builder that
- *      throws, reuses a secret or sends the wrong shape would fail a row on a tier that is fine.
- * HOW: pure; the definitions are the shapes the connector answers; secrets are generated per test.
+ * Checks `dataDefinitions`, `requiredNames`, `apiKeyAttributes` (a generated value for every secret attribute,
+ * placeholders for the other required ones, a problem for a type the suite cannot fill), `softKeyStoreAttributes` (type,
+ * password and the PKCS#12 file; a missing definition is a problem), `withoutAttribute` and `omittableRequired`.
+ *
+ * The rows build requests from the connector's live definitions, so a builder that throws, reuses a secret or sends the
+ * wrong shape would fail a row on a healthy tier. Pure; secrets are generated per test.
  */
 import { randomBytes } from 'node:crypto';
 import { expect, test } from '@playwright/test';

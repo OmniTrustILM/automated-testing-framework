@@ -1,16 +1,13 @@
 /**
- * guardRig — the loopback rigs shared by the unit tests: the guard rig, the fake-core rig and the environment hook.
+ * guardRig — the loopback rigs shared by the unit tests.
  *
- * WHAT: `registerGuardRig` starts a fake core (answers per `answer`), a second server that must never be reached and a real
- * Playwright APIRequestContext whose baseURL is the core. `registerFakeCore` does the same for a stateful fake core and
- * hands each test a guarded context on a fresh run state folder. `useEnv` sets named environment variables for each test
- * and puts every one back. `looseApi` views a guarded context with untyped url and options (the guard tests send options the typed
- * API forbids); `fakeContext`, `partialOf` and `rawAsGuarded` are the typed ways to hand a fake or a raw context to code that
- * wants a full one.
- * WHY: sixteen unit files used to copy the same save / restore blocks; one rig keeps the restore checked and the loopback-only
- * rule in one place.
- * HOW: hooks are registered on the calling file's `test`; requests go through the real Playwright client, so the tests
- * assert what actually reached the wire. Servers listen on 127.0.0.1 only.
+ * Provides:
+ *   - `registerGuardRig`: a fake core, a second server that must never be reached, and a real Playwright request context
+ *   - `registerFakeCore`: the same for a stateful fake core, with a guarded context on a fresh run state folder per test
+ *   - `useEnv`: sets environment variables for each test and puts every one back
+ *   - helpers to view a fake or raw context as a full one
+ *
+ * Requests go through the real Playwright client, so the tests assert what reached the wire. Servers listen on 127.0.0.1 only.
  */
 import { request, test } from '@playwright/test';
 import type { APIRequestContext, APIResponse, TestInfo } from '@playwright/test';

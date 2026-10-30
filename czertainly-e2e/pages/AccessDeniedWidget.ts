@@ -1,12 +1,11 @@
 /**
- * AccessDeniedWidget — the lock widget the admin UI shows for a refused call.
+ * AccessDeniedWidget — the lock widget the admin UI shows in place of a page's data when the server refused the call.
  *
- * WHAT: the lock widget the admin UI shows in place of a page's data when the server refused the call: its title,
- *       the server's message and the hint in its tooltip.
- * WHY: REG-AUTH-08 proves that a refused page still loads its shell and shows nothing but the lock;
- *       `assertNoDataRows` is the "nothing leaked" half.
- * HOW: the widget and its details icon by test id; the message is read from the captured 403 answer by the spec and
- *       compared here, never typed as a literal.
+ * Provides:
+ *   - the widget's title, the server's message and the hint in its tooltip
+ *   - `assertNoDataRows`, the "nothing leaked" check of REG-AUTH-08
+ *
+ * The message comes from the captured 403 answer, read by the spec and compared here, never typed as a literal.
  */
 import { expect, Locator, Page } from '@playwright/test';
 

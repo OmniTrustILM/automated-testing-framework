@@ -1,13 +1,12 @@
 /**
  * identities — who is calling.
  *
- * WHAT: who is calling: the shared admin test user (the `api` fixture), throwaway own users that never sign in, no
- *       credentials, and the dedicated second identity (REG_RESTRICTED_USERNAME / REG_RESTRICTED_PASSWORD; rows that need it skip
- *       with `secondIdentityBlocker`, and no wrong-password attempt is ever made). `callAs` sends one request with another identity's
- *       token through the GUARDED context; `parseProfile` reads `GET /v1/auth/profile` (user fields top level, permissions below).
- * WHY: Permission rows need the admin, a throwaway user and a dedicated second identity, and must never guess a password.
- * HOW: `callAs` sends one request with another identity's token through the guarded context, `parseProfile` reads the profile, and a
- * missing second identity is a named skip.
+ * Provides:
+ *   - the shared admin test user (the `api` fixture), throwaway own users that never sign in, and no credentials
+ *   - the dedicated second identity (REG_RESTRICTED_USERNAME / REG_RESTRICTED_PASSWORD): rows that need it skip with
+ *     `secondIdentityBlocker`, and no wrong-password attempt is ever made
+ *   - `callAs`: sends one request with another identity's token through the GUARDED context
+ *   - `parseProfile`: reads `GET /v1/auth/profile` (user fields top level, permissions below)
  */
 import { APIRequestContext, expect, Page } from '@playwright/test';
 import { ApiAnswer, answerOf } from '../apiReads';

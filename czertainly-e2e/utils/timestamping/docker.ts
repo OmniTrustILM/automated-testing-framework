@@ -1,9 +1,8 @@
 /**
  * docker — the docker CLI wrapper of the timestamping block (container state, queues, stop / start, polling).
  *
- * WHAT: the docker CLI wrapper of the timestamping block (container state, queues, stop / start, polling).
- * WHY: the environment spec reads the stack and the outage specs stop containers; both need the local stack.
- * HOW: container names come from timestampingConfig().containers; `dockerAvailable()` lets a test skip without a daemon. Ported otherwise unchanged.
+ * The environment spec reads the stack and the outage specs stop containers, so both need the local stack. Container
+ * names come from timestampingConfig().containers; `dockerAvailable()` lets a test skip without a daemon.
  */
 import { execFileSync } from 'child_process';
 import { timestampingConfig } from './config';

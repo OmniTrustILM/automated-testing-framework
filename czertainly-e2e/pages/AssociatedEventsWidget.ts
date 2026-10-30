@@ -1,14 +1,12 @@
 /**
- * AssociatedEventsWidget — the "Associated Events" widget of an RA profile.
+ * AssociatedEventsWidget — the "Associated Events" widget on the Events tab of an RA profile.
  *
- * WHAT: the "Associated Events" widget on the Events tab of an RA profile: the Add / Edit dialog that associates triggers with an event,
- *       the trigger count column and the stored order.
- * WHY: the UI must keep the order the user picked and offer only the events an RA profile can override. The picker appends each trigger and
- *      the footer replaces the whole list; an event that already has triggers is edited, not added.
- * HOW: the widget by its heading; the event and trigger pickers through the Select helper (a modal popover, closed with Escape); the
- *      Edit button has a title but no accessible name and no test id in the FE yet, so it is the row's last-cell button.
- *      `associateTriggers` returns the answer of the save and never asserts its status; `readTriggerOrder` opens the Edit dialog to
- *      read the stored order and closes it again.
+ * Encapsulates:
+ *   - the Add / Edit dialog that associates triggers with an event
+ *   - the trigger count column and the stored order
+ *
+ * The UI must keep the order the user picked and offer only the events an RA profile can override. The FE gives the Edit
+ * button no accessible name or test id yet, so it is the row's last-cell button.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { Logger } from '../utils/Logger';

@@ -1,27 +1,11 @@
 /**
  * runId — the identity of one regression run, shared by the REG-* and the API-* configs.
  *
- * WHAT: the run id (`qa-reg-<yyyymmdd>-<hhmmss>-<4 random base36>`, UTC), the state directory outside the clone, the
- * per-run defaults both configs set before anything else is loaded, and the run lock.
- *
- * WHY: every object a run creates is named `<run id>-<suffix>` and recorded in one ledger, and the run-end teardown
- * deletes only what that run recorded. A minute-granular id let two runs started in the same minute (the nightly and
- * a manual run) share a prefix; the seconds plus a random suffix keep them apart. The adhoc defaults (`qa-reg-adhoc`,
- * and `qa-api-adhoc` of the API test template) exist only for a helper imported outside a config: a config
- * refuses them as a run id, and the teardown refuses to delete anything under either.
- *
- * Hand-set ids: REG_RUN_ID set by hand must match RUN_ID_FORMAT, unless REG_RUN_ID_REUSE=1 admits an
- * earlier run's id of another shape (`qa-reg-[a-z0-9-]+`); a hand-set id does NOT default API_DELETE_OWN to 1 (a reused
- * id keeps its objects unless API_DELETE_OWN=1 is given explicitly). `<state dir>/<run id>.lock` holds the runner's pid:
- * a second live run with the same id is refused; a lock whose pid is gone is taken over.
- *
- * HOW: `setRunEnvDefaults()` runs inside `prepareRun()` (run/prepareRun.ts), the first call of both configs. Playwright loads the config in
- * the runner and again in every worker; workers inherit the runner's environment, so the values decided first win everywhere. This module
- * imports nothing from the suite, so the config can call it before any helper reads `REG_RUN_ID`.
- *
- * Two readers: production code reads the run id through `runId()` (ledger/runState.ts: frozen when that module is first
- * imported, so one run has one id); `currentRunId(env)` reads the live variable and is for the places that honour an
- * injected `env` seam (the config before runState exists, the local proof, the guard's judge, the unit tests).
+ * Provides the run id (`qa-reg-<yyyymmdd>-<hhmmss>-<4 random base36>`, UTC), the state directory outside the clone, the
+ * per-run defaults and the run lock. Every object is named `<run id>-<suffix>`; the teardown deletes only what that run recorded.
+ * The adhoc ids (`qa-reg-adhoc`, `qa-api-adhoc`) are refused by a config, and the teardown refuses to delete under them.
+ * A hand-set REG_RUN_ID must match RUN_ID_FORMAT unless REG_RUN_ID_REUSE=1. A hand-set id does NOT default API_DELETE_OWN to 1.
+ * The lock `<state dir>/<run id>.lock` refuses a second live run with the same id.
  */
 import * as crypto from 'crypto';
 import * as fs from 'fs';

@@ -1,12 +1,12 @@
 /**
  * workflowObjects — the five workflow kinds and the creators of own workflow objects.
  *
- * WHAT: the request items of conditions, rules, executions, actions and triggers, the creators of own objects and own
- *       chains, the negative-probe create (`probeWorkflowObject`) and the reads.
- * WHY: a workflow chain is the setup of every event test, and a probe the platform accepted is an object the run must own
- *      and remove like any other.
- * HOW: every create is run-prefixed and recorded in the ledger right after the call, before any assertion; the run-end
- *      teardown removes the objects in dependency order through events/workflowTeardown.ts.
+ * Provides the request items of conditions, rules, executions, actions and triggers, the creators of own objects and
+ * own chains, the negative-probe create (`probeWorkflowObject`) and the reads.
+ *
+ * Every create is run-prefixed and recorded in the ledger right after the call, before any assertion. A probe the
+ * platform accepted is an object the run must own and remove like any other; the run-end teardown removes them in
+ * dependency order through events/workflowTeardown.ts.
  */
 import { expect } from '@playwright/test';
 import { GuardedApi } from '../guard/types';

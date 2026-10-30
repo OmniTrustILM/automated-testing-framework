@@ -1,11 +1,11 @@
 /**
  * tokens — the run's own cryptography connector lookup, tokens and token profiles.
  *
- * WHAT: Finds the software cryptography connector of an interface version, creates own tokens and token profiles, enables, disables and
- * changes their usages, and holds the pure builders of the token request attributes.
- * WHY: The token form, the status vocabulary and the profile calls are one product rule set that keys, operations and the ensure chain all
- * start from; they change for token reasons only.
- * HOW: Every mutation takes a GuardedApi and an own reference, records the create in the ledger right after it, and reads the live
+ * Finds the software cryptography connector of an interface version, creates own tokens and token profiles, enables, disables
+ * and changes their usages, and holds the pure builders of the token request attributes. Keys, operations and the ensure chain
+ * all start from these.
+ *
+ * Every mutation takes a GuardedApi and an own reference, records the create in the ledger right after it, and reads the live
  * attribute definitions instead of hard-coded ids.
  */
 

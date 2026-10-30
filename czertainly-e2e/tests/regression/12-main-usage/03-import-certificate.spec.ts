@@ -1,15 +1,12 @@
 /**
- * REG-USE-03 — Importing certificates through the import dialog (release checklist: Usage 3). ilm#428.
+ * REG-USE-03 — Importing certificates through the import dialog (release checklist: Usage 3; ilm#428).
  *
- * WHAT: 1. Paste a new self-signed PEM → detected → Import → the result says "Imported"; the API finds it by fingerprint.
- *       2. The same PEM again → "Already in inventory".
- *       3. A protected PKCS#12 → "File password" is asked for; a wrong password is refused with no entries; the right one lists the
- *          entries and asks for a key destination (token profile); another file clears the password.
- *       4. A CSR file → detected, "requests are not imported", Import disabled; close without importing (a test of its own).
- * WHY: the import dialog is how operators bring existing certificates in; a duplicate must be recognised, a protected container must
- *      not leak its content, and a request is not a certificate.
- * HOW: only the PEM is imported: it is recorded from the import answer together with the key core links to it, and the run CN is recorded
- *      from the inventory if anything throws after the click. The PKCS#12 key is never imported. Passwords are random per run.
+ * A new self-signed PEM imports and the API finds it by fingerprint; the same PEM again says "Already in inventory". A
+ * protected PKCS#12 asks for its password and refuses a wrong one. A CSR file is detected, not imported, and Import stays
+ * disabled.
+ *
+ * Only the PEM is imported. It is recorded from the import answer together with its linked key; the PKCS#12 key is never
+ * imported. Passwords are random per run.
  */
 import { randomBytes } from 'node:crypto';
 import { expect, test } from '../../../fixtures/regressionFixtures';

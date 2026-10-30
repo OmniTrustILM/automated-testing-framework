@@ -1,10 +1,11 @@
 /**
- * signing — signs data through Core with an onboarded key and verifies the signature with the key's recorded public key.
+ * signing — signs data through Core with an onboarded key and verifies the signature with the key's recorded public
+ * key.
  *
- * WHAT: `signThroughCore` answers the signing attributes Core asks for from one signature scheme; `verifiesWithRecordedPublicKey`
- * checks the signature with node's verifier against the public key item Core holds.
- * WHY: a key that was onboarded is only usable when Core can address its private key on the token; a verified signature proves it.
- * HOW: ported from the developers' suite unchanged apart from the provisioning import.
+ * `signThroughCore` answers the signing attributes Core asks for from one signature scheme;
+ * `verifiesWithRecordedPublicKey` checks the signature with node's verifier against the public key item Core holds. A
+ * key that was onboarded is only usable when Core can address its private key on the token; a verified signature
+ * proves it. Ported from the developers' suite unchanged apart from the provisioning import.
  */
 import { createPublicKey, verify } from 'crypto';
 import { AdminApi, KeyDetail, KeyItem } from './adminApi';

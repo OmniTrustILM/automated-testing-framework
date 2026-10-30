@@ -1,17 +1,9 @@
 /**
  * connectorApi — live connector health and read-only connector probes.
  *
- * WHAT: live connector health and read-only connector probes. The stored status `connected` does not say the
- *       connector answers now, so health is read live and by interface version (v1 `HealthDto` ok, v2 `HealthInfo` UP), the
- *       version taken from the connector detail. Everything here is a GET; the anonymous probes (liveness, readiness,
- *       health, info) take a context without credentials.
- * WHY: A stored status `connected` does not say the connector answers now.
- * HOW: Health is read live by interface version (v1 `ok`, v2 `UP`) from the connector detail; everything is a GET and the anonymous probes
- * take a context without credentials.
- *
- *       The core's own anonymous liveness and readiness probes share one oracle here: `healthGroupProblems` says what is
- *       wrong with an answer (status 200 and the body exactly `{"status":"UP"}`), `expectHealthGroupUp` asserts it with the
- *       probe's name, and `isHealthGroupUp` is the yes / no for a poll that waits for startup.
+ * The stored status `connected` does not say the connector answers now, so health is read live, by interface version (v1
+ * `HealthDto` ok, v2 `HealthInfo` UP). Everything here is a GET. The core's anonymous liveness and readiness probes share
+ * one oracle: the status is 200 and the body is exactly `{"status":"UP"}`.
  */
 import { expect, type APIRequestContext, type APIResponse } from '@playwright/test';
 import { hasRunFamilyPrefix } from '../run/runId';

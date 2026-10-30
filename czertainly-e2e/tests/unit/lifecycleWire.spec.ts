@@ -1,12 +1,11 @@
 /**
  * lifecycleWire — loopback wire check of the lifecycle helpers.
  *
- * WHAT: issue, renew, rekey, revoke, register and the parked-operation probes on OWN certificates are sent with their
- *       bodies and record what they made before any assertion; foreign objects and raw contexts are refused before anything
- *       leaves; the approval gate, the override decisions and the teardown handlers of approvals and approval profiles send
- *       what the rules say.
- * WHY: these helpers act on certificates and approvals of a shared tier; what they send and record must be proven offline.
- * HOW: one stateful fake core behind a loopback server; each test asserts the requests that arrived and the ledger.
+ * Checks that issue, renew, rekey, revoke, register and the parked-operation probes on OWN certificates are sent with
+ * their bodies and record what they made before any assertion; that foreign objects and raw contexts are refused before
+ * anything leaves; and that the approval gate, the override decisions and the teardown handlers of approvals and approval
+ * profiles send what the rules say. These helpers act on a shared tier, so what they send and record is proven offline.
+ * One stateful fake core sits behind a loopback server; each test asserts the requests that arrived and the ledger.
  */
 import { APIRequestContext, expect, test } from '@playwright/test';
 import { GuardedApi } from '../../utils/regression/guard/types';

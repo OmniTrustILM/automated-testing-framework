@@ -1,12 +1,9 @@
 /**
  * connectorLookup — read-only lookup of the connectors the platform specs build on.
  *
- * WHAT: finds the connectors the platform specs build on, read-only: the secret-interface connector of a
- *       vault (named by env, else the credential provider v2, else any connected one with the interface) and the v1 credential
- *       connector for a credential kind. Nothing is created or changed here.
- * WHY: A vault or credential spec must find its connector or skip with a named reason.
- * HOW: Chooses the secret-interface connector (env name, else the credential provider v2, else any connected one with the interface) and
- * the v1 credential connector for a kind; nothing is created.
+ * Finds the secret-interface connector of a vault (named by env, else the credential provider v2, else any connected one with
+ * the interface) and the v1 credential connector for a credential kind. Nothing is created or changed here. A vault or
+ * credential spec must find its connector or skip with a named reason.
  */
 import type { APIRequestContext } from '@playwright/test';
 import { apiJson } from '../apiReads';

@@ -1,12 +1,12 @@
 /**
- * RolePage — the Roles list, the role detail and the Create / Edit / Delete Role dialogs.
+ * RolePage — Page Object Model for Roles (REG-CFG-07).
  *
- * WHAT: the Roles list, the role detail and the Create / Edit / Delete Role dialogs; every action that sends a request returns
- *       the platform's answer and asserts no status.
- * WHY: REG-CFG-07 creates, refuses a duplicate name, edits with the name locked and deletes. Edit and Delete are only called on
- *      a role the run created, which the spec proves first with the live own-object check.
- * HOW: composed from `entityScreens` (list, dialogs, detail widget and the shared acts), `SearchableListWidget`, `FormDialog` and
- *      `ConfirmDeleteDialog`; the form resets when the detail refetch lands, so typing waits for that request.
+ * Encapsulates:
+ *   - the Roles list and the role detail
+ *   - the Create / Edit / Delete Role dialogs
+ *
+ * Actions return the platform's answer; the spec asserts. Edit and Delete are used only on roles this run created. The
+ * form resets when the detail refetch lands, so typing waits for that request.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { Logger } from '../utils/Logger';

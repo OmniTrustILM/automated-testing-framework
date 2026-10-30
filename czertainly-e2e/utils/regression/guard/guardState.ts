@@ -1,12 +1,10 @@
 /**
- * GuardState — what one guarded context knows between its requests.
+ * guardState — what one guarded context knows between its requests.
  *
- * WHAT: the wrapped context, the environment the guard judges against, whether the context was made for a local stack,
+ * Holds the wrapped context, the environment the guard judges against, whether the context was made for a local stack,
  * the probe uuids it handed out, the run id, the options of every live ownership check and the caller's own user uuid.
- * WHY: the steps of the guard (reading, checking, claiming, sending) are separate modules; they share this one object
- * instead of closing over a factory's locals.
- * HOW: `createGuard` builds one GuardState per context. The ledger, run id, tier and environment are the process's own;
- * unit tests inject them through the test seams of `guardApiWithSeams` only.
+ * The steps of the guard share this one object. `createGuard` builds one per context; unit tests inject the ledger, run
+ * id, tier and environment through the test seams of `guardApiWithSeams` only.
  */
 import { callerUuidOf } from './approvals';
 import { currentRunId } from '../run/runId';

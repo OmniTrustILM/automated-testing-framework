@@ -1,15 +1,12 @@
 /**
- * objects — the run's own platform objects of the key onboarding block, in the source suite's order: the vault
- * instance, the vault profile, the PIN secret, the token on the PKCS#11 connector and its token profile.
+ * objects — the run's own platform objects of the key onboarding block.
  *
- * WHAT: each create sends the source suite's body under a run-prefixed name and is recorded right after it answered:
- * `vaultInstances`, `vaultProfiles` ← vault, `secrets` ← vaultProfile, `tokens`, `tokenProfiles` ← token (the parents
- * the teardown handlers read: platform/platformTeardown.ts, teardown/teardownHandlers.ts).
- * WHY: the source suite found or created fixed-name objects (`key-onboarding`, `key-onboarding-<profile>-<token>`) and
- * kept them between runs; the block creates its own per run and touches nothing else, so the block teardown (and the
- * run-end teardown as the safety net) can delete them. The PIN is KO_TOKEN_PIN: it goes to the vault in the secret's
- * body and nowhere else (no ledger line, no summary, no reason carries it).
- * HOW: enables and the secret's wait come after the ledger line; every failure the tier decides is a TierError.
+ * Creates the vault instance, vault profile, PIN secret, PKCS#11 token and token profile, each under a run-prefixed name and
+ * recorded in the ledger right after it answered.
+ *
+ * The source suite kept fixed-name objects between runs; this block creates its own per run and touches nothing else, so the
+ * teardown can delete them. The PIN (KO_TOKEN_PIN) goes to the vault in the secret's body and nowhere else. Every failure
+ * the tier decides is a TierError.
  */
 import type { OwnRef, Ref } from '../../regression/ledger/ledger';
 import { TierError } from '../../devBlocks/provision/transport';

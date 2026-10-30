@@ -1,15 +1,14 @@
 /**
- * authorities — the MS ADCS chain of the configuration checklist and the own authority and credential creators.
+ * authorities — the MS ADCS chain of the configuration checklist (REG-CFG-02 / -03), and the own authority and credential
+ * creators.
  *
- * WHAT: the MS ADCS chain of the configuration checklist (REG-CFG-02 / -03): the pre-existing MS ADCS
- *       source authority (read only), the run's OWN authority on the same CA, the template lookup, the live-health blocker that
- *       makes the chain skip on a tier without a healthy MS ADCS connector, and REG_RA_PROFILE_NAME (an issue-only RA profile
- *       of a local stack). The MS ADCS source is the first connected authority on the MS-ADCS-NG connector (override with
- *       REG_ADCS_SOURCE_AUTHORITY / REG_ADCS_CONNECTOR); its CA host and name are read at runtime and never stored here.
- *       Also an own Basic credential and an own authority that copies a pre-existing one's data attributes (REG-CONN-14).
- * WHY: The configuration rows need a real CA behind an own authority without storing any CA host in the suite.
- * HOW: The pre-existing source authority is read only; the own authority and credential are created under run-prefixed names and recorded;
- * health is read live and a tier without a healthy connector gets a named skip.
+ * Provides the pre-existing MS ADCS source authority (read only; its CA host and name are read at run time, never stored),
+ * the run's own authority on the same CA, the template lookup, and the health blocker that skips the chain on a tier without
+ * a healthy MS ADCS connector. Also an own Basic credential, and an own authority that copies a pre-existing one's data
+ * attributes (REG-CONN-14).
+ *
+ * Own objects get run-prefixed names and are recorded. REG_RA_PROFILE_NAME (local stack only) names an existing RA profile
+ * used as an issue-only parent: it and its authority have no ledger line and are never changed.
  */
 import { APIRequestContext, expect } from '@playwright/test';
 import { Logger } from '../../Logger';
@@ -28,7 +27,7 @@ import { send } from '../inventory/searchApi';
 import { settings } from '../run/settings';
 import { objectOf, rowsOf } from '../json';
 
-const logger = new Logger('authorities');
+const logger = new Logger('Authorities');
 
 export interface AdcsSource {
     uuid: string;

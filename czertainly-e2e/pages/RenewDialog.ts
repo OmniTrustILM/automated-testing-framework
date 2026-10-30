@@ -1,12 +1,10 @@
 /**
- * RenewDialog — the "Renew Certificate" dialog.
+ * RenewDialog — the "Renew Certificate" dialog (REG-CERT-07).
  *
- * WHAT: the "Renew Certificate" dialog: the "Register instead of renewing now" switch, the Challenge field (while a
- *       registration authorization is active), the CSR upload and submit.
- * WHY: REG-CERT-07 renews with a same-key CSR and proves that a challenged registration requires the challenge.
- * HOW: a `CertificateToolbarDialog` (open, close, answer reading are shared); opened from the detail toolbar; with
- *       a platform key the CSR sits behind the "Upload new CSR" switch, with an external key the upload is always
- *       shown; the renew answer carries the successor's uuid.
+ * A `CertificateToolbarDialog`: the "Register instead of renewing now" switch, the Challenge field (while a
+ * registration authorization is active), the CSR upload and submit. With a platform key the CSR sits behind the
+ * "Upload new CSR" switch; with an external key the upload is always shown. The renew answer carries the successor's
+ * uuid.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { AnswerWithUuid, CertificateToolbarDialog } from './CertificateToolbarDialog';

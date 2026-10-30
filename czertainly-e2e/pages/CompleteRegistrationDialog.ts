@@ -1,12 +1,9 @@
 /**
- * CompleteRegistrationDialog — the "Complete Certificate Registration" dialog.
+ * CompleteRegistrationDialog — the "Complete Certificate Registration" dialog of a pre-registered certificate
+ * (REG-CERT-13).
  *
- * WHAT: the "Complete Certificate Registration" dialog of a pre-registered certificate: challenge, CSR, submit and
- *       the dialog's error line.
- * WHY: REG-CERT-13 completes with a wrong secret (refused, one failed attempt) and with the right one; the
- *       completion answer goes back to the spec.
- * HOW: a `CertificateToolbarDialog` (open, close, answer reading are shared); opened from the detail toolbar;
- *       fields by test id, the CSR textarea by its id; only ever used on a certificate this run created.
+ * A `CertificateToolbarDialog`: challenge, CSR, submit and the dialog's error line. The completion answer goes back to
+ * the spec. Used only on a certificate this run created.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { CertificateToolbarDialog } from './CertificateToolbarDialog';

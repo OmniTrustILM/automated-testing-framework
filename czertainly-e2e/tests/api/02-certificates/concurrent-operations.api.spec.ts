@@ -1,16 +1,9 @@
 /**
- * API-CERT-36 — Two simultaneous operations on one own certificate. ilm#429.
+ * API-CERT-36 — Two simultaneous operations on one own certificate (ilm#429).
  *
- * WHAT: 1. Two identical renews sent together → both 200 with different uuids; both successors reach issued with different serials, both
- *          relations are renewal, exactly two successors exist and the predecessor stays issued.
- *       2. Two identical completions of a registered certificate sent together → one 200 and the other 200 or the 422 state guard;
- *          the certificate ends issued with one serial and exactly one issue event in its history.
- * WHY: renew takes no predecessor lock, so two renews are two successors (ilm#429 closing comment), while issuing claims the
- *      certificate under a pessimistic lock, so a second claim returns without a second issuance. The migration to a newer Hibernate
- *      must not turn a parallel path into a 5xx (ilm#424). Duplicate delivery is another race (core#2435) and is not asserted.
- * HOW: only own certificates are touched (own RA profile, own keys); the successors and the derived keys are recorded in the ledger
- *      before the assertions. The completion walk is issue-existing with the CSR and the challenge, after a register call without a
- *      path that the guard does not list yet.
+ * Renew takes no predecessor lock, so two renews are two successors (ilm#429 closing comment). A parallel path must never
+ * become a 5xx (ilm#424). Duplicate delivery is another race (core#2435), not asserted.
+ * Successors and derived keys are ledgered before the assertions.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { EVENT_CODES, historyOf, relationsOf, sortedHistory } from '../../../utils/regression/lifecycle/certificateHistory';

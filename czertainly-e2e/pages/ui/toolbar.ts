@@ -1,11 +1,10 @@
 /**
  * toolbar — the toolbar buttons of a detail widget.
  *
- * WHAT: the toolbar buttons of a detail widget: one map from the action a test names to the icon the admin UI
- *       renders, one button-state type, one assertion over a set of buttons.
- * WHY: the same icon means enable, approve or activate on different pages; the decision tables of the lifecycle
- *       specs read like the product rules.
- * HOW: icon buttons inside their widget; when the toolbar gets named test ids (fe-administrator#2325) only the map changes.
+ * Provides one map from the action a test names to the icon the admin UI renders, one button-state type and one
+ * assertion over a set of buttons. The same icon means enable, approve or activate on different pages, so the decision
+ * tables of the lifecycle specs read like the product rules. When the toolbar gets named test ids
+ * (fe-administrator#2325), only the map changes.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { iconButton } from './widget';

@@ -1,18 +1,10 @@
 /**
  * ownCertificates — the certificates this run creates.
  *
- * WHAT: the certificates this run creates, in one place: issued from an external CSR through the v2 API, and
- *       uploaded (self-signed or built by a fixture). Every creator records what the platform made in the ledger right after the
- *       call and BEFORE any assertion, with the parents a later operation needs (`raProfile`, `authority`), and the key the
- *       platform linked to the certificate as a derived object.
- *
- *       One argument order for issuing: `(api, ra, spec, options)`. One `OwnCertificate` (every own certificate: its ledger
- *       reference and common name); `IssuedCertificate` adds what an issue from a CSR keeps (CSR, key pair, SANs, RA profile,
- *       the answer).
- * WHY: Issue and upload are written by many specs; their ledger-before-assertion rule must be written once.
- * HOW: Issued from an external CSR through the v2 API or uploaded; every creator records the certificate with its parents and the
- * platform-made key as a derived object right after the call; `sanOracle` holds the SAN rule per CA and `waitIssued` / `waitRevoked` the
- * named waits.
+ * Covers certificates issued from an external CSR through the v2 API, and certificates uploaded (self-signed or built by a
+ * fixture). Every creator records what the platform made in the ledger right after the call and BEFORE any assertion, with
+ * the parents a later operation needs and the key the platform linked to the certificate as a derived object.
+ * `waitIssued` / `waitRevoked` are the named waits.
  */
 import type * as forge from 'node-forge';
 import { waitForCertificateState } from './wait/certificateState';
@@ -32,7 +24,7 @@ import { runName, ownName, ownCommonName } from './ledger/runState';
 import { settings } from './run/settings';
 import type { JsonObject } from './json';
 
-const logger = new Logger('ownCertificates');
+const logger = new Logger('OwnCertificates');
 
 /** A run-prefixed common name (unique under --repeat-each). */
 export const certificateName = (suffix = 'cert'): string => ownCommonName(suffix);

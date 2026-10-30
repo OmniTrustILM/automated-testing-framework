@@ -1,22 +1,10 @@
 /**
- * API-AUTH-30, 31, 32, 33 — The RBAC decision table through the API as the dedicated second identity. ilm#427.
+ * API-AUTH-30, 31, 32, 33 — The RBAC decision table through the API as the dedicated second identity (ilm#427).
  *
- * WHAT: 1. Contract: no credentials → 401, a user without the permission → 403 ACCESS_DENIED naming the exact Action / Resource pair, the
- *          admin → 200; the 403 body's `statusCode` is 403 (interfaces#887 on builds without the fix, test.fail there).
- *       2. Per permission fixture (no permissions, certificate list and detail, issuing role, rights on one RA profile, members right
- *          on one group, denies, allow-all with one deny, custom role derived from auditor): the profile's listings and
- *          resource-level actions, the run's certificates the user can see, and the detail of each certificate.
- *       3. Per fixture: RA profile list and detail, RA profile create, v2 issue on both profiles, roles and users administration, and
- *          the nested-bean gates (upload, delete, enable, archive) that must answer 403, never a silent 2xx.
- *       4. A deny is per action: `detail`, `members` or `list` denied on one RA profile changes only what that action gates.
- * WHY: the platform authorises by role permissions on the resource and on its parent resource (certificate detail needs RA profile members;
- *      visibility = certificates:list AND RA profile members, OR group members, OR owner). A red row means a role got more or less access
- *      than its document grants, or a deny answered with the wrong body. A mismatch is a finding to confirm, never an adjusted oracle.
- * HOW: the admin builds an own role from each fixture's permission document through the API, makes it the second identity's only role,
- *      waits until that user's profile reflects it, and the second identity's token walks the rows. Every test starts with the
- *      second-identity, replica and CA preflights and skips with the named reason until the account exists. Oracles: no 5xx; every
- *      403 has the ACCESS_DENIED body shape. Anything the restricted user manages to create is recorded in the ledger before the
- *      assertion; the matrix certificates are own objects of the run.
+ * The 403 body's `statusCode` is 403 (interfaces#887 on builds without the fix, test.fail there).
+ * The admin builds an own role per fixture and makes it the second identity's only role. Every test starts with the
+ * second-identity, replica and CA preflights and skips with the named reason. A mismatch is a finding, never an adjusted
+ * oracle. Anything the restricted user manages to create is ledgered before the assertion.
  */
 import { BATTERY_TEST_MS, ISSUING_MATRIX_ROW_TEST_MS, LIFECYCLE_MS, LONG_TEST_MS } from '../../../utils/regression/timeouts';
 import { expect, test } from '../../../fixtures/regressionFixtures';

@@ -1,12 +1,12 @@
 /**
- * TokenPage — the Tokens list, dialog and detail.
+ * TokenPage — Page Object Model for tokens (REG-KEY-01).
  *
- * WHAT: the Tokens list, the Create Token dialog (provider and the connector's attribute form) and the token detail
- *       with its status badge and toolbar.
- * WHY: REG-KEY-01 creates a v2 software token in the form and checks the v2 status and which toolbar actions are disabled.
- * HOW: the attribute form renders after the provider's schema loads, and asks "new or existing" only when the
- *       provider already holds tokens — both selects are tried; the create answer carries the new token's uuid, so a
- *       spec records it before the dialog closes (`waitForCreateDialogClosed`).
+ * Encapsulates:
+ *   - the Tokens list and the Create Token dialog
+ *   - the token detail with its status badge and toolbar
+ *
+ * The attribute form renders after the provider's schema loads and asks "new or existing" only when the provider already
+ * holds tokens, so both selects are tried. The spec records the new token's uuid before the dialog closes.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { Logger } from '../utils/Logger';

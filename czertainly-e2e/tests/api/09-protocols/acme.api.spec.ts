@@ -1,16 +1,9 @@
 /**
- * API-PROT-17 — ACME answers to malformed requests on the run ACME profile's new-account URL. ilm#430.
+ * API-PROT-17 — ACME answers to malformed requests on the run ACME profile's new-account URL (ilm#430).
  *
- * WHAT: 1. A garbage non-JWS body and a JWS whose protected header is not base64url → 400 `application/problem+json` of type …:malformed.
- *       2. A `{}` body and an empty body → 400 `application/problem+json` of type …:serverInternal (the behaviour today: a non-ACME
- *          exception becomes serverInternal; RFC 8555 would prefer malformed).
- *       3. The directory of an unknown profile → 400 `application/problem+json` serverInternal "Given profile name is not found".
- *       Every answer has a non-empty detail and no class name or stack text in the body.
- * WHY: RFC 8555 §6.7: errors are application/problem+json with type urn:ietf:params:acme:error:<code>. The asserted types document what the
- *      platform answers today (ilm#430); a missing signature member is not used as a probe because it hits an uncaught NPE in
- *      AcmeJwsRequest, unexpected behaviour.
- * HOW: the RA profile's ACME directory is created once for the file (own dedicated RA profile, ledger line first; skip with the named
- *      reason without a CA). Nothing else is created.
+ * `{}` and empty bodies answer serverInternal today; RFC 8555 §6.7 would prefer malformed. A missing signature member is
+ * not probed: it hits an uncaught NPE in AcmeJwsRequest. The ACME directory is created once on an own RA profile (ledger
+ * line first); skips without a CA. Nothing else is created.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { AcmeClient } from '../../../utils/regression/protocols/acmeClient';

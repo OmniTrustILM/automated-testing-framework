@@ -1,18 +1,9 @@
 /**
- * API-GEN-28 — An RA profile with a required attribute left empty, API leg. ilm#428.
+ * API-GEN-28 — An RA profile with a required attribute left empty, API leg (ilm#428).
  *
- * WHAT: 1. Validating RA-profile attributes without the required one, or with it empty → 422 naming the attribute: the connector's text for
- *          a v2 authority ("Required attribute <label> not found." / "Value of required attribute <label> not set."), core's
- *          attribute-engine text for a v3 one.
- *       2. The valid attributes of an existing RA profile validate with 200 (control).
- *       3. Creating an RA profile with the required attribute missing or empty → 422 with the same texts, and no RA profile with that name
- *          exists afterwards.
- * WHY: a connector 422 becomes a ValidationException and so a core 422 carrying the connector's messages (interfaces#898); the refusal must
- *      be a 422, not a 400 or a 502 (those are the defect under test). The oracle follows the authority's connector interface.
- * HOW: the authority is a pre-existing, connected one that has a required RA-profile attribute, and is only read; rows skip when there is
- *      none. Create-only on shared tiers with run-prefixed names; any RA profile left by a refused create is adopted by its unique name
- *      into the ledger before the assertion. A 503 from the connector (restarting or unreachable) is an environment blocker: a named skip,
- *      never retried and never a pass.
+ * A connector 422 reaches the client as a core 422 (interfaces#898); a 400 or 502 is the defect under test. The authority
+ * is a pre-existing connected one and is only read; rows skip when there is none. Create-only on shared tiers. A 503 from
+ * the connector is an environment blocker: a named skip, never a pass.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { refused422 } from '../../../utils/regression/inventory/configProbes';

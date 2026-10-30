@@ -1,12 +1,9 @@
 /**
- * listing — reading a listing for the oracles.
+ * listing — reading a listing for the oracles (read-only on the target).
  *
- * WHAT: Reading a listing for the oracles: the `ListingSpec` of a resource, one page or every page through a `Transport`
- *       (the guarded `api` fixture in the specs, a fake listing in the unit tests), the baseline walk, and the one re-read
- *       that absorbs a concurrent change of the tier (a second mismatch fails). Read-only on the target.
- * WHY: The same oracles run against the guarded API in a spec and against a fake listing in a unit test.
- * HOW: A `Transport` hides the difference; `ListingSpec` describes a resource, `loadBaseline` walks it, `ListingRun` carries the four
- * values every oracle needs, and one re-read absorbs a concurrent change (a second mismatch fails). Read-only.
+ * A `Transport` hides whether the oracles run against the guarded `api` fixture (specs) or a fake listing (unit tests).
+ * `ListingSpec` describes a resource, `loadBaseline` walks one page or every page, and `ListingRun` carries the four
+ * values every oracle needs. One re-read absorbs a concurrent change of the tier (a second mismatch fails).
  */
 import type { GuardedApi } from '../../guard/types';
 import { send, readAnswer } from '../searchApi';

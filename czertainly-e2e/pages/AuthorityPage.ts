@@ -1,12 +1,12 @@
 /**
- * AuthorityPage — the Authorities list and the add-authority page.
+ * AuthorityPage — Page Object Model for authorities (REG-CFG-02).
  *
- * WHAT: the Authorities list, the add page (name, provider connector, the connector's CA-selection method, CA host and CA name,
- *       required custom attributes) and the authority detail.
- * WHY: REG-CFG-02 creates a Microsoft ADCS authority with a manually entered CA host and name; the connector checks its connectivity before
- *      it answers, which takes up to 90 s, so the answer goes back to the spec before the redirect is waited for.
- * HOW: the form is a page, not a dialog, so its scope is `main`; the selects go through their trigger buttons; the CA host and
- *      name inputs by their attribute test id or their label; the CA values come from the caller and are never stored here.
+ * Encapsulates:
+ *   - the Authorities list and the authority detail
+ *   - the add page (a page, not a dialog): name, provider connector, CA selection, CA host and name
+ *
+ * The connector checks its connectivity before it answers (up to 90 s), so the create answer goes back to the spec
+ * before the redirect is waited for. CA values come from the caller, never stored here.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import type { CreateAnswer } from './ui/createAnswer';
@@ -34,7 +34,7 @@ export class AuthorityPage {
     }
 
     async goToList(): Promise<void> {
-        await this.page.goto('administrator/#/authorities');
+        await this.page.goto('/administrator/#/authorities');
         await expect(this.main).toBeVisible();
     }
 

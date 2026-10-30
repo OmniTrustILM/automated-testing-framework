@@ -1,11 +1,9 @@
 /**
- * approvalsPage — offline checks of pages/ApprovalsPage.ts.
+ * approvalsPage — offline checks of pages/ApprovalsPage.ts on stand-in documents.
  *
- * WHAT: the list row status and checkbox, the detail status and recipient comment on `setContent` documents, and the
- *       override Approve / Reject through the confirm dialog; each override returns the answer (`ApiAnswer`) of its PATCH.
- * WHY: REG-CERT-16 / 17 decide through the override path and assert the answer's status; a wrong button must fail on the
- *      wait for the exact request, not pass on another one.
- * HOW: stand-in documents shaped like the admin UI; a loopback-addressed context answers the PATCH itself.
+ * Checks the list row status and checkbox, the detail status and recipient comment, and the override Approve / Reject
+ * through the confirm dialog; each override returns the answer of its PATCH. REG-CERT-16 / 17 assert that status, so a wrong
+ * button must fail on the wait for the exact request. A loopback-addressed context answers the PATCH itself.
  */
 import { expect, test } from '@playwright/test';
 import { ApprovalsPage } from '../../pages/ApprovalsPage';

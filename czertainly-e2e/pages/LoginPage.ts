@@ -1,13 +1,9 @@
 /**
- * LoginPage — the sign-in screen, the session and sign-out.
+ * LoginPage — the sign-in screen, the session and sign-out (REG-AUTH-01, 08, 99).
  *
- * WHAT: the sign-in screen (provider choice, credential form), the session cookie, the header's user menu and sign-out.
- * WHY: every UI test signs in through it; REG-AUTH-01 checks the session across reloads and tabs, REG-AUTH-08 signs
- *       in as the dedicated second identity in its own context, REG-AUTH-99 signs out and expects a credential
- *       prompt (no silent single sign-on).
- * HOW: `signIn` is the admin sign-in of the `signedIn` fixture, for the specs that test the sign-in itself; the form by roles,
- *       the shell by its test id; never a wrong-password attempt (that tests the identity provider and could lock the shared
- *       account); the cookie value is read, never logged.
+ * `signIn` is the admin sign-in of the `signedIn` fixture, for the specs that test the sign-in itself. It never tries
+ * a wrong password, which would test the identity provider and could lock the shared account. The cookie value is
+ * read, never logged.
  */
 import { Locator, Page, expect } from '@playwright/test';
 import { TestEnv } from '../utils/env';

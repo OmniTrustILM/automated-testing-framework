@@ -1,13 +1,13 @@
 /**
- * NotificationProfilePage — the notification profiles.
+ * NotificationProfilePage — Page Object Model for notification profiles.
  *
- * WHAT: the notification profile list, its create dialog (recipient type and recipients, instance, internal switch, event data categories,
- *       frequency, repetitions) and the versioned profile detail.
- * WHY: a profile form must store what was typed, so request, stored object and detail are compared; the detail prints categories as labels,
- *      which the spec maps from codes.
- * HOW: selects through the helper; the switches are hidden inputs under their label (the label is clicked); `submitCreateForm` returns the
- *      answer of the create request and `waitForDetailRoute` reads the uuid from the route the UI opens afterwards; the detail widget is
- *      found by its heading, because its row ids collide with the instance table below it.
+ * Encapsulates:
+ *   - the profile list and the versioned profile detail
+ *   - the create dialog (recipients, instance, categories, frequency, repetitions)
+ *
+ * The specs compare request, stored object and detail. The switches are hidden inputs (the label is clicked).
+ * `submitCreateForm` returns the create answer and `waitForDetailRoute` reads the uuid. The detail widget is found by
+ * its heading, because its row ids collide with the instance table below it.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { Logger } from '../utils/Logger';

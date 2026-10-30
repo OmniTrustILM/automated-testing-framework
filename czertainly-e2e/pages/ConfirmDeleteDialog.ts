@@ -1,10 +1,8 @@
 /**
- * ConfirmDeleteDialog — the delete confirmation of the admin UI.
+ * ConfirmDeleteDialog — the "Delete <thing>" confirmation of the admin UI.
  *
- * WHAT: the "Delete <thing>" confirmation of the admin UI.
- * WHY: the role and user pages delete through it; the answer of the DELETE it sends is returned to the spec, which
- *       asserts it after the ledger line.
- * HOW: the dialog by its accessible name; the wait for the request is registered before the click.
+ * The role and user pages delete through it. The answer of the DELETE it sends is returned to the spec, which asserts
+ * it after the ledger line. The wait for the request is registered before the click.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import type { ApiAnswer } from '../utils/regression/apiReads';

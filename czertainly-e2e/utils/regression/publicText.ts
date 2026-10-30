@@ -1,20 +1,9 @@
 /**
  * publicText — keeps the text a reader of this public repository sees free of private working notes.
  *
- * Comments, test titles, error messages and the README must explain the suite in plain words: why a rule exists and
- * which product behaviour or bug it guards. Short ids that only make sense next to private notes (finding numbers,
- * planning items, decision numbers), names of the tools or people that wrote a change, and local file-system paths
- * do not belong there.
- *
- * `publicTextHits()` scans the comments and string literals of every TypeScript file (the parser decides what is a
- * comment and what is a string, so identifiers, regular expressions and code are never matched) and the whole text of
- * the Markdown, JSON and ignore files. The `rule:` values of `testMeta()` and the `RULE*` constants that feed them are scanned
- * too (kind `rule`): a rule names a public reference (an issue, a core class, an RFC section, a docs page) or states the
- * rule in plain words, never a private plan coordinate.
- * The patterns aim at the private forms and leave public text alone: "S3 bucket", "G1 group", "R5", "a code review of the
- * PR", core#2511, RFC 5280 §4.2.1.6, SHA-256, P-256, the REG- / API- ids, "round-robin" and the run prefixes.
- * The patterns are regular-expression literals on purpose: the scanner reads strings and comments only, so this file
- * does not match itself.
+ * Comments, test titles, error messages and the README must explain the suite in plain words. Short ids that only make sense
+ * next to private notes, names of the tools or people that wrote a change, and local file-system paths do not belong there.
+ * `publicTextHits()` scans comments and string literals of every TypeScript file and the Markdown, JSON and ignore files.
  */
 import * as fs from 'fs';
 import * as crypto from 'crypto';

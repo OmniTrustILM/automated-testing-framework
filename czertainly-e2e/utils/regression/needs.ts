@@ -1,21 +1,10 @@
 /**
  * needs — what a row needs from the tier or the runner, decided from READS before the test creates anything.
  *
- * WHAT: `resolveNeed(need, context)` answers `undefined` when one `Needs` value (the catalogue of utils/regression/tags.ts) is met,
- * else the named reason the test skips with. `declaredNeedsOf(tags)` reads the `@needs:<x>` tags of a test; `resolveNeeds` answers the
- * first unmet need of a list. The resolvers wrap what the specs used to decide one by one: helpers that return `T | { skip }`,
- * take a skip callback, throw `RaProfileSourceMissing`, or answer a blocker text.
- * WHY: every spec used to re-decide how a precondition skips (a callback, a union result, a caught throw, a hand-written
- * `test.skip`), and a skip that came after the first create left objects behind for a test that never ran. With one resolver per
- * need the order is by construction: the `needs` fixture of fixtures/regressionFixtures.ts resolves what the test declared before any
- * `own` or page call, and a skip is never coverage (the reason names the deploy gate).
- * HOW: a resolver only reads (GET through the guarded context, the environment, a tool's `--version`); it never creates. A read
- * that fails (a status that is not 2xx, a network error) is an error of the test, not an unmet need: only the tier's answer that the
- * thing is missing skips. Three needs take an option of the call, because what they check depends on the row: the events a row
- * watches (`platform-triggers-free`), the failed attempts a registration table needs (`registration-settings`) and the resources
- * whose required custom attributes the row fills (`required-attributes-fillable`); a need declared by tag uses the defaults. Needs
- * that only the test body can decide (`scan-target`: the test opens its own listener; `connector-online`: the connector row
- * under test) are met here and keep their own check in the spec.
+ * `resolveNeed` answers `undefined` when a `Needs` value (catalogue: utils/regression/tags.ts) is met, else the reason the
+ * test skips with. The `needs` fixture resolves the declared needs before any object is created, so a skip leaves nothing behind.
+ * A skip is never coverage. A resolver only reads; a failed read is an error of the test, and only the tier's answer that
+ * the thing is missing skips. `scan-target` and `connector-online` are decided by the test body.
  */
 import type { TestEnv } from '../env';
 import { authorityConnectorName, existingRaProfile } from './config/authorities';

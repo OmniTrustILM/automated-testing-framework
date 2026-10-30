@@ -1,12 +1,10 @@
 /**
  * preRegistration — platform-level pre-registration of own certificates.
  *
- * WHAT: platform-level pre-registration of own certificates (`…/certificates/register`, with or without a
- *       challenge), the registration block of a detail, the registration and validation settings of the tier (read, never
- *       set), and the re-validation of an own certificate. The placeholder a register makes is recorded before any assertion.
- * WHY: A placeholder certificate registered with or without a challenge must be recorded and completed like any own certificate.
- * HOW: The register call, the registration block of a detail, the registration and validation settings (read, never set) and re-validation;
- * the placeholder is recorded before any assertion.
+ * Provides the register call (with or without a challenge), the registration block of a certificate detail, the tier's
+ * registration and validation settings (read, never set) and the re-validation of an own certificate.
+ *
+ * The placeholder a register makes is recorded in the ledger before any assertion.
  */
 import type { APIRequestContext } from '@playwright/test';
 import { apiJson, getCertificate, ApiAnswer } from '../apiReads';

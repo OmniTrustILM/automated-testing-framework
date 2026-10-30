@@ -1,20 +1,12 @@
 /**
- * REG-DEP-01.e, REG-DEP-01.f — Read-only probe of every required connector, and the inventory of the connected ones. ilm#425.
+ * REG-DEP-01.e, REG-DEP-01.f — Read-only probe of every required connector, and the inventory of the connected ones (ilm#425).
  *
- * WHAT: 1. (REG-DEP-01.e, one test per required connector) The connector answers its live health with the body of its version (v1
- *          `ok`, v2 `UP`) and its detail has the shape the platform relies on: a v1 connector lists function groups with kinds, a v2
- *          connector offers the info and health interfaces, each with a version. A v2 connector also answers `GET /v2/connectors/{uuid}/info`
- *          with a document that names the connector and its version, and its metrics interface is checked where it offers one.
- *       2. (REG-DEP-01.f) Every connected connector the tier lists is recorded as an annotation: its version, its function groups and
- *          kinds (v1) or its interfaces and feature flags (v2). A group, kind, interface or feature the suite does not know is recorded,
- *          never a failure.
- * WHY: the post-install check covers only the connectors named in REG_REQUIRED_CONNECTORS; a connector that loses a function group or
- *      an interface, or answers an info document without its name, breaks the flows built on it while its stored status stays `connected`.
- *      The inventory shows what a tier offers, so the rows that depend on a connector can be chosen and extended from data.
- * HOW: read-only; every call is a GET through the guarded context and nothing is created. The core offers no read of a connector's metrics
- *      (the connector exposes them to its own scrapers), so the metrics interface is checked as listed in the detail, with the openMetrics
- *      feature on that interface only. Env: REG_REQUIRED_CONNECTORS (default kept), REG_BLOCKED_CONNECTORS (`name:reason;...`, a blocked
- *      connector skips with its reason).
+ * (.e, one test per required connector) The connector answers its live health with the body of its version, and its detail
+ * has the shape the platform relies on. (.f) Every connected connector is recorded as an annotation; one the suite does not
+ * know is recorded, never a failure.
+ *
+ * Read-only: every call is a GET through the guarded context and nothing is created. A blocked connector skips with its
+ * reason (the REG_* connector settings, see .env.example).
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { blockedConnectors, connectorVersion, describeHealth, findConnector, healthByVersion, listConnectors, requiredConnectors } from '../../../utils/regression/platform/connectorApi';

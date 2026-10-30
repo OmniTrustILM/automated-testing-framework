@@ -1,14 +1,13 @@
 /**
  * liveOwn — the handle of an own object that has just passed the live own-object check.
  *
- * WHAT: `LiveOwn.prove(api, type, ref)` runs `assertOwnLive` (a `created` line of this run on this tier AND a live object whose
- * name carries the run prefix) and returns a `LiveOwn`; nothing else can build one: the constructor is private, so a spec cannot
- * write `new LiveOwn(…)` or hand over an object literal where a `LiveOwn` is wanted (the type does not check), and the spec lint
- * refuses `as LiveOwn`.
- * WHY: the browser is not behind the API guard, so before a page object changes or deletes an object the live check is the only
- * barrier. A page action that takes a `LiveOwn` instead of a bare reference cannot be reached without it.
- * HOW: the `live(type, ref)` fixture of fixtures/regressionFixtures.ts calls `prove` with the test's `api`; page actions on own
- * objects take the handle in later steps. The check stays right before the act: prove it, then act.
+ * `LiveOwn.prove(api, type, ref)` runs `assertOwnLive` (a `created` line of this run on this tier AND a live object whose
+ * name carries the run prefix) and returns a `LiveOwn`. Nothing else can build one: the constructor is private, and the
+ * spec lint refuses `as LiveOwn`.
+ *
+ * The browser is not behind the API guard, so before a page object changes or deletes an object this check is the only
+ * barrier; a page action that takes a `LiveOwn` cannot be reached without it. The `live(type, ref)` fixture of
+ * fixtures/regressionFixtures.ts calls `prove` with the test's `api`. Prove it right before the act, then act.
  */
 import type { APIRequestContext } from '@playwright/test';
 import { assertOwnLive, type LiveOwnership } from './ownership';

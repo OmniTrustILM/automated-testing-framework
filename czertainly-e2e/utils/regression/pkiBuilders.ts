@@ -1,19 +1,9 @@
 /**
  * pkiBuilders — keys, CSRs, certificates and their encodings.
  *
- * WHAT: the one module for keys, CSRs, certificates and the encodings around them (PEM / DER, SHA-256), for every
- *       regression flow: issuance, protocols, the inventory seeds and the TLS scan target build on it, and no other module
- *       carries its own copy of these primitives.
- *
- *       node-forge (RSA) builds the CSRs the flows have always used; this module adds DNS + IP SANs, the private key, CSRs from a
- *       given key (same-key renew / rekey CSRs later) and an EC P-256 CSR through `@peculiar/x509` (WebCrypto: forge has no
- *       EC). Certificates whose key may be EC (the ACME leaf) and chains are read with `@peculiar/x509` as well: SANs, the
- *       public key (SPKI, compared byte for byte with the CSR's) and the signature of each chain link. `@peculiar/x509`
- *       needs `reflect-metadata` and is loaded lazily, on the first call that needs it.
- *       No openssl, no network: everything runs in-process.
- * WHY: No module should carry its own copy of these primitives.
- * HOW: node-forge builds the RSA CSRs, `@peculiar/x509` (lazy, with reflect-metadata) adds EC CSRs and reads certificates and chains;
- * everything runs in process, no openssl, no network.
+ * The one module for these primitives; issuance, protocols, the inventory seeds and the TLS scan target build on it.
+ * node-forge builds RSA keys and CSRs; `@peculiar/x509` builds an EC P-256 CSR and reads certificates and chains (SANs,
+ * public key, signatures). Everything runs in process: no openssl, no network.
  */
 import * as crypto from 'crypto';
 import * as forge from 'node-forge';

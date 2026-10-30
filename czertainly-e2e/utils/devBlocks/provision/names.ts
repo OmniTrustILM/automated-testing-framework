@@ -1,12 +1,11 @@
 /**
- * names — the block-independent helpers of the development blocks' setups: the name stamp, run-prefixed names, the
- * step wrapper and the uuid of a create answer.
+ * names — shared helpers of the development blocks' setups.
  *
- * WHAT: `newStamp` (four random base36 characters), `objectName` (`<run id>-<suffix>-<stamp>`), `step` (a TierError or
- * SetupError names its step) and `uuidOf` (the uuid of a create answer, or a TierError).
- * WHY: the run-end teardown's live-name check accepts only `<run id>-…` names; a Playwright retry of a setup project
- * must never reuse a name of its first attempt (a stamp per attempt). Both blocks need the same helpers.
- * HOW: plain helpers, no requests; `uuidOf` takes the logger name of the block that calls it.
+ * Provides:
+ *   - `newStamp`: four random base36 characters, so a Playwright retry of a setup never reuses a name of its first attempt
+ *   - `objectName`: `<run id>-<suffix>-<stamp>`, the prefix the run-end teardown's live-name check accepts
+ *   - `step`: a TierError or SetupError comes out prefixed with the step's name
+ *   - `uuidOf`: the uuid of a create answer, or a TierError (the warning goes under the caller's logger name)
  */
 import * as crypto from 'crypto';
 import { Logger } from '../../Logger';

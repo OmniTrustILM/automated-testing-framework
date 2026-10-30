@@ -1,12 +1,11 @@
 /**
  * certificateListOracle — what the certificate list must show and send.
  *
- * WHAT: What the certificate list must show and send, computed from the display rules of the admin UI and never from what the
- *       page shows: the 16 Standard columns, the date format in the browser time zone, the expected text of each cell, the
- *       words a rendered table must never hold, and the comparison of the filters a list request carries.
- * WHY: The page must be judged against the display rules of the admin UI, never against what the page happens to show.
- * HOW: Pure functions compute the 16 Standard columns, the cell text in the browser time zone, the words a table must never hold and the
- * comparison of the request filters.
+ * Computed from the admin UI's display rules, never from what the page shows:
+ *   - the 16 Standard columns
+ *   - the date format in the browser time zone and the expected text of each cell
+ *   - the words a rendered table must never hold
+ *   - the comparison of the filters a list request carries
  */
 import type { PlatformLabels } from './fieldLabels';
 import { JsonObject } from '../json';

@@ -1,12 +1,10 @@
 /**
- * seedOwnedObjects — creators of the run's own inventory objects.
+ * seedOwnedObjects — creators of the run's own inventory objects for the seeds.
  *
- * WHAT: Creates and changes the run's own inventory objects (certificates, groups, custom attribute definitions) for the
- *       seeds: every non-GET goes through the guarded `api`, every create is in the ledger before any assertion, and every
- *       change checks the object is this run's first. Uploads are synchronous, so `created` follows the upload order.
- * WHY: The seeds create certificates, groups and attributes that the run must own and remove.
- * HOW: Every non-GET goes through the guarded `api`, every create is recorded before any assertion, every change first checks the object is
- * this run's; uploads are synchronous so `created` follows upload order.
+ * Uploads the run's own seed certificates (with their custom attribute values) and changes them: groups, owner, trusted-CA
+ * mark, archive. Groups and attribute definitions are created elsewhere. Every non-GET goes through the guarded `api`,
+ * every upload is in the ledger before any assertion, and every change first checks the certificate is this run's.
+ * Uploads are synchronous, so `created` follows the upload order.
  */
 import type { GuardedApi } from '../guard/types';
 import { requestVersion } from '../attributeVersion';

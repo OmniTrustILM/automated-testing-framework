@@ -1,22 +1,12 @@
 /**
  * tags — the one place where the regression and API tags are spelled.
  *
- * A test's details are one call: `test('<expected behaviour>', testMeta({ id: 'API-GEN-33', prio: 'P1', issue: 'ilm#428' }), …)`.
- * The suite tag (`@regression` / `@api`) goes on the describe, by folder. Rules the builders enforce:
- * - every test carries `@issue:ilm#448` (the registered QA task) plus the #424 sub-issue of its area;
- * - every test carries one priority tag `@p1` / `@p2` / `@p3` (the nightly selects `@p1`, the `api-rest` project
- *   `@p2|@p3`); a characterisation pin (`@pin:<question>`) is never P1;
- * - `@gate` is API-GEN-32 only;
- * - `@local` also needs `describeLocalOnly(test)` in the spec;
- * - `@needs:<x>` names one thing a row cannot run without (`Needs`, the one catalogue below). A spec that takes the
- *   `needs` fixture of fixtures/regressionFixtures.ts gets every declared need resolved from READS before it creates
- *   anything; an unmet need skips the test with the named reason;
- * - `testMeta()` also tags the test with its id (`@REG-USE-05`) and may name a table row (`row`, an annotation).
- *   `--grep` is a regular expression, so `--grep @REG-USE-05` selects the id AND its sub-ids (`@REG-USE-05.1`): use it
- *   for a whole checklist item; `--grep "@REG-USE-05(?![\w.-])"` selects exactly that id;
- * - `@bug:<repo>#<n>` only on a test that calls `test.fail()` (the rule is asserted, and the test turns red once the
- *   bug is fixed). `bugTagsWithoutFail()` (specLint/parseSpec.ts) finds violations in a spec's source; specGuards runs it
- *   over every spec.
+ * A test's details are one call: `testMeta({ id, prio, issue })`. Rules the builders enforce:
+ *   - every test carries `@issue:ilm#448` plus the #424 sub-issue of its area, and one priority tag `@p1` / `@p2` / `@p3`
+ *   - `@gate` is API-GEN-32 only; `@local` also needs `describeLocalOnly(test)` in the spec
+ *   - `@needs:<x>` names what a row cannot run without; an unmet need skips the test with the named reason
+ *   - `@bug:<repo>#<n>` only on a test that calls `test.fail()`
+ * `--grep @REG-USE-05` also selects its sub-ids; use `"@REG-USE-05(?![\w.-])"` for exactly that id.
  */
 
 export type Prio = 'P1' | 'P2' | 'P3';

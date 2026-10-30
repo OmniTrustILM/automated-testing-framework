@@ -1,14 +1,12 @@
 /**
- * DiscoveryDetailPage — the detail page of one discovery.
+ * DiscoveryDetailPage — the detail page of one discovery (REG-DISC-01, 02, 03).
  *
- * WHAT: the detail page of one discovery: the details table and its status badge, the header controls (stop,
- *       resume, cancel, delete), the progress caption and the Results tab with the discovered certificates.
- * WHY: REG-DISC-01 / 02 / 03 compare what the page shows with the API: status, which controls a v1 and a v2 run
- *       offer, the fingerprints of the result rows; stop and resume return the answer of their request.
- * HOW: rows by data id (`status`, `kind`, `connectorInterface`); controls by test id (`pause-button`, `play-button`,
- *       `cancel-button`, `trash-button`); the progress caption by `targets-caption`; the result column by its header id
- *       (`fingerprint`); the table is read only after its busy overlay is gone and the expected row count is shown.
- *       `assert…` methods never navigate or switch a tab: `goToDetail` and `openTab` do.
+ * Encapsulates:
+ *   - the details table with its status badge, the header controls and the progress caption
+ *   - the Results tab with the discovered certificates
+ *
+ * The specs compare what the page shows with the API. The table is read only after its busy overlay is gone.
+ * `assert…` methods never navigate or switch a tab; `goToDetail` and `openTab` do.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import type { ApiAnswer } from '../utils/regression/apiReads';

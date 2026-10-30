@@ -1,14 +1,11 @@
 /**
  * sendRequest — checks a snapshot and sends it, and nothing else.
  *
- * WHAT: `checkAndSend` is the only export: it runs the guard's rules on the snapshot (checkRequest.ts) and, only when
- * they all pass, sends it. `buildSentOptions` turns the snapshot into the plain Playwright options, `sendJudged` sends it, and
- * `followRedirects` follows the same-origin redirects of a GET through the URL and side-effect rules again.
- * WHY: the guard judges what is sent and sends what it judged, so the wire sees only the snapshot's data: never the
- * caller's objects, and always `maxRedirects: 0` because the guard follows redirects itself.
- * HOW: a GET goes through `get`, every other method through `fetch` with the method set; each redirect hop is judged by
- * the URL rules, the structural path rule, the side-effect GET list and the `_method` rule, and is not followed (the
- * 3xx is returned) when any of them says no.
+ * `checkAndSend` is the only export: it runs the guard's rules on the snapshot (checkRequest.ts) and, only when they all
+ * pass, sends it. The wire sees only the snapshot's data, never the caller's objects, and always `maxRedirects: 0`
+ * because the guard follows redirects itself. A GET goes through `get`, every other method through `fetch` with the
+ * method set. Each same-origin redirect hop of a GET is judged by the URL rules, the structural path rule, the
+ * side-effect GET list and the `_method` rule, and is not followed (the 3xx is returned) when any of them says no.
  */
 import { hasMethodParam, pathCharProblem, rawPathOf, readApiPath, readPathProblem, resolveSentUrl } from './urls';
 import { REDIRECTS } from './headers';

@@ -15,7 +15,7 @@
  */
 
 import { loadDotenv } from './envFile';
-import { assertAuthModeAllowed } from './regression/tier';
+import { assertAuthModeAllowed } from './regression/tier/localProof';
 // Reads REG_ENV_FILE when set (and then NEVER the working directory's .env), else ./.env; existing variables win, so
 // what a REG / API config loaded and froze at load time cannot be changed here. API_ENV_FILE is NOT read
 // here: the REG / API configs resolve it and pin REG_ENV_FILE, a smoke run never follows it.

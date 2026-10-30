@@ -1,15 +1,12 @@
 /**
- * REG-CFG-04 — An ACME profile created through the UI (release checklist: Configuration 4). ilm#430.
+ * REG-CFG-04 — An ACME profile created through the UI (release checklist: Configuration 4; ilm#430).
  *
- * WHAT: 1. ACME Profiles → + → the form has a default retry interval and order validity; Terms of Service and contact are switched off.
- *       2. One pre-authorized identifier: DNS, exact match, a name under the run's prefix.
- *       3. Create → the profile exists, disabled.
- *       4. Detail → Enable → enabled.
- *       5. The API shows the identifier as entered (exact, no wildcard) and no Terms of Service required.
- * WHY: the identifier is pre-authorized so that REG-USE-05 orders a certificate without answering a challenge; an ACME profile
- *      is created disabled and enabled from its detail.
- * HOW: create-only: only this test's profile is enabled. The create answer is put in the ledger (`own.record`) before the dialog
- *      or the list is waited for; the profile is its own: the run's ACME profile is made by the run-setup project.
+ * Creates the profile with one pre-authorized DNS identifier (exact match, a name under the run's prefix), enables it, and
+ * checks in the API that the identifier is as entered and no Terms of Service is required. A pre-authorized identifier is
+ * what lets an ACME order skip the challenge (as in REG-USE-05, which uses the run's ACME profile, not this one).
+ *
+ * Create-only: only this test's profile is enabled. The create answer is put in the ledger before the dialog or the list is
+ * waited for. The run's ACME profile is made by the run-setup project, not here.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { AcmeProfilePage } from '../../../pages/AcmeProfilePage';

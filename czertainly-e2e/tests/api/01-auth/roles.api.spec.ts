@@ -1,14 +1,8 @@
 /**
- * API-AUTH-19, API-AUTH-20 — Role update and delete through the API. ilm#427.
+ * API-AUTH-19, API-AUTH-20 — Role update and delete through the API (ilm#427).
  *
- * WHAT: 1. PUT a role with another name, a new description and e-mail → 200; description and e-mail change, the name does not; PUT with
- *          the name of a second role → 200, no rename, the second role untouched, exactly one role carries that name.
- *       2. Delete an own role that a user holds → 204; the roles list no longer names it and the user no longer lists it.
- * WHY: a role's name cannot change: `PUT /v1/roles/{uuid}` accepts `name` and ignores it (the update carries description and e-mail
- *      only), which is the auth service's behaviour in ilm#427. A deleted role is read as absent from the roles list, because its
- *      detail answers 500 (known bug core#2511).
- * HOW: every role and user is a new run object (a disabled user, own roles); deletes go through the own-object helper, which records
- *      the ledger line first; absence is read from the list, not from the detail.
+ * `PUT /v1/roles/{uuid}` accepts `name` and ignores it. A deleted role's detail answers 500 (core#2511), so absence is
+ * read from the list. Every role and user is a new run object; deletes go through the own-object helper.
  */
 import { ACCOUNT_STEPS_TEST_MS, SEVERAL_STEPS_TEST_MS } from '../../../utils/regression/timeouts';
 import { expect, test } from '../../../fixtures/regressionFixtures';

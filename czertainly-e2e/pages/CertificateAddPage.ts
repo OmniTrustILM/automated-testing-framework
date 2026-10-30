@@ -1,13 +1,12 @@
 /**
- * CertificateAddPage — the Add Certificate form.
+ * CertificateAddPage — the Add Certificate form (REG-CERT-12, 13; also REG-USE-04, REG-CERT-16).
  *
- * WHAT: the Add Certificate form on its own route: the Pre-register request type with Challenge and Issuance
- *       window, the Request Attributes common name, and Create with its two successful outcomes (redirect, or the
- *       "accepted with warnings" panel).
- * WHY: REG-CERT-12 / 13 pre-register in the form; REG-USE-04 and REG-CERT-16 need the warnings outcome. The
- *       Issue-now fields stay on the smoke facade `CertificatePage`.
- * HOW: test ids of the form; the issuance window is a DatePicker without a test id (its input id is used, FE
- *       test-id request); the new certificate's uuid is read from the detail route.
+ * Encapsulates:
+ *   - the Pre-register request type with Challenge and Issuance window
+ *   - Create with its two successful outcomes: the redirect, or the "accepted with warnings" panel
+ *
+ * The Issue-now fields stay on the smoke page object `CertificatePage`. The issuance window is a DatePicker without a
+ * test id (FE test-id request), so its input id is used.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { Logger } from '../utils/Logger';

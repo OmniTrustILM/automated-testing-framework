@@ -1,22 +1,13 @@
 /**
- * REG-USE-05 — A certificate issued over ACME (release checklist: Usage 5). ilm#430.
+ * REG-USE-05 — A certificate issued over ACME (release checklist: Usage 5; ilm#430).
  *
- * WHAT: 1. The run's ACME profile (one exact pre-authorized identifier) is activated on an own RA profile; an RFC 8555 client reads the
- *          directory, opens a valid account and orders the identifier → ready, no challenge needed.
- *       2. Finalize → the order is valid → download the chain; the certificate carries the CSR key and the identifier, and the inventory
- *          lists it by fingerprint under the RA profile with protocol ACME and the ACME profile's uuid.
- *       3. The account is listed in the API and in the UI's ACME accounts list; the certificate detail opens.
- *       4. A name that is not pre-authorized → pending, with http-01 and dns-01 challenges only (a test of its own).
- *       5. (REG-USE-05.1, RSA-2048 and EC P-256 CSRs) Order expiry equals now plus the profile validity and Retry-After equals the retry
- *          interval on new-account, new-order and finalize; the download is application/pem-certificate-chain with the leaf first and
- *          each block signed by the next; the leaf has the ordered SAN and the CSR key.
- *       6. (REG-USE-05.2) A second finalize of a valid order → 403 orderNotReady and the order stays valid.
- * WHY: ACME is the issuance path of most automated clients; the pre-authorization must skip challenges only for the exact identifier, and
- *      the protocol answers must follow RFC 8555 (§7.1.6, §7.4.2) and the profile's settings.
- * HOW: the ACME profile and the account are the run's own; the account and every certificate an order makes are recorded in the ledger
- *      with their keys before the assertions (also when the finalize throws). Every row declares the `ca` need, so a tier without a
- *      healthy CA skips with the named reason. The EC row is skipped with the CA's text when the RA profile refuses EC keys. The SAN
- *      oracle is CA-aware: the exact set on EJBCA-NG, DNS values elsewhere. Each row registers its own account on the run ACME profile.
+ * An RFC 8555 client orders the pre-authorized identifier of the run's ACME profile on an own RA profile, finalizes and
+ * downloads the chain; the inventory lists it under protocol ACME. A name that is not pre-authorized stays pending. (.1)
+ * Expiry and Retry-After follow the profile; (.2) a second finalize gives 403 orderNotReady.
+ *
+ * The ACME profile and the account are the run's own. The account and every certificate are recorded in the ledger before
+ * the assertions. Every row needs a CA, so a tier without a healthy one skips with the reason. The EC row skips, after its
+ * objects are recorded, when the RA profile's CA refuses EC keys.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { AcmeAccountPage } from '../../../pages/AcmeAccountPage';

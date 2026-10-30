@@ -1,16 +1,13 @@
 /**
  * uiCreates — the ledger line of an object a UI form created, written from the form's ANSWER.
  *
- * WHAT: `recordUiCreate` takes what a page object's `submit…` method returned (`status`, `uuid`, `text`), appends the
- * `created` line when the answer carries a uuid, and only then fails when the platform refused (or answered without an id).
- * `recordIfCreated` is the same line for a probe that EXPECTS a refusal: it records an accepted duplicate and never throws.
- * WHY: the object is on a shared tier from the moment the platform answered. The line is therefore written before the spec waits for the
- * form's redirect, reads a list or asserts anything: a timeout after a successful create must not leave an object the teardown cannot name.
- * A refusal that still carries a uuid (an accepted duplicate) is recorded too. `submitRecordingByNameOnFailure` is the safety net around
- * the submit: when no answer arrives in time (the create may still land later) or a 2xx answer carries no uuid, every object of the exact
- * name this run may own is looked up and recorded before the error continues.
- * HOW: a spec calls it right after `submit…`, with the answer and the object's name; it returns the `OwnRef`
- * (`recordCreated`'s result) for the steps after it. An object already in the ledger (this run) is not recorded twice.
+ *   - `recordUiCreate`: appends the `created` line when the answer carries a uuid, and only then fails if the platform refused.
+ *   - `recordIfCreated`: the same for a probe that EXPECTS a refusal; it records an accepted duplicate and never throws.
+ *   - `submitRecordingByNameOnFailure`: when no answer arrives or a 2xx has no uuid, records every object of the exact name
+ *     this run may own before the error continues.
+ *
+ * The object is on a shared tier once the platform answered, so a spec calls this right after `submit...`, before it
+ * waits for a redirect or asserts anything.
  */
 import type { APIRequestContext } from '@playwright/test';
 import { Logger } from '../../Logger';
@@ -18,7 +15,7 @@ import { currentRunId } from '../run/runId';
 import { checkOwnership } from './ownership';
 import { LedgerLine, OwnRef, recordCreated } from './ledger';
 
-const logger = new Logger('uiCreates');
+const logger = new Logger('UiCreates');
 
 /** The part of a create answer this module reads (a page object's `CreateAnswer` fits). */
 export interface UiCreateAnswer {

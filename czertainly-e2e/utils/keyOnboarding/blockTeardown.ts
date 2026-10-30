@@ -1,16 +1,12 @@
 /**
- * blockTeardown — the tear-down of the key onboarding block: the developers' block tear-down (utils/devBlocks/
- * blockTeardown.ts) for the ledger lines whose spec starts with `key-onboarding/`, with the token clean-up as its
- * `after` step.
+ * blockTeardown — the teardown of the key onboarding block.
  *
- * WHAT: first the block's platform objects go, in the run-end teardown's delete order (keys — destroyed on the token
- * when a plain delete is refused — certificates, token profile, token, PIN secret, vault profile, vault instance, the
- * custom attribute); then every object left on the token whose label starts with this run's id (the pairs never
- * onboarded, or removed from the inventory) is deleted there (provision/plant.ts `unplantRunKeys`).
- * WHY: the block plants key pairs on the token the way a tool outside the platform would, so its tear-down has to
- * remove them outside the platform too. The token step runs only when every platform object of the block is gone:
- * otherwise the platform would keep a key whose token objects were removed under it.
- * HOW: see utils/devBlocks/blockTeardown.ts for the switches (dry run, API_DELETE_OWN, local-backend proof).
+ * The developers' block teardown (utils/devBlocks/blockTeardown.ts) for ledger lines whose spec starts with
+ * `key-onboarding/`, with the token clean-up as its `after` step; see that file for the switches.
+ *
+ * First the block's platform objects go, in the run-end teardown's delete order. Then every object left on the token whose
+ * label starts with this run's id is deleted. The token step runs only when every platform object of the block is gone,
+ * so the platform never keeps a key whose token objects were removed.
  */
 import * as devBlock from '../devBlocks/blockTeardown';
 import { unplantRunKeys } from './provision/provision';

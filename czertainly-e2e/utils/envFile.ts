@@ -1,16 +1,12 @@
 /**
  * envFile — which dotenv file a process reads. Side-effect free: importing it loads nothing.
  *
- * Rule: when REG_ENV_FILE is set, that file is the ONLY env file; the `.env` of the working directory is never read in
- * that case. API_ENV_FILE is an alias honoured only by the REG / API configs (`prepareRun` passes `allowApiEnvFile`),
- * never by a smoke run's `utils/env.ts`: a shell that exported API_ENV_FILE for an API run must not change what
- * the smoke suite reads. Otherwise `<dir>/.env` is read (`dir` = the config's folder for the REG / API configs, the
- * working directory for `utils/env.ts`). dotenv never overrides a variable that is already set, so the first load wins:
- * the configs load first and then freeze TIER_KIND / AUTH_MODE / REG_RA_PROFILE_NAME (regression/tier/kind.ts `freezeTierEnv`), and pin
- * REG_ENV_FILE to the file they used, so a later load in a worker reads the same file.
- *
- * An explicitly named file that does not exist is an error for the configs (`requireExplicit`); the default
- * `<dir>/.env` may be missing (CI has none).
+ * When REG_ENV_FILE is set, that file is the ONLY env file; the working directory's `.env` is never read. API_ENV_FILE is an
+ * alias honoured only by the REG / API configs (`prepareRun` passes `allowApiEnvFile`), never by a smoke run's `utils/env.ts`.
+ * Otherwise `<dir>/.env` is read (the config's folder, or the working directory for `utils/env.ts`). dotenv never overrides a
+ * set variable, so the first load wins: the configs freeze TIER_KIND / AUTH_MODE / REG_RA_PROFILE_NAME (regression/tier/kind.ts
+ * `freezeTierEnv`) and pin REG_ENV_FILE, so a later load in a worker reads the same file. An explicitly named file that does
+ * not exist is an error for the configs (`requireExplicit`); the default `.env` may be missing (CI has none).
  */
 import * as dotenv from 'dotenv';
 import * as fs from 'fs';

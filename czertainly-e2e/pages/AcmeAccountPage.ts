@@ -1,12 +1,10 @@
 /**
  * AcmeAccountPage — the ACME accounts list.
  *
- * WHAT: the ACME accounts list of the admin UI: open it, search it by account id, clear the search and assert that an account is
- *       listed under an ACME profile.
- * WHY: an account an ACME client registered must be visible to the operator under its ACME profile. The list pages by ten rows, sorted
- *      by ACME profile name, so the account is searched by its server-assigned id: it may sort onto page two.
- * HOW: a `SearchableListWidget` titled like the list; `searchById` and `clearSearch` act, `assertListed` only reads the rows the search
- *      left (exact link text, so an id that merely contains the searched id does not count).
+ * Opens the list, searches it by account id, clears the search and asserts that an account is listed under an ACME
+ * profile. The list pages by ten rows, sorted by ACME profile name, so the account is searched by its server-assigned
+ * id: it may sort onto page two. `assertListed` matches the exact link text, so an id that only contains the searched
+ * id does not count.
  */
 import { expect, Page } from '@playwright/test';
 import { Logger } from '../utils/Logger';
@@ -24,7 +22,7 @@ export class AcmeAccountPage {
     /** Opens the ACME accounts list by its route. */
     async goToList(): Promise<void> {
         logger.info('Opening the ACME accounts list');
-        await this.page.goto('administrator/#/acmeaccounts');
+        await this.page.goto('/administrator/#/acmeaccounts');
         await expect(this.list.root).toBeVisible();
     }
 

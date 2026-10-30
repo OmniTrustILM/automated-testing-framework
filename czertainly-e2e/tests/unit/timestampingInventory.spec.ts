@@ -1,11 +1,10 @@
 /**
- * timestampingInventory — the read-only before / after check of the signing profiles, TSP profiles and time-quality configurations
- * (utils/timestamping/inventory.ts): the baseline of the setup, the comparison of the teardown.
+ * timestampingInventory — the read-only before / after check of the signing profiles, TSP profiles and time-quality
+ * configurations (utils/timestamping/inventory.ts).
  *
- * WHAT: the same tier twice is `same`; a pre-existing row changed, added or gone is `differs`, naming the resource and the counts, never a name;
- * the run's own rows (a `created` ledger line) are left out of both sides; every page is read; a tier without the endpoints (404) is a skipped
- * check with the reason, never a failure, while a refused identity still fails; no baseline (the setup made none) is a skip; the check only reads.
- * HOW: the real guard over a fake request context that serves the three lists and records every request; the ledger is the run's own file.
+ * Checks the same tier twice is `same`; a pre-existing row changed, added or gone is `differs`, naming the resource and the
+ * counts, never a name; the run's own rows (a `created` ledger line) are left out; every page is read; a tier without the
+ * endpoints (404) is a skipped check, a refused identity still fails; no baseline is a skip; the check only reads.
  */
 import { APIRequestContext, expect, test } from '@playwright/test';
 import * as fs from 'fs';

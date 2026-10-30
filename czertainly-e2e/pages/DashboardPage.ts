@@ -1,12 +1,10 @@
 /**
  * DashboardPage — the certificates dashboard.
  *
- * WHAT: the certificates dashboard: the sidebar, the count tiles, the charts, header and footer.
- * WHY: an operator starts here: the tile numbers must be those of the statistics the page loaded, and a legend click must lead to the
- *      inventory. The smoke suite asserts the sidebar, header, footer and tiles after sign-in through the same regions.
- * HOW: five regions (sidebar, count tiles, charts, header, footer) by test id; a tile by its heading inside the counts
- *      section and a legend item by its button inside the chart's section; opening the dashboard returns the statistics
- *      answer of the same page load, so a number is never compared with another user's data.
+ * Provides the five regions by test id (sidebar, count tiles, charts, header, footer), a tile by its heading and a
+ * legend item by its button. The smoke suite asserts the sidebar, header, footer and tiles after sign-in through the
+ * same regions. Opening the dashboard returns the statistics answer of the same page load, so a number is never
+ * compared with another user's data.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { Logger } from '../utils/Logger';

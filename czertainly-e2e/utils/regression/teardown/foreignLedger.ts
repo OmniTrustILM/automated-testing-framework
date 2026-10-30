@@ -1,15 +1,14 @@
 /**
  * foreignLedger — what other QA tools' ledger lines explain inside a run window.
  *
- * WHAT: reads the SHARED ledger for lines of other run ids whose `at` lies inside [before.takenAt, after.takenAt]
- * (`foreignWindowLines`), says which of them record a creation or a deletion (`foreignEventOf`, `foreignResourceType`), and
- * confirms by a detail read which new objects of a large collection really are new (`confirmForeignCreates`).
+ * A manual-test session sharing the tier may create or delete its own objects while a run is in flight; the comparison must
+ * tell that apart from a change the run made, and must never explain more than it can prove.
+ *   - `foreignWindowLines`: reads the SHARED ledger for lines of other run ids whose `at` lies inside [before.takenAt, after.takenAt]
+ *   - `foreignEventOf`, `foreignResourceType`: say which of them record a creation or a deletion
+ *   - `confirmForeignCreates`: confirms by a detail read which new objects of a large collection really are new (the only
+ *     function that reads the tier: one detail URL per candidate)
  *
- * WHY: a manual-test session sharing the tier may create or delete its own objects while a run is in flight; the
- * comparison must tell that apart from a change the run made, and must never explain more than it can prove.
- *
- * HOW: fail-closed; the rules are listed in the header of nonInterference.ts. Pure except `confirmForeignCreates`, which
- * reads one detail URL per candidate.
+ * Fail-closed; the rules are in the header of nonInterference.ts.
  */
 import { LedgerLine, runIdPrefix } from '../ledger/ledger';
 import { call, SnapshotReader } from './snapshot';

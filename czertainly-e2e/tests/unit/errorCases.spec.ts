@@ -1,10 +1,10 @@
 /**
  * errorCases — unit tests of utils/regression/inventory/errorCases/.
  *
- * WHAT: the response check and its shape rule, the leak scanner, the forged token, the upload bodies, and the structure of
- *       the case tables (no duplicates, every listing and case has a request or a stated reason).
- * WHY: the battery judges every refusal of the API; a check that passes a wrong answer, or a table with a hole, would hide a defect.
- * HOW: pure calls over hand-made answers and the case tables; no request is sent.
+ * Checks the response check and its shape rule, the leak scanner, the forged token, the upload bodies, and the structure
+ * of the case tables (no duplicates, every listing and case has a request or a stated reason). The battery judges every
+ * refusal of the API, so a check that passes a wrong answer, or a table with a hole, would hide a defect. Pure calls over
+ * hand-made answers and the case tables; no request is sent.
  */
 import { test, expect } from '@playwright/test';
 import { jsonDepth, MAX_BODY_DEPTH } from '../../utils/regression/guard/targets';

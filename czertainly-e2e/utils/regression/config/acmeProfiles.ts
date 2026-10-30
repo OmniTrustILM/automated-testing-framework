@@ -1,12 +1,9 @@
 /**
  * acmeProfiles — the run's own ACME profile.
  *
- * WHAT: the run's OWN ACME profile: created with one exact, pre-authorized DNS identifier (orders for it
- *       need no challenge), enabled, and activated on an own RA profile only. `ensureAcmeProfile` reuses the run's profile from
- *       the run state, else creates and records it.
- * WHY: Protocol specs need an ACME profile they may change, and a shared tier must never see one of its existing profiles touched.
- * HOW: `createOwnAcmeProfile` records the create before any assertion, `ensureAcmeProfile` reuses the run's profile from the run state, and
- * activation passes the live own-object check on both objects.
+ * It has one exact, pre-authorized DNS identifier (orders for it need no challenge), is enabled, and is activated on an
+ * own RA profile only. `ensureAcmeProfile` reuses the run's profile from the run state, else creates and records it.
+ * The create is recorded before any assertion; activation passes the live own-object check on both objects.
  */
 import { apiJson } from '../apiReads';
 import { requiredCustomAttributes } from '../customAttributes';

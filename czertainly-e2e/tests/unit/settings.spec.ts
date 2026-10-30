@@ -1,12 +1,10 @@
 /**
- * settings — the reader of the regression and API environment (utils/regression/run/settings.ts): defaults, the two
- * spellings of the local-stack variables, an injected `env`, and the rule that every variable the reader names is
- * documented in .env.example (the internal pins in a line that says the run sets them).
+ * settings — the reader of the regression and API environment (utils/regression/run/settings.ts).
  *
- * WHAT: unit tests of `settings(env)` members and a diff of the names settings.ts reads against .env.example.
- * WHY: a variable read in code but missing from .env.example (or a documented one the code ignores under another spelling)
- * is the drift this reader exists to stop.
- * HOW: pure; the source of settings.ts and .env.example are read as text.
+ * Checks `settings(env)` members (defaults, the two spellings of the local-stack variables, an injected `env`), and that
+ * every variable the reader names is documented in .env.example (the internal pins in a line that says the run sets
+ * them). A variable read in code but missing from .env.example, or a documented one the code ignores under another
+ * spelling, is the drift this reader exists to stop. Pure; the source of settings.ts and .env.example are read as text.
  */
 import { expect, test } from '@playwright/test';
 import * as fs from 'fs';

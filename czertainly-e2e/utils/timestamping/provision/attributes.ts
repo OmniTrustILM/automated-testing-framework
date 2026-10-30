@@ -1,15 +1,10 @@
 /**
  * attributes — the request attributes of the timestamping setup, built from the connector's LIVE definitions.
  *
- * WHAT: the attribute helpers of development-environment `scripts/timestamping-setup.sh` (`attr_uuid`, `group_uuid`,
- * `offers_attribute`, `request_attribute`, `chosen_attribute`), the key-spec plan of a key pair (`requested_key_spec`,
- * `key_spec_attributes`) and the signature settings of a CSR or a signing profile (`signing_operation_attributes`), plus
- * the per-provider attribute names (`configure_crypto_provider`).
- * WHY: the script is the source of truth for every request body; the connectors' forms differ between v1 and v2 and
- * between an empty and a populated provider, so nothing is hard-coded beyond the names the script hard-codes.
- * HOW: pure functions over the definition lists the caller read; a definition or an offered value that is missing is a
- * TierError naming what the run asked for. What the connector offered goes to the log only (a reason may be shown in a
- * report; the connector's lists are the tier's data).
+ * Provides the attribute helpers of development-environment `scripts/timestamping-setup.sh`, the key-spec plan of a key pair,
+ * the signature settings of a CSR or signing profile and the per-provider attribute names. The script is the source of truth
+ * for every request body, so nothing is hard-coded beyond what it hard-codes. A missing definition or offered value is a
+ * TierError naming what the run asked for; what the connector offered goes to the log only.
  */
 import { Logger } from '../../Logger';
 import type { CryptoProvider } from '../config';

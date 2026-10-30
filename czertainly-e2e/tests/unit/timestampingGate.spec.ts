@@ -1,15 +1,11 @@
 /**
- * timestampingGate — how the timestamping block is selected on a shared tier (tests/timestamping/SHARED-TIER.md): the tags of a row, the
- * projects' tier filters, and the `timestamping` need that skips a row with a named reason when the tier lacks the components.
+ * timestampingGate — how the timestamping block is selected on a shared tier (tests/timestamping/SHARED-TIER.md).
  *
- * WHAT: a shared-tier row carries `@needs:timestamping` and no `@local`; a docker-bound or disruptive row carries `@local`; the block's
- * four projects select the first on every tier and the second on a local one only; the need answers `undefined` for a tier with the connected
- * connectors, the authority and the vault instance, and a `deploy gate` reason for every missing piece, after reads only; the `needs` fixture
- * turns that reason into a skip, and a met need into no skip at all.
- * WHY: replaces the blanket `@local` that kept the block off every shared tier; a tier DevOps equipped should run it, one without should
- * say what is missing, and neither may be written to before the need is met.
- * HOW: the real guard (`guardApiWithSeams`) over a fake request context that answers the four reads the need makes and records every request;
- * the tool probe and the environment are seams.
+ * Checks a shared-tier row carries `@needs:timestamping` and no `@local`, a docker-bound or disruptive row carries `@local`,
+ * and the block's four projects select the first on every tier and the second on a local one only. The `timestamping` need
+ * answers `undefined` for a tier with the connectors, authority and vault instance, and a `deploy gate` reason for each
+ * missing piece, after reads only; the `needs` fixture turns that reason into a skip. Nothing may be written before the need
+ * is met. Runs the real guard over a fake request context that answers the need's four reads.
  */
 import { APIRequestContext, expect, test } from '@playwright/test';
 import * as fs from 'fs';

@@ -1,12 +1,11 @@
 /**
  * parseSpec — the AST reader of spec sources: `testBlocks`, inherited describe tags, `@bug` needs `test.fail()`, exactly
- * one suite tag per test and `codeNames`.
+ * one suite tag per test, and `codeNames`.
  *
- * WHAT: reads inline spec sources and checks the test blocks found (title, kind, body, tags, describes), the tag
- * problems reported and the identifiers `codeNames` sees.
- * WHY: the lints over the real specs (specGuards) rely on this reader; a block that is missed or a tag that is not
- * inherited would let a spec through unchecked.
- * HOW: pure unit cases; every source is an inline string, comments and brackets inside strings and regexes included.
+ * Reads inline spec sources and checks the test blocks found (title, kind, body, tags, describes), the tag problems
+ * reported and the identifiers `codeNames` sees. The lints over the real specs (specGuards) rely on this reader, so a
+ * missed block or a tag that is not inherited would let a spec through unchecked. Every source is an inline string,
+ * including comments and brackets inside strings and regexes.
  */
 import { test, expect } from '@playwright/test';
 import { bugTagsWithoutFail, codeNames, suiteTagProblems, testBlocks } from '../../utils/regression/specLint/parseSpec';

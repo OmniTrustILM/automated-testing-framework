@@ -1,12 +1,8 @@
 /**
- * groupProbes — group helpers of the group CRUD and assignment API specs.
+ * groupProbes — group helpers of the group-crud and group-assignment API specs.
  *
- * WHAT: Group helpers of the group-crud and group-assignment API specs: own groups and group create probes (ledger before any
- *       assertion), group assignment on own certificates, and the readers of the certificate history that turn
- *       `Update Group` events into comparable group changes.
- * WHY: Group creates and assignments must be recorded like any create and must read their effect from the certificate history.
- * HOW: Own groups and create probes recorded before any assertion, assignment on own certificates, and readers that turn `Update Group`
- * history events into group changes.
+ * Provides own groups and group create probes (ledger before any assertion), group assignment on own certificates, and
+ * readers of the certificate history that turn `Update Group` events into comparable group changes.
  */
 import type { APIRequestContext } from '@playwright/test';
 import { assertGuarded } from '../guard/types';

@@ -1,11 +1,8 @@
 /**
- * RekeyDialog — the "Rekey Certificate" dialog.
+ * RekeyDialog — the "Rekey Certificate" dialog (REG-CERT-08).
  *
- * WHAT: the "Rekey Certificate" dialog: Key Source External with the CSR upload, submit and the error line.
- * WHY: REG-CERT-08 refuses a same-key CSR and issues a new-key successor; the answer with the successor's uuid goes
- *       back to the spec.
- * HOW: a `CertificateToolbarDialog` (open, close, answer reading are shared); opened from the detail toolbar; the
- *       key source through the Select helper; only on a certificate this run created.
+ * A `CertificateToolbarDialog`: Key Source External with the CSR upload, submit and the error line. The answer with
+ * the successor's uuid goes back to the spec. Used only on a certificate this run created.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { AnswerWithUuid, CertificateToolbarDialog } from './CertificateToolbarDialog';

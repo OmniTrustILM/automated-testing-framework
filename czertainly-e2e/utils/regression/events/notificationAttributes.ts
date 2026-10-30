@@ -1,11 +1,9 @@
 /**
- * notificationAttributes — request attributes and reserved test values for notification instances.
+ * notificationAttributes — request attributes for e-mail and webhook notification instances.
  *
- * WHAT: Builds the e-mail and webhook request attributes from the connector's definitions, the code-block and template attributes, the
- * reserved sender and URL, and the fixed templates.
- * WHY: The attribute shapes are a connector contract written once; every address and URL is a reserved `.test` name, so nothing is ever
- * delivered from a shared tier.
- * HOW: Pure builders over the live definition list; the only run-specific part is the unique name inside a reserved sender or URL.
+ * Builds the attributes from the connector's live definitions, plus the code-block and template attributes and the fixed
+ * templates. Every sender address and webhook URL is a reserved `.test` name, so nothing is ever delivered from a shared
+ * tier.
  */
 
 import { checkedDnsName, ownName } from '../ledger/runState';

@@ -1,12 +1,12 @@
 /**
- * GroupPage — the Groups list, the Create Group dialog and the group detail with its tabs.
+ * GroupPage — Page Object Model for certificate groups (REG-CFG-06).
  *
- * WHAT: the Groups list, the Create Group dialog (name, description, e-mail, required custom attributes) and the group detail
- *       with its Users, Events and Event History tabs.
- * WHY: REG-CFG-06 creates a certificate group in the form, opens its tabs and proves that the same name is refused the second
- *      time; the create answer goes back to the spec before the dialog closes so that the group is on the ledger first.
- * HOW: the dialog by its accessible name and the text-input test id of each field; a tab by its name inside the page; a tab
- *      that failed to load shows the platform's error text, which `assertNoErrorShown` looks for; a refusal is read from the toast.
+ * Encapsulates:
+ *   - the Groups list and the Create Group dialog
+ *   - the group detail with its Users, Events and Event History tabs
+ *
+ * The create answer goes back to the spec before the dialog closes, so the group is on the ledger first. A tab that
+ * failed to load shows the platform's error text, which `assertNoErrorShown` looks for.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { FormDialog } from './FormDialog';
@@ -39,13 +39,13 @@ export class GroupPage {
     }
 
     async goToList(): Promise<void> {
-        await this.page.goto('administrator/#/groups');
+        await this.page.goto('/administrator/#/groups');
         await expect(this.main).toBeVisible();
     }
 
     /** The detail page of one group. */
     async goToDetail(uuid: string): Promise<void> {
-        await this.page.goto(`administrator/#/groups/detail/${uuid}`);
+        await this.page.goto(`/administrator/#/groups/detail/${uuid}`);
         await expect(this.main).toBeVisible();
     }
 

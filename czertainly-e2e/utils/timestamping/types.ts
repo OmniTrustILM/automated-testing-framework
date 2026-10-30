@@ -1,14 +1,10 @@
 /**
- * types — the provisioning summary of the timestamping block (the `@dev-tests` port of the developers' suite,
- * automated-testing-framework#41 / #113).
+ * types — the provisioning summary of the timestamping block (automated-testing-framework#41 / #113).
  *
- * WHAT: the shape the `timestamping-setup` project writes and every timestamping spec reads. `Provisioning` is the
- * summary shape of development-environment `scripts/timestamping-setup.sh --json-summary` (sets keyed by set name), so
- * the ported specs read the same fields as on the developers' branch.
- * WHY: the specs were written against that summary; keeping it lets them move almost unchanged, while the objects
- * behind it are now created per run (run-prefixed names, ledger lines) instead of reused by fixed names.
- * HOW: `TimestampingSummary` wraps it with the outcome of the setup: `ready` (the run's sets exist) or `unavailable`
- * (the tier lacks a prerequisite; every timestamping test skips with the reason).
+ * `Provisioning` is the shape the `timestamping-setup` project writes and every timestamping spec reads: the summary
+ * shape of development-environment `scripts/timestamping-setup.sh --json-summary` (sets keyed by set name).
+ * `TimestampingSummary` wraps it with the outcome of the setup: `ready` (the run's sets exist) or `unavailable` (the tier
+ * lacks a prerequisite; every timestamping test skips with the reason).
  */
 
 export interface NamedUuid {

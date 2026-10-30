@@ -1,15 +1,10 @@
 /**
- * certificateState — wait until a certificate reaches a state, failing fast on anything polling cannot fix.
+ * certificateState — waits until a certificate reaches a state, failing fast on anything polling cannot fix.
  *
- * WHAT: `waitForCertificateState` polls `GET /api/v1/certificates/{uuid}` until the `state` equals the expected one; the
- *       error names the last state, the newest history entries and the elapsed time.
- * WHY: issuance, revoke and delete finish asynchronously, and a plain timeout hides the reason: a certificate that went
- *      `failed` or `rejected`, a refused read or a broken server must end the wait at once. The smoke helper and the
- *      regression teardown both need this policy, so it lives here once.
- * HOW: at once on a state in `failOn` (default `failed` and `rejected`, unless one of them is the expected state); on a 404
- *      once the read-after-write grace (default 10 s) is over, and at once on any other 4xx; on the third transient answer
- *      in a row (5xx, 408, 425, 429), a transient answer being tolerated twice and never retried into a pass. The last
- *      sleep is cut to the deadline, so the final poll happens at the timeout.
+ * `waitForCertificateState` polls the certificate until its `state` is the expected one. It ends at once on a state in
+ * `failOn` (default failed and rejected), a 404 after the read-after-write grace (default 10 s), any other 4xx, or a
+ * third transient answer in a row (5xx, 408, 425, 429). The error names the last state, the newest history entries and
+ * the elapsed time.
  */
 import type { APIRequestContext } from '@playwright/test';
 import { Logger } from '../../Logger';

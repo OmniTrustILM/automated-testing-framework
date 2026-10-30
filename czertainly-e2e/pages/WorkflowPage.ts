@@ -1,12 +1,11 @@
 /**
  * WorkflowPage — the create forms and detail pages of the workflow objects.
  *
- * WHAT: the create forms and detail pages of the workflow objects: conditions and rules, actions and executions, triggers.
- * WHY: objects built in the forms must be stored as typed, so the page lets a spec compare the request sent, the stored object and the
- *      reopened detail; nothing is associated here, so nothing fires.
- * HOW: list and dialog per kind from a route table; condition items through `FilterWidget.inDialog`; every `create<Kind>` returns
- *      the answer of the create request (the spec records it first), and `waitForDetailRoute` then reads the uuid from the route
- *      the UI opens after Create.
+ * Encapsulates the forms for conditions and rules, actions and executions, and triggers, with a list and dialog per
+ * kind from a route table. Objects built in the forms must be stored as typed, so a spec compares the request sent,
+ * the stored object and the reopened detail. Nothing is associated here, so nothing fires. Every `create<Kind>`
+ * returns the create answer (the spec records it first); `waitForDetailRoute` then reads the uuid from the route the
+ * UI opens.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { Logger } from '../utils/Logger';

@@ -1,14 +1,11 @@
 /**
- * REG-CFG-06 — A certificate group created through the UI (release checklist: Configuration 6). ilm#428.
+ * REG-CFG-06 — A certificate group created through the UI (release checklist: Configuration 6; ilm#428).
  *
- * WHAT: 1. Groups → + → Create Group: name, description, e-mail (and any required custom attribute of the tier).
- *       2. Create → the group exists with that e-mail.
- *       3. Detail → the tabs Users, Events and Event History open without an error.
- *       4. The same name again → refused ("already exists"); exactly one group has that name.
- * WHY: groups scope certificate visibility and triggers; a group name must be unique.
- * HOW: create-only: nothing is deleted. The create answer is put in the ledger (`own.record`) before the dialog or the list is waited for;
- *      a duplicate the platform accepted is recorded too, so the test then fails on it. The group is its own: no later
- *      spec reads it.
+ * Creates the group, checks it exists with that e-mail, and that the detail tabs Users, Events and Event History open without
+ * an error. The same name again is refused, and exactly one group has that name.
+ *
+ * Create-only: nothing is deleted. The create answer is put in the ledger before the dialog or the list is waited for; a
+ * duplicate the platform accepted is recorded too, so the test then fails on it.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { GroupPage } from '../../../pages/GroupPage';

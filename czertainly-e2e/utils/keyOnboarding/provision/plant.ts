@@ -1,19 +1,13 @@
 /**
  * plant — the key pairs of the run on the SoftHSM token, planted and removed the way a tool outside the platform would.
  *
- * WHAT: `plannedLabels` (every label `<run id>-ko-<role>-<stamp>`), `plantKeys` (runs plant-keys.sh in a throwaway
- * container: the source suite's tests/utils/token.ts, with the same random IDs and the same environment contract) and
- * `unplantRunKeys` (runs unplant-keys.sh: deletes every private key, public key and certificate on the token whose
- * label starts with `<run id>-`, and reports how many). `unplantRunKeys(env, runId)` is the `after` step of the block
- * teardown (utils/devBlocks/blockTeardown.ts), so it runs only once every ILM key of the block is gone.
- * WHY: each run starts from key pairs the inventory has never seen, and ILM keys onboarded under the suggested name
- * (the label) carry the run prefix, so the teardown's live-name check accepts them. The token objects are not platform
- * objects (no ledger line); their removal is keyed by the run prefix alone, and refuses a prefix that could match
- * other runs' labels. The stamp keeps a retried setup attempt from planting a second pair under a label of the first.
- * HOW: both scripts run as root in the sidecar's image with `--volumes-from` the sidecar; every value (the PIN
- * included) goes through the environment as `-e NAME`, never on the command line. A failing script or an output that
- * is not what the script prints is a TierError (the setup becomes `unavailable`; what was planted is removed by the
- * teardown's `after` step).
+ * `plantKeys` runs plant-keys.sh and `unplantRunKeys` runs unplant-keys.sh in a throwaway container. Labels are
+ * `<run id>-ko-<role>-<stamp>`. `unplantRunKeys` is the `after` step of the block teardown, so it runs only once every ILM key
+ * of the block is gone.
+ *
+ * Token objects have no ledger line; their removal is keyed by the run prefix alone and refuses a prefix that could match
+ * other runs' labels. The PIN goes through the environment, never on the command line. A failing plant script is a TierError
+ * (the setup becomes `unavailable`); a failing removal throws and names the command to finish it by hand.
  */
 import { randomBytes } from 'crypto';
 import * as path from 'path';

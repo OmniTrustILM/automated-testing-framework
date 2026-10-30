@@ -1,13 +1,12 @@
 /**
- * provisioning — the specs' view of the run's provisioning summary (replaces the source's env.ts).
+ * provisioning — the specs' view of the run's provisioning summary.
  *
- * WHAT: reads the summary the `timestamping-setup` project wrote (`summaryFile()`), turns it into the families, sets
- * and credentials the specs use, and names the plan-driven test titles.
- * WHY: Playwright lists tests BEFORE the setup project runs, so a title can only come from the plan (`plannedFamilies()`);
- * the summary is read lazily INSIDE tests and hooks, and a test skips with the reason when the tier could not provide
- * its family. Module-scope reads are forbidden (tests/unit/timestampingSpecs.spec.ts).
- * HOW: `readSummary()` reads and caches a ready summary; the `*OrSkip` readers skip the running test; `plannedSets()` is
- * what a module-scope `for` loop iterates; `artifactDir()` is the per-test output folder.
+ * Reads the summary the `timestamping-setup` project wrote (`summaryFile()`), turns it into the families, sets and
+ * credentials the specs use, and names the plan-driven test titles. Playwright lists tests BEFORE the setup project
+ * runs, so a title can only come from the plan (`plannedFamilies()`; `plannedSets()` is what a module-scope `for` loop
+ * iterates). The summary is read lazily INSIDE tests and hooks (`readSummary()` caches a ready summary), and a test
+ * skips with the reason when the tier could not provide its family (the `*OrSkip` readers). Module-scope reads are
+ * forbidden (tests/unit/timestampingSpecs.spec.ts). `artifactDir()` is the per-test output folder.
  */
 import { test } from '@playwright/test';
 import * as fs from 'fs';

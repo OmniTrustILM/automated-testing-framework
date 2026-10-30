@@ -1,15 +1,13 @@
 /**
  * clusterRun — the Kubernetes objects of one cert-manager row and their removal after it.
  *
- * WHAT: one fixture, `clusterRun`: the list of Kubernetes objects the test applied (in recording order) and the certificates it
- *       issued (DNS name and the server time before they were applied). After the test the objects are removed newest first
- *       (Certificate, then Secret, then issuer), then the ILM certificates of the issued DNS names are recorded once more.
- * WHY: an issuance in flight can still land after the Certificate is deleted, so the ledger needs a second look after the cluster
- *      cleanup, and that look must run even when a removal fails. The cleanup must run when the test fails or times out, and the kubectl
- *      deletes (up to 150 s each) need a budget of their own: three of them and the settle poll fit in `CLUSTER_CLEANUP_MS`. So the
- *      removal is a fixture teardown with its own timeout and not the end of the test body.
- * HOW: the test pushes a reference BEFORE it applies the object (so a failing apply or wait still leaves it listed). The
- *      ledger id comes from `own`; the `cluster` need is declared on the row, so the fixture is only built where kubectl works.
+ * The `clusterRun` fixture holds the objects the test applied and the certificates it issued. After the test, even when
+ * it fails or times out, the objects are removed newest first, then the ILM certificates of the issued DNS names are
+ * recorded once more, because an issuance in flight can land after the Certificate is deleted. If a removal fails, the
+ * certificates are still recorded and the error is thrown afterwards; the removal has its own timeout (CLUSTER_CLEANUP_MS).
+ *
+ * The test pushes a reference BEFORE it applies the object. The row declares the `cluster` need, so the fixture is only
+ * built where kubectl works.
  */
 import { test as base } from '../regressionFixtures';
 import { recordIssuedSettled } from '../../utils/regression/issuedRecords';

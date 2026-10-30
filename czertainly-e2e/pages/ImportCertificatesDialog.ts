@@ -1,12 +1,9 @@
 /**
- * ImportCertificatesDialog — the "Import certificates and keys" dialog.
+ * ImportCertificatesDialog — the "Import certificates and keys" dialog (REG-USE-03, REG-CERT-63).
  *
- * WHAT: the "Import certificates and keys" dialog: paste or choose a file, the inspection answer (refusal alert,
- *       password field, detected entries), import.
- * WHY: REG-USE-03 imports one run-named PEM; REG-CERT-63 feeds files core refuses and prove nothing is created.
- *       Every method that causes the inspection or the import returns its answer (status, content type, body text and JSON).
- * HOW: readonly locators by test id and label; the file input is hidden but takes `setInputFiles`; Enter in the
- *       password field re-reads the file and never submits.
+ * REG-USE-03 imports one run-named PEM; REG-CERT-63 feeds files core refuses and proves nothing is created. Every method
+ * that causes the inspection or the import returns its answer. The file input is hidden but takes `setInputFiles`. Enter
+ * in the password field re-reads the file and never submits.
  */
 import { expect, Locator, Page, Response } from '@playwright/test';
 import type { ApiAnswer } from '../utils/regression/apiReads';
@@ -60,7 +57,7 @@ export class ImportCertificatesDialog {
 
     /** The certificate list, opened by its route (not by the sidebar). */
     async goToList(): Promise<void> {
-        await this.page.goto('administrator/#/certificates');
+        await this.page.goto('/administrator/#/certificates');
         await expect(this.main).toBeVisible();
     }
 

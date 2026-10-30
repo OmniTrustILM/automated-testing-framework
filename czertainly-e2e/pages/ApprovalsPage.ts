@@ -1,12 +1,12 @@
 /**
- * ApprovalsPage — the Approvals list and the approval detail.
+ * ApprovalsPage — Page Object Model for approvals (REG-CERT-16, REG-CERT-17).
  *
- * WHAT: the Approvals list (row checkboxes and the override Approve / Reject toolbar with its confirm dialogs) and
- *       the approval detail with its recipient buttons.
- * WHY: REG-CERT-16 / 17 approve and reject a gated issue through the override path; each decision waits for the
- *       exact request it causes, so a wrong button fails loudly.
- * HOW: rows by their data id (newest first, so a fresh approval is on page one); toolbar icons inside the list
- *       widget; the answer comes back to the spec, which asserts its status.
+ * Encapsulates:
+ *   - the Approvals list: row checkboxes and the override Approve / Reject toolbar with its confirm dialogs
+ *   - the approval detail with its recipient buttons
+ *
+ * Each decision waits for the exact request it causes and returns the answer; the spec asserts its status. Rows are
+ * found by data id, newest first, so a fresh approval is on page one.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { Logger } from '../utils/Logger';
@@ -36,7 +36,7 @@ export class ApprovalsPage {
     /** The list page on the `List of Approvals` tab (URL slug of the tab title). */
     async goToList(): Promise<void> {
         logger.info('Opening the approvals list');
-        await this.page.goto('administrator/#/approvals?tab=list-of-approvals');
+        await this.page.goto('/administrator/#/approvals?tab=list-of-approvals');
         await expect(this.main).toBeVisible();
         await expect(this.listWidget).toBeVisible();
     }
@@ -87,7 +87,7 @@ export class ApprovalsPage {
 
     async goToDetail(approvalUuid: string): Promise<void> {
         logger.info(`Opening approval ${approvalUuid}`);
-        await this.page.goto(`administrator/#/approvals/detail/${approvalUuid}`);
+        await this.page.goto(`/administrator/#/approvals/detail/${approvalUuid}`);
         await expect(this.main).toBeVisible();
         await expect(this.detailsWidget).toBeVisible();
     }

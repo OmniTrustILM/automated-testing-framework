@@ -1,41 +1,12 @@
 /**
- * guard/routes — route tables of the ILM core REST API that the guard (guard/createGuard.ts) needs, derived from the controller
- * interfaces of the `interfaces` repository (com.otilm.api.interfaces.core.web, .core.web.v2, .core.client; read-only,
- * at revision INTERFACES_REVISION). A mutation without a uuid in its path is not
- * accepted because its body carries "some" own uuid list; it must be an allow-listed create (guardedApi POST_CREATE) or
- * one of the BULK_ROUTES below, whose body names its objects in the list the DTO declares.
+ * routes — route tables of the ILM core REST API that the guard needs, derived from the `interfaces` repository.
+ * Re-derive them when the interfaces change (INTERFACES_REVISION).
  *
- * How the tables were derived (re-derive them when the interfaces change; the generator follows them):
- * - every `@GetMapping` / `@PostMapping` / `@PutMapping` / `@PatchMapping` / `@DeleteMapping` / `@RequestMapping` of a
- *   core controller interface, prefixed with the class-level `@RequestMapping`, with its `@RequestBody` type;
- * - BULK_ROUTES: the mutations without a `{…uuid}` path variable whose body is a uuid list (`List<String>` / `List<UUID>`) or a bulk DTO
- *   with one (`uuids`, `certificateUuids`), on collection routes ending in enable / disable / delete / force / forceDelete / compromise /
- *   destroy / usages / archive / unarchive / revoke, plus DELETE on the collection paths that take a uuid list. LEFT OUT on purpose
- *   (refused by the guard): the platform-level ones (global metadata, CBOMs, OIDs, connector approve /
- *   reconnect: PLATFORM_DENY), the bulk delete of time-quality configurations (`DELETE /v1/timeQualityConfigurations`: no ledger
- *   bulk type; a single own one is deleted by uuid), compliance re-evaluations (`/v1/certificates/compliance`, `/v1/complianceProfiles/compliance`,
- *   `/v1/raProfiles/compliance`, `/v2/compliance[/{resource}]`: no listed verb; the per-object `POST /v2/compliance/{resource}/{uuid}`
- *   stays available through ownership), `PATCH /v1/notifications` (mark as read: per-user state, not a listed verb), audit-log export /
- *   purge, and every other path-less POST that is not a create (`/v1/certificates/create`, `/v1/acmeProfiles/eabKeys`, …). Moved to
- *   guardedApi POST_CREATE: `/v1/inspections` (body-judged, creates nothing), `/v1/certificates/import` (certificate-only entries).
- * - NO_HANDLER_PROBES / MALFORMED_UUID_PROBES: exact (method, path) pairs that
- *   reach NO handler at INTERFACES_REVISION — re-verify them (the grep in each table's comment) whenever
- *   INTERFACES_REVISION moves: a later release that adds a handler turns the allowance into a real mutation.
- * - ROUTE_FIELD_WAIVERS: a body field a named route may fill with a non-own uuid, with its core proof.
- * - API_WORDS: every literal path segment of every core route (any method) plus the codes a path enum may take there
- *   (`{resource}`: Resource codes; `{functionGroup}`: FunctionGroupCode codes; `{type}` of a key: KeyRequestType codes).
- *   A MUTATION path segment that is neither a canonical uuid nor one of these words names an object by NAME (an RA
- *   profile, an end-entity user name, an OID, an OAuth2 provider, a connector kind): the guard cannot prove whose object
- *   that is, so it refuses the request (kind `request`; lifted only by `localStack` on a proven local stack).
- * - SIDE_EFFECT_GETS: GET endpoints whose handler persists something (from a read-only audit of core): the guard sends them only
- *   for own objects (or probe uuids), like a mutation.
- * - TARGET_TYPES / RESOURCE_TYPES: the ledger type of the object a uuid path variable names,
- *   read from the literal segment(s) before it in every core route with a uuid path variable (and from the `Resource`
- *   code where the route takes one: `…/associations/{resource}/{uuid}`, `/v1/comments/{resource}/{uuid}`,
- *   `/v2/compliance/{resource}/{uuid}`, `/v1/attributes/custom/resources/{resource}/objects/{uuid}/{attributeUuid}`);
- *   each BULK_ROUTES entry names the ledger type of its uuid list. An ownership claim counts only for the resource the
- *   request acts on: a ledger line of another type (an id-named `approvals` line naming an RA profile) is refused.
- * - UUID_TYPED_FIELDS: the request DTO fields typed `UUID` / `List<UUID>` / `Set<UUID>`.
+ *   - A mutation without a uuid in its path must be an allow-listed create (POST_CREATE) or a BULK_ROUTE, else it is refused.
+ *   - NO_HANDLER_PROBES / MALFORMED_UUID_PROBES reach no handler at that revision; re-verify them when it moves.
+ *   - A mutation path segment that is no uuid or API word names an object by NAME, which the guard cannot prove own,
+ *     so it is refused (lifted only by `localStack` on a proven local stack).
+ *   - SIDE_EFFECT_GETS persist something; they are sent only for own objects or probe uuids.
  */
 
 /** The `interfaces` revision the tables were derived from. */

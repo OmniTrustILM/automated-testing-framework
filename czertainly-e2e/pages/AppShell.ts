@@ -1,13 +1,12 @@
 /**
- * AppShell — the signed-in frame around every page.
+ * AppShell — the signed-in frame around every page (REG-AUTH-01, 08, 99).
  *
- * WHAT: the signed-in frame around every page: hash-route navigation, reload, the sidebar links and the names a
- *       list page shows; plus a watch over the API answers the page received.
- * WHY: REG-AUTH-01 / 08 / 99 assert "no 401 / 403 after the sign-in", "the session survives a reload" and "a
- *       group-scoped user sees only its rows" from what the browser really got.
- * HOW: the sidebar's test id is the signed-in marker; routes are opened by URL; `loadingData` waits for the authenticated
- *       answer a route or a reload causes instead of an idle network; sign-in and sign-out belong to
- *       `LoginPage`, the lock widget to `AccessDeniedWidget`.
+ * Provides:
+ *   - hash-route navigation, reload and the sidebar links
+ *   - a watch over the API answers the page received (for "no 401 / 403 after the sign-in")
+ *
+ * The sidebar's test id is the signed-in marker. Sign-in and sign-out belong to `LoginPage`, the lock widget to
+ * `AccessDeniedWidget`.
  */
 import { expect, Locator, Page, Response } from '@playwright/test';
 import { Logger } from '../utils/Logger';

@@ -1,24 +1,11 @@
 /**
- * API-CERT-41, 42, 43, 45, 46, 48, 50, 51, 52 — Certificate search filters over the run's own certificate seed. ilm#428.
+ * API-CERT-41, 42, 43, 45, 46, 48, 50, 51, 52 — Certificate search filters over the run's own certificate seed (ilm#428).
  *
- * WHAT: 1. Text, datetime, list and enum, collection (group, owner) and custom attribute conditions each return the exact seed rows of
- *          their row table (searchTables), with the total; GREATER_OR_EQUAL and LESSER on one expiry split the seeds into two disjoint
- *          sets.
- *       2. The refusals of the filter engine are 422 JSON arrays of strings with fixed texts (a condition the field does not advertise, a
- *          missing or empty value, an invalid regex, a bad duration, a non-numeric number or count, an attribute identifier without its
- *          suffix, a non-numeric key length); a date that does not parse and COUNT_EQUAL / COUNT_NOT_EQUAL with an unparsable value
- *          must be a 4xx, not today's 500 (core#2504, core#2562: test.fail).
- *       3. The five seed attributes publish the condition set of their type; over all certificates EMPTY plus NOT_EMPTY and EQUALS plus
- *          NOT_EQUALS add up to the total, any-of is bounded, AND narrows and contradictions give nothing.
- *       4. Complement pairs (CONTAINS / NOT_CONTAINS, EQUALS / NOT_EQUALS, EMPTY / NOT_EMPTY on property and custom fields) are
- *          disjoint and cover all 24 seeds; filters are ANDed, order-independent and idempotent.
- * WHY: the filter matrix of the search field types decides what every certificate list shows (core#741, core#813, core#1030, core#1117;
- *      ilm#428, ilm#442). NOT_EQUALS and NOT_CONTAINS are complements including objects without a value. A refusal is a 4xx, never a 5xx.
- * HOW: the run's 24-certificate seed (groups, an owner and five custom attributes of different types) is planned once and shared; exact row
- *      sets come from the row tables with the Common Name prefix filter, so other objects of the tier cannot change a result. The
- *      search is a read. A row with a known bug is `test.fail()` placed right before the failing step; a row that fixes today's
- *      behaviour carries a pin and is never P1. The all-data invariant test is driven by the live catalogue and skips custom
- *      attributes that are disabled (core#2507).
+ * Known bugs, each with `test.fail()` right before the failing step: an unparsable date or COUNT_EQUAL value answers 500
+ * (core#2504, core#2562); `%` and `_` in a CONTAINS value act as wildcards instead of literals (core#2505). NOT_EQUALS and
+ * NOT_CONTAINS include objects without a value (core#741, core#813, core#1030,
+ * core#1117; ilm#428, ilm#442). The all-data test skips disabled custom attributes (core#2507).
+ * The seed is shared and a Common Name prefix keeps other objects out. The search is a read.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { expectRefused } from '../../../utils/regression/errorContract';

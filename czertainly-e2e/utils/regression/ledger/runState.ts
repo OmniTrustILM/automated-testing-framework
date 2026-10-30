@@ -1,25 +1,13 @@
 /**
  * runState — the run's identity and its shared state file.
  *
- * WHAT: two things every helper needs.
- * - runId() / runName: every object the suite creates is named `<run id>-<suffix>`. The run id is [a-z0-9-] and
- *   suffixes are too (names valid in ACME directory URLs and DNS labels), except where a test needs another character on
- *   purpose (REG-CFG-05.2 names an own RA profile `<run id>-ra space-<stamp>` to prove the activation refusal); ownership
- *   rests on the `<run id>-` prefix, never on the suffix's alphabet. The configs set REG_RUN_ID (`run/prepareRun.ts`)
- *   before this module loads.
- * - Run state (<REG_STATE_DIR>/<run id>.json, outside the clone): the run objects (authority, RA profile, ACME profile,
- *   role, token chain, …) that the `run-setup` project creates once through the API; the specs read them through the
- *   `ensureRun…` helpers, so a full run builds one chain instead of one per spec. A spec run on its own (or with
- *   `--no-deps`) finds no state and its `ensureRun…` call creates the missing object lazily and writes it. The UI specs
- *   never promote what they create: they keep their own objects. The file is written atomically (temp file + rename);
- *   a corrupt file is reported, not silently replaced.
- * - The name builders (`ownName`, `runName`) and the length guards of a name used as a certificate common name
- *   (`checkedCommonName`, at most 64 characters) or as a DNS name (`checkedDnsName`, labels of at most 63, at most 253 in all).
- * WHY: ownership rests on the run prefix of every name, so the id must be one value for the whole run; a name that a CA
- *      refuses for its length would fail a test for a reason that is not the behaviour under test, so the builders refuse
- *      it first and name the limit.
- * HOW: the id is read once when the module is first imported; names are built only through the builders here; the state
- *      file is JSON in a directory outside the clone, written to a temporary file and renamed.
+ * Every object is named `<run id>-<suffix>` and ownership rests on that prefix (ledger/ownership.ts), so the run id is one
+ * value, read once on first import. The suffix alphabet is not part of ownership (REG-CFG-05.2 names an RA profile with a
+ * space on purpose). UI specs keep their own objects and never promote them to run state.
+ *
+ * The state file (<REG_STATE_DIR>/<run id>.json, outside the clone) holds the run objects that `run-setup` creates once; a
+ * spec run alone creates a missing one lazily. It is written atomically; a corrupt file is reported, not replaced.
+ * `checkedCommonName` and `checkedDnsName` refuse names a CA would refuse for length.
  */
 import * as fs from 'fs';
 import * as path from 'path';

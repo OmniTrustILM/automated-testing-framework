@@ -1,13 +1,11 @@
 /**
- * regressionFixtures — the spec-facing fixtures of fixtures/regressionFixtures.ts, run for real with only `env`, the `api` context and the
- * transport of `needs` replaced (a guarded context to a loopback fake core).
- * - own: a create followed by a throwing step still leaves its ledger line, under the test's ledger id; `own.record` writes the line from
- *   the form's answer (a refusal that carries an id is recorded before it throws; no name is an error, not a line); `own.recordNamed`
- *   adopts a run-named certificate; `own.deleted` writes the deleted line; a tier without a CA skips `own.raProfile` with the named reason;
- * - needs: a declared need is resolved from reads before any `own` or base-fixture create; an unmet need skips with its named reason and
- *   creates nothing; `needs.require()` and the per-need methods skip the same way; a need outside the catalogue is an error;
- * - live: refuses a foreign object, hands over a `LiveOwn` for an own one; a forged `LiveOwn` does not type-check;
- * - localApi: refused outside a proven local stack and for a test that is not `@local`; signedIn / regressionEnv are wired.
+ * regressionFixtures — unit tests of the spec-facing fixtures of fixtures/regressionFixtures.ts, against a loopback fake core.
+ *
+ * Checks:
+ *   - own: a create followed by a throwing step still leaves its ledger line; no CA skips `own.raProfile`
+ *   - needs: an unmet need skips with its reason and creates nothing; an unknown need errors
+ *   - live: refuses a foreign object; a forged own-object handle does not type-check
+ *   - localApi: refused outside a proven local stack and for a test that is not `@local`
  */
 import { APIRequestContext, expect, request, TestInfo } from '@playwright/test';
 import { test as fixtures, needsApi, localApiProblem, withLocalApi } from '../../fixtures/regressionFixtures';

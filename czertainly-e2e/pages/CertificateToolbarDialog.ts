@@ -1,14 +1,11 @@
 /**
  * CertificateToolbarDialog — what the dialogs opened from the certificate detail toolbar have in common.
  *
- * WHAT: the shared part of the Renew, Rekey, Revoke and Complete Registration dialogs: the dialog by its accessible name,
- *       `open()` from the detail toolbar, `close()` with Cancel, the error line by its test id, and the one reader of a
- *       lifecycle answer (`answerWithUuid`: the answer plus the successor's uuid when the body names one).
- * WHY: a dialog opened from the toolbar is a real is-a: four classes had copied the constructor, `open`, `close` and the
- *      answer parsing, and each copy missed a different part. The subclasses keep only what is theirs: the fields of the
- *      form and `submit()`.
- * HOW: `open()` clicks the toolbar button of the action and waits for the dialog; `answerWithUuid` registers the wait for
- *      the request before the click and reads the body as JSON (a body that is not JSON names no uuid).
+ * Base for the Renew, Rekey, Revoke and Complete Registration dialogs: the dialog by its accessible name, `open()`,
+ * `close()`, the error line, and `answerWithUuid`, the one reader of a lifecycle answer (the answer plus the successor's
+ * uuid when the body names one).
+ *
+ * The subclasses keep only their form fields and `submit()`.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { Logger } from '../utils/Logger';

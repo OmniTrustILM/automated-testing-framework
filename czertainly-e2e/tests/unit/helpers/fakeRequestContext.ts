@@ -1,10 +1,9 @@
 /**
  * fakeRequestContext — a fake APIRequestContext for the fail-fast waits (waitForCertificateState, waitForDiscoveryCompletion).
  *
- * WHAT: `fakeRequestContext(script)` answers GET from a script, in order (the last answer repeats), answers the history read
- * with one failed entry and records every URL it was asked.
- * WHY: the waits poll an object until it reaches a state or fails; their unit tests need a controlled sequence of answers.
- * HOW: no network; the responses are built by `fakeResponse` from the scripted answers.
+ * `fakeRequestContext(script)` answers GET from a script, in order (the last answer repeats), answers the history read
+ * with one failed entry and records every URL it was asked. The waits poll an object until it reaches a state or fails, so
+ * their unit tests need a controlled sequence of answers. No network; responses are built by `fakeResponse`.
  */
 import { APIRequestContext } from '@playwright/test';
 import { fakeResponse } from './fakeResponse';

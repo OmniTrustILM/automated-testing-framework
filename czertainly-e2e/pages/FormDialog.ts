@@ -1,11 +1,10 @@
 /**
  * FormDialog — a create / edit dialog of the admin UI.
  *
- * WHAT: a create / edit dialog of the admin UI: text inputs, the submit button, Cancel.
- * WHY: the role and user pages share it; `submit` returns the answer (`ApiAnswer`) of the request the caller names,
- *       registered before the click. A create goes through `submitCreate` on the dialog instead, which keeps the new uuid.
- * HOW: the dialog by its accessible name; inputs by the text-input test id of the field; inputs are readonly until
- *       focused, so they are filled through `fillText`.
+ * Provides text inputs, the submit button and Cancel. The role and user pages share it. `submit` returns the answer
+ * (`ApiAnswer`) of the request the caller names, registered before the click; a create goes through `submitCreate` on
+ * the dialog instead, which keeps the new uuid. Inputs are readonly until focused, so they are filled through
+ * `fillText`.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import type { ApiAnswer } from '../utils/regression/apiReads';

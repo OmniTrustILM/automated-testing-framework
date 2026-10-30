@@ -1,14 +1,12 @@
 /**
- * RolePermissionsPage — the permissions editor of one role.
+ * RolePermissionsPage — the permissions editor of one role (REG-CFG-08).
  *
- * WHAT: the editor opened from a role (`#/roles/permissions/<uuid>`): the resources with their action checkboxes, the object-level
- *       permissions of a resource (add an object, allow actions on it), and Save with the request it sends.
- * WHY: REG-CFG-08 grants resource-level and object-level permissions and compares what the editor sends and shows with what the
- *      platform stores; an object-level permission must not widen to the whole resource (fe-administrator#2283). `save` returns
- *      the answer and the body sent, so the spec asserts the request and then the stored state.
- * HOW: a resource by the button that carries its label (the label spells "Ra Profiles" or "RA Profiles"), an action by its
- *      checkbox label inside the resource; an object checkbox by its id `<object uuid>_<action>` is clicked as an event, because
- *      the wrapper button around it stops the propagation of a click; Save waits for the request that is not a read.
+ * Encapsulates:
+ *   - the editor opened from a role: resources with their action checkboxes
+ *   - the object-level permissions of a resource, and Save, returning the answer and the body sent
+ *
+ * An object-level permission must not widen to the whole resource (fe-administrator#2283). An object checkbox is clicked
+ * as an event, because the wrapper button around it stops the propagation of a click.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import type { ApiAnswer } from '../utils/regression/apiReads';
@@ -40,7 +38,7 @@ export class RolePermissionsPage {
 
     /** Opens the editor of a role and waits for the resource list. */
     async goToEditor(roleUuid: string): Promise<void> {
-        await this.page.goto(`administrator/#/roles/permissions/${roleUuid}`);
+        await this.page.goto(`/administrator/#/roles/permissions/${roleUuid}`);
         await expect(this.resource('Certificates')).toBeVisible();
     }
 

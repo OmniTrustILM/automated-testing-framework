@@ -1,12 +1,18 @@
 /**
- * CertificatePage — the smoke suite's certificate page object.
+ * CertificatePage — Page Object Model for the Certificates UI flow (SMK-004).
  *
- * WHAT: the smoke suite's certificate page object: the list, the import dialog, the Issue-now fields and the
- *       Details / Request / History tabs (SMK-004, SMK-007, SMK-008).
- * WHY: the three smoke specs call these names; the regression suite uses `CertificateListPage`, `CertificateAddPage`,
- *       `CertificateDetailPage` and `ImportCertificatesDialog`, to which every method here delegates.
- * HOW: the list is opened through the sidebar because SMK-004 and SMK-007 navigate that way (SMK-002 uses
- *       Navigation directly); the methods that moved to the classes above delegate to them under their old names.
+ * Encapsulates:
+ *   - Navigation to the Certificates list and detail pages
+ *   - The "Issue New Certificate" modal flow (RA Profile + External CSR)
+ *   - Tab assertions on the detail page (deep on Details/Request/History,
+ *     shallow on the other 7 tabs)
+ *
+ * Locators that proved stable in SMK-003 (testids, ARIA roles) are reused;
+ * unknowns are semantic getByRole/getByLabel — will be tightened up after
+ * the first end-to-end run (Task 11) if any locator misses.
+ *
+ * Also used by SMK-007 and SMK-008, and directly by the regression suite. The import and submit-issue methods delegate to
+ * ImportCertificatesDialog and CertificateAddPage under their old names.
  */
 
 import { Page, Locator, Response, expect } from '@playwright/test';
@@ -307,7 +313,7 @@ export class CertificatePage {
     }
 
     /** Each listed tab that is shown opens without an error text (a tab that is not shown is skipped with a warning). */
-    async assertTabsOpenWithoutError(tabs: string[]): Promise<void> {
+    async verifyOtherTabsOpenWithoutError(tabs: string[]): Promise<void> {
         for (const tabName of tabs) {
             logger.info(`Opening tab (shallow check): ${tabName}`);
             const tab = this.tablist.getByRole('tab', { name: tabName, exact: true });
@@ -319,11 +325,6 @@ export class CertificatePage {
             await expect(this.main).not.toContainText(/internal server error/i);
             await expect(this.main).not.toContainText(/unexpected error/i);
         }
-    }
-
-    /** The former name of `assertTabsOpenWithoutError`; the smoke spec calls it. */
-    async verifyOtherTabsOpenWithoutError(tabs: string[]): Promise<void> {
-        await this.assertTabsOpenWithoutError(tabs);
     }
 
     async assignCustomAttributeValue(attributeName: string, value: string): Promise<void> {

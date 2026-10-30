@@ -1,18 +1,12 @@
 /**
  * ownCrud — the one create and the one delete of an own object.
  *
- * WHAT: `createOwn` POSTs a collection, reads the uuid of the answer and writes the ledger line BEFORE anything is
- * asserted; `recordIfAccepted` does the same record step for a probe whose create should have been refused; `deleteOwn`
- * refuses anything that is not a live object of this run, sends `DELETE <collection>/<uuid>` through the guard, writes the
- * `deleted` ledger line only when the platform accepted it (200 / 204) and hands the answer back so the test asserts it (a
- * refusal such as "still used by …" is a result, not an error).
- * WHY: the create → record step is the safety-critical line of every creator; one implementation keeps "recorded before
- * asserted" and "an accepted create is never left off the ledger" true everywhere, and one delete keeps "only a live own
- * object is removed" true for every delete that is not a teardown handler.
- * HOW: the plain collection creators (groups, roles, users, workflow kinds, notification objects, profiles, ...) are
- * descriptors over `createOwn`; the bespoke ones (RA profile copy, authority-like, key chain, issue with a CSR, upload) keep
- * their bodies and call `recordCreated` / `recordIfAccepted` for the record step. `deleteOwn` does not wait for the object
- * to leave its list.
+ *   - `createOwn` POSTs a collection and writes the ledger line BEFORE anything is asserted.
+ *   - `deleteOwn` refuses anything that is not a live object of this run, and writes the `deleted` line only when the
+ *     platform accepted the delete. It hands the answer back for the test to assert.
+ *
+ * This keeps "recorded before asserted", "an accepted create is never left off the ledger" and "only a live own object is
+ * removed" true in one place.
  */
 import { ApiAnswer, answerOf } from './apiReads';
 import type { GuardedApi } from './guard/types';

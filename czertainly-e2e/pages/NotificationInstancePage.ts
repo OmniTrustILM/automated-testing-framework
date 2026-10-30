@@ -1,13 +1,12 @@
 /**
- * NotificationInstancePage — the notification instances.
+ * NotificationInstancePage — Page Object Model for notification instances.
  *
- * WHAT: the notification instance list, its create dialog (name, description, provider, kind and the attributes that kind offers)
- *       and the instance detail.
- * WHY: an instance form must store what was typed, so the e-mail and webhook instances made in the form are compared with the request sent,
- *      the stored object and the detail page.
- * HOW: the dialog by its accessible name; attributes by the attribute editor's test ids (text, list or code kinds); `submitCreateForm`
- *      returns the answer of the create request and `waitForDetailRoute` then reads the uuid from the route the UI opens, so the spec
- *      records the object between the two.
+ * Encapsulates:
+ *   - the instance list and the instance detail
+ *   - the create dialog, with the attributes the chosen kind offers
+ *
+ * The specs compare the request sent, the stored object and the detail page. `submitCreateForm` returns the create
+ * answer and `waitForDetailRoute` then reads the uuid, so the spec records the object between the two.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { Logger } from '../utils/Logger';

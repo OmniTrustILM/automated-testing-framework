@@ -2,51 +2,12 @@
  * teardown — the teardown handlers of the timestamping block's ledger types: `tspProfiles`, `signingProfiles`,
  * `timeQualityConfigurations` and `tspBasicCredentials` (descriptor: ./resourceTypes.ts).
  *
- * WHAT: how the run-end teardown, and the block's own teardown project, remove the objects the timestamping provisioner
- * and the specs record. The registry (runTeardown HANDLER_MODULES) loads this module and wraps each handler with
- * `wrapHandlerWithGuard` (dry-run check, ledger + live run-prefixed name check, `ctx.seen`), exactly like
- * platform/platformTeardown.ts. Every handler is self-contained and idempotent: it reads only the context and its
- * ledger line, so it can be called from the main loop of runTeardown or from `executeTeardown({ readLines })` over a
- * filtered ledger, and a second call for an object that is already gone ends in the wrapper's "gone" path.
- *
- * WHY (core @ 569e853c563a, see resourceTypes.ts for the citations): the references between these objects form a
- * cycle that only a deactivation breaks. A signing profile is ACTIVATED on a TSP profile (`signing_profile.tsp_profile_uuid`,
- * the TSP profile cannot be deleted while it is set) and a TSP profile may name a signing profile as its DEFAULT (the
- * signing profile cannot be deleted while it is). A signing profile with signing records cannot be deleted (every TSP
- * request leaves one), and core keeps no way to drop them but the bulk delete. The Basic credentials of a TSP profile
- * go with it, but the vault secrets behind them are removed ASYNCHRONOUSLY, and the vault profile refuses its delete
- * while one is left. The developers' bash teardown (timestamping lib/teardown.sh) takes the same road: deactivate →
- * delete the TSP profile → empty the signing records → delete the signing profile.
- *
- * ONE DELETE OUTSIDE THE LEDGER GUARD: the explicit delete of a Basic-credential vault secret core's queue left
- * (`DELETE /v1/secrets/{uuid}?deleteInVaults=true`). The secret has no `created` line, so the guard cannot check it.
- * It is safe because it is sent only for a secret listed and read live in the same step whose name matches
- * `tsp-basic-<uuid of the run's own TSP profile>-<own run-prefixed username>-<8 hex>` (anchored, so the username `a` never
- * matches the secret of `a-b`; in the TSP profile's own handler the username part is any but the whole name is still
- * anchored: the own profile's uuid, then `-<any>-<8 hex>`, which only core uses for that profile's credentials), and only
- * after the own object it belonged to is deleted and proven absent. A secret that stays is
- * reported (warning + cleanup-failure record), not thrown: the `vaultProfiles` step fails with core's own refusal.
- *
- * HOW, per type:
- * - tspProfiles: deactivate it on every own signing profile that is activated on it (each read live), remember the vault
- *   secrets behind its Basic credentials (named `tsp-basic-<tsp profile uuid>-…`; the API does not expose their uuid),
- *   delete the profile (`deleteAndVerify`), then wait until those secrets are gone; one that stays gets one explicit
- *   delete (only a secret whose name carries the uuid of this very TSP profile) and, if it still stays, it is reported
- *   as a cleanup failure naming it (the handler itself succeeds: the profile is gone), because the run's vault profile
- *   cannot be deleted while it exists.
- * - signingProfiles: needs no ledger parents (a spec records a profile core unexpectedly accepted with none): the linked
- *   TSP profile comes from the live activation read. Deactivate it when still activated, empty its signing records page by page (bulk delete, round
- *   limit, a record core keeps is a failure), delete it; a refusal that names signing records (a record the deferred
- *   persistence staged after the last page) repeats the emptying, at most `DELETE_ATTEMPTS` times.
- * - tspBasicCredentials: a credential a spec added to the run's TSP profile: delete it through the profile-scoped route
- *   (`DELETE /v1/tspProfiles/{tsp}/basicCredentials/{uuid}`; core deletes the vault secret behind it, asynchronously, then the
- *   row), prove it by GET, and wait for its secret. It is "gone with its profile" when the TSP profile has its `deleted`
- *   line (core removes the rows with the profile), so the handler works in either order.
- * - timeQualityConfigurations: delete only; core refuses while a signing profile references it, which the handler
- *   reports as blocked by the signing profile(s).
- * Not removable through the API (reported, never a failure of these handlers): the `signing_record_volume` rows (hourly
- * counts that outlive their profile on purpose) and poisoned `signing_record_outbox` rows of a profile deleted while
- * staged records were still draining.
+ * Used by the run-end teardown and the block's own teardown project; handlers are idempotent and run wrapped by
+ * `wrapHandlerWithGuard`. A signing profile activated on a TSP profile pins it, so a deactivation breaks the cycle first.
+ * ONE DELETE OUTSIDE THE LEDGER GUARD: `DELETE /v1/secrets/{uuid}?deleteInVaults=true` for a Basic-credential vault secret
+ * core's queue left behind. It is sent only for a secret read live in the same step whose name matches
+ * `tsp-basic-<uuid of the run's own TSP profile>-<username>-<8 hex>` (the credential's own username in its handler, any in the
+ * TSP profile's), after its own object is gone.
  */
 import type { APIRequestContext, APIResponse } from '@playwright/test';
 import { assertNotDryRun } from '../regression/run/flags';

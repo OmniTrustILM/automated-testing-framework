@@ -1,22 +1,10 @@
 /**
- * ownObjects — the own-object creators and the ledger steps of one test, bound to that test's ledger id.
+ * ownObjects — the own-object creators and ledger steps of one test, bound to that test's ledger id.
  *
- * WHAT: `ownObjects(api, spec, skip)` returns what a spec needs to make and record objects of its run: `own.group(suffix, options)`,
- * `own.role`, `own.user`, `own.raProfile`, `own.customAttribute` and `own.certificate.*` delegate to the `createOwn<Thing>`
- * helpers (create through the guard, ledger line written from the answer before anything is asserted); `own.record(type, answer)`
- * writes the ledger line of an object a UI form created, from the form's answer, before the page waits for a redirect;
- * `own.recordNamed(name, note)` is the by-name record of a create whose answer carries no uuid (a protocol or a UI flow that
- * made a certificate); `own.deleted(type, ref)` writes the `deleted` line of an own object the test itself removed.
- * `own.probe(type, answer, …)` records a create that was expected to be refused but was accepted; `own.adoptNamed(type, name)`
- * records and live-proves the row a refused create left behind (a run-prefixed name only); `own.restrictedUser()` makes the
- * dedicated second-identity user (a left-behind one skips the test); `own.derivedKey`, `own.issuedNamed` and `own.acmeAccount`
- * record what a certificate issue or an ACME client made besides the certificate; `own.runAuthority()` is the run's own authority.
- * WHY: the ledger `spec` of a line is the record of who made what, and it used to be a `const SPEC` that a spec could
- * let drift from its `testMeta` id; the record steps were typed by hand after every submit (a forgotten `if (answer.uuid)` is an
- * object on a shared tier that the teardown cannot name). Here the spec id is bound once and the record step is one call.
- * HOW: built by the `own` fixture of fixtures/regressionFixtures.ts with the test's `api` and `ledgerSpecOf(testInfo)`; a unit
- * test builds it directly. `skip` is `testInfo.skip` with `true` filled in: a creator that cannot make its object because the tier
- * has no CA skips the test with the helper's named reason. A new creator is one entry of `creators`.
+ * `ownObjects(api, spec, skip)` returns what a spec needs to make and record objects of its run: creators for groups, roles,
+ * users, RA profiles, custom attributes and certificates, plus `record`, `recordNamed`, `probe`, `adoptNamed` and `deleted`
+ * for objects made by a UI form, a protocol or a refused create. Each creator goes through the guard and writes the ledger
+ * line before anything is asserted. The `own` fixture builds it, so the ledger `spec` cannot drift from the `testMeta` id.
  */
 import type { GuardedApi } from './guard/types';
 import { recordAcmeAccount, recordCertificatesNamed, recordDerivedKeyOf, recordIssuedNamed } from './issuedRecords';

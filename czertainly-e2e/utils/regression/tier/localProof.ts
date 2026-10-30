@@ -1,54 +1,14 @@
 /**
- * tier/localProof — the guards that keep destructive `@local` rows off shared tiers (the kind and the local hosts are in
- * tier/kind.ts and tier/dns.ts, the docker readers in tier/docker.ts).
+ * tier/localProof — the guards that keep destructive `@local` rows off shared tiers.
  *
- * - `tierKind()`: `TIER_KIND=local` means a disposable local stack; anything else, including unset, means a shared
- *   tier (the safe default). The configs freeze the value after loading the env file (`freezeTierEnv`), so a
- *   later dotenv load (utils/env.ts in a worker, a stray `.env` in the working directory) can never switch it.
- * - Local hosts: `localhost`, 127.0.0.0/8 and ::1 always; a `*.localhost` name only when it RESOLVES to
- *   loopback addresses only (resolved like any other name, never trusted by its suffix); a host listed
- *   in TIER_LOCAL_HOSTS only when it IS an RFC 1918 / link-local / loopback address or RESOLVES only to such addresses
- *   (the lookup runs in a child process at config load and is injectable). A public name or address is refused.
- * - `assertLocalAllowed()` (config load, synchronous): `TIER_KIND=local` needs POSITIVE proof of a local backend
- *   not only a loopback BASE_URL (a dev-server proxy, a tunnel or a port-forward can serve a loopback
- *   port from a shared core):
- *     1. BASE_URL is a local host (above);
- *     2. REG_LOCAL_CORE_URL (the local core itself, e.g. `http://localhost:8280`) is a local host too;
- *     3. `<core>/api/v1/info` answers with a core build marker: the version AND the commit id or the build time (a
- *        version alone matches every stack of the same release). No liveness-only pass;
- *     4. a container proof: `docker ps` (REG_DOCKER_BIN, else `docker`) lists a running container that publishes
- *        REG_LOCAL_CORE_URL's port ON A BIND ADDRESS THAT SERVES IT (a loopback core only 0.0.0.0, [::],
- *        127.x, ::1; a private core host every-interface or its own address), and, when REG_LOCAL_COMPOSE_PROJECT is
- *        set, that container carries the compose project label. A missing docker CLI refuses the local mode
- *        (injectable for tests). The daemon must be the one of the core's machine: a non-loopback core
- *        host must be an address of THIS machine (`os.networkInterfaces`) or the docker endpoint must point at that
- *        host; a loopback core with an endpoint pointing at another machine is refused (an unrelated container on
- *        another daemon publishing the same port proves nothing). The endpoint is DOCKER_HOST, else the current docker
- *        context's (`docker context inspect`). A TCP / SSH endpoint on loopback (`tcp://localhost:2375`,
- *        indistinguishable from an `ssh -L` tunnel) counts only when its daemon ID equals the local socket's;
- *     5. when BASE_URL's `/api/v1/info` is readable without authentication, it names the same build.
- *   The marker is kept in REG_LOCAL_CORE_MARKER. Otherwise the run stops before it lists a single test.
- * - `assertLocalBackend(api)` (the setup and the run-end teardown, asynchronous): with the AUTHENTICATED
- *   context, read BASE_URL's `/api/v1/info` and compare its marker with a fresh read of REG_LOCAL_CORE_URL's.
- *   Unreadable, or another build ⇒ refused (fail closed).
- * - `proveLocalInstance(api, env, { createRole })` (the setup only): the same build is
- *   not the same instance (a tunnel to a shared core of the same build passes the marker). A run-prefixed role is
- *   created through BASE_URL (guarded, recorded; the run-end teardown deletes it) and read back through
- *   REG_LOCAL_CORE_URL with the header-mode admin certificate (AUTH_CLIENT_CERT); not found ⇒ refused. Last step:
- *   the container that publishes the core port reads the role through ITS OWN port from inside
- *   (`docker exec … curl | wget`, injectable), so a published port that only forwards elsewhere cannot pass. Only then
- *   the run's local-backend proof (`<state dir>/<run id>.local-proof.json`: run id, tier, marker, time) is written. It
- *   expires after LOCAL_PROOF_MAX_AGE_MS, `prepareRun` (runner) and the run-end teardown delete it, and both
- *   `describeLocalOnly` and the guard's `localStack` option require it (`hasLocalProof`).
- * - `assertAuthModeAllowed()`: AUTH_MODE=header (no identity provider, a dev proxy injects an admin certificate) only
- *   with a local BASE_URL.
- * - `tierIdentity()`: a hash of BASE_URL's host (never the host itself) stored in the run state, every ledger line and
- *   the snapshots; the teardown deletes only lines recorded on the same tier.
- * - `assertRunTier()` / `assertRunTierLive(api)`: the whole check again, for the run-end teardown and the setup.
- * - `describeLocalOnly(test)`: describe-level skip for `@local` specs, the second guard next to the configs' grepInvert: the
- *   rows run only with TIER_KIND=local AND this run's unexpired local-backend proof on this tier.
- *
- * Messages never echo BASE_URL, REG_LOCAL_CORE_URL or a TIER_LOCAL_HOSTS entry: reports of a run may be shared.
+ *   - Only `TIER_KIND=local` is a local stack, and BASE_URL and REG_LOCAL_CORE_URL must be local hosts.
+ *   - `assertLocalAllowed()` needs POSITIVE proof of a local backend: `<core>/api/v1/info` answers a build marker and `docker ps`
+ *     on THIS machine's daemon shows a container publishing the core port on an address that serves it. Otherwise the run
+ *     stops before it lists a test. The configs freeze TIER_KIND after loading the env file; a later load cannot switch it.
+ *   - `assertLocalBackend(api)` checks the BASE_URL build marker equals a fresh read of REG_LOCAL_CORE_URL.
+ *   - `proveLocalInstance` creates a run-prefixed role through BASE_URL and reads it back from the core and the container; only
+ *     then is the proof file written. It expires and is required by `describeLocalOnly` and the guard's `localStack` option.
+ *   - AUTH_MODE=header only with a local BASE_URL. Messages never echo BASE_URL, REG_LOCAL_CORE_URL or TIER_LOCAL_HOSTS.
  */
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';

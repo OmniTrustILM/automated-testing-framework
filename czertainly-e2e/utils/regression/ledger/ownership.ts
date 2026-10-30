@@ -1,49 +1,14 @@
 /**
  * ownership — the guard that keeps every mutation and delete on objects this run created (own objects only).
  *
- * WHAT: the proof of ownership and the refusals built on it. Ownership is decided in two layers:
- * 1. `assertOwn` (ledger, synchronous): the uuid has a `created` line of THIS run and no later `deleted` line, and the
- *    line's name carries the run prefix (`<run id>-`, or `<run id>.` for a DNS name). Two runs, or a hand-made object
- *    that happens to carry a prefix, can never borrow ownership: the prefix is checked on top, never alone.
- * 2. `assertOwnLive` (asynchronous): assertOwn, then the LIVE object is read and, for a named type, its live
- *    name must carry the run prefix too, so a ledger line that points at the wrong uuid (a copy-paste, a reused id)
- *    cannot reach a foreign object. With a known tier identity the line must have been recorded on the same tier.
- *    It is the last step before every destructive or mutating call: the teardown handlers, the own-object helpers of
- *    apiReads.ts and the guard (guard/createGuard.ts) use it.
- *
- * Named types and the field read (`LIVE_READS`) and id-named types (`ID_NAMED`) are derived from the resource-type
- * registry (resourceTypes.ts: each entry says how its ownership is proven). A named type reads the live object and its
- * `name` (users: `username`, own certificates: `commonName`) must carry the run prefix. An id-named type (the platform names
- * the object by an id, REG-USE-05 records an ACME account as `<run id>-acme-account-<accountId>`) has no live name to check and
- * rests on the ledger line alone, as do `k8s:<kind>` lines. A type that is neither in LIVE_READS nor in ID_NAMED is refused (a
- * typo in a type name must never fall back to ledger-only proof). The name that must carry the run prefix is the LEDGER
- * line's: a name a caller passes in is never consulted.
- *
- * Derived objects (`certKey_<CN>`, certificates a discovery onboarded as new) carry no prefix; they are owned through
- * their `derived` line with `createdAfter` and are deleted only when the platform's creation time is not earlier
- * (`derivedDeletable`) and nobody adopted them (the certificate handler checks owner, groups, locations, RA profile and
- * request first).
- *
- * An RA profile named by REG_RA_PROFILE_NAME (local stack) is an issue-only parent: it has no ledger line, so the guard
- * refuses to activate protocols on it or change it.
- *
- * The dedicated second identity: the ILM user the suite creates for the
- * identity-provider account REG_RESTRICTED_USERNAME carries that fixed name, never the run prefix. For a `users` line
- * ONLY, `carriesRunPrefix` also accepts a name equal to REG_RESTRICTED_USERNAME (trimmed, case-insensitive) — on top
- * of the ledger `created` line of THIS run and tier, like every other name. The value is read from the process
- * environment with an injectable seam (`OwnershipOptions.env`); unset or empty, the second form never matches.
- * Key items: `keyItems` lines are read live under their parent key (`parents.key`); their live `name` is
- * the key's run-prefixed name.
- *
- * Messages carry the type and the uuid only, never the name of a refused object: reports may be shared, and
- * names stay in the local state files.
- *
- * WHY: the suite runs against shared tiers that hold other people's objects. A prefix on a name is not proof (a hand-made
- *      object can carry one), so only a ledger line of this run and tier, written when the object was created, lets a
- *      change or a delete through, and a second read of the live object catches a ledger line that points at the wrong uuid.
- * HOW: `assertOwn` reads the ledger lines; `assertOwnLive` adds the live read and the name check; `checkOwnership` is the
- *      same decision as a value for callers that decide instead of throw; `derivedDeletable` is the age rule of a derived
- *      object, which errs toward keeping when a time is missing or unreadable; `mayDeleteOwn` reads the delete switch.
+ * A name prefix is not proof, so only a ledger line of this run and tier lets a change through:
+ *   1. `assertOwn`: a `created` line of THIS run, no later `deleted` line, and a ledger name with the run prefix.
+ *   2. `assertOwnLive`: `assertOwn`, then the live object is read and its live name must carry the prefix too. It is the last
+ *      step before every mutating call.
+ * For both, a `users` line may carry the fixed REG_RESTRICTED_USERNAME instead of the prefix; id-named and `k8s:` types rest
+ * on the ledger line alone.
+ * A type missing from resourceTypes.ts is refused. Derived objects are owned through a `derived` line with `createdAfter`. An RA
+ * profile named by REG_RA_PROFILE_NAME is an issue-only parent and is never changed. Messages carry type and uuid, never a name.
  */
 import type { APIRequestContext } from '@playwright/test';
 import * as fs from 'fs';

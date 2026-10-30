@@ -1,22 +1,12 @@
 /**
  * preflight — does this tier have what the timestamping block builds on? Read-only.
  *
- * WHAT: `offlineBlocker` decides without a single request (a cryptography provider this tier kind cannot provision); `discoverParents`
- * finds the connectors, the authority instance and the vault instance (it is also what the `timestamping` need reads, see
- * ../need.ts); `preflight` then finds, by function group, interface
- * and name, every pre-existing parent of the block: the credential-provider v1 connector (SoftKeyStore), the EJBCA
- * authority-provider connector, the TSA_CRYPTO_PROVIDER cryptography connector, the timestamp-formatting connector (v2),
- * the vault connector (credential-provider v2, `secret` interface), the EJBCA authority instance TSA_AUTHORITY_NAME, the
- * vault instance TSA_VAULT_INSTANCE_NAME, and the EJBCA end-entity profile, certificate profiles and CA of every planned
- * family (resolved through the RA-profile attribute callbacks, as timestamping-setup.sh step 13 does).
- * WHY: timestamping-setup.sh created or approved what it missed; the block never does (create-only, design rule 1): a
- * missing or unapproved parent is a precise reason, the specs skip with it. A family whose CA is missing goes to
- * `missingFamilies` and the others still run.
- * HOW: the bash script's discovery filters on `GET /v1/connectors` (function groups) and `POST /v2/connectors/list`
- * (interfaces); the software v2 provider is picked by interface (`cryptography`) where the script matched its
- * host:port, which the block has no variables for. Every request goes through `Admin` (guarded); a TierError of any read
- * becomes the `unavailable` reason (a SetupError propagates). A reason names what the run asked for (configured names,
- * connector roles, statuses); the tier's own lists and connector names go to the log only.
+ * `offlineBlocker` decides without a request. `discoverParents` finds the connectors, the authority instance and the vault
+ * instance. `preflight` finds every pre-existing parent, and per planned family the EJBCA profiles and CA.
+ *
+ * The block never creates or approves a missing parent (create-only): the reason is named and the specs skip. A family whose
+ * CA is missing goes to `missingFamilies`; the others still run (a missing RSA CA stops the block). A TierError of a read
+ * becomes the `unavailable` reason, a SetupError propagates. The tier's own lists and names go to the log only.
  */
 import { hasLocalProof } from '../../regression/tier/localProof';
 import { isLocalTier } from '../../regression/tier/kind';

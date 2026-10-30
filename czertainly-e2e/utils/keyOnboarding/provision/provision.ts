@@ -1,18 +1,14 @@
 /**
- * provision — the key onboarding setup: preflight, the run's own objects in the source suite's order, the planted key
- * pairs, and the summary.
+ * provision — the key onboarding setup: preflight, the run's own objects, the planted key pairs, and the summary.
  *
- * WHAT: `provisionKeyOnboarding(api)` returns the run's `KeyOnboardingSummary`: `unavailable` with the reason when the
- * tier or the runner lacks a prerequisite (preflight.ts) or a step fails at the tier, else `ready` with the token, the
- * token profile, the planted labels and the certified pair's certificate. `writeSummary` stores it at `summaryFile()`
- * (mode 0600, written through a temp file). `SETUP_LEDGER_SPEC` is the `spec` of every ledger line written here.
- * WHY: replaces the source suite's global setup (tests/global-setup.ts → provision.ts + token.ts): instead of finding
- * or creating fixed-name objects that live on between runs, each run creates its own (run-prefixed names, a ledger line
- * per object right after its create), and the block teardown, then the run-end teardown, delete them; the key pairs
- * it plants are removed by the block teardown's `after` step (plant.ts `unplantRunKeys`).
- * HOW: vault instance → vault profile (+ enable) → PIN secret (+ wait active, enable) → token → token profile
- * (+ enable) → planting. Only a TierError becomes a reason: a SetupError (a refused body, a refused identity), a
- * programming error or a guard refusal propagates and fails the setup test.
+ * `provisionKeyOnboarding(api)` returns `unavailable` with the reason when the tier or the runner lacks a prerequisite or a
+ * step fails at the tier, else `ready` with the token, token profile, planted labels and the certified pair's certificate.
+ * `writeSummary` stores it at `summaryFile()` (mode 0600).
+ *
+ * Each run creates its own run-prefixed objects with a ledger line right after each create; the block teardown, then the
+ * run-end teardown, delete them. The planted key pairs are not ledger objects: the block teardown's `after` step
+ * (`unplantRunKeys`) removes them. Only a TierError becomes a reason: a refused body or identity, a programming error or a guard
+ * refusal fails the setup test.
  */
 import * as fs from 'fs';
 import { writeJsonAtomic } from '../../devBlocks/provision/summaryFile';

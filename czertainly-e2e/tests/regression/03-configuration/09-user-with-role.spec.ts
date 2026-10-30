@@ -1,19 +1,12 @@
 /**
- * REG-CFG-09 — Users in the admin UI (release checklist: Configuration 9, and the user rows of the authorization area). ilm#427.
+ * REG-CFG-09 — Users in the admin UI (release checklist: Configuration 9; ilm#427).
  *
- * WHAT: 1. Users → + → Create User with the run role ticked → the user is enabled, has the role, and the role's detail shows
- *          the user (POST user, then PATCH its roles).
- *       2. Sign in as the new user (parked with test.fixme): it needs an identity-provider account with that username, which the
- *          suite cannot create, so the row asserts nothing until one can be made.
- *       3. (REG-CFG-09.b) Detail → Edit: the username is locked; first name, last name and e-mail are saved, shown after a
- *          reload and read back from the API; `enabled` is unchanged.
- *       4. (REG-CFG-09.c) Detail → Delete: gone from the UI list, the API list and its role's members.
- * WHY: the release-checklist flow for users; the username is the identity and cannot change, and deleting a user must take
- *      its role membership with it.
- * HOW: edited and deleted users are new users of this run (created disabled through the API); the live own-object check
- *      (`live`) runs before the browser changes one. The ledger line (`own.record`) is written once the POST answered, before the
- *      roles PATCH is waited for, whatever the PATCH did. Absence is read from
- *      the list (core#2511).
+ * Creates a user with the run role (enabled, role shown on both sides), edits it with the username locked (.b) and deletes it
+ * (.c). Signing in as the new user is a test.fixme: it needs an identity-provider account the suite cannot create.
+ * Absence is read from the list (core#2511).
+ *
+ * Only users this run created are edited or deleted (created disabled through the API); the live check runs before the
+ * browser changes one. The ledger line is written once the POST answered, whatever the roles PATCH does.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { RolePage } from '../../../pages/RolePage';

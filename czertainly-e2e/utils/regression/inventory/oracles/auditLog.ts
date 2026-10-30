@@ -1,10 +1,10 @@
 /**
  * auditLog — the audit-log listing oracles.
  *
- * WHAT: The audit-log listing rows: the logging-settings gate (an audit row runs only when the platform logs the activity),
- *       the closed time window of an own activity, the activity filters and the read-only wait for the activity to appear.
- * WHY: An audit row can only be judged when the platform logs the activity, inside a closed window around an own activity.
- * HOW: The logging-settings gate, the closed time window, the activity filters and a read-only wait for the asynchronous entry.
+ * Provides:
+ *   - the logging-settings gate: an audit row runs only when the platform logs the activity
+ *   - the closed time window around an own activity, and the activity filters
+ *   - a read-only wait for the asynchronous entry to appear
  */
 import { expect } from '@playwright/test';
 import { propertyFilter } from '../searchApi';

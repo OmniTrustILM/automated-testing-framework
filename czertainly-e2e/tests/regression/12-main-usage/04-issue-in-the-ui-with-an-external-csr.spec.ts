@@ -1,20 +1,12 @@
 /**
- * REG-USE-04 — A certificate issued in the web UI from an external CSR (release checklist: Usage 4). ilm#429.
+ * REG-USE-04 — A certificate issued in the web UI from an external CSR (release checklist: Usage 4; ilm#429).
  *
- * WHAT: 1. Add Certificate → Request now → the run RA profile → Key Source External → a valid CSR → Create → the certificate is
- *          Issued within 180 s; after a reload the Details show the CN and the RA profile, the Request tab shows the pkcs10 request, the
- *          History tab has the issue entry, and the other tabs open without an error; the API shows the CSR's public key.
- *       2. A garbage CSR in the same form → inline validation and a "Failed to issue certificate (4xx)" alert; the page stays on the add
- *          form (a test of its own).
- *       3. (REG-USE-04.1) A CSR with DNS and IP SANs → issued with the requested SANs (the Details SAN widget), the stored request keeps
- *          them, and the History says "Issued using RA Profile <name>".
- * WHY: issuing from an external CSR is the central usage flow; the issued certificate must carry the CSR's key and SANs. What the CA
- *      accepts as a SAN is the CA's decision, so the SAN oracle is exact on EJBCA-NG and DNS-values-only on connectors whose template
- *      decides the SAN extension.
- * HOW: the RA profile is the run's own. Every certificate is recorded in the ledger from the create answer, before the redirect is waited
- *      for (also when the page shows the "accepted with warnings" panel or the step throws), with its linked key recorded twice
- *      (idempotent) to catch a key core links late, and is deleted by the run-end teardown. The IP SAN is a documentation address (RFC
- *      5737).
+ * Add Certificate with Key Source External issues the certificate within 180 s, and the API shows the CSR's public key. A
+ * garbage CSR gets inline validation and a "Failed to issue certificate" alert. (.1) A CSR with DNS and IP SANs is issued
+ * with them; the SAN check is exact on EJBCA-NG and DNS-only where the CA's template decides the SANs.
+ *
+ * The RA profile is the run's own. Every certificate is recorded in the ledger from the create answer, before the redirect
+ * is waited for, and deleted by the run-end teardown.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { CertificateAddPage } from '../../../pages/CertificateAddPage';
@@ -86,7 +78,7 @@ test.describe('Certificate issue in the web UI with an external key', { tag: tag
             });
 
             await test.step('Other tabs open without errors', async () => {
-                await certPage.assertTabsOpenWithoutError(CERTIFICATE_DETAILS_TABS);
+                await certPage.verifyOtherTabsOpenWithoutError(CERTIFICATE_DETAILS_TABS);
             });
 
             await test.step('API: issued by the run RA profile with the CSR key', async () => {

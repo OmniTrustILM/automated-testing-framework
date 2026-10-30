@@ -1,26 +1,12 @@
 /**
  * prepareRun — `prepareRun()`, the first call of playwright.regression.config.ts and playwright.api.config.ts.
  *
- * In this order:
- * 1. the env file: REG_ENV_FILE, else API_ENV_FILE, else `<config dir>/.env` (envFile.ts); an env file NAMED by
- *    REG_ENV_FILE / API_ENV_FILE that does not exist stops the run (a typo must not turn into a green, empty
- *    run); the default `<config dir>/.env` may be missing (CI). REG_ENV_FILE is then pinned to that file, so every
- *    later load (utils/env.ts in a worker) reads the same file and never the cwd `.env`. The pin marker
- *    REG_ENV_FILE_PINNED is honoured only inside a worker (TEST_WORKER_INDEX set): in the runner a
- *    hand-set marker can never waive the existence check of a named file;
- * 2. freeze TIER_KIND (always set), AUTH_MODE and REG_RA_PROFILE_NAME;
- * 3. the run id and its defaults (runId.ts `setRunEnvDefaults`), and the switches parsed once;
- * 4. the tier guards: positive local proof for TIER_KIND=local (private hosts only, the core's build marker,
- *    a container proof), header auth only on a local BASE_URL, the tier identity REG_TIER_ID;
- * 5. in the runner only (not in a worker, which loads the config again): one worker (`--workers` / `-j` > 1 refused:
- *    run state, ledger and the non-interference snapshot assume a single worker), the run lock, released when
- *    the runner exits, and the removal of a stale local-backend proof of this run id (only the setup of
- *    THIS invocation may write it).
+ *   - Loads the env file; a file named by REG_ENV_FILE / API_ENV_FILE that does not exist stops the run.
+ *   - Freezes TIER_KIND, AUTH_MODE and REG_RA_PROFILE_NAME, and sets the run id and its defaults.
+ *   - Checks the tier guards: positive local proof for TIER_KIND=local, header auth only on a local BASE_URL.
+ *   - In the runner only: refuses more than one worker, takes the run lock, removes a stale local proof of this run id.
  *
- * Variables written (all before the first test is listed; workers inherit them): REG_ENV_FILE, REG_ENV_FILE_PINNED
- * (here), TIER_KIND, AUTH_MODE, REG_RA_PROFILE_NAME (tier/kind.ts `freezeTierEnv`), REG_RUN_ID, API_RUN_ID, API_DELETE_OWN
- * (runId.ts `setRunEnvDefaults`), REG_TIER_ID (here, runner only) and REG_LOCAL_CORE_MARKER (tier/localProof.ts, the local proof).
- * Nothing else in utils/regression writes the environment.
+ * All variables are written before the first test is listed. Nothing else in utils/regression writes the environment.
  */
 import { loadDotenv } from '../../envFile';
 import { parseFlag } from './flags';

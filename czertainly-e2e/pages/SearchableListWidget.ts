@@ -1,10 +1,8 @@
 /**
- * SearchableListWidget — a list widget with a client-side Search box.
+ * SearchableListWidget — a list widget with a client-side Search box (ten rows a page).
  *
- * WHAT: a list widget with a client-side Search box (ten rows a page).
- * WHY: roles, users and ACME accounts share the search, the row lookup and the listed / not-listed checks; absence
- *       is asserted only after the list showed rows.
- * HOW: the widget by its heading; rows by their detail link; the search box is cleared afterwards.
+ * Roles, users and ACME accounts share the search, the row lookup and the listed / not-listed checks. Absence is
+ * asserted only after the list showed rows. The search box is cleared afterwards.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { widgetTitled } from './ui/widget';

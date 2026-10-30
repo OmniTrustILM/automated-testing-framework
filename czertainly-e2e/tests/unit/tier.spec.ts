@@ -1,14 +1,12 @@
 /**
- * Unit tests for the TIER_KIND guard: an unset or unknown kind is a shared tier, and TIER_KIND=local needs positive
- * proof of a local backend: a local BASE_URL (loopback, or a TIER_LOCAL_HOSTS entry that is or resolves to an
- * RFC 1918 / link-local address), a local REG_LOCAL_CORE_URL, the core's /api/v1/info build marker (no liveness-only
- * pass), a container publishing the core port, and, in the setup, BASE_URL's /api/v1/info read WITH authentication
- * naming the same build (unreadable ⇒ refused). HttpProbe, resolver and container proof are injected here, so a mis-set
- * variable, a dev proxy, a tunnel or a port-forward cannot switch on destructive @local rows against a shared tier.
- * Also: header auth only on a local BASE_URL, the frozen variables and the tier identity.
- * And the instance round trip (a role created through BASE_URL read back through the core),
- * the daemon of the core's machine (os.networkInterfaces / DOCKER_HOST), a marker with commit id or build time, the
- * proof file's expiry and removal, `*.localhost` resolved like any other name.
+ * tier — unit tests for the TIER_KIND guard.
+ *
+ * An unset or unknown kind is a shared tier. TIER_KIND=local needs positive proof of a local backend: a local BASE_URL
+ * (loopback, or a TIER_LOCAL_HOSTS entry that is or resolves to a private address), a local REG_LOCAL_CORE_URL, the core's
+ * /api/v1/info build marker, a container publishing the core port, and in the setup BASE_URL's authenticated /api/v1/info
+ * naming the same build. The probe, resolver and container proof are injected, so a dev proxy, tunnel or port-forward cannot
+ * switch on destructive @local rows against a shared tier. Also: header auth only on a local BASE_URL, the instance round
+ * trip, the proof file's expiry and removal, and `*.localhost` resolved like any other name.
  */
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';

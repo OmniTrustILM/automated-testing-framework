@@ -1,13 +1,11 @@
 /**
  * config — the environment contract of the key onboarding block.
  *
- * WHAT: every KO_* variable the block reads, with the developers' defaults (config.env.example of their suite), and
- * where the setup leaves its summary.
- * WHY: the block needs a PKCS#11 connector with the key-listing feature, a SoftHSM token behind its proxy sidecar, and
- * docker on the runner to plant key pairs on that token the way a tool outside the platform would. A missing value
- * makes the setup `unavailable` with the variable's name; nothing is guessed.
- * HOW: `keyOnboardingConfig()` reads the process environment (the env file is already loaded by prepareRun);
- * `summaryFile()` is the run's summary path under REG_STATE_DIR (never inside the clone).
+ * Reads the KO_* settings with the developers' defaults and says where the setup leaves its summary (under REG_STATE_DIR,
+ * never inside the clone).
+ *
+ * The block needs a PKCS#11 connector with the key-listing feature, a SoftHSM token behind its proxy sidecar, and docker on
+ * the runner. A missing value makes the setup `unavailable` with the variable's name; nothing is guessed.
  */
 import * as path from 'path';
 import { currentRunId, regressionStateDir } from '../regression/run/runId';

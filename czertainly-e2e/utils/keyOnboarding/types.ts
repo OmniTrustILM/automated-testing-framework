@@ -1,12 +1,12 @@
 /**
- * types — the provisioning summary of the key onboarding block (the `@dev-tests` port of the developers' suite for
- * ilm#409, "one-time list and onboard of existing token keys").
+ * types — the provisioning summary of the key onboarding block (the `@dev-tests` port for ilm#409, "one-time list and
+ * onboard of existing token keys").
  *
- * WHAT: the shape the `key-onboarding-setup` project writes and every key onboarding spec reads. `Provisioning` keeps
- * the developers' summary shape (token, token profile, planted labels, the certified pair's certificate), so the specs
- * read the same fields; the objects behind it are created per run and recorded in the ledger.
- * HOW: `KeyOnboardingSummary` wraps it with the outcome of the setup: `ready`, or `unavailable` (a prerequisite is
- * missing; every test skips with the reason).
+ * The shape the `key-onboarding-setup` project writes and every key onboarding spec reads. `Provisioning` keeps the
+ * developers' summary shape (token, token profile, planted labels, the certified pair's certificate), so the specs
+ * read the same fields; the objects behind it are created per run and recorded in the ledger. `KeyOnboardingSummary`
+ * wraps it with the outcome of the setup: `ready`, or `unavailable` (a prerequisite is missing; every test skips with
+ * the reason).
  */
 
 export interface NamedUuid {

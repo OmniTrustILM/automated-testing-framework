@@ -1,12 +1,12 @@
 /**
- * AcmeProfilePage — the ACME Profiles list, the Create ACME Profile dialog and the profile detail.
+ * AcmeProfilePage — Page Object Model for ACME profiles (REG-CFG-04).
  *
- * WHAT: the ACME Profiles list, the Create dialog (name, default retry interval and order validity, the Terms of Service and
- *       contact switches, pre-authorized identifiers, required custom attributes) and the detail with its Enable button.
- * WHY: REG-CFG-04 creates an ACME profile with one pre-authorized DNS identifier and enables it from the detail; the create
- *      answer goes back to the spec before the dialog closes so that the profile is on the ledger first.
- * HOW: the dialog is the last open dialog; the two requirement switches are hidden inputs set through `setSwitch` (the label is
- *      clicked and the state proven); identifier rows by test id and position; the Enable button is the toolbar's check icon.
+ * Encapsulates:
+ *   - the ACME Profiles list and the profile detail with its Enable button
+ *   - the Create ACME Profile dialog, including the Terms of Service and contact switches
+ *
+ * The create answer goes back to the spec before the dialog closes, so the profile is on the ledger first. The switches
+ * are hidden inputs, set through `setSwitch`.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import type { CreateAnswer } from './ui/createAnswer';
@@ -27,13 +27,13 @@ export class AcmeProfilePage {
     }
 
     async goToList(): Promise<void> {
-        await this.page.goto('administrator/#/acmeprofiles');
+        await this.page.goto('/administrator/#/acmeprofiles');
         await expect(this.main).toBeVisible();
     }
 
     /** The detail page of one ACME profile. */
     async goToDetail(uuid: string): Promise<void> {
-        await this.page.goto(`administrator/#/acmeprofiles/detail/${uuid}`);
+        await this.page.goto(`/administrator/#/acmeprofiles/detail/${uuid}`);
         await expect(this.main).toBeVisible();
     }
 

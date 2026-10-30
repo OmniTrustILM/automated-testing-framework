@@ -1,12 +1,10 @@
 /**
- * Refusals — the one way the guard says no.
+ * refuse — the one way the guard says no.
  *
- * WHAT: `refuserFor(where)` builds the function every guard step calls to refuse a request: it throws an
- * OwnObjectViolation that names the helper label (`where`), the reason and the refusal kind.
- * WHY: the label tells the reader at which stage the guard stopped (before the URL was understood, before the path was
- * known, or on the full `guardedApi <METHOD> <path>`), and the kind (`request`, `ownership`, `derived`) tells a test why.
- * Building the refuser once per stage keeps the label out of any mutable variable.
- * HOW: a step receives the refuser of its stage as an argument; the reason strings stay with the rule that raises them.
+ * `refuserFor(where)` builds the function every guard step calls to refuse a request: it throws an OwnObjectViolation
+ * that names the helper label (`where`), the reason and the refusal kind (`request`, `ownership`, `derived`). The label
+ * says at which stage the guard stopped (before the URL was understood, before the path was known, or on the full
+ * `guardedApi <METHOD> <path>`).
  */
 import { OwnObjectViolation, RefusalKind } from '../ledger/ownership';
 

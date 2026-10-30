@@ -1,18 +1,13 @@
 /**
  * preflight — does this tier have what the key onboarding block builds on? Read-only.
  *
- * WHAT: `offlineBlocker` decides without a request and without docker (a shared tier, no local-backend proof for this
- * run, no KO_TOKEN_PIN); `runnerBlocker` asks docker only (a daemon answers, the sidecar KO_SIDECAR_CONTAINER names is
- * running); `preflight` then reads the platform: the PKCS#11 connector (v2) at KO_PKCS11_CONNECTOR_URL, connected,
- * with the `keyList` feature on its cryptography interface; the credential-provider connector (v2) at
- * KO_VAULT_CONNECTOR_URL, connected, with a `secret` interface; and the token KO_PKCS11_TOKEN among the tokens the
- * connector's profile KO_PKCS11_PROFILE offers (the token form's callback), resolved here so a tier without that token
- * gets no object created.
- * WHY: the source suite registered and approved the connectors it did not find; the block never does (create-only):
- * a missing or unapproved connector is a precise reason, the specs skip with it.
- * HOW: connectors are matched by URL and version as the source suite did (`POST /v2/connectors/list`). Every request
- * goes through `Admin` (guarded); a TierError of any read becomes the `unavailable` reason, a SetupError propagates.
- * A reason names the variable a value came from, never the value; the tier's own lists go to the log only.
+ *   - `offlineBlocker`: decides without a request (a shared tier, no local-backend proof, no KO_TOKEN_PIN)
+ *   - `runnerBlocker`: asks docker only (a daemon answers, the sidecar is running)
+ *   - `preflight`: reads the platform for the connected PKCS#11 connector with the `keyList` feature, the connected
+ *     credential-provider connector with a `secret` interface, and the configured token among the profile's tokens
+ *
+ * The block never registers or approves a connector (create-only); a missing one is a precise reason and the specs skip with
+ * it. A reason names the variable a value came from, never the value.
  */
 import { Logger } from '../../Logger';
 import { isLocalTier } from '../../regression/tier/kind';

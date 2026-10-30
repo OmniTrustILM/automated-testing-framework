@@ -1,12 +1,12 @@
 /**
- * EventHistoryWidget — the "Event History" widget.
+ * EventHistoryWidget — the "Event History" widget, in two modes.
  *
- * WHAT: the "Event History" widget in its two modes: the platform event page (one row per firing) and an object's Event History tab (one
- *       row per trigger evaluated on it).
- * WHY: specs read whether a trigger's conditions were met and its actions performed on a certificate.
- * HOW: the widget by its heading; cells by their column's header id; paging is `PagerWidget`; the met / performed cells draw an icon with
- *      no name, so the icon's class is the only hook (no test id in the FE yet). `goToObjectHistory` opens the tab of an object's detail
- *      page; the read methods only read.
+ * Modes:
+ *   - the platform event page: one row per firing
+ *   - an object's Event History tab: one row per trigger evaluated on it
+ *
+ * Specs read whether a trigger's conditions were met and its actions performed. The met / performed cells draw an icon
+ * with no name, so the icon's class is the only hook (no FE test id yet). The read methods only read.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { PagerWidget } from './PagerWidget';

@@ -1,14 +1,9 @@
 /**
- * DiscoveryPage — the discovery list and its create dialog.
+ * DiscoveryPage — the discovery list and its Create Discovery dialog (SMK-003, REG-DISC-01).
  *
- * WHAT: the discovery list and its "Create Discovery" dialog (provider, kind, targets, ports, parallel executions).
- * WHY: SMK-003 drives it with positional arguments and checks the result table; REG-DISC-01 creates through the
- *       form and gets the uuid with the create request. The detail page is `DiscoveryDetailPage`.
- * HOW: the dialog by its accessible name and its selects through their trigger buttons (one implementation); the
- *       create form returns the answer of the create request and `waitForDetailRoute` waits for the redirect, so a spec
- *       records the new run before it waits. The methods the smoke suite calls (`goToPage`, the positional
- *       `createDiscovery`, `assertCompletedStatusBadges`, `openResultsTab`, `verifyDiscoveredCertificates`,
- *       `openCertificateDetailsAndVerify`) keep their names and their strict checks.
+ * SMK-003 calls `goToPage`, the positional `createDiscovery` and the result checks by name; they keep their names and
+ * strict checks. REG-DISC-01 uses the form, which returns the create answer, and `waitForDetailRoute`, so a spec
+ * records the new run before it waits. The detail page is `DiscoveryDetailPage`.
  */
 import { Page, Locator, expect } from '@playwright/test';
 import { Logger } from '../utils/Logger';
