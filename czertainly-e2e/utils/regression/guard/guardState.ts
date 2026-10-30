@@ -1,0 +1,71 @@
+/**
+ * guardState — what one guarded context knows between its requests.
+ *
+ * Holds the wrapped context, the environment the guard judges against, whether the context was made for a local stack,
+ * the probe uuids it handed out, the run id, the options of every live ownership check and the caller's own user uuid.
+ * The steps of the guard share this one object. `createGuard` builds one per context; unit tests inject the ledger, run
+ * id, tier and environment through the test seams of `guardApiWithSeams` only.
+ */
+import { callerUuidOf } from './approvals';
+import { currentRunId } from '../run/runId';
+import { hasLocalProof } from '../tier/localProof';
+import { isLocalTier, tierIdentity } from '../tier/kind';
+import type { LiveOptions } from '../ledger/ownership';
+import type { APIRequestContext } from '@playwright/test';
+import type { GuardTestSeams } from './types';
+
+/** The state of every guarded context, for guard/callbackTargets.ts only (the lint's `callback-target` rule keeps everything else away from it). */
+export const STATES = new WeakMap<object, GuardState>();
+
+export class GuardState {
+    /** Uuids `probeUuid()` handed out: accepted as mutation targets, they name no object. */
+    readonly probes = new Set<string>();
+    /** The pre-existing objects a preflight registered as callback parents (guard/callbackTargets.ts), lower-cased uuids. */
+    readonly callbackTargets: Record<'authority' | 'connector', Set<string>> = { authority: new Set(), connector: new Set() };
+    readonly env: NodeJS.ProcessEnv;
+    private readonly localStack: boolean;
+    /** The caller's own user uuid once read (approval profile steps). */
+    private caller: string | undefined;
+
+    constructor(
+        readonly api: APIRequestContext,
+        options: { localStack?: boolean },
+        private readonly seams: GuardTestSeams,
+    ) {
+        this.env = seams.env ?? process.env;
+        this.localStack = options.localStack === true;
+    }
+
+    runId(): string {
+        return this.seams.runId ?? currentRunId(this.env);
+    }
+
+    /** Ledger lines, run id, tier and environment of every live ownership check. */
+    liveOptions(): LiveOptions {
+        const { seams } = this;
+        return {
+            ...(seams.lines ? { lines: seams.lines } : {}),
+            ...(seams.file ? { file: seams.file } : {}),
+            runId: this.runId(),
+            tier: seams.tier === undefined ? (tierIdentity(this.env) ?? null) : seams.tier,
+            env: this.env,
+        };
+    }
+
+    /** `localStack` lifts the platform deny-list and the ownership rules only on a proven local stack. */
+    isProvenLocal(): boolean {
+        return this.localStack && isLocalTier(this.env) && hasLocalProof(this.env);
+    }
+
+    /** The caller's own user uuid (`GET /v1/auth/profile` through the wrapped context), cached once read. */
+    async callerUuid(): Promise<string | undefined> {
+        if (this.caller) return this.caller;
+        try {
+            const r = await this.api.get('/api/v1/auth/profile', { failOnStatusCode: false });
+            if (r.ok()) this.caller = callerUuidOf(await r.json());
+        } catch {
+            this.caller = undefined;
+        }
+        return this.caller;
+    }
+}

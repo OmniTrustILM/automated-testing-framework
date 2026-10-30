@@ -4,7 +4,9 @@
  * - generateCsr: produces a fresh RSA-2048 keypair and a PKCS#10 CSR (PEM) using
  *   node-forge. Caller pastes the CSR into the UI "Issue New Certificate" form.
  * - waitForCertificateState: polls GET /api/v1/certificates/{uuid} until the
- *   `state` field matches expected (e.g. "issued"). Used after UI submit.
+ *   `state` field matches expected (e.g. "issued"). Used after UI submit. Fails
+ *   fast on a terminal bad state, a 4xx (a 404 only after a short read-after-write
+ *   grace) and three 5xx in a row.
  * - revokeCertificate + deleteCertificate: best-effort cleanup helpers for
  *   the test's afterEach hook.
  *
@@ -12,9 +14,11 @@
  * this module — see SMK-004 design spec.
  */
 
-import { APIRequestContext, expect } from '@playwright/test';
+import { APIRequestContext } from '@playwright/test';
 import { Logger } from './Logger';
 import * as forge from 'node-forge';
+import { waitForCertificateState as waitUntilCertificateState } from './regression/wait/certificateState';
+import type { WaitForStateOptions } from './regression/wait/certificateState';
 
 const logger = new Logger('CertificateUtils');
 
@@ -178,30 +182,12 @@ export async function findCertificateByFingerprint(
     return { uuid: body.certificates[0].uuid };
 }
 
-export async function waitForCertificateState(
-    request: APIRequestContext,
-    certUuid: string,
-    expectedState: string,
-    timeout: number = 60_000,
-): Promise<void> {
-    logger.info(`Waiting for certificate ${certUuid} to reach state "${expectedState}" (timeout ${timeout}ms)`);
+export { NOT_FOUND_GRACE_MS, RETRYABLE_4XX, isTransientStatus } from './regression/wait/certificateState';
+export type { WaitForStateOptions } from './regression/wait/certificateState';
 
-    await expect.poll(async () => {
-        const resp = await request.get(`/api/v1/certificates/${certUuid}`);
-        if (!resp.ok()) {
-            logger.warn(`Cert ${certUuid} state poll got status ${resp.status()}`);
-            return null;
-        }
-        const cert = await resp.json();
-        return cert.state as string;
-    }, {
-        message: `Certificate ${certUuid} did not reach state "${expectedState}" within ${timeout}ms`,
-        timeout,
-        intervals: [1000, 2000, 3000],
-    }).toBe(expectedState);
-
-    logger.info(`Certificate ${certUuid} reached state "${expectedState}"`);
-}
+/** Polls until the certificate reaches `expectedState`; the policy (fail fast, grace, transient answers) lives in regression/wait/certificateState. */
+export const waitForCertificateState = (request: APIRequestContext, certUuid: string, expectedState: string, timeout: number = 60_000, opts: WaitForStateOptions = {}): Promise<void> =>
+    waitUntilCertificateState(request, certUuid, expectedState, timeout, opts);
 
 export async function revokeCertificate(
     request: APIRequestContext,

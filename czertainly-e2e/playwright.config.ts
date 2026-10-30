@@ -8,13 +8,10 @@ import * as path from 'path';
 dotenv.config({ path: path.resolve(__dirname, '.env') });
 
 export default defineConfig({
-  testDir: './tests',
-
-  // Only the smoke suite belongs to this config. The visual baselines need reference images that
-  // are captured per environment and deliberately not committed, and the unit tests need no
-  // environment at all - both have their own config, and a bare `playwright test` here must not
-  // sweep them up along with the suite it is meant to run.
-  testIgnore: ['**/visual/**', '**/unit/**'],
+  // Only the smoke suite belongs to this config: the visual, unit, regression and API suites have their own configs,
+  // and a bare `playwright test` must not sweep them up. Pointing testDir at tests/smoke (instead of an ignore list)
+  // means a new suite folder never needs an entry here.
+  testDir: './tests/smoke',
 
   globalSetup: require.resolve('./global-setup'),
   globalTeardown: require.resolve('./global-teardown'),

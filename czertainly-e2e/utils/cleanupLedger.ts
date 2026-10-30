@@ -16,13 +16,22 @@
  *
  * A run started with SMOKE_PERSIST=true skips teardown altogether and is expected to leave its
  * fixtures behind, so nothing here applies to it.
+ *
+ * CLEANUP_LEDGER_FILE moves the ledger elsewhere: the REG-* and API-* configs point it at the run's
+ * state directory (outside the clone), so their cleanup failures never mix with a smoke run's. It is
+ * read on every call, so a config or a test can set it before the first write.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 
-/** Sibling of .smoke-state.json, at czertainly-e2e/.smoke-cleanup.jsonl. */
-const LEDGER_FILE = path.resolve(__dirname, '..', '.smoke-cleanup.jsonl');
+/** Default: sibling of .smoke-state.json, at czertainly-e2e/.smoke-cleanup.jsonl. */
+const DEFAULT_LEDGER_FILE = path.resolve(__dirname, '..', '.smoke-cleanup.jsonl');
+
+/** The ledger in use: CLEANUP_LEDGER_FILE when set, else the smoke default. */
+export function cleanupLedgerFile(): string {
+    return process.env.CLEANUP_LEDGER_FILE ? path.resolve(process.env.CLEANUP_LEDGER_FILE) : DEFAULT_LEDGER_FILE;
+}
 
 export interface CleanupFailure {
     /** What could not be removed: 'certificate', 'raProfile', 'authority', 'connector', ... */
@@ -56,20 +65,45 @@ export function isDependencyRefusal(error: unknown): boolean {
 }
 
 export function recordCleanupFailure(failure: CleanupFailure): void {
-    fs.appendFileSync(LEDGER_FILE, `${JSON.stringify(failure)}\n`);
+    const file = cleanupLedgerFile();
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.appendFileSync(file, `${JSON.stringify(failure)}\n`);
 }
 
 export function readCleanupFailures(): CleanupFailure[] {
-    if (!fs.existsSync(LEDGER_FILE)) return [];
+    const file = cleanupLedgerFile();
+    if (!fs.existsSync(file)) return [];
     return fs
-        .readFileSync(LEDGER_FILE, 'utf-8')
+        .readFileSync(file, 'utf-8')
         .split('\n')
         .filter((line) => line.trim().length > 0)
         .map((line) => JSON.parse(line) as CleanupFailure);
 }
 
+/**
+ * Rewrites the recorded failures through `update` (the run-end teardown's final pass: a failure that a later attempt removed is
+ * dropped, one that still fails is replaced by a record naming both attempts). Runs in the main process after the workers.
+ */
+export function rewriteCleanupFailures(update: (failures: CleanupFailure[]) => CleanupFailure[]): void {
+    const next = update(readCleanupFailures());
+    const file = cleanupLedgerFile();
+    if (!next.length) {
+        if (fs.existsSync(file)) fs.unlinkSync(file);
+        return;
+    }
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, next.map((f) => `${JSON.stringify(f)}\n`).join(''));
+}
+
 export function clearCleanupFailures(): void {
-    if (fs.existsSync(LEDGER_FILE)) fs.unlinkSync(LEDGER_FILE);
+    const file = cleanupLedgerFile();
+    if (fs.existsSync(file)) fs.unlinkSync(file);
+}
+
+/** The `blockedBy` an error carries itself (`Object.assign(new Error(…), { blockedBy })`), if any. */
+function blockerOf(error: unknown): string | undefined {
+    const b = (error as { blockedBy?: unknown } | null)?.blockedBy;
+    return typeof b === 'string' && b ? b : undefined;
 }
 
 /**
@@ -97,8 +131,9 @@ export async function attemptCleanup(
                 ...describe,
                 status: statusOf(second),
                 message: String(second),
-                // A dependency refusal is only a consequence when something upstream actually failed.
-                blockedBy: blockedBy && isDependencyRefusal(second) ? blockedBy : undefined,
+                // An error that names its own blocker (a CA that refuses a revoke) keeps it; otherwise a dependency
+                // refusal is only a consequence when something upstream actually failed.
+                blockedBy: blockerOf(second) ?? (blockedBy && isDependencyRefusal(second) ? blockedBy : undefined),
             });
             return false;
         }
@@ -111,7 +146,9 @@ export function formatCleanupReport(failures: CleanupFailure[]): string {
         const identity = [f.uuid, f.name].filter(Boolean).join(' ');
         const status = f.status ? `status ${f.status}` : 'no status';
         const because = f.blockedBy ? ` — still referenced by ${f.blockedBy}, which could not be removed either` : '';
-        return `  ${f.resource.padEnd(14)} ${identity.padEnd(46)} ${status}${because}`;
+        // The full error text stays in the report (seen on a live tier: "no status" alone hid why an own compliance profile could not be removed).
+        const text = String(f.message ?? '').replace(/\s+/g, ' ').trim().slice(0, 1500);
+        return `  ${f.resource.padEnd(14)} ${identity.padEnd(46)} ${status}${because}${text ? `\n      ${text}` : ''}`;
     });
     const roots = failures.filter((f) => !f.blockedBy).length;
     return [

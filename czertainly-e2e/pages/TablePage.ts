@@ -1,5 +1,12 @@
+/**
+ * TablePage — the smoke suite's generic list table (SMK-003, 007, 008).
+ *
+ * The smoke suite calls these methods by name; the regression suite does not use this class. `bulkDelete` refuses a
+ * page that shows anything but the expected rows (atf#99), so a wrong filter can never delete a foreign object.
+ */
 import { Page, Locator, expect } from '@playwright/test';
 import { Logger } from '../utils/Logger';
+import { chooseOption } from './ui/select';
 
 const logger = new Logger('TablePage');
 
@@ -66,16 +73,9 @@ export class TablePage {
      * until clicked, so we click before fill.
      */
     async applyFilter(opts: { group: string; field: string; condition: string; value: string }): Promise<void> {
-        const pickOption = async (trigger: Locator, label: string, optionLabel: string) => {
-            await expect(trigger, `Filter ${label} trigger should be enabled`).toBeEnabled();
-            await trigger.click();
-            const option = this.page.getByRole('option', { name: optionLabel, exact: true });
-            await option.waitFor({ state: 'visible' });
-            await option.click();
-        };
-        await pickOption(this.filterGroupTrigger, 'Group', opts.group);
-        await pickOption(this.filterFieldTrigger, 'Field', opts.field);
-        await pickOption(this.filterConditionsTrigger, 'Condition', opts.condition);
+        await chooseOption(this.page, this.filterGroupTrigger, opts.group);
+        await chooseOption(this.page, this.filterFieldTrigger, opts.field);
+        await chooseOption(this.page, this.filterConditionsTrigger, opts.condition);
 
         await this.filterValueInput.click();  // focus first — FE removes readonly on focus
         await this.filterValueInput.fill(opts.value);

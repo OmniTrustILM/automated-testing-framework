@@ -1,3 +1,10 @@
+/**
+ * Navigation — the sidebar navigation (SMK-002, REG-CERT-60).
+ *
+ * Expands a parent group and opens a page by its link, the way a user does; the certificate pages open the list
+ * through it too. A top-level link is scoped to the first-level items, so a nested link of the same name never
+ * matches. The URL hint is awaited together with the click.
+ */
 import { Locator, Page, expect } from '@playwright/test';
 
 export class Navigation {

@@ -8,14 +8,17 @@
       "node"
     ],
     "skipLibCheck": true,
-    "resolveJsonModule": true,
-    "outDir": "dist"
+    "resolveJsonModule": true
   },
   "include": [
     "tests",
     "fixtures",
     "pages",
     "utils",
-    "playwright.config.ts"
+    "playwright.config.ts",
+    "playwright.regression.config.ts",
+    "playwright.api.config.ts",
+    "playwright.unit.config.ts",
+    "playwright.visual.config.ts"
   ]
 }

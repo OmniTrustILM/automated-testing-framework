@@ -7,10 +7,13 @@
  *      this POM keeps locators out of the spec file.
  * HOW: locators declared in constructor. Methods: goToList, openCreateModal,
  *      fillAndSubmitCreate, deleteByName.
+ *
+ * The smoke suite calls these methods by name; the regression suite does not use this class.
  */
 
 import { Page, Locator, expect } from '@playwright/test';
 import { Logger } from '../utils/Logger';
+import { chooseOption, chooseOptions, selectOfTrigger } from './ui/select';
 
 const logger = new Logger('CustomAttributesPage');
 
@@ -80,14 +83,10 @@ export class CustomAttributesPage {
         await this.nameInput.fill(opts.name);
         await this.labelInput.click();
         await this.labelInput.fill(opts.label);
-        await this.resourcesTrigger.click();
-        await this.page.getByRole('option', { name: opts.resource, exact: true }).click();
-        // Multi-select stays open after option click — press Escape to close it
-        await this.page.keyboard.press('Escape');
-        await this.contentTypeTrigger.click();
-        await this.page.getByRole('option', { name: opts.contentType, exact: true }).click();
-        await this.contentTypeTrigger.click();
-        await this.page.getByRole('option', { name: opts.contentType, exact: true }).click();
+        // Multi-select stays open after an option click: chooseOptions closes it with Escape
+        await chooseOptions(this.page, selectOfTrigger(this.page, this.resourcesTrigger), [opts.resource]);
+        await chooseOption(this.page, this.contentTypeTrigger, opts.contentType);
+        await chooseOption(this.page, this.contentTypeTrigger, opts.contentType);
         await this.submitButton.click();
         await expect(this.createModal).not.toBeVisible();
     }

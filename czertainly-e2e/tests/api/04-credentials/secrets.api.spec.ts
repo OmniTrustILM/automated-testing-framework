@@ -1,0 +1,150 @@
+/**
+ * API-GEN-17 — Credentials keep their secret (ilm#428).
+ *
+ * A SECRET attribute is serialised with data null (core#202, interfaces#125). An edit replaces the content wholesale, so a
+ * required secret must be supplied again. Create-only on shared tiers with run-prefixed names and random secrets; every
+ * create is ledgered before the first assertion. Skips when the tier has no credential connector.
+ */
+import { expect, test } from '../../../fixtures/regressionFixtures';
+import { credentialConnectorOrSkip, deleteOwnAndProveGone, expectGoneWith404, refused422 } from '../../../utils/regression/inventory/configProbes';
+import { attributeOf, basicAttributes, bulkDeleteObjects, containsSecret, contentWithData, createOwnBasicCredential, putCredential, randomSecret, readCredential, findRowByUuid, setCredentialEnabled, valuesOf } from '../../../utils/regression/inventory/credentialsApi';
+import { labelOf } from '../../../utils/regression/inventory/raProfileValidation';
+import { requiredCustomAttributes } from '../../../utils/regression/customAttributes';
+import { rowsNamed } from '../../../utils/regression/listReads';
+import { runName, ownName } from '../../../utils/regression/ledger/runState';
+import { testMeta, tags } from '../../../utils/regression/tags';
+import { readAnswer } from '../../../utils/regression/inventory/searchApi';
+import { JsonObject } from '../../../utils/regression/json';
+
+const ISSUE = 'ilm#428';
+
+// ================================================================== API-GEN-17
+
+test.describe('credential secrets and immutability', { tag: tags.api }, () => {
+    test('detail and list show the password as a secret without data',
+        testMeta({ id: 'API-GEN-17', row: 'masking', prio: 'P1', issue: ISSUE, rule: ['SECRET content is serialised with data null: ResponseAttributeSerializer', 'core#202, interfaces#125 (secret masking)', 'the plain password is in no body'] }),
+        async ({ api, own }) => {
+            const c = await credentialConnectorOrSkip(api);
+            const credential = await createOwnBasicCredential(api, own.spec, 'mask', { connector: c });
+
+            await test.step('the 201 answer does not carry the password', async () => {
+                expect(containsSecret(credential.createText, credential.password), 'the plain password is not in the create answer').toBe(false);
+            });
+
+            await test.step('detail: the password attribute is a secret without data; the username is still readable (control)', async () => {
+                const p = await readCredential(api, credential.uuid);
+                expect(p.status, p.text.slice(0, 300)).toBe(200);
+                const detail = p.json as JsonObject;
+                const password = attributeOf(detail, 'password');
+                expect(password, 'the detail lists the password attribute').toBeTruthy();
+                expect(String(password!.contentType), 'the password attribute has content type secret').toBe('secret');
+                expect(contentWithData(password), 'no content item of the secret carries data').toEqual([]);
+                expect(valuesOf(detail, 'attributes', 'username'), 'a non-secret attribute is returned in clear').toEqual([credential.username]);
+                expect(containsSecret(p.text, credential.password), 'the plain password is nowhere in the detail body').toBe(false);
+            });
+
+            await test.step('list: the row of the credential carries no secret data; the plain password is nowhere in the list body', async () => {
+                const p = await readAnswer(api, '/api/v1/credentials');
+                expect(p.status, p.text.slice(0, 300)).toBe(200);
+                const row = (p.json as JsonObject[]).find((r) => r.uuid === credential.uuid);
+                expect(row, 'the own credential is listed').toBeTruthy();
+                expect(row!.kind).toBe('Basic');
+                for (const a of Array.isArray(row!.attributes) ? (row!.attributes as JsonObject[]) : []) {
+                    if (String(a.contentType) === 'secret') expect(contentWithData(a), `list attribute ${String(a.name)}: no secret data`).toEqual([]);
+                }
+                expect(containsSecret(p.text, credential.password), 'the plain password is nowhere in the list body').toBe(false);
+            });
+        });
+
+    test('PUT with a new username and password answers 200 and keeps name, connector and kind',
+        testMeta({ id: 'API-GEN-17', row: 'put', prio: 'P1', issue: ISSUE, rule: ['edit = attributes and customAttributes only; name, connector and kind cannot change; CredentialServiceImpl.editCredential', 'PUT own credential: 200, name / kind / connector unchanged, secret still masked', 'a body name is ignored; the secret stays masked'] }),
+        async ({ api, own }) => {
+            const c = await credentialConnectorOrSkip(api);
+            const credential = await createOwnBasicCredential(api, own.spec, 'put', { connector: c });
+            const username = ownName('cu');
+            const password = randomSecret();
+            const ignoredName = ownName('cred-ignored');
+
+            await test.step('PUT answers 200 with the original name, kind and connector, the secret masked', async () => {
+                const put = await putCredential(api, credential.uuid, basicAttributes(c, { username, password }), await requiredCustomAttributes(api, 'credentials', runName('ca')), { name: ignoredName });
+                expect(put.status, put.text.slice(0, 300)).toBe(200);
+                const answer = put.json as JsonObject;
+                expect(answer.name, 'the answer names the original credential').toBe(credential.name);
+                expect(answer.kind).toBe('Basic');
+                expect(answer.connectorUuid).toBe(c.uuid);
+                expect(contentWithData(attributeOf(answer, 'password')), 'the secret is masked in the PUT answer').toEqual([]);
+                expect(containsSecret(put.text, password) || containsSecret(put.text, credential.password), 'neither password is in the PUT answer').toBe(false);
+            });
+
+            await test.step('The detail keeps name, kind and connector, stores the new username and masks the secret', async () => {
+                const read = await readCredential(api, credential.uuid);
+                expect(read.status, read.text.slice(0, 300)).toBe(200);
+                const detail = read.json as JsonObject;
+                expect(detail.name, 'name unchanged').toBe(credential.name);
+                expect(detail.kind, 'kind unchanged').toBe('Basic');
+                expect(detail.connectorUuid, 'connector unchanged').toBe(c.uuid);
+                expect(valuesOf(detail, 'attributes', 'username'), 'the new username is stored').toEqual([username]);
+                expect(contentWithData(attributeOf(detail, 'password')), 'the secret is still masked').toEqual([]);
+                expect(containsSecret(read.text, password) || containsSecret(read.text, credential.password), 'neither password is in the detail body').toBe(false);
+                expect(await rowsNamed(api, '/api/v1/credentials', ignoredName), 'the name in the PUT body created or renamed nothing').toEqual([]);
+            });
+        });
+
+    test('PUT without the password answers 422 and changes nothing',
+        testMeta({ id: 'API-GEN-17', row: 'put-no-password', prio: 'P1', issue: ISSUE, rule: ['the content is replaced wholesale and re-validated: a required secret must be supplied again', 'PUT with the password omitted (AttributeDefinitionUtils)', 'the 422 text is ["Required attribute Password not found."]'] }),
+        async ({ api, own }) => {
+            const c = await credentialConnectorOrSkip(api);
+            const credential = await createOwnBasicCredential(api, own.spec, 'putnopw', { connector: c });
+
+            const put = await putCredential(api, credential.uuid, basicAttributes(c, { username: ownName('cu') }), await requiredCustomAttributes(api, 'credentials', runName('ca')));
+            expect(refused422(put), 'the connector refuses the missing required password').toEqual([`Required attribute ${labelOf(c.passwordDef)} not found.`]);
+
+            const read = await readCredential(api, credential.uuid);
+            expect(read.status, read.text.slice(0, 300)).toBe(200);
+            const detail = read.json as JsonObject;
+            expect(valuesOf(detail, 'attributes', 'username'), 'the refused PUT changed nothing: the username is the original one').toEqual([credential.username]);
+            expect(detail.name).toBe(credential.name);
+            expect(detail.enabled, 'still enabled').toBe(true);
+        });
+
+    test('disable and enable an own credential answer 204 and `enabled` toggles',
+        testMeta({ id: 'API-GEN-17', row: 'enable-disable', prio: 'P1', issue: ISSUE, rule: ['PATCH /v1/credentials/{uuid}/enable | disable: 204; CredentialServiceImpl.enableCredential / disableCredential', '`enabled` toggles in detail and list'] }),
+        async ({ api, own }) => {
+            const c = await credentialConnectorOrSkip(api);
+            const credential = await createOwnBasicCredential(api, own.spec, 'toggle', { connector: c });
+            const state = async (): Promise<[boolean, boolean]> => {
+                const detail = (await readCredential(api, credential.uuid)).json as JsonObject;
+                const row = await findRowByUuid(api, '/api/v1/credentials', credential.uuid);
+                return [detail.enabled as boolean, row?.enabled as boolean];
+            };
+
+            expect(await state(), 'a new credential is enabled (detail, list)').toEqual([true, true]);
+            const off = await setCredentialEnabled(api, credential.uuid, false);
+            expect(off.status, off.text.slice(0, 300)).toBe(204);
+            expect(await state(), 'disabled').toEqual([false, false]);
+            const on = await setCredentialEnabled(api, credential.uuid, true);
+            expect(on.status, on.text.slice(0, 300)).toBe(204);
+            expect(await state(), 'enabled again').toEqual([true, true]);
+        });
+
+    test('deleting an own credential answers 204, then 404',
+        testMeta({ id: 'API-GEN-17', row: 'delete', prio: 'P1', issue: ISSUE, rule: 'delete never refuses; 204 (deleting an existing credential; GET of an unknown uuid)' }),
+        async ({ api, own }) => {
+            const c = await credentialConnectorOrSkip(api);
+            const credential = await createOwnBasicCredential(api, own.spec, 'del', { connector: c });
+            await deleteOwnAndProveGone(api, 'credentials', credential, 'Credential', own.spec);
+            expect(await findRowByUuid(api, '/api/v1/credentials', credential.uuid), 'the credential is not listed any more').toBeUndefined();
+        });
+
+    test('bulk delete [own, unknown] answers 204 and removes the own credential',
+        testMeta({ id: 'API-GEN-17', row: 'bulk-delete', prio: 'P1', issue: ISSUE, rule: ['bulk DELETE /v1/credentials skips unknown uuids with a warning: CredentialServiceImpl.bulkDeleteCredential', 'the unknown one is skipped'] }),
+        async ({ api, own }) => {
+            const c = await credentialConnectorOrSkip(api);
+            const credential = await createOwnBasicCredential(api, own.spec, 'bulk', { connector: c });
+            const bulk = await bulkDeleteObjects(api, 'credentials', [credential.uuid, api.probeUuid()]);
+            expect(bulk.status, bulk.text.slice(0, 300)).toBe(204);
+            expect(bulk.text, 'a 204 has no body').toBe('');
+            await expectGoneWith404(api, 'credentials', credential.uuid, 'Credential');
+            own.deleted('credentials', credential, 'bulk delete under test: 204, then 404 on read-back');
+        });
+});
