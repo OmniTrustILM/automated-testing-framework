@@ -6,12 +6,13 @@
  *   - the object-level permissions of a resource, and Save, returning the answer and the body sent
  *
  * An object-level permission must not widen to the whole resource (fe-administrator#2283). An object checkbox is clicked
- * as an event, because the wrapper button around it stops the propagation of a click.
+ * as an event, because the wrapper button around it stops the propagation of a click. Save waits only for a write to the
+ * same role uuid that `goToEditor` opened (the browser is not behind the API guard).
  */
 import { expect, Locator, Page } from '@playwright/test';
 import type { ApiAnswer } from '../utils/regression/apiReads';
 import { setSwitch, submitButtonOf } from './ui/form';
-import { actAndWaitForApi, answerFrom, UUID } from './ui/waitForResponse';
+import { actAndWaitForApi, answerFrom } from './ui/waitForResponse';
 
 /** What a save sent and what the platform answered. */
 export interface SavedPermissions {
@@ -22,12 +23,16 @@ export interface SavedPermissions {
     sentText: string;
 }
 
+const ROLE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export class RolePermissionsPage {
     readonly page: Page;
     readonly main: Locator;
     readonly allResourcesSwitch: Locator;
     /** The RA profile resource, whose label is spelled either way. */
     readonly raProfilesResource: Locator;
+    /** The role uuid last opened by `goToEditor` (the only uuid `save` will accept a write for). */
+    private roleUuid: string | undefined;
 
     constructor(page: Page) {
         this.page = page;
@@ -36,8 +41,12 @@ export class RolePermissionsPage {
         this.raProfilesResource = this.resource('Ra Profiles').or(this.resource('RA Profiles')).first();
     }
 
-    /** Opens the editor of a role and waits for the resource list. */
+    /** Opens the editor of a role and waits for the resource list. The uuid must be a live own role (the spec's `live` check). */
     async goToEditor(roleUuid: string): Promise<void> {
+        if (!ROLE_UUID.test(roleUuid)) {
+            throw new Error(`RolePermissionsPage.goToEditor: role uuid is not a uuid: ${roleUuid}`);
+        }
+        this.roleUuid = roleUuid;
         await this.page.goto(`/administrator/#/roles/permissions/${roleUuid}`);
         await expect(this.resource('Certificates')).toBeVisible();
     }
@@ -98,10 +107,27 @@ export class RolePermissionsPage {
         return this.page.screenshot();
     }
 
-    /** Clicks Save and returns the answer of the save request together with the body it sent; the stored state is read after it. */
+    /**
+     * Clicks Save and returns the answer of the save request together with the body it sent; the stored state is read after it.
+     * Only a non-GET to `/api/v1/roles/<this role>/permissions` counts: a frontend bug that wrote another role's permissions
+     * would leave this wait unmatched (and must not be treated as this save).
+     */
     async save(): Promise<SavedPermissions> {
+        const roleUuid = this.roleUuid;
+        if (!roleUuid) {
+            throw new Error('RolePermissionsPage.save: goToEditor must open a live own role before Save');
+        }
         const startedAt = Date.now();
-        const response = await actAndWaitForApi(this.page, { method: (m) => m !== 'GET', path: new RegExp(`/api/v1/roles/${UUID}/permissions`) }, () => submitButtonOf(this.main).click());
+        const pathOfOwnRole = new RegExp(`/api/v1/roles/${roleUuid}/permissions(?:\\?|$)`);
+        const response = await actAndWaitForApi(
+            this.page,
+            { method: (m) => m !== 'GET', path: pathOfOwnRole },
+            () => submitButtonOf(this.main).click(),
+        );
+        const pathname = new URL(response.url()).pathname;
+        if (!pathname.includes(`/roles/${roleUuid}/permissions`)) {
+            throw new Error(`RolePermissionsPage.save: expected a write to role ${roleUuid}, got ${pathname}`);
+        }
         const sentText = response.request().postData() ?? '';
         return { answer: await answerFrom(response, startedAt), sent: JSON.parse(sentText || '{"resources":[]}'), sentText };
     }

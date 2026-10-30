@@ -79,3 +79,8 @@ jobs:
 
       - name: All specs parse (visual)
         run: npx playwright test -c playwright.visual.config.ts --list
+
+      # key-onboarding is @local only: on CI (shared-tier defaults) the list is empty and still must parse.
+      # timestamping is intentionally not listed here while it stays disabled on develop-01.
+      - name: All specs parse (key-onboarding block)
+        run: DEV_BLOCK=key-onboarding npx playwright test -c playwright.devblock.config.ts --list --pass-with-no-tests

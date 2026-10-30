@@ -156,9 +156,10 @@ project then selects nothing).
 | smoke | `playwright.config.ts` | `npm run test:smoke` | `junit.xml` |
 | unit | `playwright.unit.config.ts` | `npm run test:unit` | none (line output) |
 
-The file names above are the contract with the Testkube workflows: do not rename a config, a report or a folder. A block
-(`DEV_BLOCK`) is `@local` only: on a shared tier it selects nothing and exits 0 with an empty report (add
-`--pass-with-no-tests`); see `tests/dev-blocks/README.md`.
+The file names above are the contract with the Testkube workflows: do not rename a config, a report or a folder.
+`key-onboarding` is `@local` only: on a shared tier it selects nothing and exits 0 with an empty report (add
+`--pass-with-no-tests`). `timestamping` has its own shared-tier model (`tests/timestamping/SHARED-TIER.md`) and is
+not enabled on develop-01 yet; see `tests/dev-blocks/README.md`.
 
 ## The safety model in short
 
