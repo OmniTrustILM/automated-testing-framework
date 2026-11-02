@@ -8,7 +8,12 @@
     "test:report": "playwright show-report",
     "visual:baseline": "playwright test -c playwright.visual.config.ts --update-snapshots",
     "visual:compare": "playwright test -c playwright.visual.config.ts",
-    "test:unit": "playwright test -c playwright.unit.config.ts"
+    "test:unit": "playwright test -c playwright.unit.config.ts",
+    "test:delegation:unit": "node --test --experimental-test-coverage --test-coverage-include='delegation/helpers.mjs' --test-coverage-include='delegation/keycloak.mjs' --test-coverage-include='delegation/product.mjs' --test-coverage-include='delegation/scan-artifacts.mjs' --test-coverage-lines=80 --test-coverage-branches=80 delegation/helpers.test.mjs delegation/keycloak.test.mjs delegation/product.test.mjs",
+    "test:delegation:issuer": "node --env-file-if-exists=.env.delegation --test delegation/keycloak.probe.mjs",
+    "test:delegation": "node --env-file-if-exists=.env.delegation --test --test-concurrency=1 delegation/scenarios.e2e.mjs",
+    "check:delegation:logs": "node delegation/scan-artifacts.mjs",
+    "check:delegation": "node --check delegation/scenarios.e2e.mjs && node --check delegation/keycloak.probe.mjs"
   },
   "license": "Apache-2.0",
   "type": "commonjs",

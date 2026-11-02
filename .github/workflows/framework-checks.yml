@@ -40,6 +40,12 @@ jobs:
       - name: Unit tests
         run: npm run test:unit
 
+      - name: Delegation helper tests and coverage
+        run: npm run test:delegation:unit
+
+      - name: Delegation release gate syntax
+        run: npm run check:delegation
+
       # Every spec is imported and listed. This is what catches a broken import or a syntax error
       # in a suite that cannot otherwise be exercised here, because running it needs a platform.
       - name: All specs parse
