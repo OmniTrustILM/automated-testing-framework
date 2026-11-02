@@ -110,8 +110,8 @@ test.describe('Certificate import', { tag: tags.regression }, () => {
 
             await test.step('Right password → entries detected, key destination required', async () => {
                 await dialog.enterPassword(passwordA);
-                await expect(dialog.detected).toBeVisible();
-                await expect(dialog.detected).toContainText(runName('p12-a'));
+                await expect(dialog.detectedContent).toBeVisible();
+                await expect(dialog.detectedContent).toContainText(runName('p12-a'));
                 await expect(dialog.dialog.getByText('Token profile', { exact: false }).first()).toBeVisible();
                 await testInfo.attach('p12-entries', { body: await page.screenshot(), contentType: 'image/png' });
             });
@@ -119,7 +119,7 @@ test.describe('Certificate import', { tag: tags.regression }, () => {
             await test.step('Switching to another file clears the password', async () => {
                 await dialog.chooseFile(p12b);
                 await dialog.assertPasswordFieldShown();
-                await expect(dialog.password).toHaveValue('');
+                await expect(dialog.passwordInput).toHaveValue('');
             });
 
             await test.step('Close without importing', async () => {

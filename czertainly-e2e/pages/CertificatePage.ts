@@ -58,6 +58,10 @@ export class CertificatePage {
 
     // Details page
     readonly tablist: Locator;
+    readonly commonNameRow: Locator;
+    readonly stateBadge: Locator;
+    /** The `Subject Alternative Names` widget of the Details tab (rows `tr[data-id=<SAN type>]`, values joined by ", "). */
+    readonly subjectAlternativeNames: Locator;
 
     // Attributes tab
     readonly customAttributeSelectTrigger: Locator;
@@ -90,6 +94,9 @@ export class CertificatePage {
         this.submitButton = this.main.getByTestId('progress-button');
 
         this.tablist = page.getByRole('tablist');
+        this.commonNameRow = this.main.locator('tr[data-id="commonName"]');
+        this.stateBadge = this.main.locator('tr[data-id="certState"] [data-testid="certificate-status"]');
+        this.subjectAlternativeNames = widgetTitled(this.main, 'Subject Alternative Names');
 
         this.customAttributeSelectTrigger = this.main.getByTestId('select-selectCustomAttribute-trigger');
         this.saveCustomValueButton = this.main.getByTestId('save-custom-value');
@@ -267,14 +274,9 @@ export class CertificatePage {
     async assertIssuedDetails(expected: { commonName: string; raProfileName: string }): Promise<void> {
         logger.info('Asserting the Details tab of an issued certificate');
         await this.openTab('Details');
-        await expect(this.main.locator('tr[data-id="commonName"]')).toContainText(expected.commonName);
-        await expect(this.main.locator('tr[data-id="certState"] [data-testid="certificate-status"]')).toHaveText('Issued');
+        await expect(this.commonNameRow).toContainText(expected.commonName);
+        await expect(this.stateBadge).toHaveText('Issued');
         await expect(this.main).toContainText(expected.raProfileName);
-    }
-
-    /** The `Subject Alternative Names` widget of the Details tab (rows `tr[data-id=<SAN type>]`, values joined by ", "). */
-    get sanWidget(): Locator {
-        return widgetTitled(this.main, 'Subject Alternative Names');
     }
 
     /**
@@ -283,9 +285,9 @@ export class CertificatePage {
      */
     async sanValues(): Promise<SanSet> {
         await this.openTab('Details');
-        await expect(this.sanWidget).toBeVisible();
+        await expect(this.subjectAlternativeNames).toBeVisible();
         const valuesOf = async (type: string): Promise<string[]> => {
-            const row = this.sanWidget.locator(`tr[data-id="${type}"]`);
+            const row = this.subjectAlternativeNames.locator(`tr[data-id="${type}"]`);
             if (!(await row.count())) return [];
             const text = (await row.locator('td').last().innerText()).trim();
             return text ? text.split(/,\s*/).map((v) => v.trim()).filter(Boolean) : [];

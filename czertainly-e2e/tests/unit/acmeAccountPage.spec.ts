@@ -39,11 +39,11 @@ test('AcmeAccountPage: searchById then assertListed finds the row of the account
         await accounts.assertListed(id, profile);
     };
     await page.setContent(acmeAccountsList([...pageOne, ['AcctFake0002', 'qa-reg-x-acme']]));
-    await expect(accounts.list.root.locator('tbody tr'), 'the run account is on page 2: not in the DOM without a search').toHaveCount(10);
+    await expect(accounts.acmeAccountsList.locator('tbody tr'), 'the run account is on page 2: not in the DOM without a search').toHaveCount(10);
     await listed('AcctFake0002', 'qa-reg-x-acme');
     await accounts.clearSearch();
-    await expect(accounts.list.root.getByRole('textbox', { name: 'Search' }), 'the search box is cleared by clearSearch').toHaveValue('');
-    await expect(accounts.list.root.locator('tbody tr')).toHaveCount(10);
+    await expect(accounts.searchInput, 'the search box is cleared by clearSearch').toHaveValue('');
+    await expect(accounts.acmeAccountsList.locator('tbody tr')).toHaveCount(10);
     // assertListed alone never types: without a search the account on page 2 is not there.
     expect(await failsFast(accounts.assertListed('AcctFake0002', 'qa-reg-x-acme'))).toBe(true);
     expect(await failsFast(listed('AcctFake0002', 'other-acme-profile'))).toBe(true);

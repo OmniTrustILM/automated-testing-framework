@@ -1,7 +1,7 @@
 /**
  * form — form helpers.
  *
- * Provides `fillText` (the one way to fill a text input), the submit button, switches, and the filler of empty required
+ * Provides `fillText` (the one way to fill a text input), `cancelIfOpen`, switches, and the filler of empty required
  * custom attributes.
  *
  * Inputs are readonly until focused, so every fill goes through `fillText`. A switch is a hidden input under its label,
@@ -20,8 +20,13 @@ export async function fillText(input: Locator, value: string): Promise<void> {
     await input.fill(value);
 }
 
-/** The form's submit (ProgressButton, data-testid progress-button: "Create", "Save", …). */
-export const submitButtonOf = (scope: Locator): Locator => scope.getByTestId('progress-button').last();
+/** Clicks `cancelButton` when `dialog` is still open (after a refused submit) and waits until the dialog is gone. */
+export async function cancelIfOpen(dialog: Locator, cancelButton: Locator): Promise<void> {
+    if (await dialog.isVisible()) {
+        await cancelButton.click();
+        await expect(dialog).toBeHidden();
+    }
+}
 
 /**
  * Sets a switch (a visually hidden input with a `label[for]`) by clicking its label, then proves the state with

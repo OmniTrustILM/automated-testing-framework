@@ -105,7 +105,7 @@ export function expectedBadgeText(parts: { source: string; field: string; condit
 /** A badge's text without the screen-reader `Remove badge` of its inner button. */
 export const badgeTextOf = (raw: string): string => collapse(raw).replace(/\s*Remove badge$/, '').trim();
 
-/** A filter given by the labels the widget shows (what `FilterWidget.addFilter` takes for an API-shaped filter). */
+/** A filter given by the labels the widget shows, for an API-shaped filter. */
 export interface LabelledFilterSpec {
     source: string;
     field: string;

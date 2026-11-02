@@ -70,7 +70,7 @@ test.describe('Certificate inventory filter', { tag: tags.regression }, () => {
                 // settled.
                 await waitForListRows(page);
                 await expect.poll(async () => {
-                    if ((await filterBadges(page)).includes(badge)) await list.filter.removeBadge(badge);
+                    if ((await filterBadges(page)).includes(badge)) await list.removeFilterBadge(badge);
                     return filterBadges(page);
                 }, { message: 'the common-name badge is gone', timeout: 30_000 }).not.toContain(badge);
                 await waitForListRows(page);

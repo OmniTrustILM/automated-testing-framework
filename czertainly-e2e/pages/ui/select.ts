@@ -32,11 +32,6 @@ export type SelectRef = SelectHandle | Locator;
 
 const collapse = (s: string): string => s.replace(/ /g, ' ').replace(/\s+/g, ' ').trim();
 
-/** The select `select-<id>` inside `scope`; its portalled content `select-<id>-content` is looked up page-wide. */
-export function selectById(page: Page, scope: Locator, id: string): SelectHandle {
-    return { trigger: scope.getByTestId(`select-${id}-trigger`), content: page.getByTestId(`select-${id}-content`), name: id };
-}
-
 /** The select behind a trigger locator; the content is the last open listbox of the page. */
 export function selectOfTrigger(page: Page, trigger: Locator): SelectHandle {
     return { trigger, content: page.getByRole('listbox').last(), name: 'select' };

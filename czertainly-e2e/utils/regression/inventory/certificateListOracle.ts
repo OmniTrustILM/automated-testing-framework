@@ -56,7 +56,7 @@ export function formatDateTime(iso: string, timeZone: string): string {
 }
 
 export interface DisplayContext {
-    /** The browser's IANA time zone (`CertificateListPage.browserTimeZone()`). */
+    /** The browser's IANA time zone (the list formats dates with the browser's local getters). */
     timeZone: string;
     labels: PlatformLabels;
 }

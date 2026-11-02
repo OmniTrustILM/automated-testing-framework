@@ -1,16 +1,14 @@
 /**
- * uiCreateAnswers — unit tests: a UI create hands its uuid back from the answer, before the page redirects.
+ * uiCreateAnswers — unit tests: what a UI create reads from the answer, and how the object reaches the ledger.
  *
- * Runs three page objects on stand-in pages whose create request is answered but whose route never changes. The create still
- * returns the uuid, and only the wait for the redirect fails. A refusal gives no uuid; an error answer that carries one keeps it.
- * The ledger line is written between the two steps, so a created object is never off the ledger because the redirect timed out.
+ * A refusal gives no uuid and keeps the answer text; an error answer that carries a uuid keeps it; only a canonical uuid is
+ * taken. `recordUiCreate` writes the ledger line before it fails a refusal, so a created object is never off the ledger, and
+ * `submitRecordingByNameOnFailure` adopts an object by the run's own name when its answer never arrives.
  */
 import { expect, request, test } from '@playwright/test';
 import type { Browser, Page } from '@playwright/test';
 import * as fs from 'fs';
-import { KeyPage } from '../../pages/KeyPage';
-import { NotificationInstancePage } from '../../pages/NotificationInstancePage';
-import { TokenPage } from '../../pages/TokenPage';
+import { submitCreate } from '../../pages/ui/detailRoute';
 import { ledgerFile, readLedger } from '../../utils/regression/ledger/ledger';
 import { loopbackServer } from './helpers/loopbackServer';
 import { currentRunId } from '../../utils/regression/run/runId';
@@ -24,8 +22,6 @@ const SPEC = 'UNIT-UI-CREATE';
 /** Ledger names carry the run prefix, or the line does not prove ownership. */
 const own = (suffix: string): string => `${currentRunId()}-${suffix}`;
 
-const failsFast = async (call: Promise<unknown>): Promise<boolean> => call.then(() => false, () => true);
-
 interface Answer {
     status: number;
     body: unknown;
@@ -36,77 +32,41 @@ const createForm = (caption: string, path: string) => `<!doctype html><html><bod
   <button data-testid="progress-button" onclick="fetch('${path}', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'qa-reg-x' }) })">Create</button>
   </div></main></body></html>`;
 
-async function withAnswers(browser: Browser, html: string, answer: Answer, body: (page: Page, posts: () => number) => Promise<void>): Promise<void> {
-    let posts = 0;
+/** Clicks Create in the stand-in's Create Token dialog and returns the create answer. */
+const createToken = (page: Page) => submitCreate(page, page.getByRole('dialog', { name: 'Create Token', exact: true }).getByTestId('progress-button').last(), { endpoint: '/v1/tokens' });
+
+async function withAnswers(browser: Browser, html: string, answer: Answer, body: (page: Page) => Promise<void>): Promise<void> {
     const context = await browser.newContext({ baseURL: 'http://127.0.0.1:9/' });
     try {
         await context.route('**/*', (route) => {
             if (route.request().method() === 'POST') {
-                posts += 1;
                 return route.fulfill({ status: answer.status, contentType: 'application/json', body: JSON.stringify(answer.body) });
             }
             return route.fulfill({ contentType: 'text/html', body: html });
         });
         const page = await context.newPage();
-        await body(page, () => posts);
+        await body(page);
     } finally {
         await context.close();
     }
 }
 
-test('NotificationInstancePage: the create answer carries the uuid although the page never redirects; the redirect wait is the step that fails', async ({ browser }) => {
-    await withAnswers(browser, createForm('Create Notification Instance', '/api/v1/notificationInstances'), { status: 201, body: { uuid: U1 } }, async (page) => {
-        await page.goto('/administrator/#/events?tab=notification-instances');
-        const instances = new NotificationInstancePage(page);
-        const answer = await instances.submitCreateForm();
-        expect(answer.status).toBe(201);
-        expect(answer.uuid).toBe(U1);
-        expect(answer.body).toEqual({ name: 'qa-reg-x' });
-        expect(answer.request.method()).toBe('POST');
-        expect(await failsFast(instances.waitForDetailRoute()), 'no redirect came').toBe(true);
-        // The redirect arrives later: the same page object now returns the uuid of the route.
-        await page.evaluate((u) => { location.hash = `#/notificationinstances/detail/${u}`; }, U1);
-        expect(await instances.waitForDetailRoute()).toBe(U1);
-    });
-});
-
-test('TokenPage: the create answer carries the uuid although the dialog never closes', async ({ browser }) => {
-    await withAnswers(browser, createForm('Create Token', '/api/v1/tokens'), { status: 201, body: { uuid: U2, name: 'qa-reg-x' } }, async (page) => {
-        await page.goto('/administrator/#/tokens');
-        const tokens = new TokenPage(page);
-        const answer = await tokens.submitCreateForm();
-        expect(answer).toMatchObject({ status: 201, uuid: U2 });
-        expect(await failsFast(tokens.waitForCreateDialogClosed(500)), 'the dialog stayed open').toBe(true);
-    });
-});
-
-test('KeyPage: the key-pair create answer carries the uuid although the detail page never opens', async ({ browser }) => {
-    await withAnswers(browser, createForm('Create Key', `/api/v1/tokens/${U1}/tokenProfiles/${U2}/keys/keyPair`), { status: 201, body: { uuid: U3 } }, async (page, posts) => {
-        await page.goto('/administrator/#/keys');
-        const keys = new KeyPage(page);
-        const answer = await keys.submitCreateForm();
-        expect(answer).toMatchObject({ status: 201, uuid: U3 });
-        expect(posts()).toBe(1);
-        expect(await failsFast(keys.waitForDetailRoute(500))).toBe(true);
-    });
-});
-
 test('a refused create has no uuid and keeps the answer text; an error answer that carries a uuid keeps it', async ({ browser }) => {
     await withAnswers(browser, createForm('Create Token', '/api/v1/tokens'), { status: 422, body: ['Name must be unique'] }, async (page) => {
         await page.goto('/administrator/#/tokens');
-        const answer = await new TokenPage(page).submitCreateForm();
+        const answer = await createToken(page);
         expect(answer.status).toBe(422);
         expect(answer.uuid).toBeUndefined();
         expect(answer.text).toContain('Name must be unique');
     });
     await withAnswers(browser, createForm('Create Token', '/api/v1/tokens'), { status: 500, body: { uuid: U2, message: 'created, then failed' } }, async (page) => {
         await page.goto('/administrator/#/tokens');
-        const answer = await new TokenPage(page).submitCreateForm();
+        const answer = await createToken(page);
         expect(answer).toMatchObject({ status: 500, uuid: U2 });
     });
     await withAnswers(browser, createForm('Create Token', '/api/v1/tokens'), { status: 201, body: { uuid: 'not-a-uuid' } }, async (page) => {
         await page.goto('/administrator/#/tokens');
-        expect((await new TokenPage(page).submitCreateForm()).uuid, 'only a canonical uuid is taken from the answer').toBeUndefined();
+        expect((await createToken(page)).uuid, 'only a canonical uuid is taken from the answer').toBeUndefined();
     });
 });
 
@@ -135,32 +95,6 @@ test('recordUiCreate writes the ledger line before it fails a refusal; recordIfC
     } finally {
         if (saved === undefined) delete process.env.REG_STATE_DIR;
         else process.env.REG_STATE_DIR = saved;
-    }
-});
-
-test('KeyPage.watchCreates: every create of a double click is collected with its own uuid, before the redirect is judged', async ({ browser }) => {
-    const U4 = '0b1e8a52-4c3f-4d6e-9a7b-1c2d3e4f5a04';
-    let n = 0;
-    const context = await browser.newContext({ baseURL: 'http://127.0.0.1:9/' });
-    try {
-        await context.route('**/*', (route) => {
-            if (route.request().method() === 'POST') {
-                n += 1;
-                return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ uuid: n === 1 ? U3 : U4 }) });
-            }
-            return route.fulfill({ contentType: 'text/html', body: createForm('Create Key', `/api/v1/tokens/${U1}/tokenProfiles/${U2}/keys/keyPair`) });
-        });
-        const page = await context.newPage();
-        await page.goto('/administrator/#/keys');
-        const keys = new KeyPage(page);
-        const creates = keys.watchCreates();
-        const first = await keys.submitCreateForm({ doubleClick: true });
-        expect(first.uuid).toBe(U3);
-        const every = await creates.settled();
-        expect(creates.requests()).toBe(2);
-        expect(every.map((a) => a.uuid).sort()).toEqual([U3, U4]);
-    } finally {
-        await context.close();
     }
 });
 

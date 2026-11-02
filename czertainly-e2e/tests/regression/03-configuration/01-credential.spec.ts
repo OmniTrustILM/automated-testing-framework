@@ -43,7 +43,7 @@ test.describe('Credential configuration', { tag: tags.regression }, () => {
                 const answer = await submitRecordingByNameOnFailure({ type: 'credentials', name, spec: own.spec, lookup }, () => credentials.submitCreateForm());
                 // Ledger before assertion: from the create answer, before the dialog or the list is waited for.
                 const created = own.record('credentials', answer, { name });
-                await expect(credentials.createDialog.dialog).toBeHidden();
+                await expect(credentials.createCredentialDialog).toBeHidden();
                 await expect.poll(async () => (await findByName(api, '/api/v1/credentials', name))?.uuid ?? '').not.toBe('');
                 expect((await findByName(api, '/api/v1/credentials', name))!.kind).toBe('Basic');
                 return created.uuid;

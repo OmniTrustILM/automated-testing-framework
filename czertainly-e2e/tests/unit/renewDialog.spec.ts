@@ -32,7 +32,7 @@ test('RenewDialog: open from the toolbar, register switch off, CSR pasted, submi
         await renew.open();
         await renew.assertRegisterOff();
         await renew.pasteCsr('-----BEGIN CERTIFICATE REQUEST-----\nYQ==\n-----END CERTIFICATE REQUEST-----');
-        await expect(renew.dialog.locator('#__fileUpload__fileContent')).toHaveValue(/BEGIN CERTIFICATE REQUEST/);
+        await expect(renew.csrTextarea).toHaveValue(/BEGIN CERTIFICATE REQUEST/);
         const answer = await renew.submit();
         expect(answer.status).toBe(200);
         expect(answer.uuid).toBe(U2);

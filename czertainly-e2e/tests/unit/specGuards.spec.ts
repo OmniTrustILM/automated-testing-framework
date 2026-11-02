@@ -98,7 +98,7 @@ test('callback-target: no .ts file of the suite outside the guard, the lint, the
 
 const FORBIDDEN = [
     { id: 'waitForTimeout', text: 'waitForTimeout', why: 'wait on API state, never on time' },
-    { id: 'lucide', text: 'svg.lucide-', why: 'icon classes are not a contract: iconButton(widget, icon) / a test id' },
+    { id: 'lucide', text: 'svg.lucide-', why: 'icon classes are not a contract: a test id inside the widget' },
     { id: 'first-button', text: "-button').first()", why: 'a duplicated button id needs its widget scope, not .first()' },
     { id: 'raw-row', text: "page.locator('main tr[data-id=", why: 'detail-table rows belong in a page object' },
 ] as const;

@@ -347,9 +347,10 @@ bug exists and turn red ("expected to fail, but passed") once it is fixed; remov
 - **`pkiBuilders`**: the one module that builds keys, CSRs and certificates and their encodings for every flow.
 - **`seedMinimal`** / **`seedFull`**: the three-certificate seed of the migration checks, and the 24-certificate seed of the
   inventory filter, sort and paging rows.
-- **`uiWidget`**: the unit file of `pages/ui/widget.ts` (an admin UI `<section>` with a title and its icon buttons).
+- **`uiWidget`**: the unit file of `pages/ui/widget.ts` (an admin UI `<section>` with a title, the scope of its icon buttons).
 - **`lifecycle/rawAnswers`**: one guarded request whose answer is read without throwing, and the readers of its error body.
-- **`FormDialog`**: a create / edit dialog of the admin UI (text inputs, submit, cancel), used by the role and user pages.
+- **Page object**: locator fields grouped by screen area (`// Create Role dialog`) and set in the constructor in the same
+  order, then only the methods the specs use (main's `TablePage` style); shared steps are functions in `pages/ui/`.
 - **`platform.spec` / `protocols.spec`**: the unit files of the pure parts of the `platform/` and `protocols/` helpers
   (no server, no browser); their wire halves are `platformWire` and `protocolsWire`.
 
@@ -376,4 +377,4 @@ bug exists and turn red ("expected to fail, but passed") once it is fixed; remov
   offers), `ledger/liveOwn.ts` (the `LiveOwn` handle), `run/runObjects.ts` (the objects of the `run-setup` project).
 - The area helpers (`lifecycle/`, `platform/`, `protocols/`, `events/`, `discovery/`, `rbac/`, `inventory/`,
   `config/`) and the page objects in `pages/` (shared UI parts in `pages/ui/`: select, toolbar, toast, widget, form,
-  list, table). Every module is imported from the file that defines it.
+  list, the create answer, the detail route, the API waits and `openHashRoute`). Every module is imported from the file that defines it.

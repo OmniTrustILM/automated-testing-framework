@@ -13,7 +13,6 @@ import type { CreateAnswer } from './ui/createAnswer';
 import { submitCreate, waitForDetailRoute } from './ui/detailRoute';
 import { customAttributesDefined, fillRequiredCustomAttributes, fillText } from './ui/form';
 import { chooseOption } from './ui/select';
-import { toolbarButton } from './ui/toolbar';
 import { AUTHORITY_CREATE_MS } from '../utils/regression/timeouts';
 
 export interface ManualCaFields {
@@ -28,9 +27,31 @@ export class AuthorityPage {
     readonly page: Page;
     readonly main: Locator;
 
+    // Authorities list
+    readonly addAuthorityButton: Locator;
+
+    // Add authority page
+    readonly nameInput: Locator;
+    readonly connectorTrigger: Locator;
+    readonly caSelectionMethodTrigger: Locator;
+    readonly caHostInput: Locator;
+    readonly caNameInput: Locator;
+    readonly createButton: Locator;
+
     constructor(page: Page) {
         this.page = page;
         this.main = page.locator('main');
+
+        // Authorities list
+        this.addAuthorityButton = this.main.getByTestId('plus-button').first();
+
+        // Add authority page
+        this.nameInput = this.main.getByTestId('text-input-name');
+        this.connectorTrigger = page.getByTestId('select-authorityProviderSelect-trigger');
+        this.caSelectionMethodTrigger = page.getByTestId('select-__attributes__authority__.data_caSelectMethodSelect-trigger');
+        this.caHostInput = this.main.getByTestId('text-input-__attributes__authority__.data_caHost').or(this.main.getByLabel(/^CA host/)).first();
+        this.caNameInput = this.main.getByTestId('text-input-__attributes__authority__.data_caName').or(this.main.getByLabel(/^CA name/)).first();
+        this.createButton = this.main.getByTestId('progress-button').last();
     }
 
     async goToList(): Promise<void> {
@@ -38,30 +59,26 @@ export class AuthorityPage {
         await expect(this.main).toBeVisible();
     }
 
-    /** The list's "+" → the add page is open. */
     async openAddPage(): Promise<void> {
-        await toolbarButton(this.page, 'plus').click();
+        await this.addAuthorityButton.click();
         await expect(this.page).toHaveURL(/\/authorities\/add/);
     }
 
     /** Fills the add page for the connector's manual CA entry (and any required custom attribute) without submitting. */
     async fillManualCaForm(fields: ManualCaFields): Promise<void> {
-        const main = this.main;
-        await fillText(main.getByTestId('text-input-name'), fields.name);
-        await chooseOption(this.page, this.page.getByTestId('select-authorityProviderSelect-trigger'), fields.connectorName);
-        await chooseOption(this.page, this.page.getByTestId('select-__attributes__authority__.data_caSelectMethodSelect-trigger'), 'Enter CA host and name manually');
-        const host = main.getByTestId('text-input-__attributes__authority__.data_caHost').or(main.getByLabel(/^CA host/)).first();
-        const caName = main.getByTestId('text-input-__attributes__authority__.data_caName').or(main.getByLabel(/^CA name/)).first();
-        await fillText(host, fields.caHost);
-        await fillText(caName, fields.caName);
-        await fillRequiredCustomAttributes(this.page, main, 'qa-reg', await customAttributesDefined(this.page, 'authorities'));
+        await fillText(this.nameInput, fields.name);
+        await chooseOption(this.page, this.connectorTrigger, fields.connectorName);
+        await chooseOption(this.page, this.caSelectionMethodTrigger, 'Enter CA host and name manually');
+        await fillText(this.caHostInput, fields.caHost);
+        await fillText(this.caNameInput, fields.caName);
+        await fillRequiredCustomAttributes(this.page, this.main, 'qa-reg', await customAttributesDefined(this.page, 'authorities'));
     }
 
     /**
      * Clicks Create and returns the answer of `POST /api/v1/authorities` (status, new uuid, request body); waits for the connector's check.
      */
     async submitCreateForm(): Promise<CreateAnswer> {
-        return submitCreate(this.page, this.main, { endpoint: '/api/v1/authorities', timeout: AUTHORITY_CREATE_MS });
+        return submitCreate(this.page, this.createButton, { endpoint: '/api/v1/authorities', timeout: AUTHORITY_CREATE_MS });
     }
 
     /** Waits for the redirect to the new authority's detail and returns its uuid. Call it after the ledger line. */
@@ -69,7 +86,6 @@ export class AuthorityPage {
         return waitForDetailRoute(this.page, 'authorities', { timeout: AUTHORITY_CREATE_MS });
     }
 
-    /** The detail page shows the authority's name. */
     async assertDetailShows(name: string): Promise<void> {
         await expect(this.main).toContainText(name);
     }

@@ -34,7 +34,7 @@ test('submitCreate returns the answer although the redirect never comes; waitFor
         const page = await context.newPage();
         await page.goto('/administrator/#/things');
         const dialog = page.getByRole('dialog', { name: 'Create Thing' });
-        const created = await submitCreate(page, dialog, { endpoint: '/v1/things' });
+        const created = await submitCreate(page, dialog.getByTestId('progress-button').last(), { endpoint: '/v1/things' });
         expect(created).toMatchObject({ status: 201, uuid: U1, body: { name: 'qa-reg-x' } });
         expect(created.request.method()).toBe('POST');
         expect(created.answer).toMatchObject({ status: 201, json: { uuid: U1 } });
@@ -65,7 +65,7 @@ test('submitCreate registers the wait before the click: an answer that is comple
             : route.fulfill({ contentType: 'text/html', body: syncForm })));
         const page = await context.newPage();
         await page.goto('/administrator/#/things');
-        const created = await submitCreate(page, page.getByRole('dialog', { name: 'Create Thing' }), { endpoint: '/v1/things', timeout: 3_000 });
+        const created = await submitCreate(page, page.getByRole('dialog', { name: 'Create Thing' }).getByTestId('progress-button').last(), { endpoint: '/v1/things', timeout: 3_000 });
         expect(created.uuid).toBe(U1);
     } finally {
         await context.close();
@@ -84,7 +84,7 @@ test('a double click that is answered with two different uuids returns the first
         });
         const page = await context.newPage();
         await page.goto('/administrator/#/things');
-        const twice = await submitCreate(page, page.getByRole('dialog', { name: 'Create Thing' }), { endpoint: '/v1/things', doubleClick: true });
+        const twice = await submitCreate(page, page.getByRole('dialog', { name: 'Create Thing' }).getByTestId('progress-button').last(), { endpoint: '/v1/things', doubleClick: true });
         expect(twice.uuid, 'the first answer is the one returned').toBe(U1);
         await expect.poll(() => posts).toBe(2);
     } finally {

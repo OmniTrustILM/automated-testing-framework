@@ -46,7 +46,7 @@ test.describe('User with a role', { tag: tags.regression }, () => {
                 const listed = await findByName(api, '/api/v1/users', name, 'username');
                 expect(listed?.username, 'user exists').toBe(name);
                 expect(rolesStatus, 'PATCH /users/{uuid}/roles').toBeLessThan(300);
-                await expect(users.createDialog.dialog).toBeHidden();
+                await expect(users.createUserDialog).toBeHidden();
                 expect(listed!.enabled).toBe(true);
             });
 
@@ -57,7 +57,7 @@ test.describe('User with a role', { tag: tags.regression }, () => {
 
             await test.step('UI: user detail and role detail show each other', async () => {
                 await users.goToDetail(uuid);
-                await expect(users.detailsWidget).toContainText(name);
+                await expect(users.userDetails).toContainText(name);
                 await users.assertRoles([role.name]);
                 const roles = new RolePage(page);
                 await roles.goToDetail(role.uuid);
@@ -91,23 +91,23 @@ test.describe('User with a role', { tag: tags.regression }, () => {
                 await users.goToDetail(liveUser.uuid);
                 await users.openEditDialog();
                 await users.assertUsernameLockedInEdit(liveUser.name);
-                await users.editDialog.cancel();
+                await users.closeEditDialog();
             });
 
             await test.step('Edit first name, last name, e-mail → Save', async () => {
                 const { status, sent } = await users.editUser(edited);
                 expect(status, 'PUT /api/v1/users/{uuid}').toBeLessThan(300);
                 expect(sent, 'the Save request carries the new names and e-mail').toMatchObject(edited);
-                await expect(users.editDialog.dialog).toBeHidden();
+                await expect(users.editUserDialog).toBeHidden();
             });
 
             await test.step('Reopen after a reload: the new values, the same username', async () => {
                 await page.reload();
-                await expect(users.detailsWidget).toBeVisible();
+                await expect(users.userDetails).toBeVisible();
                 await users.assertDetailRows({ username: user.name, email: edited.email });
                 await users.openEditDialog();
                 await users.assertEditFormValues({ username: user.name, ...edited });
-                await users.editDialog.cancel();
+                await users.closeEditDialog();
             });
 
             await test.step('API: the stored user agrees; `enabled` is unchanged', async () => {
@@ -141,7 +141,7 @@ test.describe('User with a role', { tag: tags.regression }, () => {
                 await users.goToDetail(liveUser.uuid);
                 const { status } = await users.deleteFromDetail();
                 expect(status, 'DELETE /api/v1/users/{uuid}').toBeLessThan(300);
-                await expect(users.deleteDialog.dialog).toBeHidden();
+                await expect(users.deleteUserDialog).toBeHidden();
             });
 
             await test.step('API: the users list no longer names it (the list itself is not empty)', async () => {

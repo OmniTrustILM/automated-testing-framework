@@ -20,16 +20,14 @@ test('ApprovalsPage list and detail: the row status, the row checkbox, the detai
     await approvals.assertStatus(U1, 'Pending');
     expect(await failsFast(approvals.assertStatus(U1, 'Approved'))).toBe(true);
     await approvals.checkRow(U1);
-    await expect(approvals.row(U1).locator('input[type="checkbox"]')).toBeChecked();
-    await page.setContent(`<main><section><div><h5>Approval Details</h5><button data-testid="check-button" disabled>a</button><button data-testid="times-button" disabled>r</button></div>
+    await expect(approvals.rowCheckbox(U1)).toBeChecked();
+    await page.setContent(`<main><section><div><h5>Approval Details</h5></div>
       <table><tbody><tr data-id="status"><td>Status</td><td><span>Approved</span></td></tr></tbody></table></section>
       <section><div><h5>Approvers</h5></div><table><tbody><tr data-id="rcp"><td>1</td><td>admin</td><td></td><td>Approved</td><td>Approval flow overridden</td></tr></tbody></table></section></main>`);
     await approvals.assertDetailStatus('Approved');
     await approvals.assertRecipientComment('Approval flow overridden');
-    await approvals.assertRecipientButtons('disabled');
     expect(await failsFast(approvals.assertDetailStatus('Pending'))).toBe(true);
     expect(await failsFast(approvals.assertRecipientComment('a comment nobody wrote'))).toBe(true);
-    expect(await failsFast(approvals.assertRecipientButtons('enabled'))).toBe(true);
 });
 
 /** A fake approvals list with the override dialogs: the confirm button PATCHes the route the page object waits for. */

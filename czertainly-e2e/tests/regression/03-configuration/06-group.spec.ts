@@ -36,7 +36,7 @@ test.describe('Certificate group configuration', { tag: tags.regression }, () =>
                 const answer = await submitRecordingByNameOnFailure({ type: 'groups', name, spec: own.spec, lookup }, () => groups.submitCreateForm());
                 // Ledger before assertion: from the create answer, before the dialog or the list is waited for.
                 const created = own.record('groups', answer, { name });
-                await expect(groups.createDialog.dialog).toBeHidden();
+                await expect(groups.createGroupDialog).toBeHidden();
                 await expect.poll(async () => (await findByName(api, '/api/v1/groups', name))?.uuid ?? '').not.toBe('');
                 expect((await findByName(api, '/api/v1/groups', name))!.email).toBe(form.email);
                 return created.uuid;

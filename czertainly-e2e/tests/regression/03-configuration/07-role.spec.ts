@@ -40,14 +40,14 @@ test.describe('Role configuration', { tag: tags.regression }, () => {
                 own.record('roles', answer, { name });
                 const created = await findByName(api, '/api/v1/roles', name);
                 expect(created?.name, 'the role is listed').toBe(name);
-                await expect(roles.createDialog.dialog).toBeHidden();
+                await expect(roles.createRoleDialog).toBeHidden();
                 expect(created!.systemRole).toBe(false);
                 return created!.uuid as string;
             });
 
             await test.step('Detail page: Role Details, no assigned users, no permissions yet', async () => {
                 await roles.goToDetail(uuid);
-                await expect(roles.detailsWidget).toContainText(name);
+                await expect(roles.roleDetails).toContainText(name);
                 const permissions = await apiJson(api, 'GET', `/api/v1/roles/${uuid}/permissions`);
                 expect(permissions.allowAllResources).toBe(false);
                 expect(permissions.resources ?? []).toHaveLength(0);
@@ -92,7 +92,7 @@ test.describe('Role configuration', { tag: tags.regression }, () => {
             test.fail(true, 'core#2297: a duplicate role name answers 500 "Internal server error." instead of naming the collision');
             await test.step('The refusal names the collision (known bug)', async () => {
                 await roles.assertDuplicateRefused(role.name);
-                await roles.createDialog.cancel();
+                await roles.closeCreateDialog();
             });
         });
 
@@ -113,22 +113,22 @@ test.describe('Role configuration', { tag: tags.regression }, () => {
                 await roles.goToDetail(liveRole.uuid);
                 await roles.openEditDialog();
                 await roles.assertNameLockedInEdit(liveRole.name);
-                await roles.editDialog.cancel();
+                await roles.closeEditDialog();
             });
 
             await test.step('Edit description and e-mail → Save', async () => {
                 const { status } = await roles.editRole({ description, email });
                 expect(status, 'PUT /api/v1/roles/{uuid}').toBeLessThan(300);
-                await expect(roles.editDialog.dialog).toBeHidden();
+                await expect(roles.editRoleDialog).toBeHidden();
             });
 
             await test.step('Reopen after a reload: new description and e-mail, the same name', async () => {
                 await page.reload();
-                await expect(roles.detailsWidget).toBeVisible();
+                await expect(roles.roleDetails).toBeVisible();
                 await roles.assertDetailRows({ name: role.name, description });
                 await roles.openEditDialog();
                 await roles.assertEditFormValues({ name: role.name, description, email });
-                await roles.editDialog.cancel();
+                await roles.closeEditDialog();
             });
 
             await test.step('API: the stored role agrees', async () => {
@@ -152,7 +152,7 @@ test.describe('Role configuration', { tag: tags.regression }, () => {
                 await roles.goToDetail(liveRole.uuid);
                 const { status } = await roles.deleteFromDetail();
                 expect(status, 'DELETE /api/v1/roles/{uuid}').toBeLessThan(300);
-                await expect(roles.deleteDialog.dialog).toBeHidden();
+                await expect(roles.deleteRoleDialog).toBeHidden();
             });
 
             await test.step('API: the roles list no longer names it (the list itself is not empty)', async () => {

@@ -1,12 +1,12 @@
 /**
  * fakeCertificateListApp — a stand-in of the admin UI certificate list with a fake list API.
  *
- * Provides the DOM contract FilterWidget and CertificateListPage rely on (test ids, roles, header ids and aria-sort,
+ * Provides a DOM shaped like the admin UI list (test ids, roles, header ids and aria-sort,
  * portalled selects, the date picker, badges, the empty cell, the pager, the bulk toolbar), served with a fake list API
  * over the seed plan's certificates. A browser context routes the page and the list API to in-memory data (`fakeData`).
  *
- * It proves the page objects' logic (choose, add, badge, remove, sort, page) offline, not the product; the filter tables
- * are proven elsewhere (the table unit tests and the live rows).
+ * It proves the list page object and helpers (filter, badge, remove, the list request, a row by name) offline, not the
+ * product; the filter tables are proven elsewhere (the table unit tests and the live rows).
  */
 import type { Browser, BrowserContext, Page } from '@playwright/test';
 import { SEED_A_DEFAULT_ORDER, CertificateSeedPlan, planCertificateSeed } from '../../../utils/regression/inventory/seedFull';

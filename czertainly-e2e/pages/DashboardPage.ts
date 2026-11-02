@@ -42,6 +42,26 @@ export class DashboardPage {
         this.footer = this.page.getByTestId('footer');
     }
 
+    /** The section of one count tile, found by its heading. */
+    tile(title: string): Locator {
+        return this.topTiles.locator('section').filter({ has: this.page.getByRole('heading', { name: title, exact: true }) });
+    }
+
+    /** The number of a count tile. It has no test id yet (FE test-id request): it is the large-text block of the tile. */
+    tileValue(title: string): Locator {
+        return this.tile(title).locator('div.text-3xl');
+    }
+
+    /** The section of one chart, found by its heading. */
+    chart(title: string): Locator {
+        return this.bottomTiles.locator('section').filter({ has: this.page.getByRole('heading', { name: title, exact: true }) });
+    }
+
+    /** One legend item of a chart (a button). */
+    legendItem(chart: string, item: string): Locator {
+        return this.chart(chart).getByRole('button', { name: item, exact: true });
+    }
+
     /** Opens the certificates dashboard by its route; returns the statistics the page loaded, once the first chart is drawn. */
     async goToCertificatesDashboard(): Promise<DashboardStatistics> {
         logger.info('Opening the certificates dashboard');
@@ -51,20 +71,9 @@ export class DashboardPage {
         return statistics;
     }
 
-    /** The section of one count tile, found by its heading. */
-    private tile(title: string): Locator {
-        return this.topTiles.locator('section').filter({ has: this.page.getByRole('heading', { name: title, exact: true }) });
-    }
-
-    /** The section of one chart, found by its heading. */
-    private chart(title: string): Locator {
-        return this.bottomTiles.locator('section').filter({ has: this.page.getByRole('heading', { name: title, exact: true }) });
-    }
-
     /** The number a count tile shows (every non-digit, such as a thousands separator, is dropped). */
     async readTile(title: string): Promise<number> {
-        // The number has no test id yet (FE test-id request): it is the large-text block of the tile.
-        const text = await this.tile(title).locator('div.text-3xl').innerText();
+        const text = await this.tileValue(title).innerText();
         return Number(text.replace(/[^0-9]/g, ''));
     }
 
@@ -78,7 +87,7 @@ export class DashboardPage {
      * non-zero count, so a missing one fails: the caller has read the statistics and knows the tier has data behind it.
      */
     async openLegendItem(chart: string, item: string): Promise<void> {
-        const button = this.chart(chart).getByRole('button', { name: item, exact: true });
+        const button = this.legendItem(chart, item);
         await expect(button, `legend "${item}" is shown in "${chart}" (a legend item exists only for a non-zero count)`).toBeVisible();
         logger.info(`Clicking the legend "${item}" of "${chart}"`);
         await button.click();

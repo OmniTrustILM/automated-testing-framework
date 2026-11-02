@@ -35,30 +35,59 @@ const CREATE_REQUEST: Record<FormCreate, RegExp> = {
 export class CertificateAddPage {
     readonly page: Page;
     readonly main: Locator;
+
+    // Request type
     readonly requestTypeRegister: Locator;
+
+    // Issue now: Key Source and the CSR upload
     readonly keySourceTrigger: Locator;
     readonly csrTextarea: Locator;
-    /** Create (the form's ProgressButton). */
-    readonly submitButton: Locator;
+
+    // Pre-register: Challenge and Issuance window
     readonly challengeInput: Locator;
     /**
      * A type=date TextInput renders a DatePicker that drops data-testid: the input has only id="expiresAt" (disabled until a challenge is
      * typed).
      */
     readonly issuanceWindowInput: Locator;
-    /** The Request Attributes tab's Common Name field (`__attributes__csrAttributes__.commonName`). */
-    readonly requestCommonName: Locator;
+
+    // Request Attributes tab
+    readonly requestAttributesTab: Locator;
+    /** The Common Name field (`__attributes__csrAttributes__.commonName`). */
+    readonly commonNameInput: Locator;
+
+    // Create (the form's ProgressButton)
+    readonly submitButton: Locator;
+
+    // After Create: the "Certificate request accepted with warnings" panel
+    readonly warningsPanel: Locator;
+    readonly openCertificateButton: Locator;
 
     constructor(page: Page) {
         this.page = page;
         this.main = page.locator('main');
+
+        // Request type
         this.requestTypeRegister = this.main.getByTestId('requestType-register');
+
+        // Issue now: Key Source and the CSR upload
         this.keySourceTrigger = this.main.getByTestId('keySource-trigger');
         this.csrTextarea = this.main.locator('#__fileUpload__fileContent');
-        this.submitButton = this.main.getByTestId('progress-button');
+
+        // Pre-register: Challenge and Issuance window
         this.challengeInput = this.main.getByTestId('authorizationSecret');
         this.issuanceWindowInput = this.main.locator('input#expiresAt');
-        this.requestCommonName = this.main.locator('[id="__attributes__csrAttributes__.commonName"]');
+
+        // Request Attributes tab
+        this.requestAttributesTab = this.main.getByRole('tab', { name: /^Request Attributes/ });
+        this.commonNameInput = this.main.locator('[id="__attributes__csrAttributes__.commonName"]');
+
+        // Create (the form's ProgressButton)
+        this.submitButton = this.main.getByTestId('progress-button');
+
+        // After Create: the "Certificate request accepted with warnings" panel
+        this.warningsPanel = this.page.getByTestId('compliance-errors-panel');
+        this.openCertificateButton = this.page.getByRole('button', { name: 'Open certificate', exact: true });
     }
 
     async chooseRequestTypeRegister(): Promise<void> {
@@ -79,11 +108,10 @@ export class CertificateAddPage {
     }
 
     async fillRequestCommonName(cn: string): Promise<void> {
-        const tab = this.main.getByRole('tab', { name: /^Request Attributes/ });
-        await expect(tab).toBeVisible();
-        await tab.click();
-        await expect(this.requestCommonName).toBeVisible();
-        await fillText(this.requestCommonName, cn);
+        await expect(this.requestAttributesTab).toBeVisible();
+        await this.requestAttributesTab.click();
+        await expect(this.commonNameInput).toBeVisible();
+        await fillText(this.commonNameInput, cn);
     }
 
     /**
@@ -117,19 +145,17 @@ export class CertificateAddPage {
      */
     async waitForCreatedCertificate(options: { acceptWarnings?: boolean } = {}): Promise<{ uuid: string; warnings: string[] }> {
         const acceptWarnings = options.acceptWarnings ?? false;
-        const openCertificate = this.page.getByRole('button', { name: 'Open certificate', exact: true });
         await expect(async () => {
             if (detailUuidIfOn(this.page, 'certificates')) return;
-            await expect(openCertificate).toBeVisible({ timeout: POLL_STEP_MS });
+            await expect(this.openCertificateButton).toBeVisible({ timeout: POLL_STEP_MS });
         }, 'the detail page opens, or the request is accepted with warnings').toPass({ timeout: ADD_FORM_OUTCOME_MS });
         let warnings: string[] = [];
         if (!detailUuidIfOn(this.page, 'certificates')) {
-            const panel = this.page.getByTestId('compliance-errors-panel');
-            warnings = (await panel.locator('li').allTextContents()).map((t) => t.trim()).filter(Boolean);
-            if (!warnings.length) warnings = [((await panel.textContent()) ?? '').trim()].filter(Boolean);
+            warnings = (await this.warningsPanel.locator('li').allTextContents()).map((t) => t.trim()).filter(Boolean);
+            if (!warnings.length) warnings = [((await this.warningsPanel.textContent()) ?? '').trim()].filter(Boolean);
             if (!acceptWarnings) throw new Error(`the certificate request was accepted with warnings instead of opening the new certificate: ${warnings.join(' | ')}`);
             logger.warn(`Certificate request accepted with warnings: ${warnings.join(' | ')}`);
-            await openCertificate.click();
+            await this.openCertificateButton.click();
         }
         const uuid = await waitForDetailRoute(this.page, 'certificates');
         logger.info(`Issued certificate UUID: ${uuid}`);

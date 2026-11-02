@@ -9,7 +9,6 @@
 import type { Locator, Page } from '@playwright/test';
 import { expect } from '@playwright/test';
 import { CreateAnswer, createAnswerFrom } from './createAnswer';
-import { submitButtonOf } from './form';
 import { ApiCall } from './waitForResponse';
 
 /** A canonical uuid: 8-4-4-4-12 hex digits. */
@@ -54,13 +53,12 @@ export interface SubmitCreateOptions {
 }
 
 /**
- * Clicks the submit button of `scope` and returns the answer of the create request (`POST` to `endpoint`): status, the new
+ * Clicks the form's Create button and returns the answer of the create request (`POST` to `endpoint`): status, the new
  * uuid, the request and its body. The wait is registered before the click; the redirect is NOT waited for: record the
  * ledger line from the answer first, then `waitForDetailRoute`.
  */
-export async function submitCreate(page: Page, scope: Locator, options: SubmitCreateOptions): Promise<CreateAnswer> {
-    const button = submitButtonOf(scope);
-    return createAnswerFrom(page, { method: 'POST', path: options.endpoint, timeout: options.timeout }, () => (options.doubleClick ? button.dblclick() : button.click()));
+export async function submitCreate(page: Page, createButton: Locator, options: SubmitCreateOptions): Promise<CreateAnswer> {
+    return createAnswerFrom(page, { method: 'POST', path: options.endpoint, timeout: options.timeout }, () => (options.doubleClick ? createButton.dblclick() : createButton.click()));
 }
 
 /** Waits for the redirect to `#/<route>/detail/<uuid>` (the form's last act) and returns that uuid. Call it AFTER the ledger line. */

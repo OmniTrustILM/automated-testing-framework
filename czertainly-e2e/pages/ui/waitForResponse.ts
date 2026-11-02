@@ -58,3 +58,19 @@ export async function answerFrom(response: Response, startedAt: number): Promise
     }
     return answerOf({ status: () => response.status(), headers: () => response.headers(), text: async () => text }, startedAt);
 }
+
+/** Runs `act` and returns the API answer it caused in the `ApiAnswer` shape, timed from just before `act`. */
+export async function actAndReadAnswer(page: Page, call: ApiCall, act: () => Promise<unknown>): Promise<ApiAnswer> {
+    const startedAt = Date.now();
+    return answerFrom(await actAndWaitForApi(page, call, act), startedAt);
+}
+
+/** The answer of a lifecycle request, with the uuid of the successor certificate when the answer names one. */
+export type AnswerWithUuid = ApiAnswer & { uuid?: string };
+
+/** `actAndReadAnswer`, plus the uuid its JSON body names. */
+export async function actAndReadAnswerWithUuid(page: Page, call: ApiCall, act: () => Promise<unknown>): Promise<AnswerWithUuid> {
+    const answer = await actAndReadAnswer(page, call, act);
+    const uuid = (answer.json as { uuid?: unknown } | undefined)?.uuid;
+    return { ...answer, uuid: typeof uuid === 'string' ? uuid : undefined };
+}
