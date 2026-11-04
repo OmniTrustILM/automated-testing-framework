@@ -137,6 +137,9 @@ function createTagged5xxCollector(page: Page) {
 
 test.describe('@smoke navigation', () => {
   test('SMK-002: key pages load without critical crashes', async ({ page, env }) => {
+    // Walks every sidebar page (~50) in one test: the default 30 s is not enough.
+    // On the shared dev environment it took 29.4 s on 2026-11-03 and ran out of time on 2026-11-04.
+    test.setTimeout(120_000);
     await loginAsSmokeUser(page, env);
 
     const collector = createTagged5xxCollector(page);
