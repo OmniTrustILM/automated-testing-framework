@@ -45,7 +45,7 @@ export class DiscoveryPage {
     }
 
     async goToPage() {
-        await this.navigation.openViaSidebar('Discoveries', /discoveries/i);
+        await this.navigation.openViaSidebar('sidebar-discoveries', /discoveries/i);
         await expect(this.main).toBeVisible();
         await expect(this.main.getByRole('heading', { name: /discovery store/i })).toBeVisible();
     }
