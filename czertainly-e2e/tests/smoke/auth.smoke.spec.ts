@@ -1,6 +1,7 @@
 import { Locator } from '@playwright/test';
 import { test, expect, loginAsSmokeUser } from '../../fixtures/testFixtures';
 import { DashboardPage } from '../../pages/DashboardPage';
+import { SidebarLocators } from '../../pages/Navigation';
 import {
   sidebarItems,
   topTilesTitles
@@ -33,16 +34,12 @@ test.describe('@smoke auth', () => {
     });
 
     await test.step('assert sidebar items', async () => {
-      // Scope to direct-child <a>/<button> of the main <ul>, so nested links inside
-      // expanded parent menus (e.g. Dashboard > Certificates) don't collide with
-      // top-level items of the same name (e.g. top-level Certificates).
-      const topLevelUl = sidebarNav.locator('ul').first();
+      // Top-level entries only, so nested links inside parent menus
+      // (e.g. Dashboard > Certificates) don't collide with top-level items
+      // of the same name (e.g. top-level Certificates).
+      const sidebar = new SidebarLocators(sidebarNav);
       for (const item of sidebarItems) {
-        const tag = item.role === 'link' ? 'a' : 'button';
-        await expect(
-          topLevelUl.locator(`:scope > li > ${tag}, :scope > li > div > ${tag}`)
-            .filter({ hasText: item.name })
-        ).toBeVisible();
+        await expect(sidebar.topLevelEntry(item.role, item.name)).toBeVisible();
       }
     });
 

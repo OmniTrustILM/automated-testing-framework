@@ -1,44 +1,84 @@
 import { Locator, Page, expect } from '@playwright/test';
 
+// The expanded sidebar is 260px wide, the collapsed rail 84px.
+const EXPANDED_MIN_WIDTH = 200;
+
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const exactText = (text: string): RegExp => new RegExp(`^\\s*${escapeRegExp(text)}\\s*$`);
+
+/**
+ * Locators for the main sidebar (`sidebar-sticky`).
+ *
+ * Top-level entries are found as an <a>/<button> inside a direct-child <li> of the main <ul>,
+ * at any depth, as long as the path from that <li> does not go through a nested <ul> (a submenu).
+ * This keeps Dashboard > Certificates apart from top-level Certificates without depending on the
+ * wrappers between <li> and the entry: FE wraps each entry in tooltip spans since
+ * fe-administrator#2399 (2026-11-03), and had <li> > <a> / <li> > <div> > <a> before.
+ */
+export class SidebarLocators {
+  constructor(readonly root: Locator) {}
+
+  get topLevelList(): Locator {
+    return this.root.locator('nav ul').first();
+  }
+
+  topLevelEntry(role: 'link' | 'button', name: string): Locator {
+    const tag = role === 'link' ? 'a' : 'button';
+    return this.topLevelList
+      .locator(`:scope > li > ${tag}, :scope > li > :not(ul) ${tag}`)
+      .filter({ hasText: exactText(name) });
+  }
+
+  /** The <li> of a top-level parent entry (a button with a submenu). */
+  parentItem(name: string): Locator {
+    // `has` is resolved inside each <li>, so the inner locator must start from the page, not from the sidebar.
+    const ownButton = this.root
+      .page()
+      .locator(':scope > button, :scope > :not(ul) button')
+      .filter({ hasText: exactText(name) });
+    return this.topLevelList.locator(':scope > li').filter({ has: ownButton });
+  }
+
+  submenu(parentName: string): Locator {
+    return this.parentItem(parentName).locator(':scope > ul');
+  }
+}
+
 export class Navigation {
   private readonly sidebarNav: Locator;
-  private hasToggledSidebar = false;
+  private readonly sidebar: SidebarLocators;
 
   constructor(private readonly page: Page) {
     this.sidebarNav = this.page.getByTestId('sidebar-sticky');
+    this.sidebar = new SidebarLocators(this.sidebarNav);
   }
 
+  private async sidebarWidth(): Promise<number> {
+    return this.sidebarNav.evaluate((el) => el.getBoundingClientRect().width);
+  }
+
+  /**
+   * FE starts with the collapsed rail (menu-size in localStorage). The toggle is labelled
+   * "Expand" while collapsed and "Collapse" while expanded since fe-administrator#2399;
+   * before it was always "Collapse". Decide by the width, not by the label.
+   */
   private async ensureSidebarExpanded(): Promise<void> {
     await expect(this.sidebarNav).toBeVisible();
-    if (this.hasToggledSidebar) {
+    if ((await this.sidebarWidth()) >= EXPANDED_MIN_WIDTH) {
       return;
     }
 
-    const expandButton = this.sidebarNav.getByRole('button', {
-      name: /collapse/i,
-    });
-
-    if (await expandButton.isVisible()) {
-      await expandButton.click();
-      await this.page.waitForTimeout(400);
-      this.hasToggledSidebar = true;
-    }
+    await this.sidebarNav.getByRole('button', { name: /^(expand|collapse)$/i }).click();
+    await expect.poll(() => this.sidebarWidth()).toBeGreaterThanOrEqual(EXPANDED_MIN_WIDTH);
   }
 
-  private async ensureParentExpanded(parentButton: Locator): Promise<void> {
-    const parentContainer = parentButton.locator('..');
-    const parentList = parentContainer.locator('ul').first();
-
-    if ((await parentList.count()) === 0) {
-      await parentButton.click();
-      return;
-    }
+  private async ensureParentExpanded(parentName: string): Promise<void> {
+    const parentButton = this.sidebar.topLevelEntry('button', parentName);
+    const submenu = this.sidebar.submenu(parentName);
 
     const isExpanded = async () =>
-      parentList.evaluate((el) => {
-        const mh = getComputedStyle(el).maxHeight || '0';
-        return parseFloat(mh) > 0;
-      });
+      submenu.evaluate((el) => parseFloat(getComputedStyle(el).maxHeight || '0') > 0);
 
     if (!(await isExpanded())) {
       await parentButton.click();
@@ -57,29 +97,15 @@ export class Navigation {
     let targetLink: Locator;
 
     if (parentButtonName) {
-      const parentButton = this.sidebarNav.getByRole('button', {
-        name: parentButtonName,
-        exact: true,
-      });
-      await this.ensureParentExpanded(parentButton);
-
-      // Scope link search to the parent's children <ul>. This avoids matching
-      // duplicate names that live elsewhere in the sidebar (e.g. Dashboard >
-      // Certificates vs top-level Certificates after the 2026-06 FE rename).
-      const parentContainer = parentButton.locator('..');
-      const childrenList = parentContainer.locator('ul').first();
-      targetLink = childrenList.getByRole('link', {
+      await this.ensureParentExpanded(parentButtonName);
+      // Scoped to the parent's submenu: names repeat across the sidebar
+      // (Dashboard > Certificates vs top-level Certificates).
+      targetLink = this.sidebar.submenu(parentButtonName).getByRole('link', {
         name: menuText,
         exact: true,
       });
     } else {
-      // Top-level link: scope to direct-child <li> of the sidebar's main <ul>,
-      // which excludes nested submenu links with the same name. Structural
-      // (CSS direct-child `>`), not DOM-order dependent — safer than .last().
-      const topLevelUl = this.sidebarNav.locator('ul').first();
-      targetLink = topLevelUl.locator(':scope > li').locator('> a, > div > a').filter({
-        hasText: menuText,
-      });
+      targetLink = this.sidebar.topLevelEntry('link', menuText);
     }
 
     await Promise.all([
