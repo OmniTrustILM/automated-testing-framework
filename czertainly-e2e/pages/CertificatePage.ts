@@ -91,7 +91,7 @@ export class CertificatePage {
     }
 
     async goToList(): Promise<void> {
-        await this.navigation.openViaSidebar('Certificates', /\/certificates/i);
+        await this.navigation.openViaSidebar('sidebar-certificates', /\/certificates/i);
         await expect(this.main).toBeVisible();
     }
 

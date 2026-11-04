@@ -77,7 +77,7 @@ export class CertificateListPage {
 
     /** Sidebar → Certificates; returns once the list and the filter widget are rendered and no fetch is in flight. */
     async goToList(): Promise<void> {
-        await new Navigation(this.page).openViaSidebar('Certificates', /\/certificates/i);
+        await new Navigation(this.page).openViaSidebar('sidebar-certificates', /\/certificates/i);
         await expect(this.main).toBeVisible();
         await this.waitForTableLoaded();
         await expect(this.filter.sourceTrigger).toBeVisible();
