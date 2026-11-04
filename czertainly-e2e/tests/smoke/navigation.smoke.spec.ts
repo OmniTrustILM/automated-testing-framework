@@ -153,7 +153,7 @@ test.describe('@smoke navigation', () => {
 
       collector.resetTag(item.name);
 
-      await nav.openViaSidebar(item.name, item.urlHint, item.parentButtonName);
+      await nav.openViaSidebar(item.testId, item.urlHint, item.parentTestId);
 
       await expect(main, `Main content visible for ${item.name}`).toBeVisible();
 
