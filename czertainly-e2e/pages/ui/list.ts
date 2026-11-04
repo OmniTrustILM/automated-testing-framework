@@ -21,7 +21,7 @@ export async function filterBadges(page: Page): Promise<string[]> {
     return raw.map((t) => t.replace(/\s*Remove badge$/, '').replace(/\s+/g, ' ').trim()).filter(Boolean);
 }
 
-/** Inventory filter widget: Source → Field → Condition → value → Add. The value box is readonly until focused. */
+/** Inventory filter widget: Source → Field → Condition → value → Apply (`#addFilter`). The value box is readonly until focused. */
 export async function addInventoryTextFilter(page: Page, field: string, condition: string, value: string): Promise<void> {
     const main = page.locator('main');
     await chooseOption(page, selectTriggerByLabel(main, 'Filter Field Source'), 'Property');
@@ -30,7 +30,7 @@ export async function addInventoryTextFilter(page: Page, field: string, conditio
     const input = main.getByTestId('text-input-valueSelect');
     await input.click();
     await input.pressSequentially(value);
-    await main.getByRole('button', { name: 'Add', exact: true }).click();
+    await main.locator('#addFilter').click();
 }
 
 export interface ListBody {

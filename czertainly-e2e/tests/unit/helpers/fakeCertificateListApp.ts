@@ -549,7 +549,7 @@ const APP_JS = String.raw`
           display: S.draft.cond ? label('FilterConditionOperator', S.draft.cond) : '', isSelected: function (o) { return o.value === S.draft.cond; },
           onPick: function (o) { S.draft = { source: S.draft.source, field: S.draft.field, cond: o.value, value: undefined }; S.cal = null; } }),
         h('div', {}, h('label', { for: 'valueSelect' }, 'Filter Value'), valueControl()),
-        h('button', { id: 'addFilter', type: 'button', disabled: addDisabled(), onclick: onAdd }, S.badge === -1 ? 'Add' : 'Update')),
+        h('button', { id: 'addFilter', type: 'button', disabled: addDisabled(), onclick: onAdd }, S.badge === -1 ? 'Apply' : 'Update')),
       h('div', {}, S.filters.map(badge)),
       h('div', { 'data-testid': 'switch-archived-switch' }, h('label', { for: 'archived-switch' }, 'Include archived'),
         h('label', { for: 'archived-switch' }, h('input', { type: 'checkbox', id: 'archived-switch', class: 'sr-only', 'data-testid': 'switch-archived-switch-input', checked: S.archived,
