@@ -2,7 +2,8 @@
  * workerApiRenewal — the worker-scoped admin context renews its token, and a block's worker guard needs a proven local stack.
  *
  * Checks `renewingContext` sends to the current context while its token has more than the margin left, opens one new context
- * for any number of waiting requests when it has less, retries after a failed grant and disposes every context it opened;
+ * for any number of waiting requests when it has less, retries after a failed grant and disposes every context it opened, also one
+ * still opening when dispose runs;
  * `withWorkerApi(..., { localStack: true })` refuses off a proven local stack before any request; every ledger type the key
  * onboarding block records is a registry type with a live ownership read. Uses stub contexts and an injected clock.
  */
@@ -54,6 +55,20 @@ test('a failed grant fails that request and the next request tries again', async
     await expect(api.get('/a')).rejects.toThrow('grant failed');
     expect(await api.get('/a')).toBe('ok');
     expect(attempts).toBe(2);
+});
+
+test('a context still opening when dispose runs is closed when it arrives and never handed to the request that waited for it', async () => {
+    const log: string[] = [];
+    let arrive!: () => void;
+    const open = (): Promise<OpenedContext> => new Promise((resolve) => {
+        arrive = () => resolve({ context: stubContext('late', log), expiresAt: Number.POSITIVE_INFINITY });
+    });
+    const api = renewingContext(open);
+    const waiting = api.get('/a');
+    await api.dispose();
+    arrive();
+    await expect(waiting).rejects.toThrow(/disposed/);
+    expect(log, 'disposed on arrival, never used').toEqual(['late dispose']);
 });
 
 test('a context without a token (header mode) is never renewed', async () => {

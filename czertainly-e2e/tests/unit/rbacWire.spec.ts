@@ -43,6 +43,8 @@ class AuthCore extends BaseCore {
     protected seq = 1000;
     /** The CA is healthy and has an enabled RA profile to copy. */
     caHealthy = true;
+    /** The next certificate PATCH answers 500 (a lost fixture PATCH). */
+    failNextCertPatch = false;
     /** What `POST /users` answers for a username that exists (the known bug core#2297 answers 500). */
     duplicateStatus = 500;
     /** Fixture F3: `POST /users` answers this non-2xx status WITH a uuid in the body and creates nothing. */
@@ -193,7 +195,16 @@ class AuthCore extends BaseCore {
             return { status: 200, body: { uuid } };
         }
         if ((m = /^\/api\/v1\/certificates\/([0-9a-f-]{36})$/.exec(path)) && this.certs.has(m[1])) {
-            if (a.method === 'PATCH') Object.assign(this.certs.get(m[1])!, body);
+            if (a.method === 'PATCH') {
+                if (this.failNextCertPatch) {
+                    this.failNextCertPatch = false;
+                    return { status: 500, body: { message: 'transient' } };
+                }
+                // As the core: the detail shows the RA profile and the groups, not the PATCH fields.
+                const cert = this.certs.get(m[1])!;
+                if (body.raProfileUuid) cert.raProfile = { uuid: body.raProfileUuid };
+                if (body.groupUuids) cert.groups = (body.groupUuids as string[]).map((uuid) => ({ uuid }));
+            }
             return { status: 200, body: this.certs.get(m[1]) };
         }
         return { status: 404, body: { message: `no fake route ${a.method} ${path}` } };
@@ -458,6 +469,33 @@ test('ensureRbacObjects: two own RA profiles under the pre-existing authority, t
     expect(again.p1.uuid).toBe(refs.p1.uuid);
     expect(again.certs.cg12.uuid).toBe(refs.certs.cg12.uuid);
     expect(wire()).toEqual([]);
+});
+
+test('ensureRbacObjects: a ledgered certificate whose PATCH was lost gets its RA profile again; one already in place is left alone', async () => {
+    core.failNextCertPatch = true;
+    await expect(ensureRbacObjects(api, 'T'), 'the PATCH of the first certificate fails that call').rejects.toThrow();
+    server.reset();
+    const refs = await ensureRbacObjects(api, 'T');
+    const c1 = refs.certs.c1.uuid;
+    expect(wire().filter((w) => w === `PATCH /api/v1/certificates/${c1}`), 'the lost PATCH is sent again').toHaveLength(1);
+    expect(core.certs.get(c1)!.raProfile).toEqual({ uuid: refs.p1.uuid });
+    server.reset();
+    await ensureRbacObjects(api, 'T');
+    expect(wire(), 'every certificate carries its plan: nothing is sent').toEqual([]);
+});
+
+test('ensureRbacObjects: groups are compared as a set; a ledgered certificate missing one of its groups gets them again', async () => {
+    const refs = await ensureRbacObjects(api, 'T');
+    const cg12 = refs.certs.cg12.uuid;
+    core.certs.get(cg12)!.groups = [{ uuid: refs.g2.uuid }, { uuid: refs.g1.uuid }];
+    server.reset();
+    await ensureRbacObjects(api, 'T');
+    expect(wire(), 'the same groups in another order are in place').toEqual([]);
+    core.certs.get(cg12)!.groups = [{ uuid: refs.g1.uuid }];
+    server.reset();
+    await ensureRbacObjects(api, 'T');
+    expect(wire(), 'one group missing: the plan is sent again').toEqual([`PATCH /api/v1/certificates/${cg12}`]);
+    expect(core.certs.get(cg12)!.groups).toEqual([{ uuid: refs.g1.uuid }, { uuid: refs.g2.uuid }]);
 });
 
 test('ensureRbacObjects: no healthy CA → RaProfileSourceMissing with the named deploy gate; nothing is created', async () => {

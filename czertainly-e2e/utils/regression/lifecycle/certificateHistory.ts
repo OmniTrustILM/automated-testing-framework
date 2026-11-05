@@ -47,10 +47,11 @@ export type HistoryStep = [event: keyof typeof EVENT_CODES, status: 'SUCCESS' | 
 
 /**
  * The problem with a history that does not carry `expected` (event / status pairs) in order — presence and order only,
- * never counts — or undefined when it does.
+ * never counts — or undefined when it does. `rows` are oldest first, as `historyOf()` returns them: sorting them again
+ * would turn two rows with the same timestamp around.
  */
 export function historyOrderProblem(rows: readonly JsonObject[], expected: readonly HistoryStep[]): string | undefined {
-    const seq = sortedHistory(rows).map((r) => `${String(r.event)}/${String(r.status)}`);
+    const seq = rows.map((r) => `${String(r.event)}/${String(r.status)}`);
     let from = 0;
     for (const [event, status] of expected) {
         const want = `${EVENT_CODES[event]}/${status}`;

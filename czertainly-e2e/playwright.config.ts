@@ -1,11 +1,11 @@
 /// <reference types="node" />
 
 import { defineConfig, devices } from '@playwright/test';
-import * as dotenv from 'dotenv';
-import * as path from 'path';
+import { loadDotenv } from './utils/envFile';
 
-// Load environment variables from .env file
-dotenv.config({ path: path.resolve(__dirname, '.env') });
+// Load environment variables: the file REG_ENV_FILE names (it must exist), else the .env next to this config. A variable
+// that is set is never overwritten, so loading .env first would win over REG_ENV_FILE.
+loadDotenv(process.env, __dirname, { requireExplicit: true });
 
 export default defineConfig({
   // Only the smoke suite belongs to this config: the visual, unit, regression and API suites have their own configs,

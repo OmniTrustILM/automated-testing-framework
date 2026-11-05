@@ -58,7 +58,8 @@ export const jobFingerprint = (job: JsonObject): JsonObject => ({
 
 // ------------------------------------------------------------------ Quartz cron subset, UTC
 
-const DOW: Record<string, number> = { SUN: 0, MON: 1, TUE: 2, WED: 3, THU: 4, FRI: 5, SAT: 6 };
+// Quartz numbers the weekdays 1-7 from Sunday (SUN = 1); getUTCDay counts 0-6 from Sunday.
+const DOW: Record<string, number> = { SUN: 1, MON: 2, TUE: 3, WED: 4, THU: 5, FRI: 6, SAT: 7 };
 
 interface Field {
     any: boolean;
@@ -74,12 +75,18 @@ function parseField(raw: string, min: number, max: number, names: Record<string,
         if (!m) throw new Error(`unsupported cron field "${raw}" (the suite implements the subset the six system crons use)`);
         const num = (s: string) => (names[s] !== undefined ? names[s] : Number(s));
         const start = num(m[1]);
-        const end = m[2] ? num(m[2]) : start;
+        const end = m[2] ? num(m[2]) : m[3] ? max : start; // `0/15`: from 0 to the maximum, every 15
         const step = m[3] ? Number(m[3]) : 1;
         if ([start, end, step].some((n) => Number.isNaN(n)) || start < min || end > max || step < 1) throw new Error(`cron field "${raw}" is out of range`);
         for (let v = start; v <= end; v += step) values.add(v);
     }
     return { any: false, values };
+}
+
+/** The day-of-week field in Quartz numbering, stored as getUTCDay values. */
+function dayOfWeekField(raw: string): Field {
+    const f = parseField(raw, 1, 7, DOW);
+    return { any: f.any, values: new Set([...f.values].map((v) => v - 1)) };
 }
 
 export interface ParsedCron {
@@ -102,7 +109,7 @@ export function parseQuartzCron(cron: string): ParsedCron {
         hour: parseField(f[2], 0, 23),
         dayOfMonth: parseField(f[3], 1, 31),
         month: parseField(f[4], 1, 12),
-        dayOfWeek: parseField(f[5], 0, 6, DOW),
+        dayOfWeek: dayOfWeekField(f[5]),
     };
 }
 

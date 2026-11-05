@@ -6,7 +6,7 @@
  * Successors and derived keys are ledgered before the assertions.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
-import { EVENT_CODES, historyOf, relationsOf, sortedHistory } from '../../../utils/regression/lifecycle/certificateHistory';
+import { EVENT_CODES, historyOf, relationsOf } from '../../../utils/regression/lifecycle/certificateHistory';
 import { issueExisting, renewOwnCertificate } from '../../../utils/regression/lifecycle/certificateOperations';
 import { newChallenge, registerOwnCertificate } from '../../../utils/regression/lifecycle/preRegistration';
 import { csrFromKeyWithSubject, newKeyPair, csrFromKey, sansOfDetail } from '../../../utils/regression/pkiBuilders';
@@ -90,7 +90,7 @@ test.describe('Concurrent certificate operations', { tag: tags.api }, () => {
                 await own.derivedKey(reg.cert!.uuid, reg.createdAfter);
                 const detail = await getCertificate(api, reg.cert!.uuid);
                 expect(String(detail.serialNumber ?? ''), 'one serial (hex)').toMatch(/^[0-9a-f]+$/i);
-                const history = sortedHistory(await historyOf(api, reg.cert!.uuid));
+                const history = await historyOf(api, reg.cert!.uuid);
                 expect(history.filter((h) => h.event === EVENT_CODES.ISSUE && h.status === 'SUCCESS' && String(h.message ?? '').startsWith('Issued using RA Profile')), 'exactly one issue event').toHaveLength(1);
             });
         });

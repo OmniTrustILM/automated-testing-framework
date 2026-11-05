@@ -16,7 +16,7 @@ import { apiJson } from '../apiReads';
 import { pickHealthyAuthority, RaProfileSourceMissing, createOwnRaProfileLike, raProfileBodyLike } from '../ownRaProfiles';
 import { OwnRef, readLedger } from '../ledger/ledger';
 import { runName, runId } from '../ledger/runState';
-import { createOwnGroup } from '../ownGroups';
+import { createOwnGroup, groupUuidsOf } from '../ownGroups';
 import { uploadOwnCertificate } from '../ownCertificates';
 import { createOwnRole } from '../ownRoles';
 import { createOwn } from '../ownCrud';
@@ -78,20 +78,20 @@ export async function ensureRbacObjects(api: GuardedApi, spec: string): Promise<
     for (const key of CERT_KEYS) {
         const cn = runName(`rbac-${key}`);
         const known = ledgerRef('certificates', cn);
-        if (known) {
-            certs[key] = known;
-            continue;
-        }
-        const { pem } = selfSignedPem(cn);
-        const uploaded = await uploadOwnCertificate(api, pem, cn, spec, `RBAC fixture certificate ${key} (self-signed upload)`);
-        certs[key] = uploaded;
+        const cert = known ?? await uploadOwnCertificate(api, selfSignedPem(cn).pem, cn, spec, `RBAC fixture certificate ${key} (self-signed upload)`);
+        certs[key] = cert;
         const plan = CERT_PLAN[key];
-        if (plan.ra || plan.groups.length) {
-            await apiJson(api, 'PATCH', `/api/v1/certificates/${uploaded.uuid}`, {
-                ...(plan.ra ? { raProfileUuid: refs[plan.ra].uuid } : {}),
-                ...(plan.groups.length ? { groupUuids: plan.groups.map((g) => refs[g].uuid) } : {}),
-            });
+        if (!plan.ra && !plan.groups.length) continue;
+        const ra = plan.ra ? refs[plan.ra].uuid : undefined;
+        const groups = plan.groups.map((g) => refs[g].uuid);
+        // A certificate found again in the ledger keeps its plan only if the PATCH of an earlier call landed: when that
+        // PATCH failed, the permission rows after it must not run on a certificate without its RA profile or groups.
+        if (known) {
+            const live = await apiJson<JsonObject>(api, 'GET', `/api/v1/certificates/${cert.uuid}`);
+            const liveRa = (live.raProfile as JsonObject | undefined)?.uuid;
+            if ((!ra || liveRa === ra) && (!groups.length || groupUuidsOf(live).join() === [...groups].sort().join())) continue;
         }
+        await apiJson(api, 'PATCH', `/api/v1/certificates/${cert.uuid}`, { ...(ra ? { raProfileUuid: ra } : {}), ...(groups.length ? { groupUuids: groups } : {}) });
     }
     return { authorityUuid: pick.authorityUuid, source: { uuid: pick.uuid, authorityUuid: pick.authorityUuid }, ...refs, certs };
 }
