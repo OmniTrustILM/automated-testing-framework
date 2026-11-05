@@ -1,45 +1,35 @@
 /**
- * resourceTypes — data-only descriptor of the four ledger types the timestamping block adds: `tspProfiles`, `signingProfiles`,
- * `timeQualityConfigurations`, `tspBasicCredentials`.
- *
- * Per type: how its live object is read, the reference pairs core enforces (core refuses to delete `a` while a `b` references
- * it, so `b` goes first), and the module with its teardown handler. The order inside DELETE_ORDER step 3 is load-bearing:
- * tspBasicCredentials, tspProfiles, signingProfiles, then timeQualityConfigurations. A signing profile that names another as its
- * timestamp source must be RECORDED after it. tests/unit/timestampingTeardown.spec.ts checks it against the handlers.
+ * resourceTypes — data-only descriptor of the ledger types the timestamping block adds: how each live object is read, the reference pairs
+ * core enforces and its teardown handler.
+ * The order inside DELETE_ORDER step 3 is load-bearing (checked by tests/unit/timestampingTeardown.spec.ts); a signing profile that names
+ * another as its timestamp source must be RECORDED after it.
  */
 
 type Parents = Record<string, string | string[]> | undefined;
 
 export interface TimestampingReference {
-    /** The type core refuses to delete ... */
+    /** Core refuses to delete this type ... */
     a: string;
     /** ... while an object of this type still references it (so `b` is deleted first). */
     b: string;
-    /** `<file:lines>` and what core refuses. A refusal that exists only as a database constraint says so. */
     core: string;
 }
 
 export interface TimestampingResourceType {
     type: string;
     liveRead: {
-        /** Detail URL of the live object; undefined when a parent-scoped route has no parent (the object then reads as missing). */
+        /** Undefined when a parent-scoped route has no parent (the object then reads as missing). */
         detailUrl: (uuid: string, parents?: Parents) => string | undefined;
-        /** Field of the detail body that must carry the run prefix. */
         nameField: string;
     };
-    /** Types this type is deleted AFTER (they reference it, or its handler needs them gone). */
     deleteAfter: string[];
-    /** Types this type is deleted BEFORE (it references them). */
     deleteBefore: string[];
-    /** Pairs where this type is `b`: it holds the reference, `a` cannot be deleted before it. */
     referencedBy: TimestampingReference[];
-    /** Module (relative to utils/regression) whose `teardownHandlers` export removes the type. */
     handlerModule: string;
 }
 
 const HANDLER_MODULE = '../timestamping/teardown';
 
-/** The first value of a ledger parent (a uuid or a list of them). */
 const parentOf = (parents: Parents, key: string): string | undefined => {
     const v = parents?.[key];
     return Array.isArray(v) ? v[0] : v;
@@ -47,11 +37,8 @@ const parentOf = (parents: Parents, key: string): string | undefined => {
 
 export const TIMESTAMPING_RESOURCE_TYPES: readonly TimestampingResourceType[] = [
     {
-        // Recorded by the specs (40-tsp-errors) for a Basic credential added to the run's own TSP profile; ledger parents { tspProfile }.
-        // The route is scoped by the TSP profile (interfaces TspProfileBasicCredentialController: /v1/tspProfiles/{tsp}/basicCredentials/{uuid}).
-        // The detail (TspBasicCredentialDto) names the credential by `username`: it must carry the run prefix for the guard.
-        // Its vault secret has no ledger line: the handler deletes it explicitly (deleteInVaults=true) only when core's queue left it and its live
-        // name matches exactly `tsp-basic-<own TSP profile uuid>-<own run-prefixed username>-<8 hex>`, read live in the same step (teardown.ts header).
+        // Recorded by the specs for a Basic credential of the run's own TSP profile. Its vault secret has no ledger line: the handler
+        // deletes it only when its live name matches the own-secret shape (teardown.ts).
         type: 'tspBasicCredentials',
         liveRead: {
             detailUrl: (uuid, parents) => (parentOf(parents, 'tspProfile') ? `/api/v1/tspProfiles/${parentOf(parents, 'tspProfile')}/basicCredentials/${uuid}` : undefined),
@@ -76,8 +63,8 @@ export const TIMESTAMPING_RESOURCE_TYPES: readonly TimestampingResourceType[] = 
         handlerModule: HANDLER_MODULE,
     },
     {
-        // The vault secrets behind its Basic credentials have no ledger line: the handler deletes one explicitly (deleteInVaults=true) only when
-        // core's queue left it and its live name starts with `tsp-basic-<this TSP profile's uuid>-` and matches the exact secret-name shape (teardown.ts header).
+        // The vault secrets behind its Basic credentials have no ledger line: the handler deletes one only when its live name matches the
+        // own-secret shape (teardown.ts).
         type: 'tspProfiles',
         liveRead: { detailUrl: (uuid) => `/api/v1/tspProfiles/${uuid}`, nameField: 'name' },
         deleteAfter: ['tspBasicCredentials'],
@@ -134,11 +121,8 @@ export const TIMESTAMPING_RESOURCE_TYPES: readonly TimestampingResourceType[] = 
 ];
 
 /**
- * Releases that are NOT deletes and therefore not ordering pairs. A TSP profile cannot be deleted while a signing profile
- * is ACTIVATED on it (SigningProfileServiceImpl `signing_profile.tsp_profile_uuid`); the tspProfiles handler releases it
- * with `PATCH /v1/signingProfiles/{uuid}/protocols/tsp/deactivate` (SigningProfileServiceImpl.java:770-777) and proves it
- * with `GET …/protocols/tsp` (`available: false`). Listing it as a pair {a: tspProfiles, b: signingProfiles} would
- * contradict the pair above (signingProfiles ← tspProfiles): the two references form a cycle that only the deactivation breaks.
+ * Releases that are not deletes: a TSP profile cannot be deleted while a signing profile is ACTIVATED on it, so the handler deactivates it
+ * first. A pair would form a cycle with the one above.
  */
 export const TIMESTAMPING_RELEASES: ReadonlyArray<{ a: string; b: string; by: string; core: string }> = [
     {
@@ -148,32 +132,25 @@ export const TIMESTAMPING_RELEASES: ReadonlyArray<{ a: string; b: string; by: st
 ];
 
 /**
- * Deletes core does NOT refuse over a timestamping object. The existing handlers (users, roles) need no change:
- * a Basic credential maps a TSP username to an ILM user by uuid only (no foreign key, no check in the user or role
- * delete), and the credential rows go with their TSP profile (cascade + orphanRemoval, dao/entity/signing/TspProfile.java:47).
+ * Deletes core does NOT refuse over a timestamping object: a Basic credential maps a TSP username to an ILM user by uuid only, and
+ * credential rows go with their TSP profile.
  */
 export const TIMESTAMPING_NOT_REFERENCED: ReadonlyArray<{ a: string; b: string; core: string }> = [
     { a: 'users', b: 'tspProfiles', core: 'dao/entity/signing/TspProfileBasicCredential mapped_user_uuid has no foreign key (V202606020900__tsp_profile_authentication.sql:12-20); UserManagementServiceImpl / RoleManagementServiceImpl delete read no TSP data' },
     { a: 'roles', b: 'tspProfiles', core: 'same as users: a role is never named by a TSP profile or credential' },
 ];
 
-/** Every pair of the entries, for runTeardown's REFERENCED_BY (spread as-is). */
 export const TIMESTAMPING_REFERENCED_BY: ReadonlyArray<TimestampingReference> = TIMESTAMPING_RESOURCE_TYPES.flatMap((r) => r.referencedBy);
 
-/** The descriptor's module path per type (data; the registry names the module by its key `timestamping`, which runTeardown imports). */
 export const TIMESTAMPING_HANDLER_MODULES: Readonly<Record<string, string>> = Object.fromEntries(
     TIMESTAMPING_RESOURCE_TYPES.map((r) => [r.type, r.handlerModule]),
 );
 
-/** Types of the block in the delete order within their step (step 3, after `discoveries`). */
 export const TIMESTAMPING_DELETE_STEP_TYPES: readonly string[] = ['tspBasicCredentials', 'tspProfiles', 'signingProfiles', 'timeQualityConfigurations'];
 
 /**
- * The four types in the shape of the type registry (utils/regression/resourceTypes.ts): one entry per type, in delete
- * order, with URL templates as plain strings (`{uuid}`, and `{parent}` for the parent-scoped Basic credential), so the
- * registry can spread them after `discoveries`. `handler: 'timestamping'` is the registry's key for
- * '../timestamping/teardown'. tests/unit/timestampingTeardown.spec.ts keeps every template equal to the descriptor's
- * live read above.
+ * The four types in the shape of the type registry, in delete order, with URL
+ * templates as plain strings; `handler: 'timestamping'` is the registry's key.
  */
 export const TIMESTAMPING_REGISTRY_ENTRIES = [
     {

@@ -1,9 +1,6 @@
 /**
- * attributes — request attributes the key onboarding specs send.
- *
- * Provides the attribute definition shape, lookup by name, the option a list attribute offers for a value, and the
- * request item that answers a definition. Core accepts an offered option only verbatim, so a value is always looked up
- * in the definition first. Ported from the developers' suite unchanged.
+ * attributes — request attributes of the key onboarding specs. Core accepts an
+ * offered option only verbatim, so a value is looked up in the definition first.
  */
 const REQUEST_ATTRIBUTE_VERSION = 'v3';
 
@@ -22,7 +19,6 @@ export function definitionNamed(definitions: AttributeDefinition[], name: string
   return definition;
 }
 
-/** The option a list attribute offers for a value, whole, because Core accepts only an offered option verbatim. */
 export function offered(definition: AttributeDefinition, data: unknown): { data: unknown; reference?: string } {
   const option = definition.content?.find((candidate) => candidate.data === data);
   if (!option) {

@@ -1,14 +1,7 @@
 /**
- * provision — the key onboarding setup: preflight, the run's own objects, the planted key pairs, and the summary.
- *
- * `provisionKeyOnboarding(api)` returns `unavailable` with the reason when the tier or the runner lacks a prerequisite or a
- * step fails at the tier, else `ready` with the token, token profile, planted labels and the certified pair's certificate.
- * `writeSummary` stores it at `summaryFile()` (mode 0600).
- *
- * Each run creates its own run-prefixed objects with a ledger line right after each create; the block teardown, then the
- * run-end teardown, delete them. The planted key pairs are not ledger objects: the block teardown's `after` step
- * (`unplantRunKeys`) removes them. Only a TierError becomes a reason: a refused body or identity, a programming error or a guard
- * refusal fails the setup test.
+ * provision — the key onboarding setup: preflight, the run's own objects, the planted key pairs and the summary.
+ * Only a TierError becomes an `unavailable` reason; a refused body or
+ * identity, a programming error or a guard refusal fails the setup test.
  */
 import * as fs from 'fs';
 import { writeJsonAtomic } from '../../devBlocks/provision/summaryFile';
@@ -37,22 +30,18 @@ const logger = new Logger('KeyOnboardingSetup');
 export interface ProvisionOptions {
     cfg?: KeyOnboardingConfig;
     env?: NodeJS.ProcessEnv;
-    /** The waits (unit tests: 0 ms pauses). */
     poll?: Partial<PollSettings>;
-    /** The docker CLI (unit tests: a fake). */
     docker?: DockerRunner;
-    /** The name stamp of this setup attempt (default: four random base36 characters). */
     stamp?: string;
 }
 
-/** What the summary says while a setup attempt runs: a killed or retried attempt never leaves an older `ready` file behind. */
+/** The summary while a setup attempt runs, so a killed or retried attempt never leaves an older `ready` file behind. */
 export const SETUP_NOT_FINISHED = 'setup not finished (the key onboarding setup is running, or an attempt was stopped before it wrote its summary)';
 
 export function unavailableSummary(reason: string): KeyOnboardingSummary {
     return { status: 'unavailable', runId: runId(), at: new Date().toISOString(), reason };
 }
 
-/** Preflight, then provisioning; see the file header. Every admin request goes through the guarded `api`. */
 export async function provisionKeyOnboarding(api: GuardedApi, opts: ProvisionOptions = {}): Promise<KeyOnboardingSummary> {
     const env = opts.env ?? process.env;
     const cfg = opts.cfg ?? keyOnboardingConfig(env);
@@ -95,10 +84,7 @@ export async function provisionKeyOnboarding(api: GuardedApi, opts: ProvisionOpt
     }
 }
 
-/**
- * Writes the summary at `summaryFile()` with mode 0600 (directory created): a temp file in the same directory, chmod,
- * rename, so a reader never sees half a file and the file never exists with a wider mode.
- */
+/** Writes the summary with mode 0600 through a temp file and a rename, so a reader never sees half a file. */
 export function writeSummary(summary: KeyOnboardingSummary, env: NodeJS.ProcessEnv = process.env): string {
     const file = summaryFile(env);
     return writeJsonAtomic(file, summary);

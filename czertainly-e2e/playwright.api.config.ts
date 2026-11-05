@@ -3,15 +3,10 @@ import { reporters, SINGLE_WORKER } from './utils/regression/configBase';
 import { apiProjects } from './utils/regression/regressionProjects';
 import { prepareRun } from './utils/regression/run/prepareRun';
 
-// Env file, frozen tier variables, one run id for both suites, the cleanup ledger, the local-stack proof, one worker and
-// the run lock; any failure stops the run before a test is listed (utils/regression/run/prepareRun.ts).
+// Run preparation: env, run id, ledger, local-stack proof, one worker, run lock (utils/regression/run/prepareRun.ts).
 prepareRun({ configDir: __dirname });
 
-/**
- * API suite (API-*): positive and negative cases per area, under the same create-only rules as the regression suite.
- * Projects (utils/regression/regressionProjects.ts `apiProjects`): snapshot → gate → api-p1 / api-rest →
- * non-interference, then the run-end teardown. Safety model and how to run: tests/regression/README.md.
- */
+/** API suite (API-*): create-only rules as the regression suite; see tests/regression/README.md. */
 export default defineConfig({
     testDir: './tests/api',
     timeout: 60_000,

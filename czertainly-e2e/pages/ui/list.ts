@@ -1,27 +1,21 @@
 /**
- * list — list helpers for the main-usage flows.
- *
- * Waits for real rows (a list renders skeleton rows first), reads the filter badges above a list, adds one text filter
- * and observes the certificate list request an action causes. The value box is readonly until focused.
+ * list — list helpers: real-row waits, filter badges, one text filter and the certificate list request an action causes.
  */
 import { expect, Page, Request } from '@playwright/test';
 import type { JsonObject } from '../../utils/regression/json';
 import { FILTER_LIST_REQUEST_MS, FILTER_REQUEST_SEEN_MS } from '../../utils/regression/timeouts';
 import { chooseOption, selectTriggerByLabel } from './select';
 
-/** Wait until a list table shows real rows (it renders skeleton rows first). */
 export async function waitForListRows(page: Page): Promise<void> {
     await expect(page.locator('main table tbody tr a[href*="/detail/"]').first()).toBeVisible({ timeout: 30_000 });
 }
 
-/** Filter badges shown above a list ("Property 'Common Name' contains 'x'"), without the trailing "Remove badge". */
 export async function filterBadges(page: Page): Promise<string[]> {
     const raw = await page.locator('main').getByRole('button', { name: /Remove badge$/ }).allInnerTexts();
-    // The inner "Remove badge" button matches too and leaves an empty string: drop those.
     return raw.map((t) => t.replace(/\s*Remove badge$/, '').replace(/\s+/g, ' ').trim()).filter(Boolean);
 }
 
-/** Inventory filter widget: Source → Field → Condition → value → Apply (`#addFilter`). The value box is readonly until focused. */
+/** Source → Field → Condition → value → Apply. The value box is readonly until focused. */
 export async function addInventoryTextFilter(page: Page, field: string, condition: string, value: string): Promise<void> {
     const main = page.locator('main');
     await chooseOption(page, selectTriggerByLabel(main, 'Filter Field Source'), 'Property');
@@ -43,7 +37,6 @@ export interface ListBody {
     [key: string]: unknown;
 }
 
-/** One certificate list request the page sent, with the answer. */
 export interface ListObservation {
     request: Request;
     body: ListBody;
@@ -51,7 +44,6 @@ export interface ListObservation {
     json: JsonObject | undefined;
 }
 
-/** `POST /api/v1/certificates` (the list; `…/search` is the catalogue GET and never matches). */
 export function isCertificateListRequest(request: Request): boolean {
     if (request.method() !== 'POST') return false;
     try {
@@ -70,9 +62,8 @@ function listBodyOf(request: Request): ListBody {
 }
 
 /**
- * Runs `action` and returns the certificate list request it caused (optionally the first one whose body satisfies `match`)
- * with its answer. The wait is registered BEFORE the action, so a fast request cannot be missed; nothing is mocked. A request the
- * page itself cancelled (no response: the FE may supersede a list request with a newer one) is skipped for the next matching one.
+ * Runs `action` and returns the certificate list request it caused (the first one whose body satisfies `match`, when given).
+ * A request the page cancelled (no response) is skipped for the next match.
  */
 export async function observeListRequest(
     page: Page,

@@ -1,12 +1,6 @@
 /**
- * AuthorityPage — Page Object Model for authorities (REG-CFG-02).
- *
- * Encapsulates:
- *   - the Authorities list and the authority detail
- *   - the add page (a page, not a dialog): name, provider connector, CA selection, CA host and name
- *
- * The connector checks its connectivity before it answers (up to 90 s), so the create answer goes back to the spec
- * before the redirect is waited for. CA values come from the caller, never stored here.
+ * AuthorityPage — the authorities list, detail and add page (REG-CFG-02).
+ * The connector checks its connectivity before it answers (up to 90 s). CA values come from the caller.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import type { CreateAnswer } from './ui/createAnswer';
@@ -17,7 +11,6 @@ import { AUTHORITY_CREATE_MS } from '../utils/regression/timeouts';
 
 export interface ManualCaFields {
     name: string;
-    /** The name of the authority connector. */
     connectorName: string;
     caHost: string;
     caName: string;
@@ -42,10 +35,8 @@ export class AuthorityPage {
         this.page = page;
         this.main = page.locator('main');
 
-        // Authorities list
         this.addAuthorityButton = this.main.getByTestId('plus-button').first();
 
-        // Add authority page
         this.nameInput = this.main.getByTestId('text-input-name');
         this.connectorTrigger = page.getByTestId('select-authorityProviderSelect-trigger');
         this.caSelectionMethodTrigger = page.getByTestId('select-__attributes__authority__.data_caSelectMethodSelect-trigger');
@@ -64,7 +55,6 @@ export class AuthorityPage {
         await expect(this.page).toHaveURL(/\/authorities\/add/);
     }
 
-    /** Fills the add page for the connector's manual CA entry (and any required custom attribute) without submitting. */
     async fillManualCaForm(fields: ManualCaFields): Promise<void> {
         await fillText(this.nameInput, fields.name);
         await chooseOption(this.page, this.connectorTrigger, fields.connectorName);
@@ -74,14 +64,11 @@ export class AuthorityPage {
         await fillRequiredCustomAttributes(this.page, this.main, 'qa-reg', await customAttributesDefined(this.page, 'authorities'));
     }
 
-    /**
-     * Clicks Create and returns the answer of `POST /api/v1/authorities` (status, new uuid, request body); waits for the connector's check.
-     */
+    /** Clicks Create and returns the create answer; waits for the connector's check. */
     async submitCreateForm(): Promise<CreateAnswer> {
         return submitCreate(this.page, this.createButton, { endpoint: '/api/v1/authorities', timeout: AUTHORITY_CREATE_MS });
     }
 
-    /** Waits for the redirect to the new authority's detail and returns its uuid. Call it after the ledger line. */
     async waitForDetail(): Promise<string> {
         return waitForDetailRoute(this.page, 'authorities', { timeout: AUTHORITY_CREATE_MS });
     }

@@ -1,38 +1,27 @@
 /**
- * envFile — which dotenv file a process reads. Side-effect free: importing it loads nothing.
- *
- * When REG_ENV_FILE is set, that file is the ONLY env file; the working directory's `.env` is never read. API_ENV_FILE is an
- * alias honoured only by the REG / API configs (`prepareRun` passes `allowApiEnvFile`), never by a smoke run's `utils/env.ts`.
- * Otherwise `<dir>/.env` is read (the config's folder, or the working directory for `utils/env.ts`). dotenv never overrides a
- * set variable, so the first load wins: the configs freeze TIER_KIND / AUTH_MODE / REG_RA_PROFILE_NAME (regression/tier/kind.ts
- * `freezeTierEnv`) and pin REG_ENV_FILE, so a later load in a worker reads the same file. An explicitly named file that does
- * not exist is an error for the configs (`requireExplicit`); the default `.env` may be missing (CI has none).
+ * envFile — which dotenv file a process reads; side-effect free. REG_ENV_FILE, when set, is the only env file.
+ * API_ENV_FILE is an alias for the REG / API configs only. Otherwise `<dir>/.env` is read; dotenv never overrides a set variable.
  */
 import * as dotenv from 'dotenv';
 import * as fs from 'fs';
 import * as path from 'path';
 
 export interface EnvFileOptions {
-    /** Honour API_ENV_FILE when REG_ENV_FILE is unset (the REG / API configs only). */
     allowApiEnvFile?: boolean;
-    /** Throw when REG_ENV_FILE / API_ENV_FILE names a file that does not exist. */
     requireExplicit?: boolean;
 }
 
-/** The variable that names the env file explicitly, if any (REG_ENV_FILE, else API_ENV_FILE when allowed). */
 function explicitVariable(env: NodeJS.ProcessEnv, opts: EnvFileOptions): 'REG_ENV_FILE' | 'API_ENV_FILE' | undefined {
     if (env.REG_ENV_FILE) return 'REG_ENV_FILE';
     if (opts.allowApiEnvFile && env.API_ENV_FILE) return 'API_ENV_FILE';
     return undefined;
 }
 
-/** The env file a load would read: REG_ENV_FILE, else API_ENV_FILE (configs only), else `<dir>/.env`. */
 export function envFileFor(env: NodeJS.ProcessEnv = process.env, dir: string = process.cwd(), opts: EnvFileOptions = {}): string {
     const variable = explicitVariable(env, opts);
     return variable ? path.resolve(env[variable]!) : path.resolve(dir, '.env');
 }
 
-/** Load that one file into `env` (existing variables win). Returns the path; a missing default file loads nothing. */
 export function loadDotenv(env: NodeJS.ProcessEnv = process.env, dir: string = process.cwd(), opts: EnvFileOptions = {}): string {
     const variable = explicitVariable(env, opts);
     const file = envFileFor(env, dir, opts);

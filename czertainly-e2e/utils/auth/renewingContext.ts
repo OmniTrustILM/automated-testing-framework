@@ -1,20 +1,11 @@
 import type { APIRequestContext } from '@playwright/test';
 
 /**
- * renewingContext — an API context that opens a fresh one before its token runs out.
- *
- * WHAT: `renewingContext(open)` returns an APIRequestContext whose requests go to the current context of `open()`; when the current
- * token has less than `marginMs` left, the next request opens a new context first (one renewal at a time, however many requests wait).
- * WHY: a worker-scoped fixture lives for the whole worker (minutes: a hook before a group and a hook after it), longer than the lifetime
- * of one access token; a context built once would send an expired token in its last hook.
- * HOW: a Proxy over the request methods (get, post, put, patch, delete, head, fetch, storageState); `dispose` disposes every context it
- * opened, and one still opening at that moment when it arrives. Superseded contexts are kept until `dispose`, so a request still in
- * flight on one of them is never cut off.
+ * renewingContext — an API context that opens a fresh one before its token runs out (one renewal at a time).
+ * Superseded contexts are kept until `dispose`, so a request still in flight is never cut off.
  */
 export interface RenewingOptions {
-  /** Renew when the token has less than this left (default 120 s). */
   marginMs?: number;
-  /** The clock (unit tests). */
   now?: () => number;
 }
 
@@ -33,14 +24,13 @@ export function renewingContext(open: () => Promise<OpenedContext>, options: Ren
   const fresh = (): Promise<OpenedContext> => {
     const next = open().then(async (c) => {
       if (disposed) {
-        // Disposed while this context was opening: close it, never hand it to a request that waited for it.
+        // Disposed while this context was opening: close it.
         await c.context.dispose().catch(() => undefined);
         throw disposedError();
       }
       opened.push(c.context);
       return c;
     });
-    // A failed grant is not kept: the next request tries again.
     next.catch(() => {
       if (current === next) current = undefined;
     });
@@ -52,7 +42,7 @@ export function renewingContext(open: () => Promise<OpenedContext>, options: Ren
     const known = await seen;
     if (disposed) throw disposedError();
     if (known.expiresAt - now() > margin) return known.context;
-    // Expiring: the first request that sees it renews; the others wait for the same renewal.
+    // Expiring: the first request renews; the others wait for the same renewal.
     if (current === seen) current = fresh();
     const renewed = await current;
     if (disposed) throw disposedError();

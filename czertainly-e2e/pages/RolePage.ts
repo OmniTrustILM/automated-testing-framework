@@ -1,12 +1,6 @@
 /**
- * RolePage — Page Object Model for Roles (REG-CFG-07).
- *
- * Encapsulates:
- *   - the Roles list and the role detail
- *   - the Create / Edit / Delete Role dialogs
- *
- * Actions return the platform's answer; the spec asserts. Edit and Delete are used only on roles this run created. The
- * form resets when the detail refetch lands, so typing waits for that request.
+ * RolePage — the roles list, detail and the Create / Edit / Delete Role dialogs (REG-CFG-07).
+ * Edit and Delete are used only on roles this run created. The form resets when the detail refetch lands, so typing waits for that request.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { Logger } from '../utils/Logger';
@@ -20,7 +14,6 @@ import { actAndReadAnswer, actAndWaitForApi, UUID } from './ui/waitForResponse';
 
 const logger = new Logger('RolePage');
 
-/** `GET`, `PUT` and `DELETE` of one role. */
 const ROLE_PATH = new RegExp(`/api/v1/roles/${UUID}$`);
 
 export interface RoleFields {
@@ -71,20 +64,17 @@ export class RolePage {
         this.page = page;
         this.main = page.locator('main');
 
-        // List of Roles
         this.rolesList = widgetTitled(this.main, 'List of Roles');
         this.addRoleButton = this.rolesList.getByTestId('plus-button');
         this.searchInput = this.rolesList.getByRole('textbox', { name: 'Search' });
         this.rowLinks = this.rolesList.locator('tbody tr a[href*="/detail/"]');
 
-        // Role Details
         this.roleDetails = widgetTitled(this.main, 'Role Details');
         this.editRoleButton = this.roleDetails.getByTestId('pencil-button');
         this.deleteRoleButton = this.roleDetails.getByTestId('trash-button');
         this.roleNameRow = this.roleDetails.locator('tr[data-id="roleName"]');
         this.descriptionRow = this.roleDetails.locator('tr[data-id="description"]');
 
-        // Create Role dialog
         this.createRoleDialog = page.getByRole('dialog', { name: 'Create Role' });
         this.nameInput = this.createRoleDialog.getByTestId('text-input-name');
         this.descriptionInput = this.createRoleDialog.getByTestId('text-input-description');
@@ -92,7 +82,6 @@ export class RolePage {
         this.createButton = this.createRoleDialog.getByTestId('progress-button').last();
         this.cancelCreateButton = this.createRoleDialog.getByRole('button', { name: 'Cancel', exact: true });
 
-        // Edit Role dialog
         this.editRoleDialog = page.getByRole('dialog', { name: 'Edit Role' });
         this.editDialogSpinner = this.editRoleDialog.getByTestId('spinner');
         this.editNameInput = this.editRoleDialog.getByTestId('text-input-name');
@@ -101,12 +90,10 @@ export class RolePage {
         this.saveButton = this.editRoleDialog.getByTestId('progress-button').last();
         this.cancelEditButton = this.editRoleDialog.getByRole('button', { name: 'Cancel', exact: true });
 
-        // Delete Role dialog
         this.deleteRoleDialog = page.getByRole('dialog', { name: 'Delete Role' });
         this.confirmDeleteButton = this.deleteRoleDialog.getByRole('button', { name: 'Delete', exact: true });
     }
 
-    /** The link of a role in the list (exact name). */
     roleLink(name: string): Locator {
         return this.rolesList.getByRole('link', { name, exact: true });
     }
@@ -116,10 +103,7 @@ export class RolePage {
         await expect(this.rolesList).toBeVisible();
     }
 
-    /**
-     * The list as the server serves it NOW: the hash route, a reload, and only then the widget wait (a `goto` that only repeats
-     * the hash is no navigation, so waiting first would judge the old render).
-     */
+    /** A `goto` that only repeats the hash is no navigation, so the list is reloaded before the widget wait. */
     async reloadList(): Promise<void> {
         await this.page.goto('/administrator/#/roles');
         await this.page.reload();
@@ -137,7 +121,6 @@ export class RolePage {
         await expect(this.createRoleDialog).toBeVisible();
     }
 
-    /** Fills the Create Role dialog (and any required custom attribute) without submitting. */
     async fillCreateForm(fields: RoleFields): Promise<void> {
         await fillText(this.nameInput, fields.name);
         if (fields.description !== undefined) await fillText(this.descriptionInput, fields.description);
@@ -145,12 +128,11 @@ export class RolePage {
         await fillRequiredCustomAttributes(this.page, this.createRoleDialog, 'qa-reg', await customAttributesDefined(this.page, 'roles'));
     }
 
-    /** Submits the Create Role dialog; returns the answer of `POST /api/v1/roles` (status, new uuid, text), registered before the click. */
+    /** Submits the Create Role dialog; returns the create answer. */
     async submitCreateForm(): Promise<CreateAnswer> {
         return submitCreate(this.page, this.createButton, { endpoint: /\/api\/v1\/roles$/ });
     }
 
-    /** Closes the Create Role dialog with Cancel when a refused create left it open. */
     async closeCreateDialog(): Promise<void> {
         await cancelIfOpen(this.createRoleDialog, this.cancelCreateButton);
     }
@@ -164,18 +146,11 @@ export class RolePage {
         await cancelIfOpen(this.editRoleDialog, this.cancelEditButton);
     }
 
-    /**
-     * Detail → Edit → change description / e-mail → Save; returns the answer of `PUT /api/v1/roles/{uuid}`.
-     * RoleForm resets its fields from the role detail whenever the detail refetch finishes, which overwrote typed values on a
-     * live tier. So the dialog is opened with the wait for that refetch registered, the form must show every stored value (the
-     * state the reset produces), and only then the values are typed and checked before Save.
-     */
+    /** RoleForm resets its fields on every detail refetch, so the form must show every stored value before the new ones are typed. */
     async editRole(fields: { description?: string; email?: string }): Promise<ApiAnswer> {
         const refetch = await actAndWaitForApi(this.page, { method: 'GET', path: ROLE_PATH }, () => this.openEditDialog());
         const stored = (await refetch.json()) as { name?: string; description?: string | null; email?: string | null };
-        // RoleForm resets its fields in an effect that runs once the detail fetch and the custom attribute fetch are both done (its
-        // Widget shows its Spinner while either runs, `busy`): when the answer is in and the spinner is gone, the reset has happened.
-        // The form's Widget has no busy overlay, so the spinner is the signal; then the stored values are shown.
+        // The form's Widget has no busy overlay: the spinner gone means the reset has happened.
         await expect(this.editDialogSpinner, 'the role form has finished loading (detail and custom attributes)').toHaveCount(0);
         await expect(this.editNameInput, 'the form holds the stored role').toHaveValue(String(stored.name));
         await expect(this.editDescriptionInput, 'the form shows the stored description').toHaveValue(stored.description ?? '');
@@ -187,46 +162,36 @@ export class RolePage {
         return actAndReadAnswer(this.page, { method: 'PUT', path: ROLE_PATH }, () => this.saveButton.click());
     }
 
-    /** Detail → Delete → "Delete Role" → Delete; returns the answer of `DELETE /api/v1/roles/{uuid}`. */
     async deleteFromDetail(): Promise<ApiAnswer> {
         await this.deleteRoleButton.click();
         await expect(this.deleteRoleDialog).toBeVisible();
         return actAndReadAnswer(this.page, { method: 'DELETE', path: ROLE_PATH }, () => this.confirmDeleteButton.click());
     }
 
-    /** The refusal names the collision: a danger toast that names the role and says it exists. */
     async assertDuplicateRefused(name: string): Promise<void> {
         const card = await assertToast(this.page, /Failed to create role/i, { severity: 'danger' });
         await expect(card, 'the message names the role').toContainText(name);
         await expect(card, 'the message says it already exists').toContainText(/already exists/i);
     }
 
-    /** In the Edit Role dialog the name field is disabled (RoleForm `disabled={editMode}`) and shows the name. */
     async assertNameLockedInEdit(name: string): Promise<void> {
         await expect(this.editNameInput).toBeDisabled();
         await expect(this.editNameInput).toHaveValue(name);
     }
 
-    /**
-     * The detail rows show the saved values. Call it BEFORE opening a dialog: an open modal hides the page from the
-     * accessibility tree, and the widget is found by its heading's role.
-     */
+    /** Call it BEFORE opening a dialog: an open modal hides the page from the accessibility tree. */
     async assertDetailRows(expected: { name: string; description: string }): Promise<void> {
         await expect(this.roleNameRow).toContainText(expected.name);
         await expect(this.descriptionRow).toContainText(expected.description);
     }
 
-    /** The open Edit Role dialog shows the saved values. */
     async assertEditFormValues(expected: { name: string; description: string; email: string }): Promise<void> {
         await expect(this.editDescriptionInput).toHaveValue(expected.description);
         await expect(this.editEmailInput).toHaveValue(expected.email);
         await expect(this.editNameInput).toHaveValue(expected.name);
     }
 
-    /**
-     * Searched by name, the list has no row of that name. Absence needs a positive marker first: the list shows rows (every tier
-     * has system roles), so an empty, still-loading table cannot pass for "not listed". The search box is cleared afterwards.
-     */
+    /** Absence needs a positive marker first: the list shows rows (system roles), so an empty, still-loading table cannot pass. */
     async assertNotListed(name: string, options: { loadTimeout?: number } = {}): Promise<void> {
         await expect(this.rowLinks.first(), 'the list has loaded its rows').toBeVisible({ timeout: options.loadTimeout ?? 30_000 });
         await this.searchInput.fill(name);

@@ -1,12 +1,6 @@
 /**
  * docker — the docker CLI calls of the key onboarding block, behind one injectable seam.
- *
- * Provides a `DockerRunner` and a default runner over the real CLI, plus checks that a daemon answers and the SoftHSM sidecar
- * is up. Planting and removing key pairs runs a throwaway container from the sidecar's image.
- *
- * The PIN must never be on a command line (`ps` shows it to every user of the runner): every value goes through the
- * environment and argv carries only the variable names. The runner uses no shell and never throws on a non-zero exit. The
- * unit tests replace it and never start docker.
+ * The PIN must never be on a command line: every value goes through the environment and argv carries only the variable names.
  */
 import { spawn } from 'child_process';
 import { dockerBin } from '../../regression/requireTool';
@@ -18,14 +12,11 @@ export interface DockerResult {
     stderr: string;
 }
 
-/** Runs `docker <args>` with `env` added to the runner's environment. */
 export type DockerRunner = (args: string[], opts?: { env?: Record<string, string> }) => Promise<DockerResult>;
 
-/** The owner of the token files when the sidecar container declares no user (the source suite's default). */
 const SIDECAR_IMAGE_USER = '10001';
 const SOFTHSM2_CONF_VARIABLE = 'SOFTHSM2_CONF';
 
-/** The real docker CLI (see the file header). */
 export function defaultDockerRunner(processEnv: NodeJS.ProcessEnv = process.env): DockerRunner {
     return (args, opts = {}) => new Promise((resolve) => {
         const bin = dockerBin(processEnv);
@@ -43,12 +34,10 @@ export function defaultDockerRunner(processEnv: NodeJS.ProcessEnv = process.env)
     });
 }
 
-/** A docker daemon answers. */
 export async function dockerAvailable(docker: DockerRunner): Promise<boolean> {
     return (await docker(['version', '--format', '{{.Server.Version}}'])).code === 0;
 }
 
-/** The container exists and is running. */
 export async function sidecarRunning(docker: DockerRunner, container: string): Promise<boolean> {
     const r = await docker(['inspect', '-f', '{{.State.Running}}', container]);
     return r.code === 0 && r.stdout.trim() === 'true';
@@ -56,20 +45,17 @@ export async function sidecarRunning(docker: DockerRunner, container: string): P
 
 export interface SidecarFacts {
     image: string;
-    /** `uid:gid`, the form su-exec takes. */
     owner: string;
-    /** The sidecar's SOFTHSM2_CONF, when it sets one. */
     softhsmConf?: string;
 }
 
 async function inspect(docker: DockerRunner, container: string, format: string): Promise<string> {
     const r = await docker(['inspect', '-f', format, container]);
-    // The sidecar went away since the preflight saw it running: the tier's state, not the setup's error.
+    // The sidecar went away since the preflight: the tier's state, not the setup's error.
     if (r.code !== 0) throw new TierError(`docker inspect of the sidecar container answered exit ${r.code}`);
     return r.stdout.trim();
 }
 
-/** What the planting and the removal container take over from the sidecar (the source suite's three inspects). */
 export async function sidecarFacts(docker: DockerRunner, container: string): Promise<SidecarFacts> {
     const image = await inspect(docker, container, '{{.Config.Image}}');
     const user = (await inspect(docker, container, '{{.Config.User}}')) || SIDECAR_IMAGE_USER;
@@ -80,20 +66,16 @@ export async function sidecarFacts(docker: DockerRunner, container: string): Pro
     return { image, owner: user.includes(':') ? user : `${user}:${user}`, ...(conf ? { softhsmConf: conf } : {}) };
 }
 
-/** The variables the token scripts read from the sidecar: SOFTHSM2_CONF (when set) and the owner of the token files. */
 export function sidecarEnvironment(facts: SidecarFacts): Record<string, string> {
     return { ...(facts.softhsmConf ? { [SOFTHSM2_CONF_VARIABLE]: facts.softhsmConf } : {}), TOKEN_OWNER: facts.owner };
 }
 
-/** `-e NAME` per variable: docker copies each value from its own environment, so no value is on the command line. */
+/** Docker copies each value from its own environment, so no value is on the command line. */
 export function passThrough(environment: Record<string, string>): string[] {
     return Object.keys(environment).flatMap((name) => ['-e', name]);
 }
 
-/**
- * The `docker run` argv of a token script: as root in the sidecar's image, with the sidecar's volumes, the script
- * mounted read-only and run by `sh`; values only as `-e NAME`.
- */
+/** Runs as root in the sidecar's image, with the sidecar's volumes and the script mounted read-only. */
 export function scriptRunArgs(container: string, facts: SidecarFacts, scriptPath: string, mountedAs: string, environment: Record<string, string>): string[] {
     return [
         'run', '--rm', '--user', '0', '--volumes-from', container,

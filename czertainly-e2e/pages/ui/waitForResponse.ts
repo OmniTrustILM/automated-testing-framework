@@ -1,22 +1,14 @@
 /**
- * waitForResponse — act, then wait for the API answer.
- *
- * The one place that runs an action and returns the response it caused. The wait is registered before the action, so a
- * fast answer is never missed. Provides `UUID`, the shared pattern for an id in a path, and `answerFrom`, which reads
- * a response into the one `ApiAnswer` shape.
+ * waitForResponse — runs an action and returns the API response it caused; the wait is registered before the action.
  */
 import type { Page, Response } from '@playwright/test';
 import { ApiAnswer, answerOf } from '../../utils/regression/apiReads';
 
-/** The path segment of an object id in an API path (a uuid). */
 export const UUID = '[0-9a-f-]{36}';
 
 export interface ApiCall {
-    /** The HTTP method, or a predicate over it (`(m) => m !== 'GET'`). */
     method: string | ((method: string) => boolean);
-    /** A string matches the end of the URL path, a RegExp tests the path, a function receives the path. */
     path: string | RegExp | ((pathname: string) => boolean);
-    /** Overrides the default timeout of the wait. */
     timeout?: number;
 }
 
@@ -28,12 +20,10 @@ function matches(call: ApiCall, response: Response): boolean {
     return call.path instanceof RegExp ? call.path.test(pathname) : call.path(pathname);
 }
 
-/** Starts waiting for the answer to `call` (register it before the action that causes it); await the result afterwards. */
 export function watchApiCall(page: Page, call: ApiCall): Promise<Response> {
     return page.waitForResponse((r) => matches(call, r), call.timeout === undefined ? undefined : { timeout: call.timeout });
 }
 
-/** Runs `act` and returns the API answer it caused. The wait is registered before `act` starts. */
 export async function actAndWaitForApi(page: Page, call: ApiCall, act: () => Promise<unknown>): Promise<Response> {
     const answer = watchApiCall(page, call);
     try {
@@ -45,10 +35,7 @@ export async function actAndWaitForApi(page: Page, call: ApiCall, act: () => Pro
     return answer;
 }
 
-/**
- * The answer of a response in the shared `ApiAnswer` shape. A body the browser no longer holds (an empty 204, a page that
- * moved on) reads as empty text: the status is the proof, and a failed body read must not hide it.
- */
+/** A body the browser no longer holds (an empty 204, a page that moved on) reads as empty text: the status is the proof. */
 export async function answerFrom(response: Response, startedAt: number): Promise<ApiAnswer> {
     let text = '';
     try {
@@ -59,16 +46,13 @@ export async function answerFrom(response: Response, startedAt: number): Promise
     return answerOf({ status: () => response.status(), headers: () => response.headers(), text: async () => text }, startedAt);
 }
 
-/** Runs `act` and returns the API answer it caused in the `ApiAnswer` shape, timed from just before `act`. */
 export async function actAndReadAnswer(page: Page, call: ApiCall, act: () => Promise<unknown>): Promise<ApiAnswer> {
     const startedAt = Date.now();
     return answerFrom(await actAndWaitForApi(page, call, act), startedAt);
 }
 
-/** The answer of a lifecycle request, with the uuid of the successor certificate when the answer names one. */
 export type AnswerWithUuid = ApiAnswer & { uuid?: string };
 
-/** `actAndReadAnswer`, plus the uuid its JSON body names. */
 export async function actAndReadAnswerWithUuid(page: Page, call: ApiCall, act: () => Promise<unknown>): Promise<AnswerWithUuid> {
     const answer = await actAndReadAnswer(page, call, act);
     const uuid = (answer.json as { uuid?: unknown } | undefined)?.uuid;

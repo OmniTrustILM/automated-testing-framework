@@ -1,12 +1,8 @@
 /**
- * pki — the token, the token profile and, per set, the key pair, the RA profile and the TSA certificate with its trusted chain
- * (timestamping-setup.sh steps 6, 7 and 12-16).
- *
- * Each function sends the script's requests under run-prefixed names and records the object right after its create answered.
- * ONE exception on the local stack: the root of the TSA chain is marked trusted when it is not yet, because a signing profile
- * refuses an untrusted chain; this is done only when the root is self-signed and its `trustedCa` is exactly false.
- * Chain certificates that core fetched during the run are recorded as DERIVED lines with a server-clock bound; one whose
- * history cannot be read is not recorded and stays.
+ * pki — the token, the token profile and, per set, the key pair, the RA profile and the TSA certificate with its trusted chain.
+ * Objects get run-prefixed names and are recorded right after their create answered. One exception, on the local stack only:
+ * the self-signed root of the TSA chain is marked trusted when its `trustedCa`
+ * is exactly false, because a signing profile refuses an untrusted chain.
  */
 import { createdAfterMarker, OwnRef, recordDerived } from '../../regression/ledger/ledger';
 import { isOwnObject } from '../../regression/ledger/ownership';
@@ -19,18 +15,16 @@ import { TierError } from './transport';
 
 type Json = Record<string, any>;
 
-// ------------------------------------------------------------------ step 6: token
 
 /**
- * `software_token_attributes`: the provider serves two token forms. An empty provider answers the create attributes
- * at the top level; one that already holds tokens answers a `data_options` selector whose `group_loadToken` callback
- * (option=new) yields them. Both are handled, as the script does.
+ * The provider serves two token forms: the create attributes at the top level when empty, else a `data_options` selector whose
+ * `group_loadToken` callback (option=new) yields them.
  */
 async function softwareTokenAttributes(ctx: SetupContext, connector: CryptoConnectorRef, keystoreName: string, code: string): Promise<RequestAttribute[]> {
     const v1 = ctx.cfg.cryptoProvider === 'software-v1';
     const formPath = v1 ? `/v1/connectors/${connector.uuid}/attributes/cryptographyProvider/SOFT` : `/v1/tokens/${connector.uuid}/attributes`;
     const callbackPath = v1 ? `/v1/connectors/${connector.uuid}/cryptographyProvider/SOFT/callback` : `/v2/connectors/${connector.uuid}/callback`;
-    // The v1 callback names its connector kind (a name-keyed path): only the local-stack transport may send it (preflight.offlineBlocker).
+    // The v1 callback names its connector kind: only the local-stack transport may send it.
     const callbackAdmin = v1 ? ctx.localAdmin : ctx.admin;
     if (!callbackAdmin) throw new TierError('the v1 software provider\'s token form is a name-keyed callback that a proven local stack alone may call');
     const defs = await ctx.admin.get<AttributeDef[]>(formPath);
@@ -45,14 +39,12 @@ async function softwareTokenAttributes(ctx: SetupContext, connector: CryptoConne
     }
     return [
         requestAttribute(createDefs, 'data_createTokenAction', [{ reference: 'new', data: 'new' }]),
-        // The connector names a keystore with letters, digits and underscores only.
         requestAttribute(createDefs, 'data_newTokenName', [{ data: keystoreName }]),
         requestAttribute(createDefs, 'data_tokenCode', [{ data: { secret: code } }]),
         ...(options ? [options] : []),
     ];
 }
 
-/** `setup_token` (create branch): a token on the cryptography connector, with a generated token code. */
 export async function createToken(ctx: SetupContext, connector: CryptoConnectorRef, name: string): Promise<OwnRef> {
     const attributes = await softwareTokenAttributes(ctx, connector, name.replace(/-/g, '_'), generatedSecret());
     const kind = ctx.cfg.cryptoProvider === 'software-v1' ? { kind: 'SOFT' } : {};
@@ -60,9 +52,7 @@ export async function createToken(ctx: SetupContext, connector: CryptoConnectorR
     return recordOwn('tokens', { uuid: uuidOf(created.body, `token '${name}'`), name }, `timestamping token on ${connector.name}`, undefined, created.serverAt);
 }
 
-// ------------------------------------------------------------------ step 7: token profile
 
-/** `setup_token_profile` (create branch): sign / verify / encrypt / decrypt, then enabled. */
 export async function createTokenProfile(ctx: SetupContext, token: OwnRef, name: string): Promise<OwnRef> {
     const created = await ctx.admin.request('POST', `/v1/tokens/${token.uuid}/tokenProfiles`, {
         name, description: '', attributes: [], customAttributes: [], usage: ['sign', 'verify', 'encrypt', 'decrypt'],
@@ -72,14 +62,12 @@ export async function createTokenProfile(ctx: SetupContext, token: OwnRef, name:
     return ref;
 }
 
-// ------------------------------------------------------------------ step 12: key pair
 
 export interface KeyPair {
     key: OwnRef;
     privateItemUuid: string;
 }
 
-/** `key_spec_definitions`: the key-spec group, resolved by the connector once the algorithm is chosen. */
 async function keySpecDefinitions(ctx: SetupContext, tokenProfile: OwnRef, defs: AttributeDef[], keyAlgorithm: string, algorithmAttr: RequestAttribute): Promise<AttributeDef[]> {
     const group = providerNames(ctx.cfg.cryptoProvider).keySpecGroup;
     const uuid = groupUuid(defs, group);
@@ -89,7 +77,6 @@ async function keySpecDefinitions(ctx: SetupContext, tokenProfile: OwnRef, defs:
     return (await ctx.admin.request<AttributeDef[]>('POST', `/v1/keys/${tokenProfile.uuid}/callback`, body)).body ?? [];
 }
 
-/** `setup_key_pair` (create branch): the key of the family's algorithm with the script's default key spec, enabled. */
 export async function createKeyPair(ctx: SetupContext, token: OwnRef, tokenProfile: OwnRef, keyAlgorithm: 'RSA' | 'ML-DSA', name: string): Promise<KeyPair> {
     const names = providerNames(ctx.cfg.cryptoProvider as CryptoProvider);
     const base = `/v1/tokens/${token.uuid}/tokenProfiles/${tokenProfile.uuid}/keys/keyPair`;
@@ -100,15 +87,14 @@ export async function createKeyPair(ctx: SetupContext, token: OwnRef, tokenProfi
     const spec = keySpecAttributes(specDefs, requestedKeySpec(names, keyAlgorithm), keyAlgorithm);
     const created = await ctx.admin.request<Json>('POST', base, { groupUuids: [], name, description: '', attributes: [alias, algorithm, ...spec], customAttributes: [] });
     const key = recordOwn('keys', { uuid: uuidOf(created.body, `${keyAlgorithm} key pair '${name}'`), name }, `timestamping ${keyAlgorithm} key`, { token: token.uuid, tokenProfile: tokenProfile.uuid }, created.serverAt);
-    // The items are made with the key; recorded like keyApi.recordKeyItems does, so the item routes are typed and the
-    // teardown treats them as gone with their key.
+    // Recorded like keyApi.recordKeyItems does, so the teardown treats the item routes as gone with their key.
     const recordItems = (detail: Json | undefined): void => {
         for (const item of (detail?.items ?? []) as Json[]) {
             if (item?.uuid) recordOwn('keyItems', { uuid: String(item.uuid), name }, `${String(item.type)} item of key ${key.uuid}`, { key: key.uuid });
         }
     };
     recordItems(created.body);
-    // The detail before the enable: its items are recorded even when the enable is refused.
+    // Before the enable, so the items are recorded even when the enable is refused.
     const detail = await ctx.admin.get<Json>(`/v1/keys/${key.uuid}`);
     if (!((created.body?.items ?? []) as Json[]).length) recordItems(detail);
     await ctx.admin.request('PATCH', `/v1/keys/${key.uuid}/enable`);
@@ -117,11 +103,9 @@ export async function createKeyPair(ctx: SetupContext, token: OwnRef, tokenProfi
     return { key, privateItemUuid: String(privateItem.uuid) };
 }
 
-// ------------------------------------------------------------------ step 13: RA profile
 
 const ejbcaObject = (option: { id: unknown; name: string }) => [{ data: { id: option.id, name: option.name }, reference: option.name }];
 
-/** `setup_ra_profile` (create branch) with the profile ids the preflight resolved; enabled. */
 export async function createRaProfile(ctx: SetupContext, authority: NamedUuid, plan: RaPlan, qualified: boolean, name: string): Promise<OwnRef> {
     const a = plan.attrUuids;
     const certificateProfile = qualified ? plan.certificateProfile.qualified : plan.certificateProfile.nonQualified;
@@ -134,7 +118,7 @@ export async function createRaProfile(ctx: SetupContext, authority: NamedUuid, p
             { name: 'certificationAuthority', content: ejbcaObject(plan.ca), contentType: 'object', uuid: a.certificationAuthority, version: 'v2' },
             { name: 'sendNotifications', content: [{ data: false }], contentType: 'boolean', uuid: a.sendNotifications, version: 'v2' },
             { name: 'keyRecoverable', content: [{ data: false }], contentType: 'boolean', uuid: a.keyRecoverable, version: 'v2' },
-            // EJBCA_USERNAME_GEN_METHOD=CN: the end entity is named after the certificate's CN (run-prefixed, unique).
+            // The end entity is named after the certificate's CN (run-prefixed, unique).
             { name: 'usernameGenMethod', content: [{ data: 'CN' }], contentType: 'string', uuid: a.usernameGenMethod, version: 'v2' },
         ],
         customAttributes: [],
@@ -144,7 +128,6 @@ export async function createRaProfile(ctx: SetupContext, authority: NamedUuid, p
     return ref;
 }
 
-// ------------------------------------------------------------------ steps 14–16: certificate
 
 export interface IssueInput {
     commonName: string;
@@ -155,7 +138,6 @@ export interface IssueInput {
     keyPair: KeyPair;
 }
 
-/** `issue_certificate`: a CSR made by the platform from the key, CN only, with the configured scheme and digest. */
 export async function issueCertificate(ctx: SetupContext, input: IssueInput): Promise<OwnRef> {
     const csrDefs = await ctx.admin.get<AttributeDef[]>('/v1/certificates/csr/attributes');
     const cnUuid = attrUuid(csrDefs, 'commonName', 'string');
@@ -177,7 +159,6 @@ export async function issueCertificate(ctx: SetupContext, input: IssueInput): Pr
         { raProfile: input.raProfile.uuid, authority: input.authority.uuid }, created.serverAt);
 }
 
-/** `poll_certificate`: issued, or the failure message of the certificate's history, or a timeout. */
 export async function waitIssued(ctx: SetupContext, certificate: OwnRef): Promise<void> {
     const last = await ctx.admin.poll(
         () => ctx.admin.get<Json>(`/v1/certificates/${certificate.uuid}`),
@@ -190,10 +171,9 @@ export async function waitIssued(ctx: SetupContext, certificate: OwnRef): Promis
         const raw = (history ?? []).find((h) => h.event === 'Issue Certificate' && h.status === 'FAILED')?.message;
         let text = raw ?? '(no error message available in the certificate history)';
         try {
-            // The message is a JSON-encoded string: {"message":"<text>"}.
             text = raw ? String(JSON.parse(raw).message ?? raw) : text;
         } catch {
-            // not JSON: the message as it is
+            // not JSON
         }
         // The CA's message is the tier's text: the log has it, the reason only says where to look.
         ctx.log.warn(`issuance of ${certificate.name} failed: ${text}`);
@@ -203,11 +183,10 @@ export async function waitIssued(ctx: SetupContext, certificate: OwnRef): Promis
 }
 
 /**
- * `trust_certificate_chain`: link the issuer now, walk to the root, mark the root trusted when it is not yet (the one
- * change to a pre-existing object, local stack only, logged), and wait until the TSA certificate validates.
+ * Links the issuer, walks to the root, marks the root trusted when it is not yet (the one change to a pre-existing object, local stack
+ * only, logged) and waits until the TSA certificate validates.
  */
 export async function trustChain(ctx: SetupContext, certificate: OwnRef): Promise<void> {
-    // Building the chain links the issuer now, rather than whenever Core's queued validation runs.
     await ctx.admin.get(`/v1/certificates/${certificate.uuid}/chain`);
     const leaf = await ctx.admin.poll(
         () => ctx.admin.get<Json>(`/v1/certificates/${certificate.uuid}`),
@@ -233,19 +212,16 @@ export async function trustChain(ctx: SetupContext, certificate: OwnRef): Promis
     if (!complete) throw new TierError(`the chain of ${certificate.name} has more than 16 issuers; refusing to walk further`);
     const root = chain[chain.length - 1];
     await recordAddedIssuers(ctx, chain);
-    // The top of the walked chain is a root only when it is self-signed; else Core lacks its issuer.
     if (root.subjectDn === undefined || root.subjectDn !== root.issuerDn) {
         ctx.log.warn(`the top of the chain of ${certificate.name} (${current}) is not self-signed: issuerDn '${root.issuerDn ?? ''}'`);
         throw new TierError('the top of the TSA certificate\'s chain is not self-signed: Core holds no certificate of its issuer');
     }
     if (root.trustedCa === false) {
-        // Design rule 1: the ONE change to a pre-existing object, on a proven local stack only (`localAdmin`, never the strict guard).
-        // A shared tier needs the root CA trusted beforehand: the block is unavailable with this reason otherwise.
+        // The one change to a pre-existing object, on a proven local stack only; a shared tier needs the root CA trusted beforehand.
         if (!ctx.localAdmin) throw new TierError('the issuing CA is not trusted, and the setup marks it trusted on a proven local stack only (a shared tier needs the CA trusted beforehand)');
         ctx.log.warn(`marking the issuing root CA ${current} trusted (pre-existing object, local stack only: timestamping-setup.sh step 16)`);
         await ctx.localAdmin.request('PATCH', `/v1/certificates/${current}`, { trustedCa: true });
     } else if (root.trustedCa !== true) {
-        // No trustedCa flag: Core does not hold it as a CA, and the PATCH would be refused.
         throw new TierError('the root of the TSA certificate\'s chain carries no trustedCa flag (not a CA certificate in Core)');
     }
     const validation = await ctx.admin.poll(
@@ -258,7 +234,6 @@ export async function trustChain(ctx: SetupContext, certificate: OwnRef): Promis
     }
 }
 
-/** The earliest event of a certificate's history (the detail has no creation time), or undefined. */
 async function creationTime(ctx: SetupContext, uuid: string): Promise<number | undefined> {
     const events = await ctx.admin.get<Array<{ created?: string }>>(`/v1/certificates/${uuid}/history`);
     const times = (events ?? []).map((e) => Date.parse(e.created ?? '')).filter((t) => !Number.isNaN(t));
@@ -266,8 +241,8 @@ async function creationTime(ctx: SetupContext, uuid: string): Promise<number | u
 }
 
 /**
- * The issuer certificates Core added to the inventory while building this run's chains: created (history, server
- * clock) at or after the provisioning start. Recorded as derived lines; one already in the ledger is skipped.
+ * The issuer certificates Core added while building this run's chains
+ * (created at or after the provisioning start), recorded as derived lines.
  */
 async function recordAddedIssuers(ctx: SetupContext, chain: Json[]): Promise<void> {
     const start = ctx.admin.provisionedAt();
