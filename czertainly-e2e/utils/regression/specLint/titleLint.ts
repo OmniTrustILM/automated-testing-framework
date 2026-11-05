@@ -1,42 +1,29 @@
 /**
- * titleLint — the title and details rules over a spec source (tests/unit/specGuards.spec.ts runs them over tests/regression
- * and tests/api): a test title says the expected behaviour in words; the ledger id and the table row live in
- * `testMeta({ id, row })`, so `--grep @<id>` and the census still find the test.
- *
- * Test and describe calls are found with the TypeScript compiler API (loaded lazily), like the other spec checks.
+ * titleLint — the title and details rules over a spec source: a test title says the expected behaviour in words; the ledger id
+ * and the table row live in `testMeta({ id, row })`.
  */
 import type * as TS from 'typescript';
 import { calleeKind as parsedKind, DECLARATION_FORMS, hasFunctionArg, titleOf, typescript } from './parseSpec';
 
-/** `test` (any declaration form) or `describe` (any modifier chain) of a call expression. */
 function calleeKind(ts: typeof TS, call: TS.CallExpression): 'test' | 'describe' | undefined {
     const k = parsedKind(ts, call);
     return k === undefined ? undefined : 'describe' in k ? 'describe' : 'test';
 }
 
-/** `test.fixme / skip / fail / only('<title>', details?)`: a declaration without a body (a string first argument). */
 function isTitleOnlyDeclaration(ts: typeof TS, call: TS.CallExpression): boolean {
     const c = call.expression;
     return ts.isPropertyAccessExpression(c) && ts.isIdentifier(c.expression) && c.expression.text === 'test' && DECLARATION_FORMS.has(c.name.text)
         && !!call.arguments[0] && (ts.isStringLiteralLike(call.arguments[0]) || ts.isTemplateExpression(call.arguments[0]));
 }
 
-/** The longest test title (the listed title; for a template title the lint measures its literal text). */
 export const TITLE_MAX = 100;
 const ID_PREFIX = /^(?:REG|API)-[A-Z]+-\d{2}/;
-/** A ledger id anywhere in a describe title (`REG-PROT-01 ACME issue and revoke`). */
 const ID_ANYWHERE = /\b(?:REG|API)-[A-Z]+-\d{2}/;
-/** A first word that may keep its capital: an acronym or code token (API, ACME, RA, ML-DSA, PKCS#7, NOT_AFTER, PUTs). */
 const ACRONYM = /^[A-Z][A-Z0-9_#.-]*[A-Z0-9]s?(?![\w])/;
-/** A term with an inner capital or digit (OpenAPI, IPv6, GetCACert, Base64): a name, not a sentence start. */
 const INNER_CAPITAL = /^[A-Z][a-z]*[A-Z0-9][\w#.-]*(?![\w])/;
-/** Proper nouns a title may start with (product and scheme names). "A" is never one: the article is lower-case. */
 export const TITLE_PROPER_NOUNS = new Set(['Basic', 'Kubernetes', 'Keycloak']);
 
-/**
- * The rules of one test title, as written or as listed (`literal` = the text a length and clause check can see; for a
- * listed title, the title itself).
- */
+/** The rules of one test title, as written or as listed (`literal` = the text a length and clause check can see). */
 export function testTitleProblems(title: string, literal = title): string[] {
     const out: string[] = [];
     if (ID_PREFIX.test(title)) out.push('id prefix in the title');
@@ -47,19 +34,15 @@ export function testTitleProblems(title: string, literal = title): string[] {
     return out;
 }
 
-/** The rules of one describe title: no tag (it goes in the details) and no ledger id. */
 export function describeTitleProblems(title: string): string[] {
     return [...(title.includes('@') ? ['describe title carries a tag'] : []), ...(ID_ANYWHERE.test(title) ? ['describe title carries an id'] : [])];
 }
 
-/** The static text of a title as testBlocks returns it: a template's `${…}` parts count as nothing. */
 const literalText = (title: string): string => title.replace(/\$\{[^}]*\}/g, '');
 
 /**
- * Title and details problems of one spec source: describe titles carry no `@` (the tag goes in the details) and no id, test
- * titles carry no id prefix, are at most TITLE_MAX characters, hold one clause (no "; " join) and start lower-case
- * unless the first word is an acronym or a proper noun; titles are unique inside the file; every test's details come
- * from `testMeta()` (directly, a `…Meta(…)` helper of the file that calls testMeta(), or a constant initialised by one).
+ * Title and details problems of one spec source: no `@` or id in describe titles, test titles one lower-case clause of at most TITLE_MAX
+ * characters, unique per file, details from `testMeta()`.
  */
 export function titleProblems(src: string, fileName = 'spec.ts'): string[] {
     const ts = typescript();
@@ -75,7 +58,6 @@ export function titleProblems(src: string, fileName = 'spec.ts'): string[] {
         v(n);
         return found;
     };
-    // Local declarations a details argument may name: `const details = testMeta(…)`, `const rowMeta = (…) => testMeta(…)`.
     const metaNames = new Set<string>();
     const collect = (n: TS.Node): void => {
         if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer && callsMeta(n.initializer)) metaNames.add(n.name.text);
@@ -114,10 +96,7 @@ export function titleProblems(src: string, fileName = 'spec.ts'): string[] {
     return out;
 }
 
-/**
- * The literal `row` of the first `testMeta({ … })` in a test call's source (the `body` of a parsed test block), else
- * undefined: the row a structure check names a test by, now that the title no longer carries it.
- */
+/** The literal `row` of the first `testMeta({ … })` in a test call's source, else undefined. */
 export function metaRowOf(body: string): string | undefined {
     const ts = typescript();
     const sf = ts.createSourceFile('block.ts', body, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
@@ -136,17 +115,12 @@ export function metaRowOf(body: string): string | undefined {
     return row;
 }
 
-/** `id[row]` of a parsed test block (its testMeta() id and literal row), the id alone without a row. */
 export const testKey = (b: { id?: string; body: string }): string | undefined => {
     const row = metaRowOf(b.body);
     return b.id === undefined ? undefined : row === undefined ? b.id : `${b.id}[${row}]`;
 };
 
-/**
- * Seed codes and placeholders a listed title must not carry: the code stays in `testMeta({ row, rule })`, the title says it
- * in words. `<P>` / `<…>` (a prefix or value placeholder), `T(C03)` / `{C03, …}` (a seed function or set), a bare
- * one-letter row tag `[a]`, and a seed certificate code `C03`.
- */
+/** Seed codes and placeholders a listed title must not carry (`<P>`, `T(C03)`, `[a]`, `C03`): the code stays in `testMeta`. */
 export const SEED_CODE_PATTERNS: ReadonlyArray<{ re: RegExp; what: string }> = [
     { re: /<(?:[A-Z]{1,3}|…|\.\.\.)>/, what: 'a placeholder (<P>, <…>)' },
     { re: /T\(C\d/, what: 'a seed function code (T(C…))' },
@@ -155,12 +129,10 @@ export const SEED_CODE_PATTERNS: ReadonlyArray<{ re: RegExp; what: string }> = [
     { re: /\bC\d{2}\b/, what: 'a seed code (C01 … C24)' },
 ];
 
-/** The seed-code and placeholder rules of one listed title. */
 export function seedCodeProblems(title: string): string[] {
     return SEED_CODE_PATTERNS.filter((p) => p.re.test(title)).map((p) => `${p.what} in the title`);
 }
 
-/** The parts of a Playwright `--list --reporter=json` report the runtime check reads. */
 export interface ListedSuite {
     title: string;
     file?: string;
@@ -169,9 +141,8 @@ export interface ListedSuite {
 }
 
 /**
- * The title rules over the LISTED titles of a `--list --reporter=json` report: what the static lint cannot read
- * (template values, a title from a variable or a table, an alias of `test`). Describe titles (the suites below the
- * file level) and test titles; a test title is unique per file and carries no seed code or placeholder.
+ * The title rules over the LISTED titles of a `--list --reporter=json`
+ * report: what the static lint cannot read (template values, variables).
  */
 export function listedTitleProblems(root: { suites: ListedSuite[] }): string[] {
     const out: string[] = [];

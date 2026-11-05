@@ -1,14 +1,6 @@
 /**
- * snapshot — reads a tier into a `TierSnapshot` and stores it.
- *
- * `snapshotTier` reads every resource of `SNAPSHOT_RESOURCES`: the total, the foreign objects with their marks, the windows of
- * a large collection, the platform event associations and the system jobs. `unreadableRequired` names the required resources it
- * could not read. `writeSnapshot` / `readSnapshot` / `deleteSnapshot` / `purgeOldSnapshots` carry the before snapshot from the
- * `snapshot` project to the run-end teardown, two processes that share only the state directory.
- *
- * Reading is the only I/O of the proof, so it is kept apart from the pure comparison. Reads are GET / POST through a context
- * with `fetch` only. A read that fails is recorded on the resource (`error`), never thrown, so the comparison can say "not
- * compared" or "proof incomplete". Messages carry types and uuids only.
+ * snapshot — reads a tier into a `TierSnapshot` and stores it between the `snapshot` project and the run-end teardown.
+ * A failed read is recorded on the resource (`error`), never thrown; messages carry types and uuids only.
  */
 import { APIRequestContext } from '@playwright/test';
 import * as fs from 'fs';
@@ -26,7 +18,6 @@ import type { JsonObject } from '../json';
 const logger = new Logger('NonInterference');
 
 
-/** What the reads need of an API context: `fetch` only (the post-delete snapshot reads through a re-authenticating wrapper). */
 export type SnapshotReader = Pick<APIRequestContext, 'fetch'>;
 
 export async function call(api: SnapshotReader, method: 'GET' | 'POST', url: string, data?: unknown): Promise<{ status: number; body: any }> {
@@ -55,13 +46,9 @@ async function searchPage(api: SnapshotReader, def: ResourceDef, pageNumber: num
 interface ReadRows {
     items: JsonObject[];
     total: number;
-    /** Windowed reads only: each row with its position in the newest-first list (the straddle test of keys). */
     positioned?: PositionedRow[];
 }
 
-// ------------------------------------------------------------------ the readers: one per way a collection is read
-
-/** Total, the newest NEWEST_ROWS_SAMPLED rows (head) and the oldest OLDEST_ROWS_CHECKED rows (tail) of a newest-first search. */
 async function readWindows(api: SnapshotReader, def: ResourceDef): Promise<ReadRows> {
     const { total } = await searchPage(api, def, 1, 1);
     const start = Math.max(0, total - OLDEST_ROWS_CHECKED);
@@ -110,7 +97,6 @@ async function readList(api: SnapshotReader, def: ResourceDef): Promise<ReadRows
     return { items: list ?? [], total: (list ?? []).length };
 }
 
-/** How each kind of resource is read (`ResourceDef.read`). */
 const READERS: Record<ResourceDef['read'], (api: SnapshotReader, def: ResourceDef) => Promise<ReadRows>> = {
     list: readList,
     paged: readAllPaged,
@@ -118,11 +104,7 @@ const READERS: Record<ResourceDef['read'], (api: SnapshotReader, def: ResourceDe
     search: readWindows,
 };
 
-// ------------------------------------------------------------------ one resource
-
-/**
- * The foreign objects among the rows (the default: a row whose name is not run-named; a resource may bring its own, `ResourceDef.foreign`).
- */
+/** The foreign objects among the rows (default: a row whose name is not run-named; `ResourceDef.foreign` overrides). */
 function foreignOf(def: ResourceDef, rows: JsonObject[]): Record<string, ItemMark> {
     if (def.foreign) return def.foreign(def, rows);
     const uuidOf = def.uuid ?? ((i: JsonObject) => i.uuid);
@@ -134,7 +116,6 @@ function foreignOf(def: ResourceDef, rows: JsonObject[]): Record<string, ItemMar
     return out;
 }
 
-/** `GET` of one object's detail: its body, or undefined when it is gone (compareSnapshots reports that). */
 async function detailOf(api: SnapshotReader, def: ResourceDef, uuid: string): Promise<JsonObject | undefined> {
     const r = await call(api, 'GET', def.detail!(uuid));
     if (r.status === 404) return undefined;
@@ -143,8 +124,8 @@ async function detailOf(api: SnapshotReader, def: ResourceDef, uuid: string): Pr
 }
 
 /**
- * An object with a row on a window cut may have further parts outside the windows (a key with an item on the cut): its mark
- * comes from the detail, or the object is dropped when the detail shows it is the run's own.
+ * An object with a row on a window cut may have parts outside the windows: its mark comes from the detail, or it is dropped when the detail
+ * shows it is the run's own.
  */
 async function rereadWindowCuts(api: SnapshotReader, def: ResourceDef, read: ReadRows, foreign: Record<string, ItemMark>, notes: string[]): Promise<void> {
     const cuts = def.windowCuts!;
@@ -160,7 +141,6 @@ async function rereadWindowCuts(api: SnapshotReader, def: ResourceDef, read: Rea
     }
 }
 
-/** A stored foreign object that left the windows is read by its detail, so a deletion is never mistaken for drift. */
 async function recheckStored(api: SnapshotReader, def: ResourceDef, recheck: ResourceSnapshot, foreign: Record<string, ItemMark>): Promise<void> {
     for (const [uuid, mark] of Object.entries(recheck.foreign)) {
         if (foreign[uuid]) continue;
@@ -170,7 +150,6 @@ async function recheckStored(api: SnapshotReader, def: ResourceDef, recheck: Res
             foreign[uuid] = def.detailMark(body);
             continue;
         }
-        // The detail's own name (and description) is compared too; a detail without one keeps the stored value.
         const liveName = def.name(body);
         foreign[uuid] = {
             name: typeof liveName === 'string' && liveName !== '' ? liveName : mark.name,
@@ -180,7 +159,6 @@ async function recheckStored(api: SnapshotReader, def: ResourceDef, recheck: Res
     }
 }
 
-/** The uuids (lower case) of EVERY row of the newest sample of a large collection, own or foreign. */
 function newestUuidsOf(def: ResourceDef, read: ReadRows): string[] | undefined {
     const uuidOf = def.uuid ?? ((i: JsonObject) => i.uuid);
     return def.large && read.positioned
@@ -204,9 +182,7 @@ async function snapshotResource(api: SnapshotReader, def: ResourceDef, recheck?:
 }
 
 export interface SnapshotOptions {
-    /** Only these resource types (the guard proof reads roles only). */
     only?: string[];
-    /** The before snapshot: stored uuids that left a large collection's windows are re-read by detail. */
     recheck?: TierSnapshot;
     runId?: string;
     env?: NodeJS.ProcessEnv;
@@ -242,12 +218,9 @@ export async function snapshotTier(api: SnapshotReader, opts: SnapshotOptions = 
     return snap;
 }
 
-/** The required resources a snapshot could not read. */
 export function unreadableRequired(snap: TierSnapshot): string[] {
     return REQUIRED_RESOURCES.filter((t) => !snap.resources[t] || snap.resources[t].error);
 }
-
-// ------------------------------------------------------------------ persistence (the before snapshot crosses processes)
 
 export function writeSnapshot(snap: TierSnapshot, file: string): void {
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -264,17 +237,13 @@ export function readSnapshot(file: string): TierSnapshot | undefined {
     }
 }
 
-/**
- * Removes one snapshot file (missing is fine): the setup drops a stale before-snapshot of the same run id (specs
- * may not write or remove files themselves, the lint's fs-write rule).
- */
+/** Removes one snapshot file (missing is fine); specs may not write files themselves (lint fs-write rule). */
 export function deleteSnapshot(file: string): void {
     fs.rmSync(file, { force: true });
 }
 
 const SNAPSHOT_MAX_AGE_DAYS = 14;
 
-/** Deletes `*.snapshot-*.json` files in the state directory older than `maxAgeDays` (they hold foreign names). */
 export function purgeOldSnapshots(dir: string, now: number = Date.now(), maxAgeDays: number = SNAPSHOT_MAX_AGE_DAYS): string[] {
     if (!fs.existsSync(dir)) return [];
     const limit = now - maxAgeDays * 24 * 3600 * 1000;

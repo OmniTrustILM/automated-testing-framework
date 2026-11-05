@@ -1,47 +1,33 @@
 /**
- * specLint/bindings — what the deny-by-default lint knows about the names of one source file.
- *
- * `Bindings` resolves the names of a single-file program once, before any rule runs: the guarded contexts and their aliases,
- * the token fixtures, the `request` / `page` fixtures, the fs and `process` bindings, and the predicates the rules ask
- * (isGuarded, isFsBinding, ...). Names are resolved by symbol, so a name guarded in one function is not trusted in another.
+ * specLint/bindings — what the deny-by-default lint knows about the names of one source file (guarded contexts, token / request / page
+ * fixtures, fs and `process` bindings), resolved by symbol.
  */
 import type * as TS from 'typescript';
 import * as path from 'path';
 import { isAllowedRawPostUrl } from '../guard/rawPost';
 
-/** What every rule needs to know about the file under lint. */
 export interface LintContext {
     ts: typeof TS;
     sf: TS.SourceFile;
-    /** The path relative to the czertainly-e2e folder (it resolves `../...Utils` imports). */
     fileName: string;
-    /** The file is a spec: the spec-only rules apply. */
     isSpec: boolean;
 }
 
-/** Calls that make a guarded context. */
 export const GUARD_FACTORIES = new Set(['guardApi', 'getGuardedApiContext', 'assertGuarded', 'guardApiWithSeams']);
 const TEST_CALLS = new Set(['only', 'skip', 'fixme', 'fail', 'beforeAll', 'afterAll', 'beforeEach', 'afterEach']);
 const COLLECTION_CTORS = new Set(['Map', 'Set', 'WeakMap', 'WeakSet', 'URLSearchParams', 'Headers', 'FormData']);
 const SAMPLE_UUID = '00000000-0000-4000-8000-000000000000';
 const FS_MODULES = new Set(['fs', 'fs/promises']);
-/** Globals `process` is reachable through. */
 const GLOBAL_OBJECTS = new Set(['globalThis', 'global', 'self']);
-/**
- * The guarded context fixtures (`anonymousApi` is the same guard around a credential-less context; `localApi` the local-stack guard of a
- * `@local` row; `workerApi` the guarded context a worker-scoped fixture takes).
- */
+/** The guarded context fixtures (`anonymousApi`: credential-less; `localApi`: `@local` rows; `workerApi`: worker-scoped). */
 const GUARDED_FIXTURES = new Set(['api', 'anonymousApi', 'localApi', 'workerApi']);
-/** The page fixtures (`signedIn` is `page` after the sign-in): `.request` on one is a raw context. */
 const PAGE_FIXTURES = new Set(['page', 'signedIn']);
-/** The opaque token fixtures: never printed, never compared, never annotated (`token-use`). */
 const TOKEN_FIXTURES = new Set(['adminToken', 'restrictedToken']);
 const READ_METHODS = new Set(['GET', 'HEAD']);
 
 export const builtinName = (spec: string): string => spec.replace(/^node:/, '');
 export const isFsModule = (spec: string | undefined): boolean => !!spec && FS_MODULES.has(builtinName(spec));
 
-/** A single-file program: symbols resolve without libraries or imports (binding identity only). */
 export function boundSource(ts: typeof TS, fileName: string, src: string): { sf: TS.SourceFile; checker: TS.TypeChecker } {
     const virtual = `/lint/${fileName.replace(/[\\/]/g, '__')}`;
     const sf = ts.createSourceFile(virtual, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
@@ -63,7 +49,6 @@ export function boundSource(ts: typeof TS, fileName: string, src: string): { sf:
 export class Bindings {
     private readonly ts: typeof TS;
     private readonly guarded = new Set<TS.Symbol>();
-    /** The opaque token fixtures of a test (`token-use`). */
     private readonly tokens = new Set<TS.Symbol>();
     private readonly requestFixture = new Set<TS.Symbol>();
     private readonly pageFixture = new Set<TS.Symbol>();
@@ -72,10 +57,8 @@ export class Bindings {
     private readonly fsBindings = new Set<TS.Symbol>();
     private readonly envAliases = new Set<TS.Symbol>();
     private readonly processAliases = new Set<TS.Symbol>();
-    /** Functions imported from the suite's own modules (audited helpers: they may read a whole process.env). */
     private readonly suiteHelpers = new Set<TS.Symbol>();
     private readonly declarations: TS.VariableDeclaration[] = [];
-    /** `const { page, request } = <x>`: resolved in the fix-point (the holder may itself be an alias). */
     private readonly destructurings: TS.VariableDeclaration[] = [];
 
     constructor(private readonly ctx: LintContext, private readonly checker: TS.TypeChecker) {
@@ -84,7 +67,6 @@ export class Bindings {
         this.resolveAliases();
     }
 
-    // ---- small syntax helpers every rule uses
 
     sym(n: TS.Node): TS.Symbol | undefined {
         try {
@@ -94,7 +76,6 @@ export class Bindings {
         }
     }
 
-    /** The value symbol behind `{ token }` (the identifier's own symbol there is the property). */
     shorthandValueSymbol(n: TS.ShorthandPropertyAssignment): TS.Symbol | undefined {
         return this.checker.getShorthandAssignmentValueSymbol(n);
     }
@@ -117,7 +98,6 @@ export class Bindings {
         return spec.startsWith('.') ? path.posix.normalize(path.posix.join(path.posix.dirname(this.ctx.fileName.replace(/\\/g, '/')), spec)) : spec;
     }
 
-    // ---- predicates on names
 
     isGuarded(e: TS.Expression | undefined): boolean {
         if (!e) return false;
@@ -130,7 +110,6 @@ export class Bindings {
         return ts.isCallExpression(x) && ts.isIdentifier(x.expression) && GUARD_FACTORIES.has(x.expression.text);
     }
 
-    /** A guarded binding by symbol (an assignment target). */
     isGuardedSymbol(s: TS.Symbol | undefined): boolean {
         return !!s && this.guarded.has(s);
     }
@@ -142,10 +121,7 @@ export class Bindings {
         return !!s && this.collections.has(s);
     }
 
-    /**
-     * A page: the `page` / `signedIn` fixture, an alias of one, or `<x>.page` / `<x>['page']` / a `page` destructured from any
-     * object (a page object's own page is the same raw context as the fixture's).
-     */
+    /** A page: the `page` / `signedIn` fixture, an alias of one, or `<x>.page` / a `page` destructured from any object. */
     isPageRef(e: TS.Expression): boolean {
         const ts = this.ts;
         const x = this.unwrap(e);
@@ -156,7 +132,6 @@ export class Bindings {
         return (!!s && this.pageFixture.has(s)) || x.text === 'page';
     }
 
-    /** `<page>.request` or `<page>['request']`. */
     isPageRequest(e: TS.Expression): boolean {
         const ts = this.ts;
         const x = this.unwrap(e);
@@ -174,7 +149,6 @@ export class Bindings {
         return !!s && this.requestFixture.has(s);
     }
 
-    /** An identifier bound to the `request` fixture of a test (no symbol lookup at all when the file has none). */
     isRequestFixtureName(n: TS.Identifier): boolean {
         return this.requestFixture.size > 0 && this.isRequestFixtureSymbol(this.sym(n));
     }
@@ -182,12 +156,10 @@ export class Bindings {
     isTokenRef(e: TS.Node): boolean {
         const ts = this.ts;
         if (!ts.isIdentifier(e)) return false;
-        // `{ restrictedToken }`: the identifier's own symbol is the property; the VALUE symbol is the binding.
         const s = ts.isShorthandPropertyAssignment(e.parent) && e.parent.name === e ? this.shorthandValueSymbol(e.parent) : this.sym(e);
         return !!s && this.tokens.has(s);
     }
 
-    /** An identifier bound to a function imported from a relative (suite) module. */
     isSuiteHelper(e: TS.Expression): boolean {
         const s = this.sym(e);
         return !!s && this.suiteHelpers.has(s);
@@ -202,7 +174,6 @@ export class Bindings {
         return ts.isPropertyAccessExpression(c) && /^apiJson/.test(c.name.text);
     }
 
-    /** A literal (or segment-wise template) read-only / protocol POST URL, or a runtime-checked `allowedRawPost(url)`. */
     urlAllowed(e: TS.Expression | undefined): boolean {
         if (!e) return false;
         const ts = this.ts;
@@ -213,17 +184,14 @@ export class Bindings {
             text = x.head.text;
             for (const span of x.templateSpans) {
                 const after = span.literal.text;
-                // A substitution counts as one uuid only when it fills a whole path segment.
                 if (!text.endsWith('/') || !(after === '' || after.startsWith('/'))) return false;
                 text += SAMPLE_UUID + after;
             }
         }
-        // Judged like allowedRawPost judges it at runtime: printable ASCII, the path as written equal to
-        // the effective one, unreserved segments, a segment-strict read-only / protocol pattern; relative URLs only.
+        // Judged like allowedRawPost at runtime; relative URLs only.
         return text !== undefined && isAllowedRawPostUrl(text);
     }
 
-    /** The method of a fetch options argument: 'GET' when absent, the literal, or undefined when it is not literal. */
     methodOf(e: TS.Expression | undefined): string | undefined {
         if (!e) return 'GET';
         const ts = this.ts;
@@ -235,12 +203,11 @@ export class Bindings {
             const name = p.name && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) ? p.name.text : undefined;
             if (name !== 'method') continue;
             if (ts.isPropertyAssignment(p)) return this.literal(p.initializer)?.toUpperCase();
-            return undefined; // shorthand `{ method }`: dynamic
+            return undefined;
         }
         return spread ? undefined : 'GET';
     }
 
-    /** True when the fetch options say GET or HEAD. */
     isReadMethod(verb: string | undefined): boolean {
         return !!verb && READ_METHODS.has(verb);
     }
@@ -251,7 +218,6 @@ export class Bindings {
         return x && ts.isCallExpression(x) && ts.isIdentifier(x.expression) && x.expression.text === 'require' ? this.literal(x.arguments[0]) : undefined;
     }
 
-    /** `process`, `globalThis.process` / `global.process` (also element access), or a variable initialised from one. */
     isProcessRef(e: TS.Expression): boolean {
         const ts = this.ts;
         const x = this.unwrap(e);
@@ -278,7 +244,6 @@ export class Bindings {
         return false;
     }
 
-    /** `process.env.X` / `process.env[x]` (also through an alias) or `process.env` itself; an alias variable alone is not. */
     isEnvTarget(e: TS.Expression): boolean {
         const ts = this.ts;
         const x = this.unwrap(e);
@@ -297,7 +262,6 @@ export class Bindings {
         return isFsModule(this.requireOf(x));
     }
 
-    // ---- step 1: bindings (fixtures, typed parameters, collections, apiJson aliases)
 
     private collect(n: TS.Node): void {
         this.collectTestFixtures(n);
@@ -320,7 +284,6 @@ export class Bindings {
         return ts.isPropertyAccessExpression(c) && ts.isIdentifier(c.expression) && c.expression.text === 'test' && TEST_CALLS.has(c.name.text);
     }
 
-    /** The fixtures a test / hook callback destructures: `api`, the tokens, `request`, `page`. */
     private collectTestFixtures(n: TS.Node): void {
         const ts = this.ts;
         if (!(ts.isCallExpression(n) && this.isTestCall(n))) return;
@@ -356,7 +319,6 @@ export class Bindings {
         }
     }
 
-    /** fs module bindings: default / namespace / `promises` imports and `import fs = require('fs')`. */
     private collectFsImport(n: TS.Node): void {
         const ts = this.ts;
         const add = (name: TS.Node): void => {
@@ -374,7 +336,6 @@ export class Bindings {
         if (ts.isImportEqualsDeclaration(n) && ts.isExternalModuleReference(n.moduleReference) && isFsModule(this.literal(n.moduleReference.expression))) add(n.name);
     }
 
-    /** `const fs = require('fs')`, `const e = process.env`, `const p = globalThis.process`. */
     private collectProcessAliases(n: TS.Node): void {
         const ts = this.ts;
         if (!(ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer)) return;
@@ -385,7 +346,6 @@ export class Bindings {
         if (s && !ts.isIdentifier(init) && this.isProcessRef(init)) this.processAliases.add(s);
     }
 
-    /** `const { env } = process`. */
     private collectEnvDestructuring(n: TS.Node): void {
         const ts = this.ts;
         if (!(ts.isVariableDeclaration(n) && ts.isObjectBindingPattern(n.name) && n.initializer)) return;
@@ -419,7 +379,6 @@ export class Bindings {
         }
     }
 
-    /** Aliases (`const a = api`, `const f = fs`, `const e = process.env`, `const j = apiJson`) to a fix-point. */
     private resolveAliases(): void {
         for (let changed = true; changed; ) {
             changed = false;
@@ -451,7 +410,6 @@ export class Bindings {
         return changed;
     }
 
-    /** `const { page } = po` / `{ page: p }` is a page; `const { request } = <page>` is a raw request context. */
     private addDestructured(d: TS.VariableDeclaration): boolean {
         const ts = this.ts;
         const init = d.initializer!;

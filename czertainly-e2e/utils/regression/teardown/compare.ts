@@ -1,23 +1,13 @@
 /**
- * compare — judges two snapshots: did the run change anything it did not create?
- *
- * `compareSnapshots(before, after, options)` returns the violations (a finding for a human) and the notes. It checks that:
- *   - every stored foreign object is unchanged
- *   - the net change of every total is explained by the ledger (own objects created and deleted since the before snapshot,
- *     other tools' lines inside the window)
- *   - platform event associations and system jobs are identical
- *   - required resources were readable, and both snapshots come from the same tier
- *
- * This is the proof that the run touched nothing foreign on a shared tier; a wrong sign in the accounting would be a silent
- * false "clean". Pure; the rules are in the header of nonInterference.ts and pinned by tests/unit/nonInterference*.spec.ts.
- * `REG_NET_TOLERANCE` (default 0) widens the accepted unexplained change of a total.
+ * compare — judges two snapshots: did the run change anything it did not create? Returns the violations and the notes.
+ * Pure; the rules are in the header of nonInterference.ts. `REG_NET_TOLERANCE`
+ * (default 0) widens the accepted unexplained change of a total.
  */
 import { foreignWindowLines, LedgerWindowOptions, ownUuidsOf } from './foreignLedger';
 import { SNAPSHOT_RESOURCES } from '../resourceTypes';
 import { settings } from '../run/settings';
 import { AccountingCounts, ItemMark, REQUIRED_RESOURCES, ResourceSnapshot, TierSnapshot } from './snapshotModel';
 
-/** REG_NET_TOLERANCE: allowed unexplained change of a total (default 0; raise it only on a busy tier, and say so). */
 export function allowedNetChange(env: NodeJS.ProcessEnv = process.env): number {
     const raw = settings(env).netTolerance;
     if (raw === undefined || raw.trim() === '') return 0;
@@ -27,28 +17,20 @@ export function allowedNetChange(env: NodeJS.ProcessEnv = process.env): number {
 }
 
 export interface CompareOptions extends LedgerWindowOptions {
-    /** Allowed unexplained change of a total (default: REG_NET_TOLERANCE, else 0). */
     tolerance?: number;
-    /** `<type>:<uuid>` of other tools' creates in a large collection confirmed by a detail read (`confirmForeignCreates`). */
     confirmedCreated?: readonly string[];
 }
 
 export interface CompareResult {
     violations: string[];
-    /** Resources that could not be compared, the accounting tolerance, and own deletions that explain a missing object. */
     notes: string[];
 }
 
-// ------------------------------------------------------------------ own accounting: what this run's ledger lines explain
-
-/** The run's own ledger lines since the before snapshot, counted per resource type. */
 interface OwnAccounting {
-    /** Uuids this run created / uuids it deleted (ledger `deleted` lines and the objects the teardown deleted). */
     created: ReadonlySet<string>;
     gone: ReadonlySet<string>;
     createdSince(type: string): number;
     deletedSince(type: string): number;
-    /** The same counts without the derived objects (an object the platform made on its own, e.g. a `certKey_` key). */
     createdOwn(type: string): number;
     deletedOwn(type: string): number;
 }
@@ -78,30 +60,21 @@ function ownAccounting(since: number, runId: string, opts: CompareOptions): OwnA
     };
 }
 
-// ------------------------------------------------------------------ foreign accounting: what other tools' lines explain
-
 type ByTypeAndUuid = Map<string, Map<string, string>>;
 
-/** Other QA tools' lines inside [before.takenAt, after.takenAt], keyed by resource type and uuid, and what they explain. */
 interface ForeignAccounting {
     deleted: ByTypeAndUuid;
     created: ByTypeAndUuid;
-    /** The family of a line, marked when the line carries no tier identity. */
     familyOf(by: ByTypeAndUuid, type: string, uuid: string): string;
-    /** Stored foreign objects of `type` that are gone and whose deletion another tool recorded inside the window. */
     gone(type: string): string[];
-    /** Objects another tool created inside the window, proven new (see `foreignAccounting`). */
     fresh(type: string): string[];
-    /** Notes collected while comparing: a stored object deleted by another tool, a total changed by another tool. */
     explained: string[];
     explainedTotals: string[];
 }
 
 /**
- * `fresh(type)`: no deletion line of their own inside the window, and
- * - a collection read whole: not stored before, stored after;
- * - a large collection with a creation time on the detail: confirmed by `confirmForeignCreates`;
- * - any other large collection: in the after newest sample, absent from the before newest sample.
+ * `fresh(type)`: no deletion line inside the window, and either not stored
+ * before / stored after, confirmed by detail, or new in the newest sample.
  */
 function foreignAccounting(before: TierSnapshot, after: TierSnapshot, runId: string, opts: CompareOptions): ForeignAccounting {
     const lines = foreignWindowLines(opts.ledger ?? [], runId, Date.parse(before.takenAt), Date.parse(after.takenAt), before.tier, ownUuidsOf(opts.ledger ?? [], runId, opts.ownDeleted));
@@ -137,7 +110,7 @@ function foreignAccounting(before: TierSnapshot, after: TierSnapshot, runId: str
             const proven = (u: string): boolean => {
                 if (!def?.large) return !b.foreign[u] && !!a.foreign[u];
                 if (def.detailCreated) return confirmed.has(`${type}:${u}`);
-                // An empty before sample of a non-empty collection is a failed read, not evidence: it fails closed.
+                // An empty "before" sample of a non-empty collection is a failed read, not evidence: fail closed.
                 const beforeSampled = !!b.newestUuids && (b.newestUuids.length > 0 || b.total === 0);
                 return beforeSampled && !!a.newestUuids && a.newestUuids.includes(u) && !b.newestUuids!.includes(u);
             };
@@ -148,9 +121,6 @@ function foreignAccounting(before: TierSnapshot, after: TierSnapshot, runId: str
     };
 }
 
-// ------------------------------------------------------------------ per-resource comparison
-
-/** What one comparison needs besides the two snapshots. */
 interface CompareContext {
     own: OwnAccounting;
     foreign: ForeignAccounting;
@@ -162,7 +132,6 @@ interface Findings {
     notes: string[];
 }
 
-/** Every stored foreign object is still there with the same name, description and marker. */
 function compareStoredObjects(type: string, b: ResourceSnapshot, a: ResourceSnapshot, ctx: CompareContext, out: Findings): void {
     const { own, foreign } = ctx;
     for (const [uuid, mark] of Object.entries(b.foreign)) {
@@ -185,7 +154,6 @@ function compareStoredObjects(type: string, b: ResourceSnapshot, a: ResourceSnap
     }
 }
 
-/** The counts a resource's accounting rule reads (see `AccountingCounts`). */
 function countsOf(type: string, ctx: CompareContext, foreignNew: number, foreignGone: number): AccountingCounts {
     const { own, foreign } = ctx;
     return {
@@ -200,10 +168,8 @@ function countsOf(type: string, ctx: CompareContext, foreignNew: number, foreign
 }
 
 /**
- * Net accounting: `after.total - before.total` must lie in the range the ledger explains (own objects created and deleted
- * since the before snapshot, other tools' objects proven new or gone), within the tolerance. A resource with a `delta` hook
- * (keys count key items: an own key brings one or two, an own certificate up to one `certKey_<CN>` item; a derived key line is
- * one such item) states its own range; every other resource explains exactly created - deleted.
+ * Net accounting: `after.total - before.total` must lie in the range the ledger explains, within the tolerance; a `delta` hook states its
+ * own range (keys count key items).
  */
 function compareTotal(type: string, b: ResourceSnapshot, a: ResourceSnapshot, ctx: CompareContext, out: Findings): void {
     const { foreign, tolerance } = ctx;
@@ -237,9 +203,6 @@ function compareResource(type: string, b: ResourceSnapshot, a: ResourceSnapshot 
     compareTotal(type, b, a, ctx, out);
 }
 
-// ------------------------------------------------------------------ platform comparison
-
-/** Platform event associations and system jobs are identical (or were unreadable before, which is a note). */
 function comparePlatform(before: TierSnapshot, after: TierSnapshot, out: Findings): void {
     if (before.platformEvents !== undefined) {
         if (before.platformEvents.startsWith('error:')) out.notes.push(`platform events: not compared (${before.platformEvents})`);
@@ -251,10 +214,7 @@ function comparePlatform(before: TierSnapshot, after: TierSnapshot, out: Finding
     }
 }
 
-/**
- * The comparison in four phases: the run's own accounting, other tools' accounting, one comparison per resource of the
- * before snapshot (stored objects, then the total), and the platform-level state.
- */
+/** The comparison: own accounting, other tools' accounting, per resource (stored objects, then the total), then the platform state. */
 export function compareSnapshots(before: TierSnapshot, after: TierSnapshot, opts: CompareOptions = {}): CompareResult {
     const runId = opts.runId ?? before.runId;
     const tolerance = opts.tolerance ?? allowedNetChange();

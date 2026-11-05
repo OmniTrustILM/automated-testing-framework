@@ -1,12 +1,7 @@
 /**
- * prepareRun — `prepareRun()`, the first call of playwright.regression.config.ts and playwright.api.config.ts.
- *
- *   - Loads the env file; a file named by REG_ENV_FILE / API_ENV_FILE that does not exist stops the run.
- *   - Freezes TIER_KIND, AUTH_MODE and REG_RA_PROFILE_NAME, and sets the run id and its defaults.
- *   - Checks the tier guards: positive local proof for TIER_KIND=local, header auth only on a local BASE_URL.
- *   - In the runner only: refuses more than one worker, takes the run lock, removes a stale local proof of this run id.
- *
- * All variables are written before the first test is listed. Nothing else in utils/regression writes the environment.
+ * prepareRun — `prepareRun()`, the first call of both Playwright configs: loads the env file, freezes TIER_KIND / AUTH_MODE /
+ * REG_RA_PROFILE_NAME, sets the run id and its defaults, checks the tier guards. In the runner only: one worker, the run lock.
+ * All variables are written before the first test is listed; nothing else in utils/regression writes the environment.
  */
 import { loadDotenv } from '../../envFile';
 import { parseFlag } from './flags';
@@ -16,15 +11,12 @@ import { freezeTierEnv, tierIdentity } from '../tier/kind';
 import { settings } from './settings';
 
 export interface PrepareRunOptions extends LocalProofOptions {
-    /** The config's folder (`__dirname`): its `.env` is the default env file. */
     configDir: string;
     env?: NodeJS.ProcessEnv;
     argv?: string[];
-    /** Take the run lock (default: in the runner, i.e. when TEST_WORKER_INDEX is unset). */
     lock?: boolean;
 }
 
-/** The `--workers` / `-j` value of a Playwright command line, if any. */
 export function workersFromArgv(argv: string[]): string | undefined {
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i];
@@ -35,7 +27,6 @@ export function workersFromArgv(argv: string[]): string | undefined {
     return undefined;
 }
 
-/** Throws when the command line asks for more than one worker. */
 export function assertSingleWorker(argv: string[]): void {
     const w = workersFromArgv(argv);
     if (w !== undefined && w.trim() !== '1') {
@@ -44,19 +35,16 @@ export function assertSingleWorker(argv: string[]): void {
     }
 }
 
-/** The env file this process pinned itself (a second config load in the runner reads the same file). */
 let pinnedInThisProcess: string | undefined;
 
-/** Forget the env file this process pinned (unit tests that load a config twice with different files). */
 export function resetPinnedEnvFileForTests(): void {
     pinnedInThisProcess = undefined;
 }
 
 export function prepareRun(opts: PrepareRunOptions): string {
     const env = opts.env ?? process.env;
-    // A worker sees REG_ENV_FILE pinned by the runner's load, possibly to the missing default `<config dir>/.env`: only a
-    // file the USER named must exist. REG_ENV_FILE_PINNED marks the pin and counts ONLY inside a worker.
-    // A second load in the runner process itself is recognised by this module's memory, never by the variable.
+    // A worker sees REG_ENV_FILE pinned by the runner, possibly to the missing default: only a file the USER named must exist.
+    // The pin counts only inside a worker; the runner recognises its own second load by memory.
     const inWorker = env.TEST_WORKER_INDEX !== undefined;
     const named = settings(env).envFile;
     const pinned = !!named && ((inWorker && env.REG_ENV_FILE_PINNED === named) || pinnedInThisProcess === named);

@@ -1,11 +1,7 @@
 /**
- * areaFixtures — the shape rule of an area fixture (`fixtures/areas/<name>.ts`), the per-folder setup a spec may use.
- *
- * One shape only: `export const test = <base>.extend<...>({ ... })`, which only ADDS fixtures.
- *   - no key may be an existing fixture, so an area fixture cannot redefine `api` or Playwright's `request`
- *   - a fixture takes only AREA_FIXTURE_INPUTS (guarded contexts, ledger / needs / settings fixtures, never a page)
- *   - no `.request`, `.context`, `.browser`, credential member, `newContext` or reflection
- * This guards against mistakes, not a hostile author.
+ * areaFixtures — the shape rule of an area fixture (`fixtures/areas/<name>.ts`): only `export const test = <base>.extend<...>({ ... })`.
+ * It may not redefine a fixture, take a page or credentials as input,
+ * or reach a raw context. Guards against mistakes, not a hostile author.
  */
 import * as path from 'path';
 import type * as TS from 'typescript';
@@ -21,11 +17,7 @@ export interface AreaFixtureProblem {
     text: string;
 }
 
-/**
- * Playwright's built-in fixtures and options (the members of PlaywrightTestArgs / PlaywrightWorkerArgs /
- * PlaywrightTestOptions / PlaywrightWorkerOptions); tests/unit/areaFixtureLint.spec.ts keeps it equal to the installed
- * Playwright's types, and specGuards adds the installed names too.
- */
+/** Playwright's built-in fixtures and options; a unit test keeps it equal to the installed types. */
 export const PLAYWRIGHT_FIXTURES: ReadonlySet<string> = new Set([
     'page', 'context', 'browser', 'browserName', 'request', 'playwright', 'baseURL', 'headless', 'channel', 'launchOptions',
     'connectOptions', 'screenshot', 'trace', 'video', 'viewport', 'storageState', 'extraHTTPHeaders', 'httpCredentials',
@@ -35,28 +27,17 @@ export const PLAYWRIGHT_FIXTURES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * The fixtures an area fixture may take as inputs (besides the fixtures it defines itself and those of the area fixture it
- * extends): the guarded contexts and the ledger / needs / settings fixtures. Not a page (`signedIn`, `page`: a page
- * reaches a raw context), not Playwright's raw sources, not the tokens, `env` or `regressionEnv` (whole objects that hold
- * credentials: handed on under a new name they escape the token and secret rules; a spec reads its settings itself).
+ * The fixtures an area fixture may take: guarded contexts and ledger / needs / settings fixtures. Not a page, the tokens, `env` or
+ * `regressionEnv` (they hold credentials).
  */
 export const AREA_FIXTURE_INPUTS: ReadonlySet<string> = new Set([
     'api', 'anonymousApi', 'localApi', 'workerApi', 'own', 'live', 'needs', 'declaredNeeds', 'ownRaProfile',
 ]);
-/**
- * Member names that read a credential or a cluster key (`regressionEnv.userPassword`, `.restrictedPassword`, `.kubeconfig`,
- * `.cmAuthSecret`, an access / admin / bearer token, a private key): an area fixture reads none of them. A plain `token` is the platform's
- * cryptographic token object (a key store), not a credential, and stays readable; by access or destructuring, so no secret reaches a spec
- * under a name the spec lint's token and secret rules do not know. (`env`, the raw TestEnv with the admin login, is no input.)
- */
+/** Member names that read a credential or a cluster key; a plain `token` (the platform's cryptographic token) stays readable. */
 const SECRET_MEMBER = /password|passwd|secret|kubeconfig|credential|username|privateKey|apiKey|bearer|(access|refresh|id|auth|admin|restricted)Token/i;
-/** Globals that read or wrap an object's members around the member rules. */
 const REFLECTION = new Set(['Reflect', 'Proxy', 'getOwnPropertyDescriptor', 'getOwnPropertyDescriptors', 'getPrototypeOf', '__proto__', 'defineProperty']);
-/** Members that reach a raw context, or the cookies / headers of a guarded one: no area fixture reads them, on any receiver. */
 const RAW_MEMBERS = new Set(['request', 'context', 'browser', 'newContext', 'storageState', 'headers', 'allHeaders', 'headersArray', 'headerValue', 'headerValues']);
-/** The modules an area fixture may take its base `test` from (root-relative, without extension). */
 const BASE_MODULE = /^fixtures\/(testFixtures|regressionFixtures|areas\/[a-z][A-Za-z0-9]*)$/;
-/** The Playwright interfaces whose members are fixtures or options. */
 const PLAYWRIGHT_FIXTURE_TYPES = new Set(['PlaywrightTestArgs', 'PlaywrightWorkerArgs', 'PlaywrightTestOptions', 'PlaywrightWorkerOptions']);
 
 const parse = (ts: typeof TS, src: string, fileName: string): TS.SourceFile =>
@@ -70,7 +51,6 @@ function walk(ts: typeof TS, root: TS.Node, visit: (n: TS.Node) => void): void {
     go(root);
 }
 
-/** The plain key names of an object literal, and the properties that have no plain name (spread, computed). */
 function keysOf(ts: typeof TS, o: TS.ObjectLiteralExpression): { names: Array<{ name: string; node: TS.Node }>; dynamic: TS.Node[] } {
     const names: Array<{ name: string; node: TS.Node }> = [];
     const dynamic: TS.Node[] = [];
@@ -82,7 +62,6 @@ function keysOf(ts: typeof TS, o: TS.ObjectLiteralExpression): { names: Array<{ 
     return { names, dynamic };
 }
 
-/** The member names of Playwright's fixture / option interfaces in its type definitions (`playwright/types/test.d.ts`). */
 export function playwrightFixtureNamesOf(dts: string): string[] {
     const ts = typescript();
     const sf = parse(ts, dts, 'test.d.ts');
@@ -94,7 +73,6 @@ export function playwrightFixtureNamesOf(dts: string): string[] {
     return out;
 }
 
-/** The fixture names a fixtures file defines: the plain keys of the object literal of every `.extend({…})` call in it. */
 export function fixtureNamesOf(src: string, fileName: string): string[] {
     const ts = typescript();
     const sf = parse(ts, src, fileName);
@@ -109,12 +87,10 @@ export function fixtureNamesOf(src: string, fileName: string): string[] {
 
 type FixtureFunction = TS.ArrowFunction | TS.FunctionExpression | TS.MethodDeclaration;
 
-/** The binding pattern is the first parameter of a function (a fixture's inputs: checked against the allow-list). */
 const isFixtureInputs = (ts: typeof TS, pattern: TS.ObjectBindingPattern): boolean =>
     ts.isParameter(pattern.parent) && (ts.isArrowFunction(pattern.parent.parent) || ts.isFunctionExpression(pattern.parent.parent) || ts.isMethodDeclaration(pattern.parent.parent))
     && pattern.parent.parent.parameters[0] === pattern.parent;
 
-/** The fixture function(s) of one property of the extend literal: `name: fn`, `name: [fn, options]`, `name(…) {…}`. */
 function fixtureFunctions(ts: typeof TS, p: TS.ObjectLiteralElementLike): FixtureFunction[] {
     const isFn = (e: TS.Node): e is FixtureFunction => ts.isArrowFunction(e) || ts.isFunctionExpression(e) || ts.isMethodDeclaration(e);
     if (ts.isMethodDeclaration(p)) return [p];
@@ -125,7 +101,6 @@ function fixtureFunctions(ts: typeof TS, p: TS.ObjectLiteralElementLike): Fixtur
     return [];
 }
 
-/** A fixture function that takes an input outside the allow-list, or does not destructure its inputs (then any could be read). */
 function rawSourceProblems(ts: typeof TS, f: FixtureFunction, inputs: ReadonlySet<string>, at: (rule: AreaFixtureRule, node: TS.Node) => AreaFixtureProblem): AreaFixtureProblem[] {
     const first = f.parameters[0];
     if (!first) return [];
@@ -138,7 +113,6 @@ function rawSourceProblems(ts: typeof TS, f: FixtureFunction, inputs: ReadonlySe
     return out;
 }
 
-/** `export const test = <init>` as the one declaration of an exported `const` statement: the initializer, else undefined. */
 function exportedTestInit(ts: typeof TS, s: TS.Statement): { decl: TS.VariableDeclaration; init: TS.Expression } | undefined {
     if (!ts.isVariableStatement(s) || !s.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)) return undefined;
     if (!(s.declarationList.flags & ts.NodeFlags.Const) || s.declarationList.declarations.length !== 1) return undefined;
@@ -146,7 +120,6 @@ function exportedTestInit(ts: typeof TS, s: TS.Statement): { decl: TS.VariableDe
     return ts.isIdentifier(decl.name) && decl.name.text === 'test' && decl.initializer ? { decl, init: decl.initializer } : undefined;
 }
 
-/** The shape problems of one area fixture file; `reserved` holds every fixture name it may not redefine. */
 export function areaFixtureProblems(src: string, fileName: string, reserved: ReadonlySet<string>, inherited: ReadonlySet<string> = new Set()): AreaFixtureProblem[] {
     const ts = typescript();
     const sf = parse(ts, src, fileName);
@@ -156,7 +129,6 @@ export function areaFixtureProblems(src: string, fileName: string, reserved: Rea
     const resolve = (spec: string): string =>
         spec.startsWith('.') ? path.posix.normalize(path.posix.join(path.posix.dirname(fileName.replace(/\\/g, '/')), spec)) : spec;
 
-    // 1. One named value import of `test` from a base module; no other binding of a base module.
     const baseNames: Array<{ local: TS.Identifier }> = [];
     for (const s of sf.statements) {
         if (!ts.isImportDeclaration(s) || !ts.isStringLiteral(s.moduleSpecifier) || !BASE_MODULE.test(resolve(s.moduleSpecifier.text))) continue;
@@ -176,7 +148,6 @@ export function areaFixtureProblems(src: string, fileName: string, reserved: Rea
     }
     const base = baseNames[0]?.local;
 
-    // 2. Exactly `export const test = <base>.extend<…>({ … })`.
     const exported = sf.statements.map((s) => exportedTestInit(ts, s)).filter((x): x is NonNullable<typeof x> => !!x);
     let sanctioned: TS.CallExpression | undefined;
     if (exported.length !== 1) {
@@ -197,13 +168,11 @@ export function areaFixtureProblems(src: string, fileName: string, reserved: Rea
         const inputs = new Set([...AREA_FIXTURE_INPUTS, ...inherited, ...names.map((k) => k.name)]);
         for (const p of literal.properties) {
             const fns = fixtureFunctions(ts, p);
-            // a fixture is written inline (`name: fn`, `name: [fn, options]`, `name(…) {…}`), so its inputs can be read here
             if (fns.length === 0 && !ts.isSpreadAssignment(p)) problems.push(at('extend-shape', p));
             for (const f of fns) problems.push(...rawSourceProblems(ts, f, inputs, at));
         }
     }
 
-    // 3. Exports: the one `export const test`, `expect` (re-exported or local), types; nothing else leaves the file.
     for (const s of sf.statements) {
         const exportedMod = (ts.canHaveModifiers(s) ? ts.getModifiers(s) : undefined)?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
         if (ts.isExportDeclaration(s)) {
@@ -219,7 +188,6 @@ export function areaFixtureProblems(src: string, fileName: string, reserved: Rea
         if (ts.isImportEqualsDeclaration(s) && ts.isExternalModuleReference(s.moduleReference)) problems.push(at('module-load', s));
     }
 
-    // 4. Every other mention: `extend` (any form), the base binding, the file's own `test`, `.use(…)`, `require` / `import()`.
     const sanctionedName = sanctioned && (sanctioned.expression as TS.PropertyAccessExpression).name;
     const sanctionedReceiver = sanctioned && (sanctioned.expression as TS.PropertyAccessExpression).expression;
     const ownTest = exported[0]?.decl.name;
@@ -228,20 +196,16 @@ export function areaFixtureProblems(src: string, fileName: string, reserved: Rea
             problems.push(at('extend-mention', n));
         }
         if ((ts.isIdentifier(n) || ts.isStringLiteralLike(n)) && n.text === 'newContext') problems.push(at('raw-source', n));
-        // reflection reads members around the member rules
         if ((ts.isIdentifier(n) || ts.isStringLiteralLike(n)) && REFLECTION.has(n.text)) problems.push(at('raw-source', n));
-        // a destructured raw member (`const { request } = x`), anywhere but the fixture inputs checked above
         if (ts.isBindingElement(n) && ts.isObjectBindingPattern(n.parent)) {
             const key = n.propertyName ?? n.name;
             if (!(ts.isIdentifier(key) || ts.isStringLiteralLike(key)) || RAW_MEMBERS.has(key.text)) problems.push(at('raw-source', n));
         }
-        // a credential read from the settings or any object, by access or destructuring
         if (ts.isPropertyAccessExpression(n) && SECRET_MEMBER.test(n.name.text)) problems.push(at('secret-read', n));
         if (ts.isBindingElement(n) && ts.isObjectBindingPattern(n.parent)) {
             const key = n.propertyName ?? n.name;
             if ((ts.isIdentifier(key) || ts.isStringLiteralLike(key)) && SECRET_MEMBER.test(key.text) && !isFixtureInputs(ts, n.parent)) problems.push(at('secret-read', n));
         }
-        // a raw context reached through an object (`x.request`, `x.context().request`, `.browser()`)
         if ((ts.isPropertyAccessExpression(n) && RAW_MEMBERS.has(n.name.text))
             || (ts.isElementAccessExpression(n) && (!ts.isStringLiteralLike(n.argumentExpression) || RAW_MEMBERS.has(n.argumentExpression.text)))) {
             problems.push(at('raw-source', n));

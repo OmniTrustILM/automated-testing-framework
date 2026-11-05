@@ -4,19 +4,11 @@ import { OwnObjectViolation } from '../ledger/ownership';
 
 export interface AllowedRawPostOptions {
     env?: NodeJS.ProcessEnv;
-    /**
-     * The request carries no credentials (the ACME client's global `fetch`: its URLs come from the tier's ACME
-     * directory): the origin rule is skipped; every other URL rule holds.
-     */
+    /** The request carries no credentials (the ACME client's `fetch`): the origin rule is skipped. */
     unauthenticated?: boolean;
 }
 
-/**
- * The URL itself when a RAW POST to it is allowed: judged like the guard judges a URL (written form, printable ASCII,
- * the path as written equal to the effective one, unreserved segments, BASE_URL's origin unless `unauthenticated`, no
- * `_method` query parameter), then a read-only or protocol path of the segment-strict allow-list; else
- * OwnObjectViolation (kind `request`).
- */
+/** The URL when a raw POST to it is allowed (judged like a guarded URL, then a read-only or protocol path); else an OwnObjectViolation. */
 export function allowedRawPost(url: string, opts: AllowedRawPostOptions = {}): string {
     const r = resolveSentUrl(url, { env: opts.env, anyOrigin: opts.unauthenticated === true });
     const apiPath = 'sent' in r ? apiPathOfPathname(r.sent.effective.pathname) : undefined;
@@ -27,10 +19,7 @@ export function allowedRawPost(url: string, opts: AllowedRawPostOptions = {}): s
     return url;
 }
 
-/**
- * The lint's literal-URL check (specLint/rawMutations.ts): a raw POST to `url` would be allowed by `allowedRawPost` (no BASE_URL, so
- * relative URLs only).
- */
+/** The lint's literal-URL check: would `allowedRawPost` allow a raw POST to this relative `url`. */
 export function isAllowedRawPostUrl(url: string): boolean {
     try {
         allowedRawPost(url, { env: {} });
