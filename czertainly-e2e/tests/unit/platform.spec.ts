@@ -133,6 +133,12 @@ test('Quartz subset: the six system crons parse; next fire in UTC; isFireTime; s
     expect(nextFireUtc('0 0 * ? * *', new Date('2026-10-14T11:00:00Z')).toISOString(), 'strictly after').toBe('2026-10-14T12:00:00.000Z');
     expect(isFireTime('0 30 2 ? * SUN', new Date('2026-10-18T02:30:00Z'))).toBe(true);
     expect(isFireTime('0 30 2 ? * SUN', new Date('2026-10-18T03:30:00Z')), 'another zone would land here').toBe(false);
+    // Quartz numbers the weekdays from 1 = Sunday to 7 = Saturday; 0 is not a weekday.
+    expect(nextFireUtc('0 30 2 ? * 1', from).toISOString(), '1 is Sunday').toBe('2026-10-18T02:30:00.000Z');
+    expect(nextFireUtc('0 30 2 ? * 7', from).toISOString(), '7 is Saturday').toBe('2026-10-17T02:30:00.000Z');
+    expect(nextFireUtc('0 30 2 ? * MON-FRI', from).toISOString(), 'a named range').toBe('2026-10-15T02:30:00.000Z');
+    expect(() => parseQuartzCron('0 0 0 ? * 0')).toThrow(/out of range/);
+    expect(nextFireUtc('0 0/15 * ? * *', from).toISOString(), 'a step without a range runs to the maximum').toBe('2026-10-14T10:30:00.000Z');
     expect(() => parseQuartzCron('0 0 0 29 2 ? 2027')).toThrow(/year/);
     expect(() => parseQuartzCron('0 0 L * * ?')).toThrow(/unsupported|out of range/);
 

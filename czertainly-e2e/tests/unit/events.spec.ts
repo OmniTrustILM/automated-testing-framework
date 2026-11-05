@@ -1,12 +1,14 @@
 /**
  * The pure helpers of the events area: workflow request builders (trigger body, Set field items, condition items), the
  * association ledger notes, the event labels, the absence window, and the notification request attributes (the connector's
- * uuid per content type of the webhook template attribute, e-mail / webhook attributes, ISO-8601 durations). No network: a change
- * in a builder fails here before it fails a run against a tier.
+ * uuid per content type of the webhook template attribute, e-mail / webhook attributes, ISO-8601 durations), and the notification
+ * connector choice over a fake connector list. No network: a change in a builder fails here before it fails a run against a tier.
  */
 import { expect, test } from '@playwright/test';
 import { durationSeconds } from '../../utils/regression/events/notificationProfiles';
 import { emailAttributes, webhookAttributes, webhookTemplateAttribute } from '../../utils/regression/events/notificationAttributes';
+import { findNotificationConnector } from '../../utils/regression/events/notificationConnector';
+import type { GuardedApi } from '../../utils/regression/guard/types';
 import { associationKey } from '../../utils/regression/events/eventAssociations';
 import { assertHeldFor, firingsOfObject } from '../../utils/regression/events/eventHistory';
 import { EVENT, EVENT_LABEL } from '../../utils/regression/events/eventVocabulary';
@@ -15,6 +17,8 @@ import { errorShapeOf, errorTexts } from '../../utils/regression/events/workflow
 import { parseAssociationNote } from '../../utils/regression/events/workflowTeardown';
 import { runId } from '../../utils/regression/ledger/runState';
 import { contentOf } from './helpers/contentOf';
+import { fakeResponse } from './helpers/fakeResponse';
+import { partialOf } from './helpers/guardRig';
 
 type Json = Record<string, any>;
 
@@ -158,4 +162,23 @@ test('firingsOfObject: the firings whose objects include the uuid, in page order
     expect(firingsOfObject(page, 'z')).toEqual([]);
     expect(firingsOfObject({ items: [] }, 'a')).toEqual([]);
     expect(firingsOfObject({ items: [{ ...firing('t0', []), objectHistories: undefined as never /* a firing the platform sent without the field the type requires */ }] }, 'a')).toEqual([]);
+});
+
+test('findNotificationConnector: a healthy connector wins over an unhealthy one listed before it; with none healthy, the first one and why', async () => {
+    const health: Record<string, number> = { first: 503, second: 200 };
+    const rows = ['first', 'second'].map((uuid) => ({ uuid, name: `mail-${uuid}`, status: 'connected',
+        functionGroups: [{ functionGroupCode: 'notificationProvider', kinds: ['EMAIL'] }] }));
+    const api = partialOf<GuardedApi>({
+        get: async (url: string) => {
+            const m = /^\/api\/v[12]\/connectors\/(first|second)(\/health)?$/.exec(url);
+            if (url === '/api/v1/connectors') return fakeResponse({ status: 200, body: rows });
+            if (m && !m[2]) return fakeResponse({ status: 200, body: { uuid: m[1], version: 'v1' } });
+            if (m) return fakeResponse({ status: health[m[1]], body: { status: health[m[1]] === 200 ? 'ok' : 'nok' } });
+            return fakeResponse({ status: 404, body: { message: `no fake route ${url}` } });
+        },
+    });
+    expect(await findNotificationConnector(api, 'EMAIL')).toEqual({ uuid: 'second', name: 'mail-second', kind: 'EMAIL' });
+    health.second = 503;
+    expect(await findNotificationConnector(api, 'EMAIL'), 'none healthy: the first one with the reason').toEqual({ uuid: 'first', name: 'mail-first', kind: 'EMAIL', unhealthy: 'live health 503' });
+    expect(await findNotificationConnector(api, 'WEBHOOK'), 'no connector offers the kind').toBeUndefined();
 });

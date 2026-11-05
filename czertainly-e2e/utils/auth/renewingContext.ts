@@ -8,7 +8,8 @@ import type { APIRequestContext } from '@playwright/test';
  * WHY: a worker-scoped fixture lives for the whole worker (minutes: a hook before a group and a hook after it), longer than the lifetime
  * of one access token; a context built once would send an expired token in its last hook.
  * HOW: a Proxy over the request methods (get, post, put, patch, delete, head, fetch, storageState); `dispose` disposes every context it
- * opened. Superseded contexts are kept until `dispose`, so a request still in flight on one of them is never cut off.
+ * opened, and one still opening at that moment when it arrives. Superseded contexts are kept until `dispose`, so a request still in
+ * flight on one of them is never cut off.
  */
 export interface RenewingOptions {
   /** Renew when the token has less than this left (default 120 s). */
@@ -28,8 +29,14 @@ export function renewingContext(open: () => Promise<OpenedContext>, options: Ren
   let current: Promise<OpenedContext> | undefined;
   let disposed = false;
 
+  const disposedError = () => new Error('the API context was disposed');
   const fresh = (): Promise<OpenedContext> => {
-    const next = open().then((c) => {
+    const next = open().then(async (c) => {
+      if (disposed) {
+        // Disposed while this context was opening: close it, never hand it to a request that waited for it.
+        await c.context.dispose().catch(() => undefined);
+        throw disposedError();
+      }
       opened.push(c.context);
       return c;
     });
@@ -40,13 +47,16 @@ export function renewingContext(open: () => Promise<OpenedContext>, options: Ren
     return next;
   };
   const currentContext = async (): Promise<APIRequestContext> => {
-    if (disposed) throw new Error('the API context was disposed');
+    if (disposed) throw disposedError();
     const seen = (current ??= fresh());
     const known = await seen;
+    if (disposed) throw disposedError();
     if (known.expiresAt - now() > margin) return known.context;
     // Expiring: the first request that sees it renews; the others wait for the same renewal.
     if (current === seen) current = fresh();
-    return (await current).context;
+    const renewed = await current;
+    if (disposed) throw disposedError();
+    return renewed.context;
   };
 
   const methods = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'fetch', 'storageState']);

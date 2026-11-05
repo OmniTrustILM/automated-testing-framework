@@ -5,7 +5,7 @@
  */
 import { expect, test } from '@playwright/test';
 import { approvalStatusLabel, recipientComments, sameApprovalStatus } from '../../utils/regression/lifecycle/approvals';
-import { EVENT_CODES, historyOrderProblem, sortedHistory } from '../../utils/regression/lifecycle/certificateHistory';
+import { EVENT_CODES, historyOrderProblem, sortedHistory, type HistoryStep } from '../../utils/regression/lifecycle/certificateHistory';
 import { approvalClosedText, opsBase, REVOKE_REASONS, revokedText, STATE_LABELS, stateGuardText } from '../../utils/regression/lifecycle/certificateLabels';
 import { isSubsequenceOf } from '../../utils/regression/lifecycle/certificateOperations';
 import { cnAttributeOf, DEFAULT_CN_DEFINITION, msBetween, newChallenge } from '../../utils/regression/lifecycle/preRegistration';
@@ -48,13 +48,26 @@ test('historyOrderProblem: the JSON event codes in order; presence and order onl
     expect(historyOrderProblem(rows, [['ISSUE', 'SUCCESS'], ['APPROVAL_CLOSE', 'SUCCESS']])).toMatch(/missing Approve action closed\/SUCCESS after position/);
     expect(historyOrderProblem(rows, [['REVOKE', 'SUCCESS']])).toMatch(/missing Revoke Certificate\/SUCCESS/);
     expect(historyOrderProblem(rows, [['APPROVAL_CLOSE', 'FAILED']]), 'the status is part of the row').toMatch(/missing/);
-    // The order is judged on the sorted rows, whatever the server's list order.
-    expect(historyOrderProblem([...rows].reverse(), [['APPROVAL_REQUEST', 'SUCCESS'], ['ISSUE', 'SUCCESS']])).toBeUndefined();
+    // The rows come oldest first: the server's newest-first list, sorted once (as historyOf does), passes.
+    expect(historyOrderProblem(sortedHistory([...rows].reverse()), [['APPROVAL_REQUEST', 'SUCCESS'], ['ISSUE', 'SUCCESS']])).toBeUndefined();
     // Mutant (row reuse): one history row may satisfy one expected step only — two expected ISSUE rows need two rows.
     const single = rows.slice(0, 3);
     expect(historyOrderProblem(single, [['ISSUE', 'SUCCESS']])).toBeUndefined();
     expect(historyOrderProblem(single, [['ISSUE', 'SUCCESS'], ['ISSUE', 'SUCCESS']])).toMatch(/missing Issue Certificate\/SUCCESS after position 3/);
     expect(historyOrderProblem(single, [['APPROVAL_CLOSE', 'SUCCESS'], ['APPROVAL_CLOSE', 'SUCCESS']])).toMatch(/missing/);
+});
+
+test('historyOrderProblem judges the rows as given: the server list sorted once keeps two rows of one timestamp in order', () => {
+    // The server lists newest first: the issue row, listed first, is the newer of two rows written in the same second.
+    const server = [
+        row(EVENT_CODES.ISSUE, 'SUCCESS', '2026-10-14T10:00:02Z'),
+        row(EVENT_CODES.APPROVAL_CLOSE, 'SUCCESS', '2026-10-14T10:00:02Z'),
+        row(EVENT_CODES.APPROVAL_REQUEST, 'SUCCESS', '2026-10-14T10:00:01Z'),
+    ];
+    const steps: HistoryStep[] = [['APPROVAL_REQUEST', 'SUCCESS'], ['APPROVAL_CLOSE', 'SUCCESS'], ['ISSUE', 'SUCCESS']];
+    expect(historyOrderProblem(sortedHistory(server), steps)).toBeUndefined();
+    // Mutant: a second sort turns the two rows of one timestamp around and rejects the valid history.
+    expect(historyOrderProblem(sortedHistory(sortedHistory(server)), steps)).toMatch(/missing Issue Certificate\/SUCCESS/);
 });
 
 test('rule texts: state guards use the state label, the nine revoke reasons carry their labels, approval close and revoke lines', () => {

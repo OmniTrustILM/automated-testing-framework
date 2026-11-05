@@ -19,6 +19,7 @@
     "playwright.regression.config.ts",
     "playwright.api.config.ts",
     "playwright.unit.config.ts",
-    "playwright.visual.config.ts"
+    "playwright.visual.config.ts",
+    "playwright.devblock.config.ts"
   ]
 }

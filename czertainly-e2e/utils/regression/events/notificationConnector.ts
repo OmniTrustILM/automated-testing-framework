@@ -26,8 +26,8 @@ export interface NotificationConnector {
 
 /**
  * The registered, connected notification connector that offers `kind` (a v1 connector with the `notificationProvider`
- * function group), with its LIVE health. Read-only. `undefined` = the tier has none: the spec skips with the named
- * reason (`@needs:email-provider` / `@needs:webhook-provider`).
+ * function group), with its LIVE health: the first healthy one, else the first unhealthy one with the reason. Read-only.
+ * `undefined` = the tier has none: the spec skips with the named reason (`@needs:email-provider` / `@needs:webhook-provider`).
  */
 export async function findNotificationConnector(api: GuardedApi, kind: NotificationKind): Promise<NotificationConnector | undefined> {
     const rows = await api.get('/api/v1/connectors');
@@ -38,13 +38,15 @@ export async function findNotificationConnector(api: GuardedApi, kind: Notificat
             c.status === 'connected' &&
             rowsOf(c.functionGroups).some((g) => g.functionGroupCode === NOTIFICATION_FUNCTION_GROUP && ((g.kinds ?? []) as string[]).includes(kind)),
     );
+    let unhealthy: NotificationConnector | undefined;
     for (const c of candidates) {
         const connector = (await listConnectors(api)).find((x) => x.uuid === c.uuid) ?? (await findConnector(api, String(c.name)));
         if (!connector) continue;
         const health = await healthByVersion(api, connector);
-        return { uuid: String(c.uuid), name: String(c.name), kind, ...(health.healthy ? {} : { unhealthy: health.why }) };
+        if (health.healthy) return { uuid: String(c.uuid), name: String(c.name), kind };
+        unhealthy ??= { uuid: String(c.uuid), name: String(c.name), kind, unhealthy: health.why };
     }
-    return undefined;
+    return unhealthy;
 }
 
 /** The attribute definitions of one kind (`GET /v1/connectors/{uuid}/attributes/notificationProvider/{kind}`), read-only. */

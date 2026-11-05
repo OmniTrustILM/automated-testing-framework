@@ -151,3 +151,9 @@ test('the runner removes a stale local-backend proof of its run id; a worker kee
     prepareRun({ configDir: cwd, env: { ...env }, lock: false });
     expect(fs.existsSync(stale), 'the runner removes it').toBe(false);
 });
+
+test('the smoke config reads its env through loadDotenv, so REG_ENV_FILE wins over the .env next to it', () => {
+    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'playwright.config.ts'), 'utf8');
+    expect(source).toMatch(/loadDotenv\(process\.env, __dirname, \{ requireExplicit: true \}\)/);
+    expect(source, 'loading .env directly would win over REG_ENV_FILE (a set variable is never overwritten)').not.toMatch(/dotenv\.config\(/);
+});
