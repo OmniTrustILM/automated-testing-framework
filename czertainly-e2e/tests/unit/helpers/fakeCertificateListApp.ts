@@ -636,7 +636,7 @@ const APP_JS = String.raw`
 
   function render() {
     root.replaceChildren(
-      h('nav', { 'data-testid': 'sidebar-sticky' }, h('ul', {}, h('li', {}, h('a', { href: '#/' }, 'Dashboard')), h('li', {}, h('a', { href: '#/certificates' }, 'Certificates')))),
+      h('nav', { 'data-testid': 'sidebar-sticky' }, h('ul', {}, h('li', {}, h('a', { href: '#/', 'data-testid': 'sidebar-dashboard' }, 'Dashboard')), h('li', {}, h('a', { href: '#/certificates', 'data-testid': 'sidebar-certificates' }, 'Certificates')))),
       h('main', {}, location.hash.indexOf('/certificates') >= 0 ? (S.loaded ? [filterWidget(), listWidget()] : h('div', { 'data-testid': 'table-skeleton' }, 'loading')) : h('div', {}, 'Dashboard')));
     renderPortal();
   }

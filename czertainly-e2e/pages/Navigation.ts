@@ -7,91 +7,60 @@
  */
 import { Locator, Page, expect } from '@playwright/test';
 
+// The expanded sidebar is 260px wide, the collapsed rail 84px.
+const EXPANDED_MIN_WIDTH = 200;
+
+/**
+ * Sidebar navigation by the FE `data-testid` of each entry (see `smokeData.sidebarItems`).
+ * Scoped to the main sidebar (`sidebar-sticky`): the flying menu that opens over a collapsed rail
+ * renders the same test ids.
+ */
 export class Navigation {
-  private readonly sidebarNav: Locator;
-  private hasToggledSidebar = false;
+  readonly sidebarNav: Locator;
 
   constructor(private readonly page: Page) {
     this.sidebarNav = this.page.getByTestId('sidebar-sticky');
   }
 
+  entry(testId: string): Locator {
+    return this.sidebarNav.getByTestId(testId);
+  }
+
+  private async sidebarWidth(): Promise<number> {
+    return this.sidebarNav.evaluate((el) => el.getBoundingClientRect().width);
+  }
+
+  /**
+   * FE starts with the collapsed rail (menu-size in localStorage), where a parent opens the flying
+   * menu instead of its submenu. The toggle is labelled "Expand" while collapsed and "Collapse"
+   * while expanded since fe-administrator#2399; before it was always "Collapse". Decide by the width.
+   */
   private async ensureSidebarExpanded(): Promise<void> {
     await expect(this.sidebarNav).toBeVisible();
-    if (this.hasToggledSidebar) {
+    if ((await this.sidebarWidth()) >= EXPANDED_MIN_WIDTH) {
       return;
     }
 
-    const expandButton = this.sidebarNav.getByRole('button', {
-      name: /collapse/i,
-    });
-
-    if (await expandButton.isVisible()) {
-      await expandButton.click();
-      await this.page.waitForTimeout(400);
-      this.hasToggledSidebar = true;
-    }
+    await this.sidebarNav.getByRole('button', { name: /^(expand|collapse)$/i }).click();
+    await expect.poll(() => this.sidebarWidth()).toBeGreaterThanOrEqual(EXPANDED_MIN_WIDTH);
   }
 
-  private async ensureParentExpanded(parentButton: Locator): Promise<void> {
-    const parentContainer = parentButton.locator('..');
-    const parentList = parentContainer.locator('ul').first();
-
-    if ((await parentList.count()) === 0) {
-      await parentButton.click();
-      return;
-    }
-
-    const isExpanded = async () =>
-      parentList.evaluate((el) => {
-        const mh = getComputedStyle(el).maxHeight || '0';
-        return parseFloat(mh) > 0;
-      });
-
-    if (!(await isExpanded())) {
-      await parentButton.click();
-    }
-
-    await expect.poll(isExpanded).toBeTruthy();
-  }
-
-  async openViaSidebar(
-    menuText: string,
-    urlHint: RegExp,
-    parentButtonName?: string
-  ): Promise<void> {
+  async openViaSidebar(testId: string, urlHint: RegExp, parentTestId?: string): Promise<void> {
     await this.ensureSidebarExpanded();
 
-    let targetLink: Locator;
-
-    if (parentButtonName) {
-      const parentButton = this.sidebarNav.getByRole('button', {
-        name: parentButtonName,
-        exact: true,
-      });
-      await this.ensureParentExpanded(parentButton);
-
-      // Scope link search to the parent's children <ul>. This avoids matching
-      // duplicate names that live elsewhere in the sidebar (e.g. Dashboard >
-      // Certificates vs top-level Certificates after the 2026-06 FE rename).
-      const parentContainer = parentButton.locator('..');
-      const childrenList = parentContainer.locator('ul').first();
-      targetLink = childrenList.getByRole('link', {
-        name: menuText,
-        exact: true,
-      });
-    } else {
-      // Top-level link: scope to direct-child <li> of the sidebar's main <ul>,
-      // which excludes nested submenu links with the same name. Structural
-      // (CSS direct-child `>`), not DOM-order dependent — safer than .last().
-      const topLevelUl = this.sidebarNav.locator('ul').first();
-      targetLink = topLevelUl.locator(':scope > li').locator('> a, > div > a').filter({
-        hasText: menuText,
-      });
+    const target = this.entry(testId);
+    if (parentTestId) {
+      // A closed submenu is clipped (max-height 0), not hidden, so ask the parent, not the link.
+      const parent = this.entry(parentTestId);
+      if ((await parent.getAttribute('aria-expanded')) !== 'true') {
+        await parent.click();
+      }
+      await expect(parent).toHaveAttribute('aria-expanded', 'true');
     }
 
     await Promise.all([
       this.page.waitForURL(urlHint, { waitUntil: 'domcontentloaded' }),
-      targetLink.click(),
+      target.click(),
     ]);
   }
 }

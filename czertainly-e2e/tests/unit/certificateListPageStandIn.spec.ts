@@ -15,7 +15,7 @@ const failsFast = async (call: Promise<unknown>): Promise<boolean> => call.then(
 async function open(browser: Browser, opts: Parameters<typeof serveInventory>[1] = {}): Promise<{ app: Served; inventory: CertificateListPage }> {
     const app = await serveInventory(browser, opts);
     const inventory = new CertificateListPage(app.page);
-    await new Navigation(app.page).openViaSidebar('Certificates', /\/certificates/i);
+    await new Navigation(app.page).openViaSidebar('sidebar-certificates', /\/certificates/i);
     await inventory.waitForTableLoaded();
     return { app, inventory };
 }

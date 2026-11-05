@@ -115,7 +115,7 @@ test.describe('@smoke discovery', () => {
 
     // --- Step 1: Check Connector Status (UI) ---
     await test.step('Check Connector Status', async () => {
-      await nav.openViaSidebar('Connectors', /connectors/i);
+      await nav.openViaSidebar('sidebar-connectors', /connectors/i);
       const main = page.locator('main');
       await expect(main).toBeVisible();
 
