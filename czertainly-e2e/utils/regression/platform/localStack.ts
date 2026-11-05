@@ -1,10 +1,6 @@
 /**
- * localStack — docker compose control of the local stack, for the local-only rows.
- *
- * Stop, start, restart, `down -v`, logs, and psql inside the database container. Restart, stop and database rows can only run
- * against a stack the suite owns, so every call refuses unless TIER_KIND=local and BASE_URL is loopback. The docker binary
- * comes from `tools.requireTool('docker')` (a fake under the unit tests); compose file, project and service names come from
- * the environment, never from code.
+ * localStack — docker compose control of the local stack for the local-only rows; every call refuses unless TIER_KIND=local and BASE_URL is
+ * loopback. Compose file, project and service names come from the environment.
  */
 import { execFileSync, spawnSync } from 'child_process';
 import { Logger } from '../../Logger';
@@ -25,7 +21,6 @@ export interface StackConfig {
     services: Record<Service, string>;
 }
 
-/** Why the local stack must not be touched from this process, or undefined. */
 export function stackProblem(env: NodeJS.ProcessEnv = process.env): string | undefined {
     if (!isLocalTier(env)) return 'local stack only (TIER_KIND=local)';
     let host: string;
@@ -38,7 +33,6 @@ export function stackProblem(env: NodeJS.ProcessEnv = process.env): string | und
     return requireTool('docker');
 }
 
-/** The stack configuration from the environment (pure apart from reading `env`). */
 export function stackConfig(env: NodeJS.ProcessEnv = process.env): StackConfig {
     return {
         dockerBin: settings(env).dockerBinOverride ?? 'docker',
@@ -48,7 +42,6 @@ export function stackConfig(env: NodeJS.ProcessEnv = process.env): StackConfig {
     };
 }
 
-/** The `docker compose …` argv for a subcommand (pure): `-f <file>` / `-p <project>` when configured. */
 export function composeArgs(cfg: StackConfig, ...rest: string[]): string[] {
     return ['compose', ...(cfg.composeFile ? ['-f', cfg.composeFile] : []), ...(cfg.project ? ['-p', cfg.project] : []), ...rest];
 }
@@ -62,16 +55,12 @@ export interface CommandResult {
 
 export type Runner = (bin: string, args: string[], input?: string) => CommandResult;
 
-/** The default runner: `spawnSync` with a 10-minute ceiling (an upgrade's migration can take minutes). */
 const spawnRunner: Runner = (bin, args, input) => {
     const r = spawnSync(bin, args, { encoding: 'utf8', input, timeout: 600_000, maxBuffer: 64 * 1024 * 1024 });
     return { ok: !r.error && r.status === 0, status: r.status, stdout: r.stdout ?? '', stderr: r.error ? String(r.error) : (r.stderr ?? '') };
 };
 
-/**
- * The local stack controller. `run` is injectable for the unit tests (the fake records argv); the real runner is only
- * reached after `stackProblem` passed.
- */
+/** The local stack controller; `run` is injectable for unit tests. */
 export class PlatformStack {
     constructor(private readonly cfg: StackConfig = stackConfig(), private readonly run: Runner = spawnRunner, private readonly env: NodeJS.ProcessEnv = process.env) {}
 
@@ -105,36 +94,26 @@ export class PlatformStack {
         this.compose(`restart(${service})`, 'restart', this.service(service));
     }
 
-    /**
-     * `compose down -v` (volumes too): the empty-database start of REG-CORE-01 / 02. Refused unless the compose project OR the
-     * compose file is explicit (`LOCAL_COMPOSE_PROJECT` / `LOCAL_COMPOSE_FILE`): a `down -v` resolved from the current directory
-     * would wipe whatever project the shell happens to sit in.
-     */
+    /** `compose down -v`: refused unless the compose project or file is explicit, or it would wipe whatever project the shell sits in. */
     downWithVolumes(): void {
         if (!this.cfg.project && !this.cfg.composeFile) throw new Error('localStack.downWithVolumes: LOCAL_COMPOSE_PROJECT or LOCAL_COMPOSE_FILE must name the stack explicitly');
         this.compose('downWithVolumes', 'down', '-v', '--remove-orphans');
     }
 
-    /** `compose up -d <services>`. */
     up(...services: Service[]): void {
         this.compose('up', 'up', '-d', ...services.map((s) => this.service(s)));
     }
 
-    /** The logs of a service since a duration / timestamp (`--since`), as text. */
     logs(service: Service, since?: string): string {
         return this.compose(`logs(${service})`, 'logs', '--no-color', ...(since ? ['--since', since] : []), this.service(service)).stdout;
     }
 
-    /**
-     * One SQL statement inside the database container: `compose exec -T <db> psql -At -v ON_ERROR_STOP=1 -c <sql>` as
-     * the container's default user / database. Returns the unaligned rows (`|`-separated columns).
-     */
+    /** One SQL statement inside the database container (`psql -At`); returns the unaligned rows. */
     psql(sql: string): string[] {
         const r = this.compose('psql', 'exec', '-T', this.service('db'), 'psql', '-At', '-v', 'ON_ERROR_STOP=1', '-c', sql);
         return r.stdout.split('\n').map((l) => l.trimEnd()).filter(Boolean);
     }
 
-    /** The image / tag a service runs (`compose images --format json`), for the upgrade guard of REG-DEP-02. */
     imageOf(service: Service): string | undefined {
         const r = this.compose(`imageOf(${service})`, 'images', '--format', 'json', this.service(service));
         try {
@@ -147,7 +126,6 @@ export class PlatformStack {
     }
 }
 
-/** The parts of a core start log REG-CORE-01 / 02 read (pure). */
 export interface CoreStartLogFacts {
     appliedMigrations?: number;
     nowAtVersion?: string;
@@ -171,13 +149,8 @@ export function coreStartLogFacts(log: string): CoreStartLogFacts {
     };
 }
 
-// ------------------------------------------------------------------ the core restart (session tests on the local stack)
 
-/**
- * The docker arguments that restart the core service, or why not. Stricter than `PlatformStack.restart`: it needs this run's
- * unexpired local-backend proof (`hasLocalProof`, tier/localProof.ts) and a NAMED compose project (a bare `docker compose restart` would
- * act on whatever compose project the working directory belongs to).
- */
+/** The docker arguments that restart the core service, or why not: needs this run's unexpired local proof and a NAMED compose project. */
 export function restartPlan(env: NodeJS.ProcessEnv = process.env): { args: string[] } | { problem: string } {
     if (!isLocalTier(env)) return { problem: 'restarting core needs a local stack (TIER_KIND=local)' };
     if (!hasLocalProof(env)) return { problem: 'no authenticated local-backend proof for this run (API-GEN-33[guard] in the snapshot project)' };
@@ -187,9 +160,8 @@ export function restartPlan(env: NodeJS.ProcessEnv = process.env): { args: strin
 }
 
 /**
- * `docker compose -p <project> restart <core service>` on a proven local stack; returns when docker returns. Specs never call
- * child_process (spec guards): the session tests call this. Under the unit tests (`REG_UNIT_NO_DOCKER=1`) only an absolute fake inside
- * the test output runs (requireTool.ts `dockerBin`).
+ * Restarts the core service on a proven local stack; specs never call child_process, the session tests call this. Under
+ * `REG_UNIT_NO_DOCKER=1` only a fake docker runs.
  */
 export function restartCore(env: NodeJS.ProcessEnv = process.env): void {
     const plan = restartPlan(env);

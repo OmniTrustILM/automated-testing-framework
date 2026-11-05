@@ -1,8 +1,6 @@
 /**
- * notificationDeliveryFixtures — the own objects the `@local` delivery rows need: an own RA profile, group and owner, one own
- * certificate in that group, and ONE trigger on `Certificate status changed` (associated on the own group) whose execution
- * sends the given notification profiles; revoking the certificate fires it. Object level only, every object own and
- * ledgered; delivery goes to the local catchers of notificationCatchers.ts.
+ * notificationDeliveryFixtures — the own objects the `@local` delivery rows need: an own RA profile, group, owner and certificate, and one
+ * trigger on `Certificate status changed` whose execution sends the given profiles; revoking the certificate fires it.
  */
 import { GuardedApi } from '../guard/types';
 import { createOwnGroup } from '../ownGroups';
@@ -24,15 +22,13 @@ export interface Rig {
     cert: OwnCertificate;
 }
 
-/** The address of an own user / group / role: `<name>@example.test` (reserved, RFC 6761: only the local catcher ever sees it). */
 export const addressOf = (name: string): string => `${name}@example.test`;
 
-/** The suffix of the rig's certificate: short, because it becomes part of a common name that has a 64-character limit. */
 export const rigCertificateSuffix = (suffix: string): string => `${suffix}-c`;
 
 /**
- * RA profile, group (with a contact e-mail), owner (with an e-mail) and one issued certificate in the group owned by the owner. A tier
- * without a healthy CA is the `ca` need's to skip before this runs: here it is an error.
+ * RA profile, group (with a contact e-mail), owner (with an e-mail) and one issued certificate; a tier without a healthy CA is the `ca`
+ * need's skip, here an error.
  */
 export async function buildRig(api: GuardedApi, spec: string, suffix: string): Promise<Rig> {
     const ra = await createOwnRaProfile(api, spec, `${suffix}-ra`);
@@ -42,7 +38,6 @@ export async function buildRig(api: GuardedApi, spec: string, suffix: string): P
     return { ra, group, owner, ownerEmail: addressOf(`${suffix}-owner`), cert };
 }
 
-/** One trigger (event Certificate status changed) with ONE execution sending every profile; associated on the rig's group. */
 export async function armGroup(api: GuardedApi, spec: string, rig: Pick<Rig, 'group'>, suffix: string, profiles: OwnRef[]): Promise<{ triggerName: string; triggerUuid: string }> {
     const execution = await createOwnExecution(api, spec, `${suffix}-e`, { type: 'sendNotification', items: profiles.map((p) => sendNotificationItem(p.uuid)) });
     const action = await createOwnAction(api, spec, `${suffix}-a`, { executions: [execution] });
@@ -52,7 +47,6 @@ export async function armGroup(api: GuardedApi, spec: string, rig: Pick<Rig, 'gr
     return { triggerName: trigger.name, triggerUuid: trigger.uuid };
 }
 
-/** Revokes the rig's certificate and returns the trigger's history row on it once the firing finished. */
 export async function fire(api: GuardedApi, rig: Rig, armed: { triggerName: string }): Promise<ObjectHistoryRow> {
     const revoked = await revokeOwnCertificateAndWait(api, rig.ra, rig.cert);
     if (revoked.status >= 300) throw new Error(`revoke → ${revoked.status} ${revoked.text.slice(0, 300)}`);

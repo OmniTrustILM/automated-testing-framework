@@ -1,7 +1,6 @@
 /**
- * platformTeardown — the teardown handlers of the platform objects (entities, locations, secrets, vault profiles,
- * vault instances, compliance profiles). The registry (runTeardown HANDLER_MODULES) loads this module; each removal
- * proves the object's absence afterwards.
+ * platformTeardown — the teardown handlers of the platform objects (entities, locations, secrets, vault profiles, vault instances,
+ * compliance profiles); each removal proves the object's absence.
  */
 import type { TeardownHandler } from '../teardown/runTeardown';
 import { deleteAndVerify, removeComplianceProfile } from '../teardown/teardownHandlers';

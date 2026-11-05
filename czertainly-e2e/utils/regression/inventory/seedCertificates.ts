@@ -1,9 +1,6 @@
 /**
- * seedCertificates — X.509 certificates for the inventory seeds.
- *
- * Builds certificates with a chosen validity, key size, signature hash, issuer and CA flag with @peculiar/x509 (loaded
- * lazily); no openssl, no network. A CA gets basicConstraints cA=true and an end entity none, so the platform classifies
- * each as root CA, intermediate CA, self-signed end entity or end entity.
+ * seedCertificates — X.509 certificates for the inventory seeds, built with @peculiar/x509 (lazy; no openssl, no network); a CA gets
+ * basicConstraints cA=true, an end entity none.
  */
 import * as crypto from 'crypto';
 import type * as X509 from '@peculiar/x509';
@@ -12,11 +9,9 @@ import { loadX509Module, sha256Hex } from '../pkiBuilders';
 export type KeyBits = 2048 | 3072 | 4096;
 export type SignatureHash = 'SHA-256' | 'SHA-384' | 'SHA-512';
 
-/** What a certificate can sign with: its subject and private key (kept in memory only). */
 export interface IssuerHandle {
-    /** Distinguished name as `CN=<commonName>`. */
     subject: string;
-    /** The hash the issuer's key signs with: WebCrypto binds an RSASSA-PKCS1-v1_5 key to its hash at generation time. */
+    /** The hash the issuer's key signs with (WebCrypto binds the key to its hash at generation). */
     hash: SignatureHash;
     privateKey: CryptoKey;
     publicKey: CryptoKey;
@@ -27,37 +22,28 @@ export interface CertificateSpec {
     notBefore: Date;
     notAfter: Date;
     keyBits?: KeyBits;
-    /**
-     * The signature hash of a SELF-SIGNED certificate (default SHA-256). An issued certificate is signed with the issuer's key, whose hash
-     * is fixed when the key is generated: asking for another hash throws instead of silently signing with the issuer's.
-     */
+    /** The hash of a SELF-SIGNED certificate (default SHA-256); an issued one uses the issuer's, and asking for another throws. */
     hash?: SignatureHash;
-    /** Signed by this issuer; default: self-signed. */
     issuer?: IssuerHandle;
-    /** basicConstraints cA=true and keyCertSign (a CA certificate). */
     ca?: boolean;
-    /** Serial number as hex (default: random, positive). */
     serialHex?: string;
-    /** Reuse a key pair (a CA signing several leaves is NOT this: leaves always get their own key). */
+    /** Reuse a key pair (leaves always get their own key). */
     keys?: CryptoKeyPair;
 }
 
 export interface BuiltCertificate {
     pem: string;
     der: Buffer;
-    /** Lowercase hex SHA-256 of the DER: the inventory fingerprint and the import entryReference. */
     fingerprintSha256: string;
     serialHex: string;
     keyBits: KeyBits;
     hash: SignatureHash;
-    /** Handle to sign other certificates with. */
     handle: IssuerHandle;
     commonName: string;
     notBefore: Date;
     notAfter: Date;
 }
 
-/** A date at second precision (X.509 UTCTime / GeneralizedTime carry no milliseconds). */
 const dateAtSecond = (d: Date): Date => new Date(Math.floor(d.getTime() / 1000) * 1000);
 
 async function generateRsa(bits: KeyBits, hash: SignatureHash): Promise<CryptoKeyPair> {
@@ -68,13 +54,11 @@ async function generateRsa(bits: KeyBits, hash: SignatureHash): Promise<CryptoKe
     )) as unknown as CryptoKeyPair;
 }
 
-/** A fresh RSA key pair (native; 2048 bits in ~0.1 s, 4096 in a few seconds). */
 export const generateKeys = generateRsa;
 
 /**
- * One certificate. The key pair is generated here (own key per certificate) unless `keys` is given.
- * Extensions: subjectKeyIdentifier always; authorityKeyIdentifier when issued by another certificate; basicConstraints
- * and keyUsage only for a CA.
+ * One certificate with a fresh key pair unless `keys` is given; extensions: subjectKeyIdentifier, authorityKeyIdentifier when issued,
+ * basicConstraints and keyUsage for a CA.
  */
 export async function buildCertificate(spec: CertificateSpec): Promise<BuiltCertificate> {
     const lib = loadX509Module();
@@ -82,7 +66,6 @@ export async function buildCertificate(spec: CertificateSpec): Promise<BuiltCert
     if (spec.issuer && spec.hash && spec.hash !== spec.issuer.hash) {
         throw new Error(`buildCertificate: ${spec.commonName} asks for ${spec.hash} but its issuer's key signs with ${spec.issuer.hash}`);
     }
-    // The hash of the SIGNATURE is the signing key's: the issuer's, or the certificate's own when self-signed.
     const hash = spec.issuer ? spec.issuer.hash : (spec.hash ?? 'SHA-256');
     const keys = spec.keys ?? (await generateRsa(keyBits, spec.hash ?? hash));
     const serialHex = spec.serialHex ?? `01${crypto.randomBytes(15).toString('hex')}`;
@@ -124,7 +107,6 @@ export async function buildCertificate(spec: CertificateSpec): Promise<BuiltCert
     };
 }
 
-/** What a parsed certificate says (for the unit tests and the manifest read-back checks). */
 export function describeCertificate(pemOrDer: string | Buffer): {
     subject: string;
     issuer: string;
@@ -151,7 +133,6 @@ export function describeCertificate(pemOrDer: string | Buffer): {
     };
 }
 
-/** Does `cert` verify under `issuer`'s public key (the signature check core runs to call a certificate self-signed)? */
 export async function verifiesUnder(certPem: string, issuerPem: string): Promise<boolean> {
     const lib = loadX509Module();
     const cert = new lib.X509Certificate(certPem);

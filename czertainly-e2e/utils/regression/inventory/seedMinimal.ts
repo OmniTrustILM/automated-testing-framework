@@ -1,9 +1,6 @@
 /**
- * seedMinimal — the three-certificate seed of the migration checks.
- *
- * Two certificates with the run's owner and one without, two with a custom attribute value and one without, so a sort
- * by owner or by the attribute puts the empty one last in both directions. Own objects only, recorded in the ledger
- * before any assertion; the manifest is reused within a run.
+ * seedMinimal — the three-certificate seed of the migration checks: two with the run's owner, two with a custom attribute value, so a sort
+ * puts the empty one last in both directions; own objects only, ledger first, manifest reused within a run.
  */
 import { Logger } from '../../Logger';
 import { GuardedApi } from '../guard/types';
@@ -25,15 +22,12 @@ export type SeedField = 'owner' | 'rank';
 interface SeedCertificatePlan {
     key: SeedKey;
     commonName: string;
-    /** Owned by the seed user. */
     owner: boolean;
-    /** Value of the seed custom attribute (integer), or null for none. */
     rank: number | null;
 }
 
 export interface SeedSubsetPlan {
     kind: 'b1-null-last-subset';
-    /** Common-name prefix shared by the subset's certificates and by nothing else (the isolation filter). */
     prefix: string;
     attribute: { name: string; label: string; contentType: 'integer' };
     owner: { username: string };
@@ -47,10 +41,7 @@ export interface SeedSubsetManifest extends SeedSubsetPlan {
     certificates: Array<SeedCertificatePlan & { uuid: string }>;
 }
 
-/**
- * The subset's names and values (pure). `stamp` makes the prefix unique per build, so a second build in the same run
- * (state lost) never mixes with the first under the isolation filter.
- */
+/** The subset's names and values (pure); `stamp` makes the prefix unique per build. */
 export function planSeedSubset(name: (suffix: string) => string = runName, stamp: string = uniqueSuffix()): SeedSubsetPlan {
     const prefix = name(`seed-${stamp}-`);
     return {
@@ -66,24 +57,20 @@ export function planSeedSubset(name: (suffix: string) => string = runName, stamp
     };
 }
 
-/** What a manifest says about one of its certificates: the owner's username or the rank, null when it has none. */
 export function manifestValue(m: SeedSubsetManifest, uuid: string, field: SeedField): string | number | null | undefined {
     const c = m.certificates.find((x) => x.uuid === uuid);
     if (!c) return undefined;
     return field === 'owner' ? (c.owner ? m.owner.username : null) : c.rank;
 }
 
-/** The uuids of the subset's certificates WITHOUT a value for the field (the rows that must sort last). */
 export function nullRows(m: SeedSubsetManifest, field: SeedField): string[] {
     return m.certificates.filter((c) => (field === 'owner' ? !c.owner : c.rank === null)).map((c) => c.uuid);
 }
 
-/** The isolation filter of the subset: certificates whose common name starts with the subset prefix. */
 export function seedFilter(m: Pick<SeedSubsetPlan, 'prefix'>): JsonObject[] {
     return [{ fieldSource: 'property', fieldIdentifier: 'COMMON_NAME', condition: 'STARTS_WITH', value: m.prefix }];
 }
 
-/** Why a manifest is not a usable subset (empty = usable): 3 distinct certificates under the prefix, one null per field. */
 export function manifestProblems(m: SeedSubsetManifest, ofRun: string = runId()): string[] {
     const problems: string[] = [];
     if (m.kind !== 'b1-null-last-subset') problems.push(`kind ${String(m.kind)}`);
@@ -103,10 +90,8 @@ const stillOwn = (m: SeedSubsetManifest): boolean =>
     [m.attributeUuid, m.ownerUuid, ...m.certificates.map((c) => c.uuid)].every((uuid) => checkOwnership({ uuid }).own);
 
 /**
- * Builds the subset through the guarded API (or returns this run's earlier one): own custom attribute (integer, not
- * required, resource certificates), own disabled user, three self-signed uploads (with the attribute value where the
- * plan has one), then the owner on a and b (`PATCH /v1/certificates/{own}` with `ownerUuid` = the own user: the guard
- * types that field as users). Ledger before assertion for every object.
+ * Builds the subset through the guarded API (or returns this run's earlier one): own custom attribute and disabled user, three self-signed
+ * uploads, then the owner on a and b; ledger first for every object.
  */
 export async function buildSeedSubset(api: GuardedApi, spec: string, plan: SeedSubsetPlan = planSeedSubset()): Promise<SeedSubsetManifest> {
     const earlier = readRunState().inventorySeed?.b1Subset as SeedSubsetManifest | undefined;

@@ -1,7 +1,6 @@
 /**
- * tier/dns — which hosts count as local: `localhost`, 127.0.0.0/8 and ::1 always; a `*.localhost` name only when it
- * RESOLVES to loopback only; a TIER_LOCAL_HOSTS entry only when it is (or resolves only to) an RFC 1918 / link-local /
- * loopback address. The lookup runs in a child process (config load is synchronous) and is injectable.
+ * tier/dns — which hosts count as local: loopback always, a `*.localhost` name only when it resolves to loopback only, a TIER_LOCAL_HOSTS
+ * entry only when private. The lookup runs in a child process (config load is synchronous) and is injectable.
  */
 import { spawnSync } from 'child_process';
 import * as net from 'net';
@@ -9,7 +8,6 @@ import { settings } from '../run/settings';
 
 export const bareHost = (host: string): string => host.toLowerCase().replace(/^\[|\]$/g, '');
 
-/** 127.0.0.0/8, ::1 and ::ffff:127.x (with or without brackets). */
 export function isLoopbackAddress(address: string): boolean {
     const a = bareHost(address);
     if (net.isIPv4(a)) return a.split('.')[0] === '127';
@@ -21,16 +19,12 @@ export function isLoopbackAddress(address: string): boolean {
     return false;
 }
 
-/**
- * `localhost` and loopback literals (with or without brackets). A `*.localhost` name is NOT loopback by its suffix:
- * `isLocalHost` resolves it and accepts it only when every address is loopback.
- */
+/** `localhost` and loopback literals; a `*.localhost` name is not loopback by its suffix, `isLocalHost` resolves it. */
 export function isLoopbackHost(host: string): boolean {
     const h = bareHost(host);
     return h === 'localhost' || isLoopbackAddress(h);
 }
 
-/** RFC 1918 (10/8, 172.16/12, 192.168/16), link-local (169.254/16, fe80::/10) or loopback; false for anything else. */
 export function isPrivateAddress(address: string): boolean {
     const a = bareHost(address);
     if (net.isIPv4(a)) {
@@ -46,7 +40,6 @@ export function isPrivateAddress(address: string): boolean {
     return false;
 }
 
-/** Extra hosts a local stack may use (TIER_LOCAL_HOSTS, comma-separated); each must still prove it is private. */
 export function extraLocalHosts(env: NodeJS.ProcessEnv = process.env): string[] {
     return settings(env).tierLocalHosts
         .split(',')
@@ -54,7 +47,6 @@ export function extraLocalHosts(env: NodeJS.ProcessEnv = process.env): string[] 
         .filter(Boolean);
 }
 
-/** A synchronous name lookup (config load is synchronous): every address the name resolves to. Injected in tests. */
 export type Resolver = (host: string) => { addresses?: string[]; error?: string };
 
 const RESOLVE_SCRIPT = `
@@ -64,17 +56,15 @@ require('dns').lookup(process.argv[1], { all: true }, (e, a) =>
 
 const resolved = new Map<string, { addresses?: string[]; error?: string }>();
 
-/** Forget the cached host lookups of this process (unit tests). */
 export function resetResolvedHostsForTests(): void {
     resolved.clear();
 }
 
-/** Default resolver: `dns.lookup(all)` in a child Node process, cached per process. */
 export const dnsResolveSync: Resolver = (host) => {
     const key = host.toLowerCase();
     const hit = resolved.get(key);
     if (hit) return hit;
-    // `--` ends node's own options: a host that starts with `-` is an argument, never an option.
+    // `--` ends node's own options: a host starting with `-` is never an option.
     const r = spawnSync(process.execPath, ['-e', RESOLVE_SCRIPT, '--', key], { encoding: 'utf8', timeout: 10_000 });
     let out: { addresses?: string[]; error?: string };
     try {
@@ -91,15 +81,12 @@ export interface LocalHostOptions {
     resolve?: Resolver;
 }
 
-/**
- * Loopback; or listed in TIER_LOCAL_HOSTS AND private: an RFC 1918 / link-local / loopback literal, or a name whose
- * every address is one.
- */
+/** Loopback; or listed in TIER_LOCAL_HOSTS AND private (a private literal, or a name whose every address is private). */
 export function isLocalHost(host: string, env: NodeJS.ProcessEnv = process.env, opts: LocalHostOptions = {}): boolean {
     if (isLoopbackHost(host)) return true;
     const h = bareHost(host);
     if (h.endsWith('.localhost')) {
-        // Resolved like any other name: loopback only (a resolver or /etc/hosts may map it anywhere).
+        // Resolved like any other name (a resolver or /etc/hosts may map it anywhere).
         const { addresses } = (opts.resolve ?? dnsResolveSync)(h);
         return !!addresses && addresses.length > 0 && addresses.every(isLoopbackAddress);
     }
@@ -109,7 +96,6 @@ export function isLocalHost(host: string, env: NodeJS.ProcessEnv = process.env, 
     return !!addresses && addresses.length > 0 && addresses.every(isPrivateAddress);
 }
 
-/** The hostname of a URL variable; the error names the variable, never its value. */
 export function hostOf(value: string, variable: string): string {
     try {
         return new URL(value).hostname;

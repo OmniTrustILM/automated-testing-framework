@@ -1,7 +1,6 @@
 /**
- * lifecycleTeardown — the run-end teardown handlers of the `approvals` and `approvalProfiles` ledger types (runTeardown
- * `HANDLER_MODULES` maps both to this module). Approvals are never deleted by the
- * platform and an approval profile with approvals cannot be deleted: both are reported as kept, never left silently.
+ * lifecycleTeardown — the run-end teardown handlers of the `approvals` and `approvalProfiles` ledger types; the platform never deletes
+ * approvals and an approval profile with approvals cannot be deleted, so both are reported as kept.
  */
 import { apiJson } from '../apiReads';
 import { guardApi } from '../guard/createGuard';
@@ -12,23 +11,18 @@ import { pollUntil } from '../wait';
 import { sameApprovalStatus } from './approvals';
 import { sendRaw } from './rawAnswers';
 
-// ------------------------------------------------------------------ teardown handlers (runTeardown HANDLER_MODULES → lifecycle)
 
 const EXISTING_APPROVALS = /existing approvals/i;
 
 /**
- * `approvals` (step 1 of the teardown order): a Pending approval of an own certificate is REJECTED through the override
- * path (the certificate then leaves `pending_approval`); approvals are never deleted by the platform, so the line is
- * reported as kept with its final status. `approvalProfiles` (step 12): its remaining associations on own RA profiles
- * are removed, then the delete is attempted; a profile that has approvals cannot be deleted (core
- * ApprovalProfileServiceImpl) and is reported as kept, naming the rule. Both send their mutations through the guard
- * (`guardApi` over the teardown's context: ledger lines of this run, dry run honoured).
+ * `approvals`: a Pending approval of an own certificate is REJECTED through the override path, then reported as kept. `approvalProfiles`:
+ * remaining associations are removed, then the delete is attempted; a profile with approvals is kept. Mutations go through the guard.
  */
 export const teardownHandlers: Record<string, TeardownHandler> = {
     approvals: {
         action: 'reject through the override path when still Pending; approvals are retained by the platform (kept, reported)',
         async remove(ctx, line) {
-            // The guard over the teardown's own context (never disposed here: the context serves every object).
+            // The guard over the teardown's own context (never disposed here).
             const api = guardApi(ctx.api);
             const detail = await apiJson<JsonObject>(api, 'GET', `/api/v1/approvals/${line.uuid}`);
             if (sameApprovalStatus(detail.status, 'Pending')) {

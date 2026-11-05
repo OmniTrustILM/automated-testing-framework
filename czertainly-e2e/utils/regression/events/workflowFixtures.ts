@@ -1,12 +1,6 @@
 /**
- * workflowFixtures — the own objects the workflow and discovery rows need around their triggers.
- *
- * Provides pre-registered and revoked certificates, object updates that put a certificate into a group or give it a custom
- * attribute value, and the read of a certificate detail.
- *
- * An event association on the RUN RA profile would fire for every certificate other specs issue on it, so each association row
- * gets its own RA profile. Every helper records what it creates before the caller asserts, and checks the object is own
- * before it changes it.
+ * workflowFixtures — the own objects the workflow and discovery rows need around their triggers; each association row gets its own RA
+ * profile, since one on the RUN RA profile would fire for every certificate other specs issue.
  */
 import { waitForCertificateState } from '../wait/certificateState';
 import { GuardedApi } from '../guard/types';
@@ -22,7 +16,6 @@ import { uniqueSuffix } from '../text';
 import { ApiAnswer } from '../apiReads';
 import type { CertificateDetail } from '../apiReads';
 
-// ------------------------------------------------------------------ certificates
 
 export interface Registered {
     status: number;
@@ -31,10 +24,8 @@ export interface Registered {
 }
 
 /**
- * Pre-registers a placeholder certificate with an authorization secret on an own RA profile (`POST …/certificates/register`):
- * it fires `Certificate registered` and makes no connector call when the authority has no registration support, so it is the
- * cheap driver of firing counts (REG-WFL-15). The answer is returned: a 4xx on the first call
- * is a deploy gate (the authority cannot pre-register) the caller turns into a skip with the text.
+ * Pre-registers a placeholder certificate on an own RA profile: the cheap driver of firing counts; a 4xx on the first call is a deploy gate
+ * the caller turns into a skip.
  */
 export async function registerPlaceholder(api: GuardedApi, spec: string, ra: OwnRaProfile, suffix: string, opts: { ownerUuid?: string; groupUuids?: string[] } = {}): Promise<Registered> {
     const commonName = ownCommonName(suffix);
@@ -53,10 +44,7 @@ export async function registerPlaceholder(api: GuardedApi, spec: string, ra: Own
     return { status: sent.status, text: sent.text };
 }
 
-/**
- * Revokes an own, issued certificate (`POST …/revoke`) and waits until it is revoked; the status of the call is returned.
- * (lifecycle/certificateOperations `revokeOwnCertificate` sends the call only and returns the raw answer.)
- */
+/** Revokes an own, issued certificate and waits until it is revoked; returns the call's status. */
 export async function revokeOwnCertificateAndWait(api: GuardedApi, ra: OwnRaProfile, cert: OwnRef, reason = 'keyCompromise'): Promise<ApiAnswer> {
     await assertOwnLive(api, 'certificates', cert, 'revokeOwnCertificateAndWait');
     const sent = await sendJson(api, 'POST', `/api/v2/operations/authorities/${ra.authorityUuid}/raProfiles/${ra.uuid}/certificates/${cert.uuid}/revoke`, { reason, attributes: [] });
@@ -70,36 +58,29 @@ export interface CertificateObjects {
 }
 
 /**
- * `PATCH /v1/certificates/{own}`: groups and owner of an OWN certificate (the guard types each uuid). The update DTO
- * (`CertificateUpdateObjectsDto`) has NO custom attributes: core ignores unknown fields, so a custom attribute is set with
- * `setOwnCustomAttribute`.
+ * `PATCH /v1/certificates/{own}`: groups and owner of an OWN certificate; the update DTO has no custom attributes (core ignores unknown
+ * fields), use `setOwnCustomAttribute`.
  */
 export async function updateOwnCertificate(api: GuardedApi, cert: OwnRef, objects: CertificateObjects): Promise<ApiAnswer> {
     await assertOwnLive(api, 'certificates', cert, 'updateOwnCertificate');
     return sendJson(api, 'PATCH', `/api/v1/certificates/${cert.uuid}`, objects);
 }
 
-/**
- * `PATCH /v1/attributes/custom/resources/certificates/objects/{certificate}/{attribute}` with the content list of the value
- * (`updateAttributeContentForResource`): both the certificate and the custom attribute must be OWN (the guard types both uuids).
- */
+/** Sets a custom attribute value on a certificate; both must be OWN. */
 export async function setOwnCustomAttribute(api: GuardedApi, cert: OwnRef, attr: OwnCustomAttribute, value: unknown): Promise<ApiAnswer> {
     await assertOwnLive(api, 'certificates', cert, 'setOwnCustomAttribute (certificate)');
     await assertOwnLive(api, 'customAttributes', attr, 'setOwnCustomAttribute (attribute)');
     return sendJson(api, 'PATCH', `/api/v1/attributes/custom/resources/certificates/objects/${cert.uuid}/${attr.uuid}`, [{ data: value }]);
 }
 
-/** The detail of a certificate (read-only): groups, owner, custom attributes, state. */
 export async function getCertificateDetail(api: GuardedApi, uuid: string): Promise<CertificateDetail> {
     const sent = await sendJson(api, 'GET', `/api/v1/certificates/${uuid}`);
     if (sent.status !== 200) throw new Error(`GET certificate ${uuid} answered ${sent.status}`);
     return sent.json as CertificateDetail;
 }
 
-/** The issue options of an event row's certificate: the CN as the only SAN, the tier's required custom attributes filled. */
 export const eventCertificate = (suffix: string): IssueOptions => ({ suffix, sans: { ip: [] }, fillRequiredAttributes: true, note: 'issued on an own RA profile (event driver)' });
 
-/** An own certificate in an own group, owned by an own user (event driver for the status-changed notification rows). */
 export async function issueOwnCertificateInGroup(api: GuardedApi, ra: OwnRaProfile, spec: string, group: OwnRef, owner: OwnRef | undefined, suffix: string): Promise<OwnCertificate> {
     const cert = await issueOwnCertificate(api, ra, spec, eventCertificate(suffix));
     const sent = await updateOwnCertificate(api, cert, { groupUuids: [group.uuid], ...(owner ? { ownerUuid: owner.uuid } : {}) });

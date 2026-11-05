@@ -1,9 +1,6 @@
 /**
- * connectorLookup — read-only lookup of the connectors the platform specs build on.
- *
- * Finds the secret-interface connector of a vault (named by env, else the credential provider v2, else any connected one with
- * the interface) and the v1 credential connector for a credential kind. Nothing is created or changed here. A vault or
- * credential spec must find its connector or skip with a named reason.
+ * connectorLookup — read-only lookup of the connectors the platform specs build on: the secret-interface connector of a vault and the v1
+ * credential connector for a kind; a spec must find its connector or skip with a named reason.
  */
 import type { APIRequestContext } from '@playwright/test';
 import { apiJson } from '../apiReads';
@@ -11,22 +8,20 @@ import type { JsonObject } from '../json';
 import { settings } from '../run/settings';
 
 /**
- * The chart's registration name of the credential provider's v2 record (the default secret-interface connector); the registered name
- * differs between tiers by a space or a hyphen before `v2`.
+ * The chart's registration name of the credential provider's v2 record; the
+ * registered name differs between tiers by a space or hyphen before `v2`.
  */
 const DEFAULT_SECRET_CONNECTOR_RE = /^Common-Credential-Connector[ -]v2$/i;
 
 /**
- * The first connected connector whose v2 interfaces include a code matching `code` (e.g. /^secret/i): the one named by
- * `settings(env).secretConnector`, else the credential provider v2 (`DEFAULT_SECRET_CONNECTOR_RE`), else the first connected one with the
- * interface.
+ * The first connected connector whose v2 interfaces include a code matching `code`: the one named by `settings(env).secretConnector`, else
+ * the credential provider v2, else any connected one with the interface.
  */
 export async function findConnectorWithInterface(api: APIRequestContext, code: RegExp, env: NodeJS.ProcessEnv = process.env): Promise<{ uuid: string; name: string; interfaceUuid: string } | undefined> {
     const rows = await apiJson<JsonObject[]>(api, 'GET', '/api/v1/connectors');
     const named = settings(env).secretConnector;
-    // The provider is matched by what it IS, not by one display name (seen on a live tier: "Common-Credential-Connector v2" with a space
-    // missed the hyphenated default and the first connected connector with a secret interface won): the named one, the credential
-    // provider v2 by either spelling, then any connector with a credentialProvider function group, then the other connected ones.
+    // Match the provider by what it IS, not one display name: the named one, the credential provider v2 by either spelling, any connector
+    // with a credentialProvider group, then the other connected ones.
     const isCredentialProvider = (r: JsonObject): boolean => ((r.functionGroups ?? []) as JsonObject[]).some((g: JsonObject) => g.functionGroupCode === 'credentialProvider' || g.code === 'credentialProvider');
     const picked = new Set<string>();
     const ordered: JsonObject[] = [];
@@ -45,7 +40,6 @@ export async function findConnectorWithInterface(api: APIRequestContext, code: R
     return undefined;
 }
 
-/** The first connected v1 connector offering a credential kind (`credentialProvider` / `Basic`). */
 export async function findCredentialConnector(api: APIRequestContext, kind = 'Basic', env: NodeJS.ProcessEnv = process.env): Promise<{ uuid: string; name: string } | undefined> {
     const rows = await apiJson<JsonObject[]>(api, 'GET', '/api/v1/connectors');
     const wanted = settings(env).credentialConnector;

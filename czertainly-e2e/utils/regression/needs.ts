@@ -1,10 +1,7 @@
 /**
  * needs — what a row needs from the tier or the runner, decided from READS before the test creates anything.
- *
- * `resolveNeed` answers `undefined` when a `Needs` value (catalogue: utils/regression/tags.ts) is met, else the reason the
- * test skips with. The `needs` fixture resolves the declared needs before any object is created, so a skip leaves nothing behind.
- * A skip is never coverage. A resolver only reads; a failed read is an error of the test, and only the tier's answer that
- * the thing is missing skips. `scan-target` and `connector-online` are decided by the test body.
+ * `resolveNeed` answers `undefined` when met, else the skip reason; a failed
+ * read is a test error, only "missing" skips. A skip is never coverage.
  */
 import type { TestEnv } from '../env';
 import { authorityConnectorName, existingRaProfile } from './config/authorities';
@@ -31,19 +28,13 @@ import { timestampingNeedProblem } from '../timestamping/need';
 import { DEFAULT_EJBCA_CONNECTOR, settings } from './run/settings';
 import { NEEDS, type Needs } from './tags';
 
-/** What a call may tell the three needs that depend on the row (see the module header); every member has a default. */
 export interface NeedOptions {
-    /** `platform-triggers-free`: the events the row watches (default: every event of the vocabulary). */
     events?: readonly EventCode[];
-    /** `registration-settings`: the least `maxFailedAttempts` the row needs (default 1). */
     minFailedAttempts?: number;
-    /**
-     * `required-attributes-fillable`: the resources whose required custom attributes the row fills (default certificates and RA profiles).
-     */
+    /** `required-attributes-fillable`: the resources whose required custom attributes the row fills (default certificates and RA profiles). */
     resources?: readonly string[];
 }
 
-/** What a resolver may read: the guarded context (reads only are made), the validated environment and the options of the call. */
 export interface NeedContext {
     api: GuardedApi;
     env: TestEnv;
@@ -52,13 +43,10 @@ export interface NeedContext {
 
 type Resolver = (context: NeedContext) => Promise<string | undefined>;
 
-/** An API read that answered 404, or the helper's own "names nothing" assertion for REG_RA_PROFILE_NAME. */
 const isNotFound = (message: string): boolean => /^[A-Z]+ \S+ → 404\b/.test(message) || /REG_RA_PROFILE_NAME .* not found/.test(message);
 
-/** The tier's CA connector name behind the run RA profile: the run state's, else the one the run would pick (reads only). */
 async function runCaConnector(api: GuardedApi): Promise<{ connector: string; picked: boolean } | { skip: string }> {
-    // Only "not there" is an unmet need: a run authority that is gone (answer 404) or a REG_RA_PROFILE_NAME that names nothing. Any other
-    // error (401, 5xx, network, a coding error) is a failure of the test, not a missing CA.
+    // Only "not there" is an unmet need (a gone run authority, a REG_RA_PROFILE_NAME that names nothing); any other error fails the test.
     try {
         return await readRunCaConnector(api);
     } catch (e) {
@@ -77,10 +65,7 @@ async function readRunCaConnector(api: GuardedApi): Promise<{ connector: string;
     return 'skip' in pick ? pick : { connector: pick.connectorName, picked: true };
 }
 
-/**
- * The run CA resolves AND a healthy authority can be picked: the run RA profile can exist while `pickHealthyAuthority` finds none (a row
- * that makes its own RA profile would then fail instead of skipping), so the picker is asked here, before the row writes anything.
- */
+/** The run CA resolves AND a healthy authority can be picked; asked here so a row that makes its own RA profile skips instead of failing. */
 async function healthyCaProblem(api: GuardedApi): Promise<string | undefined> {
     const found = await runCaConnector(api);
     if ('skip' in found) return found.skip;
@@ -95,13 +80,11 @@ const notification = (kind: NotificationKind, label: string): Resolver => async 
     return connector.unhealthy ? `deploy gate: the ${label} notification connector ${connector.name} is not healthy (${connector.unhealthy})` : undefined;
 };
 
-/** A connector the tier must have registered (any state: a dead one is the row's finding, not a skip), found by what it offers. */
 const registered = (spec: ConnectorSpec, label: string, need: Needs): Resolver => async ({ api }) =>
     (await findRegisteredConnector(api, spec)) ? undefined : `deploy gate: no ${label} is registered on this tier (@needs:${need})`;
 
 const tool = (name: Parameters<typeof requireTool>[0]): Resolver => async () => requireTool(name);
 
-/** One resolver per need; the record type makes a new `Needs` value fail to compile until it has one. */
 const RESOLVERS: Record<Needs, Resolver> = {
     ca: ({ api }) => healthyCaProblem(api),
     'ejbca-ng': async ({ api }) => {
@@ -137,7 +120,7 @@ const RESOLVERS: Record<Needs, Resolver> = {
     },
     'required-attributes-fillable': async ({ api, options }) => {
         for (const resource of options?.resources ?? ['certificates', 'raProfiles']) {
-            // Definitions are only read; "the suite cannot fill it" is the one error that skips, a failed read fails the test.
+            // Only reads; "the suite cannot fill it" skips, a failed read fails the test.
             try {
                 await requiredCustomAttributes(api, resource, 'probe');
             } catch (e) {
@@ -149,7 +132,7 @@ const RESOLVERS: Record<Needs, Resolver> = {
     },
     'bearer-token': async ({ env }) =>
         env.authMode === 'header' ? 'no bearer token on AUTH_MODE=header (a header-mode stack authenticates with the certificate header; @needs:keycloak-local)' : undefined,
-    // The admin UI builds its utils client from the platform settings and parses a pasted CSR only through that service.
+    // The admin UI builds its utils client from the platform settings.
     'utils-service': async ({ api }) => {
         const settings = await apiJson<{ utils?: { utilsServiceUrl?: string } } | undefined>(api, 'GET', '/api/v1/settings/platform');
         return settings?.utils?.utilsServiceUrl?.trim() ? undefined : 'the platform settings configure no utils service (utils.utilsServiceUrl), so the form cannot parse a pasted CSR';
@@ -164,16 +147,14 @@ const RESOLVERS: Record<Needs, Resolver> = {
     'webhook-provider': notification('WEBHOOK', 'webhook'),
     'smtp-catcher': async () => smtpCatcherProblem(),
     'webhook-receiver': async () => webhookReceiverProblem(),
-    // The test opens its own runner-hosted TLS listener, and the connector row under test is the one it reads: their checks stay in the
-    // spec.
+    // Decided in the spec: the test opens its own listener.
     'scan-target': async () => undefined,
     'connector-online': async () => undefined,
     openssl: tool('openssl'),
     sscep: tool('sscep'),
     docker: tool('docker'),
     cluster: async () => {
-        // What the cert-manager row asks for: a kubeconfig, the namespace and the auth secret, then the tool and the namespaced
-        // permissions.
+        // The cert-manager row needs a kubeconfig, namespace, auth secret, the tool and namespaced permissions.
         const { kubeconfig, cmNamespace: namespace, cmAuthSecret } = settings();
         if (!kubeconfig || !namespace || !cmAuthSecret) return '@needs:cluster — cert-manager flow needs KUBECONFIG, REG_CM_NAMESPACE and REG_CM_AUTH_SECRET (no cluster configured)';
         const missing = requireTool('kubectl');
@@ -184,10 +165,8 @@ const RESOLVERS: Record<Needs, Resolver> = {
 };
 
 /**
- * SCEP over https cannot be driven by classic sscep. The URL core reports for a protocol is known only after an activation, which is a
- * write; the one read that shows it earlier is the ACME directory URL of the run RA profile when the run already activated ACME on it
- * (core builds every protocol URL from the same address). Without that, the need cannot tell and is met: the rig keeps its check of the
- * reported SCEP URL as the last word. A 404 means the run RA profile is gone (no URL to read); any other failed read fails the test.
+ * Classic sscep cannot drive SCEP over https; the URL is known only after an activation (a write), so the ACME directory URL of the run RA
+ * profile is read instead. Without it the need is met and the rig checks the reported SCEP URL.
  */
 async function scepHttpsProblem(api: GuardedApi): Promise<string | undefined> {
     const state = readRunState();
@@ -206,13 +185,11 @@ async function scepHttpsProblem(api: GuardedApi): Promise<string | undefined> {
         : undefined;
 }
 
-/** `undefined` when the need is met, else the reason the test skips with. Only reads. */
 export function resolveNeed(need: Needs, context: NeedContext): Promise<string | undefined> {
     const resolver = RESOLVERS[need];
     return resolver(context);
 }
 
-/** The first unmet need of the list, in order (`undefined` when all are met); each resolver runs once. */
 export async function resolveNeeds(wanted: readonly Needs[], context: NeedContext): Promise<string | undefined> {
     for (const need of new Set(wanted)) {
         const reason = await resolveNeed(need, context);
@@ -221,9 +198,7 @@ export async function resolveNeeds(wanted: readonly Needs[], context: NeedContex
     return undefined;
 }
 
-/**
- * The needs a test declared: its `@needs:<x>` tags (`testMeta({ needs })`), in tag order; a tag that is not in the catalogue is an error.
- */
+/** The needs a test declared in its `@needs:<x>` tags, in tag order; an unknown tag is an error. */
 export function declaredNeedsOf(tagsOfTest: readonly string[]): Needs[] {
     const found: Needs[] = [];
     for (const tag of tagsOfTest) {

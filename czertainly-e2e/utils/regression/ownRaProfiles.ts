@@ -1,12 +1,6 @@
 /**
- * ownRaProfiles — every way the suite gets an RA profile it may change.
- *
- *   - `ensureRunRaProfile`: the RUN RA profile every issuing flow goes through (REG_RA_PROFILE_NAME on a local stack is
- *     an issue-only parent; otherwise a new own one under the first healthy CA)
- *   - `ensureOwnRaProfile`, `cloneRunRaProfile`, `createOwnRaProfile`, `ensureProtocolRaProfile`: own RA profiles to change
- *
- * Every change goes through `assertOwnLive`; nothing pre-existing is ever changed. With no healthy CA to copy from it
- * throws `RaProfileSourceMissing`, and the caller skips with the named deploy gate.
+ * ownRaProfiles — every way the suite gets an RA profile it may change; nothing pre-existing is ever changed. Without a healthy CA to copy
+ * from it throws `RaProfileSourceMissing` and the caller skips.
  */
 import type { APIRequestContext } from '@playwright/test';
 import { expect } from '@playwright/test';
@@ -28,36 +22,28 @@ import { rowsOf } from './json';
 
 const logger = new Logger('OwnRaProfiles');
 
-/** An RA profile a lifecycle call goes through: the run RA profile or an own clone of it. */
 export interface RaLike {
     uuid: string;
     name: string;
     authorityUuid: string;
 }
 
-/** An RA profile this run created: the ledger knows it, so it may be changed. */
 export interface OwnRaProfile extends OwnRef {
     authorityUuid: string;
 }
 
-/** The run RA profile: own, or an issue-only parent (REG_RA_PROFILE_NAME on a local stack). */
 export type RunRaProfile = (OwnRef | CreateOnlyRef) & { authorityUuid: string };
 
-/** Enable an RA profile this run created (RA profiles are created disabled). */
 export async function enableOwnRaProfile(api: GuardedApi, authorityUuid: string, raProfile: OwnRef): Promise<void> {
     await assertOwnLive(api, 'raProfiles', raProfile, 'enableOwnRaProfile');
     await apiJson(api, 'PATCH', `/api/v1/authorities/${authorityUuid}/raProfiles/${raProfile.uuid}/enable`);
 }
 
-/**
- * The connectors whose authorities may issue the run's certificates, in this order (MS ADCS, EJBCA-NG, PyADCS):
- * REG_CA_CONNECTORS (comma list of connector registration names) overrides it.
- */
+/** The connectors whose authorities may issue the run's certificates, in order; REG_CA_CONNECTORS overrides it. */
 export function caConnectorOrder(env: NodeJS.ProcessEnv = process.env): string[] {
     return settings(env).caConnectors;
 }
 
-/** Thrown when no healthy authority with an enabled RA profile exists to copy from: the caller skips with `reason`. */
 export class RaProfileSourceMissing extends Error {
     constructor(readonly reason: string) {
         super(reason);
@@ -66,17 +52,14 @@ export class RaProfileSourceMissing extends Error {
 }
 
 export interface RaProfileSource {
-    /** The RA profile whose attributes are copied (read-only; it existed before the run, or is this run's own). */
     uuid: string;
     authorityUuid: string;
     connectorName: string;
 }
 
 /**
- * The first healthy CA in `caConnectorOrder()` that has a connected authority (not a run object) with an ENABLED RA
- * profile (not a run object) to copy — the first such RA profile by name (deterministic) —: health is read live and by
- * version (connectorApi). Read-only. Returns the source or `{ skip }` with one reason per connector ("deploy gate": a
- * skip, never a pass).
+ * The first healthy CA (by `caConnectorOrder`) with a connected authority and an enabled RA profile to copy, both not run objects;
+ * read-only. Returns the source or `{ skip }` with a reason per connector.
  */
 export async function pickHealthyAuthority(api: APIRequestContext, env: NodeJS.ProcessEnv = process.env): Promise<RaProfileSource | { skip: string }> {
     const connectors = await listConnectors(api);
@@ -105,7 +88,7 @@ export async function pickHealthyAuthority(api: APIRequestContext, env: NodeJS.P
             reasons.push(`${name}: no connected authority`);
             continue;
         }
-        // The candidates sorted by name (code points), so the copy source does not depend on the list order.
+        // Sorted by name, so the copy source does not depend on the list order.
         const byName = (a: JsonObject, b: JsonObject): number => (String(a.name) < String(b.name) ? -1 : String(a.name) > String(b.name) ? 1 : 0);
         const source = raProfiles
             .filter((r) => onConnector.has(String(r.authorityInstanceUuid)) && r.enabled === true && !hasRunFamilyPrefix(String(r.name)))
@@ -120,8 +103,8 @@ export async function pickHealthyAuthority(api: APIRequestContext, env: NodeJS.P
 }
 
 /**
- * The body `POST /v1/authorities/{a}/raProfiles` takes for a new RA profile whose connector attributes are COPIED from the
- * source RA profile (read-only: one GET of its detail; nothing on the source changes), plus the tier's required custom attributes.
+ * The body for a new RA profile whose connector attributes are copied from the
+ * source RA profile (read-only), plus the tier's required custom attributes.
  */
 export async function raProfileBodyLike(api: APIRequestContext, source: Pick<RaProfileSource, 'uuid' | 'authorityUuid'>, name: string, description = `REG run ${runId()}`): Promise<JsonObject> {
     const detail = await apiJson<JsonObject>(api, 'GET', `/api/v1/authorities/${source.authorityUuid}/raProfiles/${source.uuid}`);
@@ -134,20 +117,16 @@ export async function raProfileBodyLike(api: APIRequestContext, source: Pick<RaP
 }
 
 export interface RaProfileLikeOptions {
-    /** The RA profile the connector attributes are copied from (read-only). */
     source: Pick<RaProfileSource, 'uuid' | 'authorityUuid'>;
-    /** A planned name (the run's canonical profile, a fixture); default `ownName(suffix)`. */
     name?: string;
     note: string;
-    /** RA profiles are created disabled (core default, RA-1); the profile is enabled unless this is false. */
+    /** The profile is enabled unless this is false (RA profiles are created disabled). */
     enable?: boolean;
 }
 
 /**
- * The one creator every other function of this module ends in: a NEW RA profile of the run on the source's authority whose
- * connector attributes are COPIED from the source RA profile (`raProfileBodyLike`), recorded in the ledger right after the
- * create (with its authority as parent), then enabled. The authority is a scope parent of the create
- * (`POST /v1/authorities/{a}/raProfiles` is on the guard's create list): an own RA profile may live under a pre-existing authority.
+ * The creator every other function ends in: a new RA profile on the source's authority with copied attributes, recorded in the ledger right
+ * after the create, then enabled.
  */
 export async function createOwnRaProfileLike(api: GuardedApi, spec: string, suffix: string, o: RaProfileLikeOptions): Promise<OwnRaProfile> {
     const name = o.name ?? ownName(suffix);
@@ -165,10 +144,8 @@ export async function createOwnRaProfileLike(api: GuardedApi, spec: string, suff
 }
 
 /**
- * The run's RA profile, CA-agnostic: the run state's when a flow already made it (REG-CFG-03 on a healthy MS ADCS
- * tier); REG_RA_PROFILE_NAME on a local stack (issue-only parent); otherwise a NEW own RA profile copied from an
- * enabled RA profile of the first healthy CA (`pickHealthyAuthority`: MS ADCS, else EJBCA-NG, else PyADCS), enabled.
- * When no CA qualifies it throws RaProfileSourceMissing (callers skip with its reason: `ensureRunRaProfileOrSkip`).
+ * The run's RA profile: the run state's, REG_RA_PROFILE_NAME on a local stack (issue-only), or a new own one copied from the first healthy
+ * CA; throws RaProfileSourceMissing when none qualifies.
  */
 export async function ensureRunRaProfile(api: GuardedApi, spec: string): Promise<RunRaProfile> {
     const state = readRunState();
@@ -185,15 +162,11 @@ export async function ensureRunRaProfile(api: GuardedApi, spec: string): Promise
     return ra;
 }
 
-/**
- * ensureRunRaProfile, with the deploy gate as a skip: `skip` is called with the reason when no CA qualifies (pass
- * `(reason) => test.skip(true, reason)`); every other error propagates.
- */
+/** ensureRunRaProfile, with the deploy gate as a skip: `skip` gets the reason; other errors propagate. */
 export async function ensureRunRaProfileOrSkip(api: GuardedApi, spec: string, skip: (reason: string) => void): Promise<RunRaProfile> {
     return orSkipWithoutCa(ensureRunRaProfile(api, spec), skip);
 }
 
-/** Any work that needs a CA-backed RA profile (ensureOwnRaProfile, ensureAcmeOnRaProfile, …), with the deploy gate as a skip. */
 export async function orSkipWithoutCa<T>(work: Promise<T>, skip: (reason: string) => void): Promise<T> {
     try {
         return await work;
@@ -203,7 +176,6 @@ export async function orSkipWithoutCa<T>(work: Promise<T>, skip: (reason: string
     }
 }
 
-/** The ledger's own RA profile of this run with this exact name (created, not deleted), or undefined. */
 function ownRaProfileNamed(name: string): OwnRaProfile | undefined {
     const lines: LedgerLine[] = readLedger().filter((l) => l.runId === runId() && l.type === 'raProfiles' && l.name === name);
     const created = [...lines].reverse().find((l) => l.event === 'created');
@@ -214,10 +186,8 @@ function ownRaProfileNamed(name: string): OwnRaProfile | undefined {
 }
 
 /**
- * An RA profile this run CREATED, for flows that change the RA profile (protocol activation): the run RA profile when
- * it is own; for an issue-only parent (REG_RA_PROFILE_NAME, local stack) an own clone of it (`<run>-ra-own`, connector
- * attributes copied read-only, enabled), found again through the ledger on later calls. Nothing is ever activated
- * on the issue-only parent itself.
+ * An RA profile this run created, for flows that change it: the run RA profile when own, else an own clone `<run>-ra-own`; the issue-only
+ * parent is never changed.
  */
 export async function ensureOwnRaProfile(api: GuardedApi, spec: string): Promise<OwnRaProfile> {
     const ra = await ensureRunRaProfile(api, spec);
@@ -229,9 +199,8 @@ export async function ensureOwnRaProfile(api: GuardedApi, spec: string): Promise
 }
 
 /**
- * The dedicated RA profile of a protocol flow (its own, not the run RA profile), `<run>-ra-<label>`: created once per run and label (found
- * again through the ledger on a re-run or under `--repeat-each`), enabled, a copy of the run RA profile's attributes.
- * Throws `RaProfileSourceMissing` like `ensureRunRaProfile` when no CA can issue (the spec skips with that reason).
+ * The dedicated RA profile of a protocol flow, `<run>-ra-<label>`: created
+ * once per run and label, enabled, a copy of the run RA profile's attributes.
  */
 export async function ensureProtocolRaProfile(api: GuardedApi, spec: string, label: string): Promise<OwnRaProfile> {
     if (!/^[a-z0-9-]+$/.test(label)) throw new Error(`ensureProtocolRaProfile: label "${label}" must be [a-z0-9-] (it is part of a URL path)`);
@@ -242,32 +211,23 @@ export async function ensureProtocolRaProfile(api: GuardedApi, spec: string, lab
     return createOwnRaProfileLike(api, spec, 'ra', { source: runRa, name, note: `dedicated RA profile of the ${label} protocol flow: attributes copied read-only from the run RA profile` });
 }
 
-/**
- * An OWN, ENABLED clone of the run RA profile: the same authority and connector attributes (read-only copy), an
- * own name. Flags and associations are flipped on the clone only, never on the run RA profile.
- */
+/** An own, enabled clone of the run RA profile; flags and associations are flipped on the clone only. */
 export async function cloneRunRaProfile(api: GuardedApi, spec: string, suffix: string): Promise<OwnRaProfile> {
     const run = await ensureRunRaProfile(api, spec);
     return createOwnRaProfileLike(api, spec, `ra-${suffix}`, { source: run, note: `own clone of the run RA profile (${suffix})` });
 }
 
-/**
- * A NEW own RA profile (a clone of an enabled RA profile of the first healthy CA, enabled) for one row: event associations
- * and triggers hang on it alone, named `<run>-<suffix>-<time>`. Throws RaProfileSourceMissing when no CA qualifies (the caller
- * skips with its reason).
- */
+/** A new own, enabled RA profile for one row, named `<run>-<suffix>-<time>`. */
 export async function createOwnRaProfile(api: GuardedApi, spec: string, suffix: string): Promise<OwnRaProfile> {
     const pick = await pickHealthyAuthority(api);
     if ('skip' in pick) throw new RaProfileSourceMissing(pick.skip);
     return createOwnRaProfileLike(api, spec, suffix, { source: pick, note: `own RA profile of an event row; attributes copied read-only from an enabled RA profile on ${pick.connectorName}` });
 }
 
-/** `createOwnRaProfile` with the deploy gate as a skip: `skip` is called with the reason when no CA qualifies. */
 export async function createOwnRaProfileOrSkip(api: GuardedApi, spec: string, suffix: string, skip: (reason: string) => void): Promise<OwnRaProfile> {
     return orSkipWithoutCa(createOwnRaProfile(api, spec, suffix), skip);
 }
 
-/** The run's own RA profile with the run's ACME profile activated on it; returns the RA-profile directory URL. */
 export async function ensureAcmeOnRaProfile(api: GuardedApi, spec: string): Promise<{ raProfile: OwnRaProfile; acmeProfile: OwnRef & { identifier: string }; directoryUrl: string }> {
     const ra = await ensureOwnRaProfile(api, spec);
     const acmeProfile = await ensureAcmeProfile(api, spec);

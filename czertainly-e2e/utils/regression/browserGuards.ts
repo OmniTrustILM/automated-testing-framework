@@ -1,21 +1,16 @@
 /**
- * What a page did wrong while a test looked elsewhere, counted per labelled step: console errors, uncaught page
- * errors, 5xx answers, 4xx answers no allow-list entry covers, failed requests, unexpected writes and error text on the
- * page. It only listens (`page.on`); it changes no request and no route.
+ * browserGuards — counts what a page did wrong per labelled step (console and page errors, 5xx, unallowed 4xx, failed requests, unexpected
+ * writes, error text); it only listens.
  */
 import { expect, Locator, Page, Request, Response } from '@playwright/test';
 
 /**
- * A 4xx a test tolerates, with the reason it is tolerated: either a bug the page causes today (`bug`: `<repo>#<n>`; REG-CERT-60
- * allow-list, every entry stands for a filed defect) or a refusal the test provokes on purpose (`expected`: the rule that
- * makes the status the oracle, e.g. REG-CERT-63's 422 of the inspection). A bare 4xx is never allowed.
+ * A 4xx a test tolerates, with the reason: a filed defect (`bug`: `<repo>#<n>`) or a refusal the test provokes on purpose (`expected`). A
+ * bare 4xx is never allowed.
  */
 export type AllowedClientError = {
-    /** Upper-case HTTP method; absent = any. */
     method?: string;
-    /** Matches the request path without its query (`/api/v1/...`). */
     path: RegExp;
-    /** The statuses covered (all 4xx; a 5xx is never allowed). */
     status: number | number[];
     reason: string;
 } & ({ bug: string; expected?: never } | { expected: string; bug?: never });
@@ -24,35 +19,26 @@ export type Counter = 'console' | 'pageerror' | 'server' | 'client' | 'failed' |
 
 export interface Finding {
     counter: Counter;
-    /** The step label current when it happened (a page name). */
     label: string;
     text: string;
 }
 
 export interface BrowserGuardOptions {
     allow?: AllowedClientError[];
-    /** Extra console messages to ignore (regexps over the message text). */
     ignoreConsole?: RegExp[];
-    /** The page's origin; default: the origin of the page's URL at the time of each event. */
     origin?: string;
-    /**
-     * The POST paths (regexps over the request path) the page may send because they only READ (list and search requests).
-     * Given → every other same-origin API write counts as a `write` finding; absent → writes are not watched.
-     */
+    /** The POST paths the page may send because they only read; given → every other same-origin API write is a `write` finding. */
     readPosts?: RegExp[];
 }
 
 const HTTP_NOISE = /^Failed to load resource: the server responded with a status of \d{3}/;
 
-/** True for a console error that only repeats a failed request (counted by the response counters). */
 export const ignorableConsole = (text: string, extra: RegExp[] = []): boolean => HTTP_NOISE.test(text) || extra.some((re) => re.test(text));
 
-/** Which allow-list entry covers the response, if any. */
 export function matchAllowed(allow: AllowedClientError[], method: string, path: string, status: number): AllowedClientError | undefined {
     return allow.find((a) => (!a.method || a.method.toUpperCase() === method.toUpperCase()) && a.path.test(path) && [a.status].flat().includes(status));
 }
 
-/** The class of a same-origin response: `server` (>= 500), `client` (4xx outside the allow-list) or nothing. */
 export function classify(status: number, method: string, path: string, allow: AllowedClientError[]): 'server' | 'client' | undefined {
     if (status >= 500) return 'server';
     if (status >= 400 && !matchAllowed(allow, method, path, status)) return 'client';
@@ -60,10 +46,8 @@ export function classify(status: number, method: string, path: string, allow: Al
 }
 
 /**
- * The error texts a page must not show: "unexpected error", "Internal server error" (any case) and the word `undefined`
- * (exact, lower case: it is what a template prints for a missing value). `chrome` is the text outside data tables (the
- * error phrases are searched there only: a table may list a log line that says "Internal server error." by design),
- * `all` the whole text (`undefined` is searched there: a rendered missing value). Returns the distinct matches.
+ * The error texts a page must not show: "unexpected error" and "Internal server error" (searched outside data tables) and the word
+ * `undefined` (whole text). Returns the distinct matches.
  */
 export function scanForErrorText(chrome: string, all: string = chrome): string[] {
     const found = new Set<string>();
@@ -72,13 +56,9 @@ export function scanForErrorText(chrome: string, all: string = chrome): string[]
     return [...found];
 }
 
-/** What the answer of a page's list request must look like: one object (a dashboard, a settings page), a bare array, or a paged object. */
 export type ListShape = 'single' | 'bare' | 'paged';
 
-/**
- * The shape problems of a list answer (pure; empty = fine). `paged`: an object with numeric `itemsPerPage`, `pageNumber`,
- * `totalPages`, `totalItems` and exactly one array of rows, never more rows than `itemsPerPage` or `totalItems`.
- */
+/** The shape problems of a list answer (empty = fine); `paged` needs numeric paging fields and exactly one rows array within the limits. */
 export function listShapeProblems(shape: ListShape, body: unknown): string[] {
     if (shape === 'bare') return Array.isArray(body) ? [] : ['not a bare array'];
     if (shape === 'single') return body && typeof body === 'object' && !Array.isArray(body) ? [] : ['not a single object'];
@@ -96,10 +76,8 @@ export function listShapeProblems(shape: ListShape, body: unknown): string[] {
     return problems;
 }
 
-/** True for a method that changes state. */
 export const isWriteMethod = (method: string): boolean => /^(PUT|PATCH|DELETE)$/i.test(method);
 
-/** True when a same-origin API request is a write the sweep did not provoke on purpose (see `BrowserGuardOptions.readPosts`). */
 export function isUnexpectedWrite(method: string, path: string, readPosts: RegExp[]): boolean {
     if (isWriteMethod(method)) return true;
     return /^POST$/i.test(method) && !readPosts.some((re) => re.test(path));
@@ -163,7 +141,7 @@ export class BrowserGuards {
     private readonly onRequestFailed = (req: Request): void => {
         if (!this.sameOrigin(req.url())) return;
         const failure = req.failure()?.errorText ?? 'failed';
-        // Navigating away aborts the requests still in flight: not a finding.
+        // Navigating away aborts requests still in flight: not a finding.
         if (/ERR_ABORTED|NS_BINDING_ABORTED|Load request cancelled/i.test(failure)) return;
         this.add('failed', `${req.method()} ${pathOf(req.url())} failed: ${failure}`);
     };
@@ -184,7 +162,6 @@ export class BrowserGuards {
         this.findings.push({ counter, label: this.label, text });
     }
 
-    /** Starts listening; call once, before the first navigation. */
     start(): this {
         if (this.started) return this;
         this.started = true;
@@ -196,7 +173,6 @@ export class BrowserGuards {
         return this;
     }
 
-    /** Stops listening (the findings stay readable). */
     dispose(): void {
         if (!this.started) return;
         this.started = false;
@@ -207,15 +183,11 @@ export class BrowserGuards {
         this.page.off('requestfailed', this.onRequestFailed);
     }
 
-    /** The label findings are attributed to from now on (a page name, a step). */
     mark(label: string): void {
         this.label = label;
     }
 
-    /**
-     * Reads the text of `scope` (default: `main`, else the body) and counts the forbidden error texts under the current
-     * label: the error phrases outside data tables, the word `undefined` everywhere (`scanForErrorText`).
-     */
+    /** Counts the forbidden error texts of `scope` (default `main`, else the body) under the current label. */
     async scanText(scope?: Locator): Promise<string[]> {
         const target = scope ?? this.page.locator('main');
         const { chrome, all } = await target.evaluate((el: Element) => {
@@ -229,36 +201,30 @@ export class BrowserGuards {
     }
 
     /**
-     * Waits until the page's network is quiet (a bounded wait: a page that polls never settles, which is no finding), then
-     * lets the page run its queued timers once and delivers the events they caused (a `pageerror` of a zero-delay timer
-     * would otherwise be counted under the NEXT label). Not a sleep on state: the state is the quiet network.
+     * Waits for a quiet network (bounded; a polling page never settles, which is no finding), then runs queued timers once so their
+     * `pageerror` is not counted under the next label.
      */
     async settle(timeoutMs = 15_000): Promise<void> {
         await this.page.waitForLoadState('networkidle', { timeout: timeoutMs }).catch(() => undefined);
         await this.page.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 20))).catch(() => undefined);
     }
 
-    /** Every finding, or those of one label / counter. */
     all(filter: { label?: string; counter?: Counter } = {}): Finding[] {
         return this.findings.filter((f) => (!filter.label || f.label === filter.label) && (!filter.counter || f.counter === filter.counter));
     }
 
-    /** Counter totals (optionally for one label): every counter present, zero included. */
     counts(label?: string): Record<Counter, number> {
         const out: Record<Counter, number> = { console: 0, pageerror: 0, server: 0, client: 0, failed: 0, text: 0, write: 0 };
         for (const f of this.all({ label })) out[f.counter] += 1;
         return out;
     }
 
-    /** The allow-list entries a response actually matched (a stale entry — never matched — is a finding of its own for the caller). */
+    /** The allow-list entries a response matched (a never-matched entry is stale). */
     allowedSeen(): AllowedClientError[] {
         return [...this.used];
     }
 
-    /**
-     * All counters are zero (for `label`, or overall): the failure message lists every finding as
-     * `<counter> [<label>] <text>`. `soft` records the failure and lets the test go on (a sweep reports every page).
-     */
+    /** Fails unless all counters are zero; the message lists every finding. `soft` records the failure and goes on. */
     assertZero(label?: string, opts: { soft?: boolean } = {}): void {
         const lines = this.all({ label }).map((f) => `${f.counter} [${f.label}] ${f.text}`);
         const check = opts.soft ? expect.soft : expect;

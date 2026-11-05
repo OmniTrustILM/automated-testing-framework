@@ -1,23 +1,15 @@
 /**
  * values — values of a DTO member and the row-level filter predicates of the listing oracles.
- *
- * `satisfiesFilter` is the one home of the filter semantics, only for fields whose DTO mapping is known.
- * Ordering conditions (GREATER ... LESSER_OR_EQUAL) and COUNT_* read both sides as NUMBERS, also for a numeric-looking string
- * ("999" is less than "1000"), because core compares them that way. A value that is not a number never satisfies an ordering,
- * and a condition that takes one value is refused when given several.
+ * Ordering conditions and COUNT_* compare numbers, also for numeric-looking strings ("999" < "1000"), as core does.
  */
 import type { CatalogueField } from '../searchApi';
 import type { ListRow } from '../listInvariants';
 import { ConditionKind } from './catalogueContract';
 
-// ====================================================================================================================
-// 1. Values of a DTO member
-// ====================================================================================================================
 
 export type Scalar = string | number | boolean;
 export type Values = Scalar[];
 
-/** The values a DTO member carries: null / undefined / [] are no value; arrays flatten (nulls dropped); objects are no value. */
 export function toValues(raw: unknown): Values {
     if (raw === null || raw === undefined) return [];
     if (Array.isArray(raw)) return raw.flatMap((x) => toValues(x));
@@ -25,7 +17,6 @@ export function toValues(raw: unknown): Values {
     return [];
 }
 
-/** An instant in epoch milliseconds from a DTO datetime (ISO text with any number of fraction digits, or epoch seconds / ms). */
 export function instantMs(v: unknown): number | undefined {
     if (typeof v === 'number') return Number.isFinite(v) ? (Math.abs(v) < 1e11 ? Math.round(v * 1000) : v) : undefined;
     if (typeof v !== 'string') return undefined;
@@ -33,11 +24,7 @@ export function instantMs(v: unknown): number | undefined {
     return Number.isNaN(t) ? undefined : t;
 }
 
-/**
- * The filter literal of a DTO datetime: the server's own text with the fraction cut to milliseconds, the offset kept
- * (`yyyy-MM-dd'T'HH:mm:ss.SSSXXX` is what FilterPredicatesBuilder.java parses). A value that is not ISO text becomes
- * the UTC form of its instant.
- */
+/** The filter literal of a DTO datetime: ISO text with the fraction cut to milliseconds and the offset kept; other values become UTC. */
 export function datetimeLiteral(v: unknown): string {
     if (typeof v === 'string') {
         const m = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})$/.exec(v);
@@ -59,7 +46,6 @@ export const nested = (...path: string[]) => (r: ListRow): Values => {
     return toValues(cur);
 };
 
-/** `row[array][i][name]` for every element: the names of the groups of a key, the uuids of the objects of an audit record. */
 export const elementsOf = (path: string[], name: string) => (r: ListRow): Values => {
     let cur: unknown = r;
     for (const p of path) {
@@ -69,31 +55,23 @@ export const elementsOf = (path: string[], name: string) => (r: ListRow): Values
     return Array.isArray(cur) ? cur.flatMap((o) => toValues(o && typeof o === 'object' ? (o as Record<string, unknown>)[name] : undefined)) : [];
 };
 
-// ====================================================================================================================
-// 3. Row predicates, samples
-// ====================================================================================================================
 
 const EXACT_CONDITIONS = new Set(['EMPTY', 'NOT_EMPTY', 'EQUALS', 'NOT_EQUALS', 'GREATER', 'GREATER_OR_EQUAL', 'LESSER', 'LESSER_OR_EQUAL', 'COUNT_EQUAL', 'COUNT_NOT_EQUAL', 'COUNT_GREATER_THAN', 'COUNT_LESS_THAN']);
 
-/** Conditions whose answer is decided by equality or order alone: the baseline implies the exact row set. */
 export const isExactCondition = (condition: string): boolean => EXACT_CONDITIONS.has(condition);
 
-/** Conditions that read ONE wanted value: with a list, `satisfiesFilter` refuses instead of using the first. */
+/** Conditions that read ONE wanted value: given several, `satisfiesFilter` refuses. */
 const NUMERIC_CONDITIONS = new Set(['GREATER', 'GREATER_OR_EQUAL', 'LESSER', 'LESSER_OR_EQUAL', 'COUNT_EQUAL', 'COUNT_NOT_EQUAL', 'COUNT_GREATER_THAN', 'COUNT_LESS_THAN']);
 const SINGLE_VALUE_CONDITIONS = new Set(['CONTAINS', 'NOT_CONTAINS', 'STARTS_WITH', 'ENDS_WITH', 'MATCHES', 'NOT_MATCHES', ...NUMERIC_CONDITIONS]);
 
 const asList = (value: unknown): unknown[] => (Array.isArray(value) ? value : [value]);
 const lower = (v: Scalar): string => String(v).toLowerCase();
 
-/** The regex source that matches `text` literally: every non-alphanumeric character is escaped (Java and PostgreSQL agree on that form). */
 export const regexLiteral = (text: string): string => text.replace(/[^A-Za-z0-9]/g, (c) => `\\${c}`);
 
 /**
- * Does a row with these `values` satisfy the filter? Reference rules (FilterPredicatesBuilder): EQUALS = any of the listed values equals a
- * value; NOT_EQUALS / NOT_CONTAINS include rows without a value; NOT_MATCHES excludes them; EMPTY = no value; number comparisons and the
- * positive string conditions need a value. STRING conditions are the WEAK forms (see the module header): CONTAINS / STARTS_WITH / ENDS_WITH
- * / MATCHES match case-insensitively, NOT_CONTAINS / NOT_MATCHES require no match case-sensitively. COUNT_* compare the number of values.
- * `caseSensitive` turns CONTAINS / STARTS_WITH / ENDS_WITH into exact-case tests (the strict reading `matchesCondition` offers).
+ * Does a row with these `values` satisfy the filter (FilterPredicatesBuilder rules)? The string conditions are the weak forms;
+ * `caseSensitive` makes CONTAINS / STARTS_WITH / ENDS_WITH exact-case.
  */
 export function satisfiesFilter(values: Values, condition: string, value?: unknown, options: { caseSensitive?: boolean } = {}): boolean {
     const wanted = asList(value);
@@ -128,40 +106,28 @@ export function satisfiesFilter(values: Values, condition: string, value?: unkno
 }
 
 export interface FieldMap {
-    /** The FilterField name the catalogue publishes (property source). */
     id: string;
     type: CatalogueField['type'];
-    /** The kind of condition set core publishes for it (verified in core FilterField / SearchHelper). */
     kind: ConditionKind;
-    /** How its values compare: text, number, datetime (an instant), boolean, or `code` (EQUALS / NOT_EQUALS only: enum codes, names). */
     shape: 'text' | 'number' | 'datetime' | 'boolean' | 'code';
-    /** The DTO values of the field in one listing row; [] is "no value". */
     get: (row: ListRow) => Values;
-    /** Expected catalogue `sortable` (SearchHelper.isSortableField) on a configurable listing. */
     sortable: boolean;
-    /** How the sort order is verified; `structure`: the column is an enum stored by NAME, the DTO shows the CODE; `none`: not sortable. */
     sort: 'text' | 'number' | 'datetime' | 'boolean' | 'structure' | 'minMaxText' | 'none';
-    /** Where the mapping was verified (file:line in core / interfaces). */
     evidence: string;
 }
 
-/** Rows (from a complete baseline) the filter must return, for the exact conditions; undefined for the weak string ones. */
 export function expectedRows(rows: ListRow[], field: Pick<FieldMap, 'get'>, condition: string, value?: unknown): ListRow[] | undefined {
     if (!isExactCondition(condition)) return undefined;
     return rows.filter((r) => satisfiesFilter(field.get(r), condition, value));
 }
 
-/** Evenly spread picks from a sorted list: first, last, middle (n <= 3), distinct. */
 export function pickSpread<T>(sorted: T[], n = 3): T[] {
     if (sorted.length <= n) return [...sorted];
     const idx = n === 1 ? [0] : n === 2 ? [0, sorted.length - 1] : [0, Math.floor((sorted.length - 1) / 2), sorted.length - 1];
     return [...new Set(idx)].map((i) => sorted[i]);
 }
 
-/**
- * At most `n` sample values of a field from the rows already read: numbers and datetimes spread over the range (smallest,
- * middle, largest), everything else first seen, most frequent, last seen. Values keep their DTO form.
- */
+/** At most `n` sample values from the rows: numbers and datetimes spread over the range, others first seen, most frequent, last seen. */
 export function pickSampleValues(rows: ListRow[], field: Pick<FieldMap, 'get' | 'shape'>, n = 3): Scalar[] {
     const info = new Map<string, { v: Scalar; count: number; order: number }>();
     rows.forEach((r, i) => {
@@ -185,10 +151,8 @@ export function pickSampleValues(rows: ListRow[], field: Pick<FieldMap, 'get' | 
     return [...new Map(picks.map((e) => [String(e.v), e.v])).values()].slice(0, n);
 }
 
-/** A run of [A-Za-z0-9 .:/-] characters: what a LIKE / regex probe may be made of (no wildcard, escape or quote). */
 const SAFE_RUN = /[A-Za-z0-9 .:/-]+/g;
 
-/** A prefix / suffix / inner probe (<= 4 characters) of a sampled text, or undefined when the text offers no safe one. */
 export function textProbe(text: string, where: 'prefix' | 'suffix' | 'inner'): string | undefined {
     const safe = (s: string) => /^[A-Za-z0-9 .:/-]+$/.test(s);
     if (where === 'prefix') {

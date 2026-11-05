@@ -1,8 +1,6 @@
 /**
- * notificationConnector — the notification connector of the tier and its live definitions.
- *
- * Finds the connected e-mail or webhook notification connector (by kind and health) and reads its instance attribute
- * definitions and mapping attributes. A tier without a connector is a named skip, not a failure.
+ * notificationConnector — the notification connector of the tier and its
+ * live definitions; a tier without one is a named skip, not a failure.
  */
 
 import { GuardedApi } from '../guard/types';
@@ -20,14 +18,12 @@ export interface NotificationConnector {
     uuid: string;
     name: string;
     kind: NotificationKind;
-    /** Why it cannot be used ("live health 503"), or undefined when it answers its live health. */
     unhealthy?: string;
 }
 
 /**
- * The registered, connected notification connector that offers `kind` (a v1 connector with the `notificationProvider`
- * function group), with its LIVE health: the first healthy one, else the first unhealthy one with the reason. Read-only.
- * `undefined` = the tier has none: the spec skips with the named reason (`@needs:email-provider` / `@needs:webhook-provider`).
+ * The connected notification connector offering `kind`, with its live health: the first healthy one, else the first unhealthy one with the
+ * reason; `undefined` = none (the spec skips). Read-only.
  */
 export async function findNotificationConnector(api: GuardedApi, kind: NotificationKind): Promise<NotificationConnector | undefined> {
     const rows = await api.get('/api/v1/connectors');
@@ -49,14 +45,12 @@ export async function findNotificationConnector(api: GuardedApi, kind: Notificat
     return unhealthy;
 }
 
-/** The attribute definitions of one kind (`GET /v1/connectors/{uuid}/attributes/notificationProvider/{kind}`), read-only. */
 export async function instanceDefinitions(api: GuardedApi, connector: NotificationConnector): Promise<JsonObject[]> {
     const res = await api.get(`/api/v1/connectors/${connector.uuid}/attributes/${NOTIFICATION_FUNCTION_GROUP}/${connector.kind}`);
     if (!res.ok()) throw new Error(`GET attribute definitions of ${connector.name} (${connector.kind}) answered ${res.status()}`);
     return (await res.json()) as JsonObject[];
 }
 
-/** The mapping attributes of a kind (`GET /v1/notificationInstances/attributes/mapping/{connector}/{kind}`). */
 export async function getMappingAttributes(api: GuardedApi, connector: NotificationConnector): Promise<ApiAnswer> {
     return sendJson(api, 'GET', `/api/v1/notificationInstances/attributes/mapping/${connector.uuid}/${connector.kind}`);
 }

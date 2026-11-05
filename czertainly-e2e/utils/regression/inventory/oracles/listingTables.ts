@@ -1,22 +1,16 @@
 /**
- * listingTables — the listings the contract specs run the oracles on (keys, discoveries, audit logs).
- *
- * Each listing has its property fields with the verified DTO member (and the component that proves the mapping) and the
- * expected catalogue facts. Also the listings that refuse a sort.
+ * listingTables — the listings the contract specs run the oracles on (keys, discoveries, audit logs): property fields with the verified DTO
+ * member, the expected catalogue facts, and the listings that refuse a sort.
  */
 import { elementsOf, member, nested } from './values';
 import { CatalogueExpectations } from './catalogueContract';
 import { ListingSpec } from './listing';
 
-// ====================================================================================================================
-// 11. The listings: field tables (each DTO mapping read in core / interfaces; file:line in `evidence`)
-// ====================================================================================================================
 
 const KEY_ITEM = 'core CryptographicKeyItem.mapToSummaryDto (dao/entity/CryptographicKeyItem.java) → interfaces KeyItemDto';
 const DISCOVERY_ROW = 'core DiscoveryDtoMapper.toListDto → interfaces DiscoveryListDto';
 const AUDIT_ROW = 'core AuditLog.mapToDto (dao/entity/AuditLog.java) → interfaces AuditLogDto, LogRecord records';
 
-/** `POST /api/v1/keys`: the rows are KEY ITEMS (`cryptographicKeys[]`, CryptographicKeyServiceImpl.java). */
 export const KEYS: ListingSpec = {
     name: 'keys',
     searchUrl: '/api/v1/keys',
@@ -32,8 +26,7 @@ export const KEYS: ListingSpec = {
         { id: 'CKI_FORMAT', type: 'list', kind: 'list', shape: 'code', get: member('format'), sortable: true, sort: 'structure', evidence: `${KEY_ITEM}: format; FilterField.java` },
         { id: 'CKI_STATE', type: 'list', kind: 'list', shape: 'code', get: member('state'), sortable: true, sort: 'structure', evidence: `${KEY_ITEM}: state; FilterField.java` },
         { id: 'CKI_CRYPTOGRAPHIC_ALGORITHM', type: 'list', kind: 'list', shape: 'code', get: member('keyAlgorithm'), sortable: true, sort: 'structure', evidence: `${KEY_ITEM}: keyAlgorithm; FilterField.java` },
-        // KeyUsage is a BitMaskEnum: EMPTY = bit mask 0 (FilterPredicatesBuilder.java), EQUALS = the bit is set; not sortable
-        // (SearchHelper.isBitMaskField).
+        // KeyUsage is a bit mask: EMPTY = mask 0, EQUALS = the bit is set; not sortable.
         { id: 'CKI_USAGE', type: 'list', kind: 'list', shape: 'code', get: member('usage'), sortable: false, sort: 'none', evidence: `${KEY_ITEM}: usage (KeyUsage codes of the bit mask); FilterField.java` },
         { id: 'CKI_LENGTH', type: 'number', kind: 'number', shape: 'number', get: member('length'), sortable: true, sort: 'number', evidence: `${KEY_ITEM}: length (nullable Integer); FilterField.java` },
         { id: 'CKI_ENABLED', type: 'boolean', kind: 'boolean', shape: 'boolean', get: member('enabled'), sortable: true, sort: 'boolean', evidence: `${KEY_ITEM}: enabled (primitive; the column is primitive too, CryptographicKeyItem.java); FilterField.java` },
@@ -45,7 +38,6 @@ export const KEYS: ListingSpec = {
     ],
 };
 
-/** `POST /api/v1/discoveries/list` (DiscoveryServiceImpl.java). */
 export const DISCOVERIES: ListingSpec = {
     name: 'discoveries',
     searchUrl: '/api/v1/discoveries/list',
@@ -67,8 +59,8 @@ export const DISCOVERIES: ListingSpec = {
 };
 
 /**
- * `POST /api/v1/auditLogs` (AuditLogServiceImpl.java): rows `items[]`, newest first (id desc), NO sort (any sort is refused).
- * The enum columns are stored by name and filtered by CODE (FilterPredicatesBuilder.findEnumByCustomValue).
+ * `POST /api/v1/auditLogs`: rows `items[]`, newest first, NO sort (any
+ * sort is refused); enum columns are stored by name and filtered by CODE.
  */
 export const AUDIT_LOGS: ListingSpec = {
     name: 'auditLogs',
@@ -99,7 +91,6 @@ export const AUDIT_LOGS: ListingSpec = {
     ],
 };
 
-/** The catalogue expectations of a listing derived from its field table (the known fields must be published exactly so). */
 export function expectationsOf(spec: ListingSpec, onlyProperty = false): CatalogueExpectations {
     return {
         configurable: spec.configurable,
@@ -108,16 +99,12 @@ export function expectationsOf(spec: ListingSpec, onlyProperty = false): Catalog
     };
 }
 
-/** The searchable-fields catalogues of every resource with one (`GET <listing>/search`; interfaces core/web/*Controller.java). */
 export interface CatalogueRow {
     name: string;
     url: string;
-    /** SearchHelper.CONFIGURABLE_COLUMN_RESOURCES. */
     configurable: boolean;
-    /** The listing table, when the area owns its oracles (keys, discoveries, audit logs). */
     listing?: ListingSpec;
     onlyProperty?: boolean;
-    /** Not named in the ledger row of API-GEN-12 (an extra resource with a catalogue). */
     extra?: boolean;
 }
 
@@ -141,7 +128,6 @@ export const CATALOGUES: readonly CatalogueRow[] = [
     { name: 'timeQualityConfigurations', url: '/api/v1/timeQualityConfigurations/search', configurable: false, extra: true },
 ];
 
-/** The listings that refuse ANY sort (Resource not in CONFIGURABLE_COLUMN_RESOURCES): `POST <url>` and the label of the refusal text. */
 export const SORT_REFUSING_LISTINGS: ReadonlyArray<{ name: string; url: string; label: string; evidence: string }> = [
     { name: 'auditLogs', url: AUDIT_LOGS.searchUrl, label: 'Audit logs', evidence: 'AuditLogServiceImpl.java; Resource.AUDIT_LOG "Audit logs" (Resource.java)' },
     { name: 'oids', url: '/api/v1/oids/list', label: 'OID', evidence: 'CustomOidEntryServiceImpl.java; Resource.OID "OID" (Resource.java); OID is not in SearchHelper.CONFIGURABLE_COLUMN_RESOURCES' },

@@ -1,9 +1,6 @@
 /**
- * fakeConnector — an in-test stand-in for a v2 connector.
- *
- * An HTTP server that answers info, health and metrics, echoes the body of its one attributes callback, records every request
- * and can answer with an injected fault. It listens on loopback (or the bind host the environment names) and is registered as
- * an own connector, which the run-end teardown removes. Connector rows use it to control the answers and faults.
+ * fakeConnector — an in-test stand-in for a v2 connector: an HTTP server answering info, health and metrics, echoing its attributes
+ * callback, recording requests and answering injected faults; registered as an own connector the teardown removes.
  */
 import * as http from 'http';
 import type { AddressInfo } from 'net';
@@ -30,10 +27,7 @@ interface StubAnswer {
 
 export const CALLBACK_ATTRIBUTE = { uuid: '7d4f1a3e-2b6c-4e8f-9a1d-3c5e7f9b1d2a', name: 'data_echo' } as const;
 
-/**
- * The `/v2/info` document of the stub (interfaces: info, health, metrics, attributes; one functional `authority`-free stub needs a
- * functional interface: `discovery`).
- */
+/** The `/v2/info` document of the stub; it needs one functional interface (`discovery`). */
 function infoDocument(name: string, port: number): JsonObject {
     return {
         name,
@@ -61,13 +55,11 @@ export class StubConnector {
         this.name = runName(suffix);
     }
 
-    /** Answer a path with a fixed status / body from now on (fault injection); `undefined` clears it. */
     answerWith(path: string, answer?: StubAnswer): void {
         if (answer) this.faults.set(path, answer);
         else this.faults.delete(path);
     }
 
-    /** The callback requests received so far (what core forwarded), parsed. */
     callbacks(): StubRequest[] {
         return this.requests.filter((r) => r.method === 'POST' && /\/v2\/attributes\/callback$/.test(r.url.split('?')[0]));
     }
@@ -116,7 +108,7 @@ export class StubConnector {
                 res.end(out.body === undefined ? '' : typeof out.body === 'string' ? out.body : JSON.stringify(out.body));
             });
         });
-        // 127.0.0.1 by default; `REG_STUB_BIND_HOST=0.0.0.0` when core sits on a docker bridge that cannot reach the loopback.
+        // 127.0.0.1 by default; `REG_STUB_BIND_HOST=0.0.0.0` when core sits on a docker bridge that cannot reach loopback.
         const bind = settings().stubBindHost;
         if (!/^(127\.0\.0\.1|0\.0\.0\.0|::1|::)$/.test(bind)) throw new Error('REG_STUB_BIND_HOST must be a loopback or the any-address (0.0.0.0): the stub is never bound to a named interface');
         await new Promise<void>((resolve) => this.server!.listen(0, bind, () => resolve()));
@@ -124,12 +116,10 @@ export class StubConnector {
         return { port: this.port };
     }
 
-    /** The loopback origin (for the unit tests). */
     get origin(): string {
         return `http://127.0.0.1:${this.port}`;
     }
 
-    /** The URL core registers: the advertised host (docker gateway alias by default) and this port. */
     advertisedUrl(env: NodeJS.ProcessEnv = process.env): string {
         return `http://${settings(env).stubAdvertisedHost}:${this.port}`;
     }
@@ -140,10 +130,7 @@ export class StubConnector {
         this.server = undefined;
     }
 
-    /**
-     * Registers the stub as an own connector through the ADMIN create (`POST /v2/connectors`, `authType none`,
-     * version v2): recorded under `connectors` before any assertion. Core probes `/v2/info` during the create.
-     */
+/** Registers the stub as an own connector through the admin create (`authType none`, v2), recorded before any assertion. */
     async register(api: GuardedApi, spec: string, env: NodeJS.ProcessEnv = process.env): Promise<OwnRef & { detail: JsonObject }> {
         const created = await apiJson<JsonObject>(api, 'POST', '/api/v2/connectors', {
             name: this.name, url: this.advertisedUrl(env), authType: 'none', authAttributes: [], customAttributes: [], version: 'v2',
@@ -153,7 +140,6 @@ export class StubConnector {
     }
 }
 
-/** A free-form document that exercises every JSON value kind the callback must carry intact (REG-CONN-13). */
 export function callbackProbeDocument(): JsonObject {
     return {
         nested: { deeper: { list: [1, 2, { three: 3 }], text: 'ünïcödé — 日本語 🙂', empty: {} } },

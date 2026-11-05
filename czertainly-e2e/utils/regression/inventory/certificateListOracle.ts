@@ -1,19 +1,12 @@
 /**
- * certificateListOracle — what the certificate list must show and send.
- *
- * Computed from the admin UI's display rules, never from what the page shows:
- *   - the 16 Standard columns
- *   - the date format in the browser time zone and the expected text of each cell
- *   - the words a rendered table must never hold
- *   - the comparison of the filters a list request carries
+ * certificateListOracle — what the certificate list must show and send,
+ * computed from the admin UI's display rules, never from what the page shows.
  */
 import type { PlatformLabels } from './fieldLabels';
 import { JsonObject } from '../json';
 import { objectOf } from '../json';
 
-// ------------------------------------------------------------------ the Standard columns
 
-/** The 16 Standard columns in display order, with the heading each ships (`certificateTableHelpers.tsx`; ids `<source>:<identifier>`). */
 export const STANDARD_COLUMNS: ReadonlyArray<{ id: string; heading: string }> = [
     { id: 'property:CERTIFICATE_STATE', heading: 'State' },
     { id: 'property:CERTIFICATE_VALIDATION_STATUS', heading: 'Validation' },
@@ -33,13 +26,9 @@ export const STANDARD_COLUMNS: ReadonlyArray<{ id: string; heading: string }> = 
     { id: 'property:ARCHIVED', heading: 'Archived' },
 ];
 
-/** `utils/common-utils.ts`. */
 const capitalize = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 
-/**
- * `yyyy-MM-dd HH:mm:ss` in a time zone: the list's date cells (`dateFormatter`, `utils/dateUtil.ts`, which formats with the
- * BROWSER's local getters; the test passes the browser's own zone, so the runner's zone does not matter).
- */
+/** `yyyy-MM-dd HH:mm:ss` in a time zone (the list formats with the browser's local getters, so the test passes the browser's zone). */
 export function formatDateTime(iso: string, timeZone: string): string {
     const parts = new Intl.DateTimeFormat('en-CA', {
         timeZone,
@@ -56,32 +45,23 @@ export function formatDateTime(iso: string, timeZone: string): string {
 }
 
 export interface DisplayContext {
-    /** The browser's IANA time zone (the list formats dates with the browser's local getters). */
     timeZone: string;
     labels: PlatformLabels;
 }
 
-/** What one cell must show: an exact text, the shared empty state, or fragments (a multi-value cell). */
 export type CellExpectation = { text: string } | { empty: true } | { contains: string[] };
 
-/**
- * The expected cell of a Standard column for a list row (an element of the API's `certificates` array), derived from the display
- * rules, never from what the page shows. Each branch cites the FE rule it mirrors; a blank value renders the empty state
- * (`buildTableRows.tsx`: null, undefined and '' all become `EmptyCell`).
- */
+/** The expected cell of a Standard column for a list row, derived from the display rules; a blank value renders the empty state. */
 export function expectedCell(columnId: string, row: JsonObject, ctx: DisplayContext): CellExpectation {
     const text = (value: unknown): CellExpectation => (value === null || value === undefined || value === '' ? { empty: true } : { text: String(value) });
     switch (columnId) {
-        // certificateTableHelpers.tsx + CertificateStatus/index.tsx (a coloured dot with the sr-only label), label: certificate.tsx
         case 'property:CERTIFICATE_STATE':
             return text(row.state ? capitalize(ctx.labels.display('CertificateState', String(row.state))) : undefined);
-        // label: certificate.tsx
         case 'property:CERTIFICATE_VALIDATION_STATUS':
             return text(row.validationStatus ? capitalize(ctx.labels.display('CertificateValidationStatus', String(row.validationStatus))) : undefined);
-        // label: certificate.tsx
         case 'property:COMPLIANCE_STATUS':
             return text(row.complianceStatus ? capitalize(ctx.labels.display('ComplianceStatus', String(row.complianceStatus))) : undefined);
-        // the key icon with the sr-only text, or nothing (the empty state) when no private key is available — never a "No" badge
+        // The key icon with the sr-only text, or the empty state when no private key is available; never a "No" badge.
         case 'property:PRIVATE_KEY':
             return row.privateKeyAvailability ? { text: 'Private key available' } : { empty: true };
         case 'property:COMMON_NAME':
@@ -90,7 +70,6 @@ export function expectedCell(columnId: string, row: JsonObject, ctx: DisplayCont
             return row.notBefore ? { text: formatDateTime(String(row.notBefore), ctx.timeZone) } : { empty: true };
         case 'property:NOT_AFTER':
             return row.notAfter ? { text: formatDateTime(String(row.notAfter), ctx.timeZone) } : { empty: true };
-        // MultiValueCell: the first group, `+N` for the rest behind the toggletip
         case 'property:GROUP_NAME': {
             const groups = (row.groups ?? []) as Array<{ name?: string }>;
             if (groups.length === 0) return { empty: true };
@@ -117,27 +96,22 @@ export function expectedCell(columnId: string, row: JsonObject, ctx: DisplayCont
     }
 }
 
-/** The words that must never appear in a rendered table body. */
 export const FORBIDDEN_RENDERED = /\b(?:null|undefined|NaN)\b|Invalid Date/;
 
-/** The first forbidden word in a text (with a little context), or undefined. */
 export function forbiddenWordIn(text: string): string | undefined {
     const m = FORBIDDEN_RENDERED.exec(text);
     return m ? text.slice(Math.max(0, m.index - 20), m.index + m[0].length + 20) : undefined;
 }
 
-// ------------------------------------------------------------------ the filters of a list request
 
-/** A request value as comparable text: undefined stays undefined, an array becomes its items as strings, a scalar its string. */
 export function wireValue(value: unknown): undefined | string | string[] {
     if (value === undefined || value === null) return undefined;
     return Array.isArray(value) ? value.map((v) => String(v)) : String(value);
 }
 
 /**
- * The filters of an observed list request against the expected ones: source, identifier, condition and the value (arrays item by
- * item in order, numbers as text: the FE sends a NUMBER field's value as a raw string and a list value as codes). Returns the
- * first difference, or undefined when they agree.
+ * The filters of an observed list request against the expected ones (arrays
+ * item by item, numbers as text); returns the first difference or undefined.
  */
 export function filtersDifference(actual: readonly JsonObject[] | undefined, expected: readonly JsonObject[]): string | undefined {
     const got = actual ?? [];

@@ -1,22 +1,16 @@
 /**
- * upgradeRunner — the local upgrade test.
- *
- * Seeds on the old core image, takes a snapshot, upgrades on the same database, takes a snapshot again and diffs. An upgrade
- * must keep every object, and every migration drift must show. The snapshot diff and the schema-history checks are pure; the
- * live half reads through the API and `PlatformStack.psql`. The upgrade is one way: a target older than the source image is
- * refused.
+ * upgradeRunner — the local upgrade test: seed on the old core image, snapshot, upgrade on the same database, snapshot and diff; the diff
+ * and schema-history checks are pure. The upgrade is one way: a target older than the source image is refused.
  */
 import type { APIRequestContext } from '@playwright/test';
 import { apiJson } from '../apiReads';
 import { PlatformStack } from './localStack';
 import type { JsonObject } from '../json';
 
-/** The listed types whose uuid sets must survive an upgrade (DEP-02-4). */
 const SNAPSHOT_TYPES: readonly string[] = ['raProfiles', 'acmeProfiles', 'roles', 'users', 'groups', 'credentials', 'authorities', 'tokens', 'tokenProfiles', 'connectors'];
 
 interface TypeSnapshot {
     count: number;
-    /** uuid → name (or the key attribute that identifies the object). */
     objects: Record<string, string>;
 }
 
@@ -38,18 +32,14 @@ export interface Snapshot {
     schemaHistory: SchemaHistoryRow[];
 }
 
-// ------------------------------------------------------------------ pure: the diff rules
 
-/** Users and roles may grow by the SYSTEM objects that migrations create: any extra must match these patterns. */
 const SYSTEM_IDENTITY = /^(localhost|superadmin|acme|scep|cmp|attribute-content-resolver|cert-manager|protocol-)/i;
 
 export interface DiffReport {
     problems: string[];
-    /** Extras in users / roles that look like system objects (reported, not failed). */
     systemExtras: string[];
 }
 
-/** DEP-02-4: every before-uuid still after with the same name, counts equal except system extras in users / roles. */
 export function diffSnapshots(before: Snapshot, after: Snapshot): DiffReport {
     const problems: string[] = [];
     const systemExtras: string[] = [];
@@ -83,7 +73,6 @@ export function diffSnapshots(before: Snapshot, after: Snapshot): DiffReport {
     return { problems, systemExtras };
 }
 
-/** DEP-02-2: before-rows kept (same checksum, success), new rows success, out-of-order evidenced. */
 export function schemaHistoryProblems(before: SchemaHistoryRow[], after: SchemaHistoryRow[]): { problems: string[]; newVersions: string[]; outOfOrder: boolean } {
     const problems: string[] = [];
     const byRank = new Map(after.map((r) => [r.installedRank, r]));
@@ -103,14 +92,12 @@ export function schemaHistoryProblems(before: SchemaHistoryRow[], after: SchemaH
     return { problems, newVersions, outOfOrder };
 }
 
-/** Flyway compares versions numerically (a 13-digit version is greater than every 12-digit one); non-numeric parts fall back to text. */
 export function versionGreater(a: string, b: string): boolean {
     if (!b) return true;
     if (/^\d+$/.test(a) && /^\d+$/.test(b)) return BigInt(a) > BigInt(b);
     return a > b;
 }
 
-/** Never downgrade — the `from` tag must not be newer than the target. Tags `2.19.1`, `2.20.0-SNAPSHOT`, …; undefined = cannot compare. */
 export function upgradeDirectionProblem(fromTag: string, targetVersion: string): string | undefined {
     const parse = (s: string) => /(\d+)\.(\d+)\.(\d+)/.exec(s)?.slice(1, 4).map(Number);
     const f = parse(fromTag);
@@ -123,7 +110,6 @@ export function upgradeDirectionProblem(fromTag: string, targetVersion: string):
     return undefined;
 }
 
-/** `core_schema_history` rows from the unaligned psql output (`rank|version|description|checksum|success`). */
 export function parseSchemaHistory(rows: string[]): SchemaHistoryRow[] {
     return rows.map((line) => {
         const [rank, version, description, checksum, success] = line.split('|');
@@ -133,7 +119,6 @@ export function parseSchemaHistory(rows: string[]): SchemaHistoryRow[] {
 
 const SCHEMA_HISTORY_SQL = 'select installed_rank, version, description, checksum, success from core.core_schema_history order by installed_rank';
 
-// ------------------------------------------------------------------ live: snapshots
 
 const LIST_URLS: Readonly<Record<string, string>> = {
     raProfiles: '/api/v1/raProfiles', acmeProfiles: '/api/v1/acmeProfiles', roles: '/api/v1/roles', users: '/api/v1/users', groups: '/api/v1/groups',
@@ -142,7 +127,6 @@ const LIST_URLS: Readonly<Record<string, string>> = {
 
 const nameOf = (row: JsonObject): string => String(row.name ?? row.username ?? row.uuid);
 
-/** A snapshot through the API (read-only) and, when a stack is given, the schema history through psql. */
 export async function takeSnapshot(api: APIRequestContext, stack?: PlatformStack): Promise<Snapshot> {
     const types: Record<string, TypeSnapshot> = {};
     for (const type of SNAPSHOT_TYPES) {
