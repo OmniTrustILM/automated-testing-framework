@@ -4,15 +4,9 @@ import { cryptographyConnectors, skipUnlessLocalStack } from '../../utils/timest
 import { timestampingConfig } from '../../utils/timestamping/config';
 import { devTests } from '../../utils/timestamping/tags';
 
-/**
- * The environment itself, asserted before anything is blamed on the code under test.
- * A failure here means the stack is broken, not that timestamping regressed.
- * Two rows read the local docker stack (container states, the broker's queues through `docker exec`): `@local`, skipped off a proven local
- * stack. The other two read the API and run on a shared tier too.
- */
+/** The environment itself, asserted before anything is blamed on the code under test: a failure here means the stack is broken. */
 const c = timestampingConfig().containers;
 test.describe('environment', devTests(), () => {
-  // The containers the environment names; the ones the TSA_CONTAINER_* variables can rename come from the config.
   const containers = [
     'postgres',
     c.rabbitmq,
@@ -45,8 +39,6 @@ test.describe('environment', devTests(), () => {
   });
 
   test('the connectors backing timestamping are connected and healthy', devTests(), async ({ admin, ts }) => {
-    // v1 and v2 connectors expose different health routes: /v1/connectors/{uuid}/health
-    // proxies the connector's /v1/health, which a v2 connector does not serve.
     const expected = [
       ts.connectors.credentialProvider,
       ts.connectors.ejbca,
@@ -78,9 +70,6 @@ test.describe('environment', devTests(), () => {
   test('Core is subscribed to the time-quality exchange', { tag: [...devTests({ local: true }).tag, DOCKER] }, () => {
     skipUnlessLocalStack();
     test.skip(!dockerAvailable(), 'docker is not available');
-    // 0 consumers on the config-request queue is the signature of a Core started without
-    // MESSAGING_TIME_QUALITY_ENABLED — every qualified timestamp would fail later with
-    // "time quality is not sufficient" and no other clue.
     const queues = listQueues(/time-quality/);
     expect(queues.length, 'time-quality queues exist').toBeGreaterThan(0);
 

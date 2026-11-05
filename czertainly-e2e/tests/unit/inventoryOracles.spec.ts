@@ -1,7 +1,6 @@
 /**
  * Unit tests of utils/regression/inventory/oracles/: the catalogue contract, the row predicates, sampling, the list
- * checks, the audit-log gate and the activity helpers. Each check passes on a correct input and names the field, the
- * neighbouring rows or the sets on a wrong one. No environment, no network.
+ * checks, the audit-log gate and the activity helpers.
  */
 import { expect, test } from '@playwright/test';
 import { activityFilters, activityMatches, auditGate } from '../../utils/regression/inventory/oracles/auditLog';
@@ -16,8 +15,6 @@ import { unsupportedSortText } from '../../utils/regression/inventory/oracles/so
 
 const key = (r: ListRow): string => String(r.uuid);
 const rows = (...ids: string[]): ListRow[] => ids.map((uuid) => ({ uuid }));
-
-// ------------------------------------------------------------------ values
 
 test('toValues: null, undefined, empty arrays and objects are no value; arrays flatten; the empty string IS a value', () => {
     expect(toValues(null)).toEqual([]);
@@ -48,8 +45,6 @@ test('datetimeLiteral keeps the server text, cuts the fraction to milliseconds a
     expect(() => datetimeLiteral('x')).toThrow(/not a datetime/);
 });
 
-// ------------------------------------------------------------------ condition kinds
-
 test('classifyConditions: the type decides which of the equal-looking sets a field publishes', () => {
     const k = (type: string, kind: ConditionKind) => classifyConditions(type, KIND_CONDITIONS[kind]);
     expect(k('string', 'string')).toBe('string');
@@ -64,21 +59,16 @@ test('classifyConditions: the type decides which of the equal-looking sets a fie
     expect(k('boolean', 'expectedBoolean')).toBe('expectedBoolean');
     expect(k('string', 'freeText')).toBe('freeText');
     for (const type of ['string', 'number', 'list', 'date', 'datetime', 'boolean']) expect(classifyConditions(type, ['EMPTY', 'NOT_EMPTY'])).toBe('presence');
-    // none of the sets: a missing condition, an extra one, the wrong type for the set
     expect(classifyConditions('number', ['EQUALS', 'NOT_EQUALS', 'GREATER'])).toBeUndefined();
     expect(classifyConditions('string', [...KIND_CONDITIONS.string, 'IN_PAST'])).toBeUndefined();
     expect(classifyConditions('number', KIND_CONDITIONS.string)).toBeUndefined();
     expect(classifyConditions('list', KIND_CONDITIONS.date)).toBeUndefined();
     expect(classifyConditions('nope', ['EQUALS'])).toBeUndefined();
-    // set sizes of the "Absolute condition sets" table of the inventory search API and the core code
     expect(Object.fromEntries(Object.entries(KIND_CONDITIONS).map(([n, c]) => [n, c.length]))).toEqual({
         string: 10, number: 8, date: 10, time: 8, list: 4, collection: 8, nativeArray: 6, jsonArray: 4, boolean: 4, expectedBoolean: 2, presence: 2, freeText: 1,
     });
 });
 
-// ------------------------------------------------------------------ the catalogue contract
-
-/** A catalogue built from a listing table: every field with the conditions of its kind. */
 function catalogueOf(spec: typeof KEYS, patch: (f: Record<string, unknown>) => void = () => undefined, extraGroups: unknown[] = []): unknown[] {
     const fields = spec.fields.map((f) => ({
         fieldIdentifier: f.id,
@@ -191,14 +181,10 @@ test('catalogueProblems: attribute fields (<name>|<TYPE>), the TIME set, native 
     expect(problems(withAttr(attr({})), KEYS)).toEqual([]);
     expect(problems(withAttr(attr({ fieldIdentifier: 'department' })), KEYS).join('\n')).toMatch(/an attribute identifier is <name>\|<CONTENT_TYPE>/);
     expect(problems(withAttr(attr({ attributeContentType: undefined })), KEYS).join('\n')).toMatch(/carries no attributeContentType/);
-    // a TIME attribute publishes the 8-condition date set, a date attribute 10
     expect(problems(withAttr(attr({ fieldIdentifier: 't|TIME', type: 'date', conditions: [...KIND_CONDITIONS.time], attributeContentType: 'time' })), KEYS)).toEqual([]);
     expect(problems(withAttr(attr({ fieldIdentifier: 't|DATE', type: 'date', conditions: [...KIND_CONDITIONS.time], attributeContentType: 'date' })), KEYS).join('\n')).toMatch(/the 8-condition date set belongs to a TIME attribute only/);
-    // a collection or an expected-value boolean is a property kind
     expect(problems(withAttr(attr({ fieldIdentifier: 'g|LIST', type: 'list', conditions: [...KIND_CONDITIONS.collection], multiValue: true })), KEYS).join('\n')).toMatch(/kind collection exists on property fields only/);
-    // a native array is multi-valued
     expect(problems(withAttr(attr({ fieldIdentifier: 'n|LIST', type: 'list', conditions: [...KIND_CONDITIONS.nativeArray], multiValue: false })), KEYS).join('\n')).toMatch(/a native-array field is multiValue/);
-    // the encrypted / withheld attribute publishes the presence pair
     expect(problems(withAttr(attr({ fieldIdentifier: 's|SECRET', conditions: [...KIND_CONDITIONS.presence], displayable: false, sortable: false })), KEYS)).toEqual([]);
 });
 
@@ -206,7 +192,8 @@ test('every catalogue row names an endpoint of a GET <listing>/search and a conf
     const names = CATALOGUES.map((c) => c.name);
     expect(new Set(names).size).toBe(names.length);
     for (const c of CATALOGUES) expect(c.url, c.name).toMatch(/^\/api\/v[12]\/[A-Za-z]+(\/[A-Za-z]+)?\/search$/);
-    // CONFIGURABLE_COLUMN_RESOURCES: certificates, keys, discoveries, connectors v2, secrets, CBOMs, signing records, crypto assets
+    // CONFIGURABLE_COLUMN_RESOURCES: certificates, keys, discoveries,
+    // connectors v2, secrets, CBOMs, signing records, crypto assets.
     expect(CATALOGUES.filter((c) => c.configurable).map((c) => c.name).sort()).toEqual(['cboms', 'certificates', 'connectorsV2', 'cryptoAssets', 'discoveries', 'keys', 'secrets', 'signingRecords']);
     expect(CATALOGUES.find((c) => c.name === 'auditLogs')).toMatchObject({ configurable: false, onlyProperty: true });
     expect(SORT_REFUSING_LISTINGS.map((l) => l.name)).toEqual(['auditLogs', 'oids', 'locations', 'entities', 'vaults', 'vaultProfiles']);
@@ -214,14 +201,10 @@ test('every catalogue row names an endpoint of a GET <listing>/search and a conf
     expect(unsupportedSortText('OID')).toBe('Sorting is not supported for the OID listing.');
 });
 
-// ------------------------------------------------------------------ row predicates
-
 test('satisfiesFilter: the reference filter rules (nulls, complements, weak string forms, COUNT_*)', () => {
-    // EMPTY / NOT_EMPTY: no value; the empty string is a value
     expect(satisfiesFilter([], 'EMPTY')).toBe(true);
     expect(satisfiesFilter([''], 'EMPTY')).toBe(false);
     expect(satisfiesFilter([''], 'NOT_EMPTY')).toBe(true);
-    // EQUALS = any of the listed values; NOT_EQUALS = none of them, rows without a value included
     expect(satisfiesFilter(['a', 'b'], 'EQUALS', 'b')).toBe(true);
     expect(satisfiesFilter(['a', 'b'], 'EQUALS', ['x', 'b'])).toBe(true);
     expect(satisfiesFilter(['a', 'b'], 'NOT_EQUALS', 'b')).toBe(false);
@@ -229,7 +212,6 @@ test('satisfiesFilter: the reference filter rules (nulls, complements, weak stri
     expect(satisfiesFilter([2048], 'EQUALS', 2048)).toBe(true);
     expect(satisfiesFilter([true], 'EQUALS', true)).toBe(true);
     expect(satisfiesFilter([false], 'EQUALS', true)).toBe(false);
-    // weak string forms: positive ones ignore case, negative ones are case-sensitive
     expect(satisfiesFilter(['Alpha-1'], 'CONTAINS', 'alp')).toBe(true);
     expect(satisfiesFilter(['Alpha-1'], 'NOT_CONTAINS', 'alp'), 'a case-sensitive server returns it for NOT_CONTAINS "alp"').toBe(true);
     expect(satisfiesFilter(['Alpha-1'], 'NOT_CONTAINS', 'Alp')).toBe(false);
@@ -241,7 +223,6 @@ test('satisfiesFilter: the reference filter rules (nulls, complements, weak stri
     expect(satisfiesFilter(['Alpha-1'], 'NOT_MATCHES', '^alpha'), 'case-sensitive: "Alpha" does not match ^alpha').toBe(true);
     expect(satisfiesFilter([], 'NOT_MATCHES', '^a'), 'NOT_MATCHES excludes rows without a value').toBe(false);
     expect(satisfiesFilter([], 'MATCHES', '^a')).toBe(false);
-    // numbers: a comparison needs a value
     expect(satisfiesFilter([2048], 'GREATER', 1024)).toBe(true);
     expect(satisfiesFilter([2048], 'GREATER', 2048)).toBe(false);
     expect(satisfiesFilter([2048], 'GREATER_OR_EQUAL', 2048)).toBe(true);
@@ -249,7 +230,6 @@ test('satisfiesFilter: the reference filter rules (nulls, complements, weak stri
     expect(satisfiesFilter([2048], 'LESSER_OR_EQUAL', 2047)).toBe(false);
     expect(satisfiesFilter([], 'GREATER', 0)).toBe(false);
     expect(satisfiesFilter([], 'LESSER_OR_EQUAL', 0)).toBe(false);
-    // COUNT_* count the values of the row
     expect(satisfiesFilter(['g1', 'g2'], 'COUNT_EQUAL', 2)).toBe(true);
     expect(satisfiesFilter([], 'COUNT_EQUAL', 0)).toBe(true);
     expect(satisfiesFilter(['g1'], 'COUNT_NOT_EQUAL', 0)).toBe(true);
@@ -288,8 +268,6 @@ test('textProbe returns prefix, suffix and inner probes of <= 4 safe characters 
     expect(textProbe('', 'prefix')).toBeUndefined();
 });
 
-// ------------------------------------------------------------------ sampling
-
 const numberField: Pick<FieldMap, 'get' | 'shape'> = { get: (r) => toValues(r.n), shape: 'number' };
 const textField: Pick<FieldMap, 'get' | 'shape'> = { get: (r) => toValues(r.t), shape: 'text' };
 const datetimeField: Pick<FieldMap, 'get' | 'shape'> = { get: (r) => toValues(r.d), shape: 'datetime' };
@@ -313,7 +291,6 @@ test('sampleValues: numbers spread over the range, datetimes over time, text fir
     expect(pickSampleValues([{ t: 'only' }, { t: 'only' }], textField)).toEqual(['only']);
     expect(pickSampleValues([{ t: null }, {}], textField)).toEqual([]);
     expect(pickSampleValues([], numberField)).toEqual([]);
-    // arrays contribute every element
     const groups: ListRow[] = [{ t: ['g1', 'g2'] }, { t: ['g2'] }, { t: [] }];
     expect(pickSampleValues(groups, textField)).toEqual(['g1', 'g2']);
 });
@@ -335,8 +312,6 @@ test('findAndPairs prefers a pair whose intersection is non-empty and narrower t
     expect(findAndPairs([f('A', 'a'), f('B', 'b')], data, new Set(['A']))).toEqual([]);
     expect(findAndPairs([f('A', 'a'), f('B', 'b')], [], new Set(['A', 'B']))).toEqual([]);
 });
-
-// ------------------------------------------------------------------ checkers
 
 test('expectCountsAdd names the parts and the expected total', () => {
     expect(() => expectCountsAdd('x EQUALS', [['EQUALS', 3], ['NOT_EQUALS', 7]], 10)).not.toThrow();
@@ -398,7 +373,6 @@ test('textOrdered: code-unit order for [a-z0-9] strings, either code-unit or en 
     expect(textOrdered('a-c', 'ab', 'asc')).toBe(true);
     expect(textOrdered('Zed', 'alpha', 'asc'), 'code units put "Z" first').toBe(true);
     expect(textOrdered('alpha', 'Zed', 'asc'), 'an en collator puts "alpha" first').toBe(true);
-    // a clearly wrong pair is flagged in the mixed case too
     expect(textOrdered('Mango-2', 'Apple-1', 'asc')).toBe(false);
     expect(textOrdered('Apple-1', 'Mango-2', 'desc')).toBe(false);
 });
@@ -466,8 +440,6 @@ test('withReread: a transient disagreement is absorbed and noted once; a second 
     })).rejects.toThrow(/network down/);
     expect(calls, 'only an InvariantViolation is re-read').toBe(1);
 });
-
-// ------------------------------------------------------------------ the audit log gate and the activity helpers
 
 test('auditGate mirrors AuditLogAspect / LoggingHelper: database output and a logged module and resource', () => {
     const settings = (over: Record<string, unknown> = {}) => ({

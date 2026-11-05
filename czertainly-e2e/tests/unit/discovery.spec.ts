@@ -1,8 +1,6 @@
 /**
- * The pure helpers of the discovery area: the v1 (`ip`, `port`, `allPorts`, `data_parallel_executions`) and v2
- * (`version: v3`, one content item per entry) attribute shapes, the generation-dependent create body, `isSubsequence`,
- * `fingerprintSet`, and the TLS scan target (deploy gate texts, a served chain read back over a real TLS handshake on
- * loopback, distinct leaves). No network beyond 127.0.0.1.
+ * The pure helpers of the discovery area: the v1 (`ip`, `port`, `allPorts`, `data_parallel_executions`) and v2 attribute shapes, the
+ * generation-dependent create body and the TLS scan target.
  */
 import { expect, test } from '@playwright/test';
 import * as tls from 'tls';
@@ -14,8 +12,6 @@ import { runName } from '../../utils/regression/ledger/runState';
 import { contentOf } from './helpers/contentOf';
 
 type Json = Record<string, any>;
-
-// ------------------------------------------------------------------ discovery builders
 
 const V1_DEFS: Json[] = [
     { uuid: 'd-ip', name: 'ip', contentType: 'string' },
@@ -66,8 +62,6 @@ test('isSubsequence keeps order and allows gaps; fingerprintSet normalises, de-d
     expect(fingerprintSet([{ fingerprint: 'AB:CD' }, { fingerprint: 'abcd' }, { fingerprint: '01 02' }, {}])).toEqual(['0102', 'abcd']);
 });
 
-// ------------------------------------------------------------------ TLS scan target
-
 test('the scan target deploy gate: unset, malformed and valid REG_SCAN_HOST', () => {
     expect(scanTargetProblem({})).toMatch(/^deploy gate: no scan target \(REG_SCAN_HOST unset\)/);
     expect(scanTargetProblem({ REG_SCAN_HOST: 'localhost' })).toMatch(/neither a dotted host name nor an IP address/);
@@ -81,11 +75,6 @@ test('startTlsTarget without a scan host refuses with the deploy gate text and o
     await expect(startTlsTarget({ env: {} })).rejects.toThrow(/deploy gate: no scan target/);
 });
 
-/**
- * The chain listener `index` serves, read over a verified TLS handshake on loopback: the client trusts `ca` (default: the root
- * alone, which no listener serves) and checks the leaf's name. Node appends the issuers it finds in `ca`, so the served
- * certificates come first.
- */
 async function servedOn(target: TlsTarget, index: number, ca: string[] = [target.rootPem]): Promise<string[]> {
     return new Promise((resolve, reject) => {
         const socket = tls.connect({ host: '127.0.0.1', port: target.ports[index], ca, servername: target.served[index][0].commonName }, () => {
@@ -132,8 +121,6 @@ test('distinct leaves: 3 listeners / 2 distinct leaves repeat leaf 1; no interme
         expect(new Set(leafPrints).size).toBe(2);
         expect(leafPrints[2]).toBe(leafPrints[0]);
         expect(target.distinct()).toHaveLength(2);
-        // the leaf alone: trusting only the root, a client cannot verify it (OpenSSL's code for a one-certificate chain whose
-        // issuer is missing); trusting the intermediate too, it reads this listener's leaf
         await expect(servedOn(target, 1)).rejects.toMatchObject({ code: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' });
         expect((await servedOn(target, 1, [target.rootPem, target.intermediatePem]))[0]).toBe(leafPrints[1]);
     } finally {

@@ -1,6 +1,6 @@
 /**
- * Unit tests for coreBuild.ts: /v1/info parsing, the migrated / baseline
- * decision, a failed read that is never cached (the next call reads again), a successful read that is, and the
+ * Unit tests for coreBuild.ts: /v1/info parsing, the migrated / baseline decision, a failed read that is never cached
+ * (the next call reads again), a successful read that is, and the
  * annotation an unreadable marker writes into the (required) testInfo.
  */
 import { APIRequestContext, test, expect } from '@playwright/test';

@@ -1,7 +1,5 @@
 /**
- * lifecycle — pure helpers of utils/regression/lifecycle/ without an environment: the state-walk subsequence and the
- * history order oracles, the sorted history, the rule texts (state guards, revoke reasons, approval close), the
- * raw-answer readers, the leak words, the e-mail SAN CSR, the challenge format and the approval status names.
+ * lifecycle — pure helpers of utils/regression/lifecycle/ without an environment.
  */
 import { expect, test } from '@playwright/test';
 import { approvalStatusLabel, recipientComments, sameApprovalStatus } from '../../utils/regression/lifecycle/approvals';
@@ -27,7 +25,6 @@ test('isSubsequenceOf: the observed state walk must appear in the expected order
 const row = (event: string, status: string, created: string, message = '') => ({ event, status, created, message });
 
 test('sortedHistory: oldest first by created; equal timestamps keep the server\'s newest-first order reversed; unparsable dates too', () => {
-    // The server lists newest first: b (10:00:02, listed before c) is the NEWER of the two equal timestamps.
     const rows = [row('b', 'SUCCESS', '2026-10-14T10:00:02Z'), row('c', 'SUCCESS', '2026-10-14T10:00:02Z'), row('a', 'SUCCESS', '2026-10-14T10:00:01Z')];
     expect(sortedHistory(rows).map((r) => r.event)).toEqual(['a', 'c', 'b']);
     expect(sortedHistory([row('x', 'S', 'nope'), row('y', 'S', 'nope')]).map((r) => r.event), 'no dates: the server order reversed').toEqual(['y', 'x']);
@@ -50,7 +47,6 @@ test('historyOrderProblem: the JSON event codes in order; presence and order onl
     expect(historyOrderProblem(rows, [['APPROVAL_CLOSE', 'FAILED']]), 'the status is part of the row').toMatch(/missing/);
     // The rows come oldest first: the server's newest-first list, sorted once (as historyOf does), passes.
     expect(historyOrderProblem(sortedHistory([...rows].reverse()), [['APPROVAL_REQUEST', 'SUCCESS'], ['ISSUE', 'SUCCESS']])).toBeUndefined();
-    // Mutant (row reuse): one history row may satisfy one expected step only — two expected ISSUE rows need two rows.
     const single = rows.slice(0, 3);
     expect(historyOrderProblem(single, [['ISSUE', 'SUCCESS']])).toBeUndefined();
     expect(historyOrderProblem(single, [['ISSUE', 'SUCCESS'], ['ISSUE', 'SUCCESS']])).toMatch(/missing Issue Certificate\/SUCCESS after position 3/);
@@ -58,7 +54,6 @@ test('historyOrderProblem: the JSON event codes in order; presence and order onl
 });
 
 test('historyOrderProblem judges the rows as given: the server list sorted once keeps two rows of one timestamp in order', () => {
-    // The server lists newest first: the issue row, listed first, is the newer of two rows written in the same second.
     const server = [
         row(EVENT_CODES.ISSUE, 'SUCCESS', '2026-10-14T10:00:02Z'),
         row(EVENT_CODES.APPROVAL_CLOSE, 'SUCCESS', '2026-10-14T10:00:02Z'),
@@ -66,7 +61,6 @@ test('historyOrderProblem judges the rows as given: the server list sorted once 
     ];
     const steps: HistoryStep[] = [['APPROVAL_REQUEST', 'SUCCESS'], ['APPROVAL_CLOSE', 'SUCCESS'], ['ISSUE', 'SUCCESS']];
     expect(historyOrderProblem(sortedHistory(server), steps)).toBeUndefined();
-    // Mutant: a second sort turns the two rows of one timestamp around and rejects the valid history.
     expect(historyOrderProblem(sortedHistory(sortedHistory(server)), steps)).toMatch(/missing Issue Certificate\/SUCCESS/);
 });
 
@@ -121,8 +115,6 @@ test('csrWithEmailSan: a DNS name and an rfc822Name next to the CN; newChallenge
     expect(msBetween('2026-10-14T10:00:00Z', new Date('2026-10-14T10:05:00Z'))).toBe(5 * 60 * 1000);
 });
 
-// ------------------------------------------------------------------ approval status (lifecycle approvals)
-
 test('approval status: the API enum name (PENDING) and the UI label (Pending) are the same status; other statuses are not', () => {
     expect(approvalStatusLabel('PENDING')).toBe('Pending');
     expect(approvalStatusLabel('approved')).toBe('Approved');
@@ -134,10 +126,8 @@ test('approval status: the API enum name (PENDING) and the UI label (Pending) ar
 test('cnAttributeOf: a v3 CN request attribute carries contentType on every content item (core cannot read the body without it); v2 items do not', () => {
     const cn = 'qa-reg-x-cn';
     expect(cnAttributeOf(DEFAULT_CN_DEFINITION, cn)).toEqual({ version: 'v3', uuid: DEFAULT_CN_DEFINITION.uuid, name: 'commonName', contentType: 'string', content: [{ data: cn, contentType: 'string' }] });
-    // core lists definitions with a numeric version
     expect(cnAttributeOf({ version: 3 as unknown as string, uuid: 'u3', name: 'commonName', contentType: 'string' }, cn).content).toEqual([{ data: cn, contentType: 'string' }]);
     expect(cnAttributeOf({ version: 3 as unknown as string, uuid: 'u3', name: 'commonName' }, cn)).toMatchObject({ contentType: 'string', content: [{ data: cn, contentType: 'string' }] });
     expect(cnAttributeOf({ version: 2 as unknown as string, uuid: 'u2', name: 'commonName', contentType: 'string' }, cn)).toEqual({ version: 'v2', uuid: 'u2', name: 'commonName', contentType: 'string', content: [{ data: cn }] });
-    // no version on the definition: v3 (the register DTO's current request attribute)
     expect(cnAttributeOf({ uuid: 'u', name: 'commonName', contentType: 'string' }, cn)).toMatchObject({ version: 'v3', content: [{ data: cn, contentType: 'string' }] });
 });

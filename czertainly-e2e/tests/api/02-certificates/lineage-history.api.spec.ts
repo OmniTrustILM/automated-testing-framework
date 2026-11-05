@@ -1,10 +1,7 @@
 /**
- * API-CERT-34 — The audit trail of each legal certificate state transition (ilm#429).
- *
- * Each of the 25 legal transitions writes an audit event with a status (core#1599, core#1605); a rejected revoke restores
- * issued (core#1553), a rejected completion registered (ilm#284). Presence and order only, never counts, no 5xx.
- * Approval walks use an own RA profile clone. The approved / rejected completion walk skips when the tier's registration
- * settings cannot hold a challenge.
+ * API-CERT-34 — The audit trail of each legal certificate state transition (ilm#429). Each of the 25 legal transitions
+ * writes an audit event with a status (core#1599, core#1605); a rejected revoke restores issued (core#1553), a rejected
+ * completion registered (ilm#284).
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { decideApproval, findApproval, openApprovalGate } from '../../../utils/regression/lifecycle/approvals';
@@ -86,9 +83,7 @@ test.describe('Certificate state transition audit trail', { tag: tags.api }, () 
                     const approval = await findApproval(api, cert, own.spec, { status: 'Pending' });
                     expect((await decideApproval(api, approval, 'reject')).status).toBe(204);
                     await waitForCertificateState(api, cert.uuid, 'rejected', STATE_CHANGE_WAIT_MS, { failOn: ['failed', 'issued'] });
-                    // The approval close is SUCCESS and the state machine audits the rejection as UPDATE_STATE / FAILED "Certificate state
-                    // changed from Pending approval to Rejected." (core handleFailedOrRejectedEvent); the two come from independent
-                    // asynchronous paths, so the rows are asserted present, not in a fixed order.
+                    // The approval close and the rejection row are asynchronous: present, not in order.
                     await expectWalkRows(api, cert.uuid, 'rejected', [['APPROVAL_REQUEST', 'SUCCESS'], ['APPROVAL_CLOSE', 'SUCCESS'], ['UPDATE_STATE', 'FAILED']]);
                     expect(historyMessages(await historyOf(api, cert.uuid))).toContainEqual(expect.stringContaining('Certificate state changed from Pending approval to Rejected.'));
                 });
@@ -101,8 +96,7 @@ test.describe('Certificate state transition audit trail', { tag: tags.api }, () 
         testMeta({ id: 'API-CERT-34', row: 'approved-and-rejected-revoke', prio: 'P1', issue: 'ilm#429', needs: 'ca', rule: [...RULES, 'reject restores ISSUED; core#1553'] }),
         async ({ api, own }) => {
             test.setTimeout(APPROVAL_REVOKE_TEST_MS);
-            // The certificates are issued on the clone BEFORE the approval profile is associated (an ungated issue), so the
-            // revoke is the first gated operation.
+            // The certificates are issued before the approval profile is associated, so the revoke is the first gated operation.
             const gate = await openApprovalGate(api, own.spec, 'g34r', { associate: false });
             try {
                 const [a, b] = await test.step('Fixture: two own certificates issued on the (not yet gated) clone', async () =>
@@ -114,8 +108,7 @@ test.describe('Certificate state transition audit trail', { tag: tags.api }, () 
                     const approval = await findApproval(api, a, own.spec, { status: 'Pending' });
                     expect((await decideApproval(api, approval, 'reject')).status).toBe(204);
                     await waitForCertificateState(api, a.uuid, 'issued', STATE_CHANGE_WAIT_MS);
-                    // The restore (REVOKE / FAILED) and the approval close (APPROVAL_CLOSE / SUCCESS) come from independent
-                    // asynchronous paths, so the two last rows are asserted present, not in a fixed order.
+                    // The restore (REVOKE / FAILED) and the approval close (APPROVAL_CLOSE / SUCCESS) are asynchronous: present, not in order.
                     await expectWalkRows(api, a.uuid, 'issued', [['ISSUE', 'SUCCESS'], ['APPROVAL_REQUEST', 'SUCCESS'], ['APPROVAL_CLOSE', 'SUCCESS'], ['REVOKE', 'FAILED']]);
                     expect(historyMessages(await historyOf(api, a.uuid))).toContainEqual(expect.stringContaining('Revocation approval was rejected; certificate restored to Issued.'));
                 });

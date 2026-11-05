@@ -1,6 +1,6 @@
 /**
- * Offline checks of pages/CertificateListPage.ts and the list helpers of pages/ui/list.ts against a stand-in of the admin
- * UI (tests/unit/helpers/fakeCertificateListApp.ts). Each assertion meant to catch a wrong page is shown failing on one.
+ * Offline checks of pages/CertificateListPage.ts and the list helpers of pages/ui/list.ts against a stand-in of the
+ * admin UI (tests/unit/helpers/fakeCertificateListApp.ts).
  */
 import { Browser, expect, test } from '@playwright/test';
 import { CertificateListPage } from '../../pages/CertificateListPage';
@@ -11,7 +11,6 @@ import { Served, serveInventory } from './helpers/fakeCertificateListApp';
 
 const failsFast = async (call: Promise<unknown>): Promise<boolean> => call.then(() => false, () => true);
 
-/** The stand-in with the certificate list opened from the sidebar and loaded. */
 async function open(browser: Browser, opts: Parameters<typeof serveInventory>[1] = {}): Promise<{ app: Served; inventory: CertificateListPage }> {
     const app = await serveInventory(browser, opts);
     const inventory = new CertificateListPage(app.page);
@@ -35,7 +34,6 @@ test('addInventoryTextFilter shows the badge; removeFilterBadge sends the list r
 
         const removed = await inventory.removeFilterBadge(`Property 'Common Name' contains 'web'`);
         expect(removed.body.filters).toEqual([{ fieldSource: 'property', fieldIdentifier: 'COMMON_NAME', condition: 'STARTS_WITH', value: prefix }]);
-        // no poll: the table had loaded again before removeFilterBadge returned (24 rows, 10 on the page)
         expect(await inventory.rows.count()).toBe(10);
         expect(await filterBadges(app.page)).toEqual([startsWith]);
         expect(await failsFast(inventory.removeFilterBadge(`Property 'Common Name' contains 'web'`)), 'a badge that is not shown fails').toBe(true);
@@ -95,7 +93,6 @@ test('rowByCommonName: a CA whose name is also the Issuer Common Name link of th
         const ca = app.data.rows.find((r) => r.commonName.endsWith('ca-root'))!;
         const issued = app.data.rows.filter((r) => r.issuerCertificateUuid === ca.uuid);
         expect(issued.length, 'the stand-in links the CA from the rows it issued').toBe(3);
-        // the row-wide link match: the CA row plus the three it issued
         await expect(inventory.rows.filter({ has: app.page.getByRole('link', { name: ca.commonName, exact: true }) })).toHaveCount(4);
         const row = await inventory.rowByCommonName(ca.commonName);
         await expect(row).toHaveCount(1);

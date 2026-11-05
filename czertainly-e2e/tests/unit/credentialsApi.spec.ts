@@ -1,7 +1,6 @@
 /**
- * Unit tests of utils/regression/inventory/credentialsApi.ts: the secret helpers, the credential connector name,
- * the Basic attribute definitions and builders, the request body and the readers of a created credential.
- * No environment, no network; the requests on the wire are in credentialsAndGroupsWire.spec.ts.
+ * Unit tests of utils/regression/inventory/credentialsApi.ts: the secret helpers, the credential connector name, the
+ * Basic attribute definitions and builders, the request body and the readers of a created credential.
  */
 import { expect, test } from '@playwright/test';
 import { attributeOf, basicAttributes, basicDefinitions, containsSecret, contentWithData, credentialBody, credentialConnectorName, randomSecret, valuesOf } from '../../utils/regression/inventory/credentialsApi';
@@ -10,7 +9,6 @@ import { ApiAnswer } from '../../utils/regression/apiReads';
 import { fakeAnswer } from './helpers/fakeAnswer';
 import { createdUuid } from '../../utils/regression/ownCrud';
 
-// Run-scoped generated test passwords: no password-like literal in the file.
 const GEN_PW_1 = `qa-${randomBytes(9).toString('base64url')}`;
 const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
@@ -19,8 +17,6 @@ const PASSWORD_DEF = { uuid: U(2), name: 'password', type: 'data', contentType: 
 const defs = { usernameDef: USERNAME_DEF, passwordDef: PASSWORD_DEF };
 
 const probe = (status: number, json: unknown): ApiAnswer => fakeAnswer(status, JSON.stringify(json ?? ''), { json });
-
-// ------------------------------------------------------------------ secrets and names
 
 test('randomSecret: a fresh value per call from node:crypto, in the JSON-safe alphabet; containsSecret finds it in a body text and ignores an empty secret', () => {
     const seen = new Set(Array.from({ length: 200 }, () => randomSecret()));
@@ -31,8 +27,6 @@ test('randomSecret: a fresh value per call from node:crypto, in the JSON-safe al
     expect(containsSecret(JSON.stringify({ attributes: [{ content: [{}] }] }), secret)).toBe(false);
     expect(containsSecret('anything', ''), 'an empty secret never counts as a leak').toBe(false);
 });
-
-// ------------------------------------------------------------------ the credential connector
 
 test('credentialConnectorName: REG_CREDENTIAL_CONNECTOR, else the credential entry of REG_REQUIRED_CONNECTORS, else the default', () => {
     expect(credentialConnectorName({ REG_CREDENTIAL_CONNECTOR: ' My-Credential ' } as NodeJS.ProcessEnv)).toBe('My-Credential');
@@ -73,8 +67,6 @@ test('credentialBody: JSON of a body drops an undefined member, keeps null, and 
     expect(JSON.parse(JSON.stringify(credentialBody({ uuid: U(9) }, null, [], [], { connectorUuid: undefined })))).toEqual({ name: null, kind: 'Basic', attributes: [], customAttributes: [] });
     expect(credentialBody({ uuid: U(9) }, 'n', [], [], { kind: 'X', attributes: [{ a: 1 }] })).toMatchObject({ kind: 'X', attributes: [{ a: 1 }] });
 });
-
-// ------------------------------------------------------------------ response readers
 
 test('attributeOf / contentWithData / valuesOf: a masked secret has no data item; a plain attribute exposes its values', () => {
     const detail = {

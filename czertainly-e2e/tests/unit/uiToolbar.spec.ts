@@ -1,6 +1,6 @@
 /**
- * pages/ui/toolbar.ts on a static page: `expectButtons` for the three states (enabled, disabled, absent), with the buttons
- * looked up inside their widget, each shown passing on the right page and failing on a wrong one.
+ * pages/ui/toolbar.ts on a static page: `expectButtons` for the three states (enabled, disabled, absent), with the
+ * buttons looked up inside their widget, each shown passing on the right page and failing on a wrong one.
  */
 import { expect, test } from '@playwright/test';
 import { expectButtons } from '../../pages/ui/toolbar';

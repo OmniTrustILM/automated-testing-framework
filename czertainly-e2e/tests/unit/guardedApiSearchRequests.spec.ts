@@ -1,13 +1,9 @@
 /**
- * The guard verdict on every request the certificate search specs and the certificate list UI rows send: searches
- * with sorts, attribute filters and arrays, catalogue reads, the own PATCH and bulk archive are accepted; the UI rows
- * send plain GETs only. Nothing is sent (the verdict helper).
+ * The guard verdict on every request the certificate search specs and the certificate list UI rows send.
  */
 import { APIRequestContext, expect, request, test } from '@playwright/test';
 import { guardVerdict, GuardVerdict } from './helpers/guardVerdict';
 import { runId } from '../../utils/regression/ledger/runState';
-
-// ------------------------------------------------------------------ the guard's verdict on the request shapes of the specs
 
 test.describe('the guard accepts the request shapes of API-CERT-41…56 (nothing is sent)', () => {
     let judge: GuardVerdict;

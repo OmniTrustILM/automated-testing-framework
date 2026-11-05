@@ -1,8 +1,6 @@
 /**
- * Unit tests for API-GEN-33's comparison (compareSnapshots on hand-made snapshots) and for the snapshot reader against
- * a fake API: the newest sample and the oldest window of a newest-first collection, the recheck of a stored object
- * that left them, net accounting with its tolerance, required resources, transient discovery statuses,
- * messages without foreign names, the tier identity and the purge of old snapshot files.
+ * Unit tests for API-GEN-33's comparison (compareSnapshots on
+ * hand-made snapshots) and for the snapshot reader against a fake API.
  */
 import { APIRequestContext, test, expect } from '@playwright/test';
 import * as fs from 'fs';
@@ -36,7 +34,6 @@ test('an untouched tier has no violations', () => {
     expect(compareSnapshots(before(), before(), { tolerance: 0 })).toEqual({ violations: [], notes: [] });
 });
 
-// a pre-existing object that vanished or changed its marker is a violation, named by type and uuid only
 test('a pre-existing object that vanished or changed its marker is a violation, named by type and uuid', () => {
     const after = before();
     delete after.resources.raProfiles.foreign.ra2;
@@ -68,7 +65,6 @@ test('net accounting: the total changes exactly by own creates minus own deletes
 // net accounting catches a foreign delete hidden behind an own create + delete (the old one-sided bounds did not)
 test('net accounting catches a foreign delete hidden behind an own create and delete', () => {
     const after = before();
-    // The run created one RA profile and deleted it again, and one foreign RA profile vanished: 3 -> 2.
     after.resources.raProfiles.total = 2;
     after.resources.raProfiles.foreign = { ra1: { name: 'Prod RA', marker: 'enabled=true' }, ra2: { name: 'Lab RA', marker: 'enabled=false' } };
     const ledger = [ledgerLine({ uuid: 'own-ra' }), ledgerLine({ uuid: 'own-ra', event: 'deleted', at: '2026-10-13T12:30:00.000Z' })];
@@ -125,7 +121,6 @@ test('platform event associations and system jobs must be identical', () => {
     expect(compareSnapshots(before(), after, { tolerance: 0 }).violations).toEqual(['platform event associations changed', 'system jobs changed (uuid, name, type, cron, enabled, one-time)']);
 });
 
-// unreadable before: a required resource is a violation, an optional one a note; unreadable after: violation
 test('unreadable before: a required resource is a violation, an optional one a note', () => {
     const b = before();
     b.resources.roles = { total: -1, foreign: {}, error: 'GET /api/v1/roles answered 403' };
@@ -186,7 +181,6 @@ test('canonical JSON ignores key order and the order of string lists', () => {
     expect(canonicalJson([{ a: 1 }, { a: 2 }])).not.toBe(canonicalJson([{ a: 2 }, { a: 1 }]));
 });
 
-/** Fake API: certificate search answers pages of a newest-first list; detail GETs answer from `details`. */
 function fakeApi(certs: Array<{ uuid: string; commonName: string; state: string }>, details: Record<string, number>): { api: APIRequestContext; requests: string[] } {
     const requests: string[] = [];
     const reply = (status: number, body: unknown) => ({ status: () => status, text: async () => JSON.stringify(body) });
@@ -205,7 +199,6 @@ function fakeApi(certs: Array<{ uuid: string; commonName: string; state: string 
     return { api, requests };
 }
 
-// large collections store the newest 100 (head) and the oldest 200 (tail) of a newest-first list, without run-prefixed names
 test('large collections store the newest 100 (head) and oldest 200 (tail) of a newest-first list', async () => {
     const certs = Array.from({ length: 350 }, (_, i) => ({ uuid: `c${349 - i}`, commonName: i % 50 === 0 ? `qa-reg-x-${i}` : `cn-${349 - i}`, state: 'issued' }));
     const { api, requests } = fakeApi(certs, {});
@@ -213,7 +206,6 @@ test('large collections store the newest 100 (head) and oldest 200 (tail) of a n
     const r = s.resources.certificates;
     expect(r.total).toBe(350);
     expect(requests).toEqual(['POST /api/v1/certificates p1x1', 'POST /api/v1/certificates p1x100', 'POST /api/v1/certificates p2x100', 'POST /api/v1/certificates p3x100', 'POST /api/v1/certificates p4x100']);
-    // positions 0..99 (minus 2 prefixed: i = 0, 50) + 150..349 (minus 4 prefixed: i = 150, 200, 250, 300)
     expect(Object.keys(r.foreign)).toHaveLength(98 + 196);
     expect(r.foreign.c0).toEqual({ name: 'cn-0', marker: 'issued' });
     expect(r.foreign.c348, 'position 1, in the newest sample').toEqual({ name: 'cn-348', marker: 'issued' });
@@ -221,7 +213,6 @@ test('large collections store the newest 100 (head) and oldest 200 (tail) of a n
     expect(r.foreign.c199, 'position 150 carries a run prefix').toBeUndefined();
     expect(r.foreign.c200, 'position 149: between the sample and the window').toBeUndefined();
     expect(r.foreign.c249, 'position 100: just after the sample').toBeUndefined();
-    // Every row of the newest sample by uuid, run-prefixed ones included (the proof that another tool's object is new).
     expect(r.newestUuids).toEqual(Array.from({ length: 100 }, (_, i) => `c${349 - i}`));
 });
 
@@ -265,9 +256,6 @@ test('the recheck by detail reads the live name, so a rename outside the windows
     expect(violations).toEqual(['certificates: pre-existing moved was renamed (name withheld)']);
 });
 
-// --------------------------------------------------------------- keys (incident fix after a live run): wrapper identity, straddle recheck
-
-/** A key pair: two search rows (item names, states) of one wrapper, newest-first; its detail names the WRAPPER. */
 interface FakeKey {
     uuid: string;
     wrapper: string;
@@ -277,7 +265,6 @@ const pair = (n: number, over: Partial<FakeKey> = {}): FakeKey => ({
     uuid: `k${n}`, wrapper: `token key ${n}`, items: [{ name: `pub-${n}`, state: 'active', enabled: true }, { name: `priv-${n}`, state: 'active', enabled: true }], ...over,
 });
 
-/** Fake key API: one row per item of a newest-first list of keys; `GET /v1/keys/{uuid}` answers the wrapper detail. */
 function fakeKeyApi(keys: FakeKey[], cfg: { detail404?: string[] } = {}): { api: APIRequestContext; requests: string[] } {
     const requests: string[] = [];
     const rows = keys.flatMap((k) => k.items.map((it, i) => ({ uuid: `${k.uuid}-i${i}`, keyWrapperUuid: k.uuid, name: it.name, state: it.state, enabled: it.enabled })));
@@ -298,15 +285,12 @@ function fakeKeyApi(keys: FakeKey[], cfg: { detail404?: string[] } = {}): { api:
     return { api, requests };
 }
 
-/** `count` key pairs (2 rows each) with one extra single-item key first, so the newest-100 cut falls INSIDE pair `cutPair`. */
 function keysWithCutInside(count: number): { keys: FakeKey[]; cutPair: FakeKey } {
     const single: FakeKey = { uuid: 'k-single', wrapper: 'secret 0', items: [{ name: 'sec-0', state: 'active', enabled: true }] };
     const keys = [single, ...Array.from({ length: count }, (_, i) => pair(i + 1))];
-    // rows: single at 0, pair i at 2i-1 / 2i → row 99 and 100 belong to pair 50.
     return { keys, cutPair: keys[50] };
 }
 
-// keys: rows and detail give the same mark (item names + item states); the detail adds the wrapper name
 test('keys: rows and detail give the same mark from item names and states', () => {
     const k = pair(7);
     const rows = k.items.map((it, i) => ({ uuid: `${k.uuid}-i${i}`, keyWrapperUuid: k.uuid, ...it }));
@@ -317,7 +301,6 @@ test('keys: rows and detail give the same mark from item names and states', () =
     expect(compareSnapshots(snap({ keys: { total: 2, foreign: { k7: fromRows } } }), snap({ keys: { total: 2, foreign: { k7: fromDetail } } }), { tolerance: 0 }).violations).toEqual([]);
 });
 
-// keys: keysChangedDuringRun names the wrappers on the two window cuts, and nothing when the sample meets the window
 test('keys: keysChangedDuringRun names the wrappers on the two window cuts, none when the sample fits', () => {
     const at = (pos: number, w: string) => ({ row: { keyWrapperUuid: w, uuid: `${w}-x` }, pos });
     const total = 1000;
@@ -327,8 +310,6 @@ test('keys: keysChangedDuringRun names the wrappers on the two window cuts, none
     expect([...keysChangedDuringRun([at(NEWEST_ROWS_SAMPLED - 1, 'b')], 150)], 'small collection').toEqual([]);
 });
 
-// keys: a 2-item key on the newest-100 cut is marked from its detail, in the before and in the after snapshot (both directions)
-// — no violation
 test('keys: a 2-item key on the newest-100 cut is marked from its detail in both snapshots, no violation', async () => {
     const { keys, cutPair } = keysWithCutInside(200);
     const before = await snapshotTier(fakeKeyApi(keys).api, { only: ['keys'], runId: RUN, env: {} });
@@ -337,16 +318,12 @@ test('keys: a 2-item key on the newest-100 cut is marked from its detail in both
     expect(before.resources.keys.newestUuids, 'keys: wrapper uuids, one per key').toContain(cutPair.uuid);
     expect(new Set(before.resources.keys.newestUuids).size).toBe(before.resources.keys.newestUuids!.length);
 
-    // Direction 1: a new key appears in front, the cut moves one pair back: pair 50 leaves the sample, pair 49 straddles now.
     const grown = [pair(999), ...keys];
     const { api: afterApi, requests } = fakeKeyApi(grown);
     const after = await snapshotTier(afterApi, { only: ['keys'], recheck: before, runId: RUN, env: {} });
-    // Details read, one GET each: the key now on the sample cut (k49), the one on the oldest-window cut (row 203 = k101) and the key that
-    // left the sample (k50).
     expect(requests.filter((r) => r.startsWith('GET /api/v1/keys/')).sort()).toEqual(['GET /api/v1/keys/k101', 'GET /api/v1/keys/k49', `GET /api/v1/keys/${cutPair.uuid}`]);
     expect(compareSnapshots(before, { ...after, platformEvents: '{}', systemJobs: '[]' }, { tolerance: 0 }).violations).toEqual(['keys: total 401 -> 403 (+2), the ledger explains +0']);
 
-    // Direction 2: the same from the grown list back to the original (a key in front vanished).
     const before2 = await snapshotTier(fakeKeyApi(grown).api, { only: ['keys'], runId: RUN, env: {} });
     const after2 = await snapshotTier(fakeKeyApi(keys).api, { only: ['keys'], recheck: before2, runId: RUN, env: {} });
     const v2 = compareSnapshots(before2, { ...after2, platformEvents: '{}', systemJobs: '[]' }, { tolerance: 0 }).violations;
@@ -354,20 +331,16 @@ test('keys: a 2-item key on the newest-100 cut is marked from its detail in both
     expect(v2).toEqual(['keys: pre-existing k999 is gone', 'keys: total 403 -> 401 (-2), the ledger explains +0']);
 });
 
-// keys: a 2-item key that leaves the newest sample entirely is re-read by its detail and compared by its items — no "renamed"
-// (a false positive seen in a live run)
 test('keys: a 2-item key leaving the newest sample is re-read by detail and compared by items, not renamed', async () => {
     const keys = [pair(1), pair(2), pair(3)];
     const before = await snapshotTier(fakeKeyApi(keys).api, { only: ['keys'], runId: RUN, env: {} });
-    // 60 new pairs in front: pairs 1..3 are beyond row 100 and below the oldest window's start? No: total 126 rows < 300, all read.
-    // So push them out for real: 200 pairs in front (total 406 rows, oldest window = rows 206..405, newest = 0..99).
     const after = await snapshotTier(fakeKeyApi([...Array.from({ length: 200 }, (_, i) => pair(100 + i)), ...keys]).api, { only: ['keys'], recheck: before, runId: RUN, env: {} });
     expect(after.resources.keys.foreign.k2, 'inside the oldest window: from rows').toEqual({ name: 'priv-2,pub-2', marker: 'active/true,active/true' });
     const v = compareSnapshots(before, { ...after, platformEvents: '{}', systemJobs: '[]' }, { tolerance: 0 }).violations;
     expect(v.filter((x) => /renamed|changed/.test(x))).toEqual([]);
 });
 
-// keys: a real rename of the wrapper, a renamed item or a destroyed item is a violation, by wrapper uuid only
+// keys: a real rename of the wrapper, a renamed item or a destroyed item is a violation, by wrapper uuid only.
 test('keys: a real rename of wrapper or item, or a destroyed item, is a violation by wrapper uuid', async () => {
     const { keys, cutPair } = keysWithCutInside(200);
     const before = await snapshotTier(fakeKeyApi(keys).api, { only: ['keys'], runId: RUN, env: {} });
@@ -382,7 +355,6 @@ test('keys: a real rename of wrapper or item, or a destroyed item, is a violatio
     const v3 = compareSnapshots(before, { ...a3, platformEvents: '{}', systemJobs: '[]' }, { tolerance: 0 }).violations;
     expect(v3).toEqual(['keys: pre-existing k10 changed active/true,active/true -> active/true,destroyed/false']);
     expect(v3.join('\n'), 'no key names').not.toMatch(/token key|pub-|priv-/);
-    // The same on the straddling key, whose states come from the detail.
     const destroyedStraddler = keys.map((k) => (k === cutPair ? { ...k, items: [k.items[0], { ...k.items[1], state: 'destroyed', enabled: false }] } : k));
     const a4 = await snapshotTier(fakeKeyApi(destroyedStraddler).api, { only: ['keys'], recheck: before, runId: RUN, env: {} });
     expect(compareSnapshots(before, { ...a4, platformEvents: '{}', systemJobs: '[]' }, { tolerance: 0 }).violations).toEqual([`keys: pre-existing ${cutPair.uuid} changed active/true,active/true -> active/true,destroyed/false`]);
@@ -391,12 +363,9 @@ test('keys: a real rename of wrapper or item, or a destroyed item, is a violatio
     expect(own.resources.keys.foreign).toEqual({});
 });
 
-// derived accounting reads the `derived` flag from the created line: a teardown-deleted certKey_ key is a derived delete, not
-// an own one
 test('derived accounting reads the derived flag: a teardown-deleted certKey_ key is a derived delete', () => {
     const b = before();
     const after = before();
-    // The run uploaded a certificate (+1 cert, +1 certKey_ item), then the teardown deleted both: the `deleted` lines carry no `derived`.
     const ledger = [
         ledgerLine({ type: 'certificates', uuid: 'c1' }),
         ledgerLine({ type: 'keys', uuid: 'k-derived', derived: true }),
@@ -410,7 +379,7 @@ test('derived accounting reads the derived flag: a teardown-deleted certKey_ key
     after.resources.keys.total = 8;
     expect(compareSnapshots(b, after, { ledger, tolerance: 0 }).violations).toEqual(['keys: total 10 -> 8 (-2), the ledger explains -1..+0']);
     after.resources.keys.total = 10;
-    // Counted as an own key delete, the expected range would be -2..-1 and 10 -> 10 a violation; the same through ownDeleted.
+    // Counted as an own key delete, the expected range would be -2..-1 and 10 -> 10 a violation.
     const viaTeardown = ledger.slice(0, 3);
     expect(compareSnapshots(b, after, { ledger: viaTeardown, ownDeleted: [{ type: 'keys', uuid: 'k-derived' }], tolerance: 0 }).violations).toEqual([]);
     // Deleting an OWN key (not derived) still explains -1..-2 items.
@@ -419,7 +388,6 @@ test('derived accounting reads the derived flag: a teardown-deleted certKey_ key
     expect(compareSnapshots(b, after, { ledger: ownKey, tolerance: 0 }).violations).toEqual(['keys: total 10 -> 12 (+2), the ledger explains -1..+1']);
 });
 
-// isRunNamed: run-prefixed names and the certKey_ / altCertKey_ keys core derives from run certificates; nothing else
 test('isRunNamed: run-prefixed names and certKey_ / altCertKey_ keys derived from run certificates', () => {
     expect(isRunNamed('qa-reg-20261013-120000-ab12-ui.example.test')).toBe(true);
     expect(isRunNamed('certKey_qa-reg-20261013-120000-ab12-ui.example.test')).toBe(true);
@@ -430,12 +398,10 @@ test('isRunNamed: run-prefixed names and certKey_ / altCertKey_ keys derived fro
     expect(isRunNamed(undefined)).toBe(false);
 });
 
-// keys: a certKey_<run CN> item makes the key the run's own; a straddler whose item OUTSIDE the windows is run-named is own too
 test('keys: a certKey_ item with the run CN makes the key own, also for a straddler', async () => {
     const derived = pair(5, { items: [{ name: 'certKey_qa-reg-x-ui.example.test', state: 'active', enabled: true }] });
     const inWindow = await snapshotTier(fakeKeyApi([derived, pair(6)]).api, { only: ['keys'], runId: RUN, env: {} });
     expect(Object.keys(inWindow.resources.keys.foreign)).toEqual(['k6']);
-    // Pair 50's second item (row 100, outside the sample) is run-named: only the detail shows it.
     const { keys, cutPair } = keysWithCutInside(200);
     const ownStraddler = keys.map((k) => (k === cutPair ? { ...k, items: [k.items[0], { ...k.items[1], name: 'qa-reg-x-key' }] } : k));
     const s = await snapshotTier(fakeKeyApi(ownStraddler).api, { only: ['keys'], runId: RUN, env: {} });
@@ -443,7 +409,6 @@ test('keys: a certKey_ item with the run CN makes the key own, also for a stradd
     expect(s.resources.keys.foreign.k49).toBeDefined();
 });
 
-// keys: a straddler whose detail answers 404 is dropped from the snapshot with a note naming it, and the compare carries the note
 test('keys: a straddler whose detail answers 404 is dropped with a note the compare carries', async () => {
     const { keys, cutPair } = keysWithCutInside(200);
     const before = await snapshotTier(fakeKeyApi(keys, { detail404: [cutPair.uuid] }).api, { only: ['keys'], runId: RUN, env: {} });

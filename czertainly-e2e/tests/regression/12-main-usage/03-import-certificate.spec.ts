@@ -1,12 +1,6 @@
 /**
- * REG-USE-03 — Importing certificates through the import dialog (release checklist: Usage 3; ilm#428).
- *
- * A new self-signed PEM imports and the API finds it by fingerprint; the same PEM again says "Already in inventory". A
- * protected PKCS#12 asks for its password and refuses a wrong one. A CSR file is detected, not imported, and Import stays
- * disabled.
- *
- * Only the PEM is imported. It is recorded from the import answer together with its linked key; the PKCS#12 key is never
- * imported. Passwords are random per run.
+ * REG-USE-03 — Importing certificates through the import dialog (release checklist: Usage 3; ilm#428). A new self-signed
+ * PEM imports and the API finds it by fingerprint; the same PEM again says "Already in inventory".
  */
 import { randomBytes } from 'node:crypto';
 import { expect, test } from '../../../fixtures/regressionFixtures';
@@ -38,11 +32,12 @@ test.describe('Certificate import', { tag: tags.regression }, () => {
             const importedUuid = await test.step('Paste the PEM → detected → Import → recorded from the answer (+ its linked key) → "Imported"', async () => {
                 await certPage.pasteCertificatePem(pem);
                 const createdAfter = await serverCreatedAfter(api);
-                // Whatever throws after the click (a response wait that times out, an answer that does not parse, a key read
-                // that fails) the run CN is recorded from the inventory by recordingIssued.
+                // Whatever throws after the click (a response wait that times out, an answer that does not parse, a key
+                // read that fails) the run CN is recorded from the inventory by recordingIssued.
                 const { result: { answer, created } } = await recordingIssued(api, cn, createdAfter, own.spec, 'imported (self-signed)', async () => {
                     const answer = await certPage.submitImport();
-                    // A body that is not JSON names nothing created: the inventory read of recordingIssued records it instead.
+                    // A body that is not JSON names nothing created: the
+                    // inventory read of recordingIssued records it instead.
                     const text = await answer.text().catch(() => '');
                     const parsed = ((): { results?: Array<{ certificateUuid?: string; certificateOutcome?: string }> } => {
                         try {
@@ -86,7 +81,6 @@ test.describe('Certificate import', { tag: tags.regression }, () => {
         async ({ signedIn: page }, testInfo) => {
             const certPage = new CertificatePage(page);
             const dialog = certPage.importDialog;
-            // Run-scoped random passwords: nothing password-like is a literal in the spec.
             const secret = () => `qa-${randomBytes(12).toString('base64url')}`;
             const passwordA = secret(), passwordB = secret(), wrongPassword = secret();
             const p12a = { name: `${runName('a')}.p12`, mimeType: 'application/x-pkcs12', buffer: selfSignedPkcs12(runName('p12-a'), passwordA) };

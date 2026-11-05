@@ -1,12 +1,7 @@
 /**
- * Unit tests for the guarded API context (body vectors,
- * reference fields, query / params, origin, platform deny-list, localStack needs the proof) against a fake raw context: GET
- * always passes; POST passes on the create / search / attribute-validation allow-list; PUT / PATCH / DELETE and any
- * other POST reach the server only when every uuid they name — in the path and in the body's association lists — is own
- * (ledger line of this run + live run-prefixed name); scope parents in the PATH may be foreign, never in a body; bulk
- * bodies must name own uuids; derived objects are refused; ownership is checked before the dry run; encoded or dotted
- * paths are refused; probe uuids are accepted; the ledger, run id and tier come from the process unless a unit test
- * injects them through `guardApiWithSeams`. A refused request is never sent.
+ * Unit tests for the guarded API context (body vectors, reference fields, query / params, origin, platform deny-list,
+ * localStack needs the proof) against a fake raw context: GET always passes;
+ * a mutation reaches the server only when every uuid it names is own.
  */
 import { APIRequestContext, test, expect } from '@playwright/test';
 import * as fs from 'fs';
@@ -67,7 +62,6 @@ const live: Record<string, Record<string, unknown>> = {
     [`/api/v1/workflows/triggers/${OWN_TRIGGER}`]: { name: `${RUN}-trigger` },
 };
 
-/** A raw context: GETs answer from `live`, every non-GET is recorded and answered 200. */
 function raw(): { api: APIRequestContext; sent: string[] } {
     const sent: string[] = [];
     const reply = (status: number, body?: unknown) => ({ status: () => status, ok: () => status < 300, json: async () => body, text: async () => '' });
@@ -111,7 +105,6 @@ test('path helpers: the API path, the allow-list, scope parents, bulk bodies and
     expect(pathProblem('/api/v1/roles;a=b/1')).toMatch(/semicolon/); // the shared rule names it
 });
 
-// /validate is allow-listed for attribute validations only; a certificate's own validate is a mutation
 test('/validate is allow-listed for attribute validations only; a certificate validate is a mutation', () => {
     expect(isAllowedPostRoute(`/v1/authorities/${AUTH}/attributes/raProfile/validate`)).toBe(true);
     expect(isAllowedPostRoute(`/v1/tokens/${AUTH}/tokenProfile/attributes/validate`)).toBe(true);
@@ -144,7 +137,7 @@ test('mutations of own objects pass; a scope parent may be foreign', async () =>
     ]);
 });
 
-// a foreign target, a renamed own uuid, a foreign association partner and a filter body are refused and never sent
+// a foreign target, a renamed own uuid, a foreign association partner and a filter body are refused and never sent.
 test('a foreign target, renamed own uuid, foreign association partner and filter body are never sent', async () => {
     const r = raw();
     const g = guardApiWithSeams(r.api, seams);
@@ -154,7 +147,6 @@ test('a foreign target, renamed own uuid, foreign association partner and filter
     await expect(g.fetch(`/api/v1/roles/${FOREIGN_RA}`, { method: 'PUT', data: {} })).rejects.toThrow(OwnObjectViolation);
     await expect(g.delete('/api/v1/keys', { data: { filters: [] } }), 'bulk delete by filter').rejects.toThrow(/a bulk body with filters/);
     await expect(g.patch('/api/v1/certificates', { data: { certificateUuids: [OWN_CERT], filters: [] } }), 'a list next to filters').rejects.toThrow(/a bulk body with filters/);
-    // DELETE /v1/keys is an allow-listed bulk route whose body IS the uuid list (List<String>).
     await expect(g.delete('/api/v1/keys', { data: {} }), 'no list at all').rejects.toThrow(/takes a uuid list/);
     await expect(g.patch('/api/v1/certificates', { data: { certificateUuids: [OWN_CERT, FOREIGN_RA] } }), 'a *Uuids bulk list with a foreign uuid').rejects.toThrow(OwnObjectViolation);
     await expect(g.patch('/api/v1/acmeProfiles/disable', { data: [OWN_ROLE, FOREIGN_RA] }), 'one foreign uuid in a bulk body').rejects.toThrow(OwnObjectViolation);
@@ -164,7 +156,7 @@ test('a foreign target, renamed own uuid, foreign association partner and filter
     expect(r.sent).toEqual([]);
 });
 
-// body associations must be own: PATCH /v1/roles/{own}/users [foreign] is refused, scope parents never apply to bodies
+// body associations must be own: PATCH /v1/roles/{own}/users [foreign] is refused, scope parents never apply to bodies.
 test('body associations must be own: PATCH /v1/roles/{own}/users with a foreign user is refused', async () => {
     const r = raw();
     const g = guardApiWithSeams(r.api, seams);
@@ -198,7 +190,6 @@ test('a derived object is refused: only the run-end teardown removes it', async 
     expect(r.sent).toEqual([]);
 });
 
-// ownership before the dry run: a foreign DELETE is an OwnObjectViolation under the dry run too, an own one a DryRunRefusal
 test('ownership is judged before the dry run: a foreign DELETE is a violation, an own one a refusal', async () => {
     const r = raw();
     const g = guardApiWithSeams(r.api, { ...seams, env: { API_TEARDOWN_DRY_RUN: '1' } });
@@ -219,7 +210,6 @@ test('encoded, dotted and empty path segments are refused for every mutating met
     await expect(g.post('/api/v1/roles%2Fx')).rejects.toThrow(/encoded/);
     await expect(g.patch(`/api/v1//roles/${OWN_ROLE}`)).rejects.toThrow(/empty segment/);
     expect(() => allowedRawPost('/api/v1/roles%2F1')).toThrow(OwnObjectViolation);
-    // A raw POST goes to BASE_URL's origin only, unless it carries no credentials (the ACME client).
     const acme = 'https://h.example/api/v1/protocols/acme/raProfile/x/new-order';
     expect(allowedRawPost(acme, { env: { BASE_URL: 'https://h.example/administrator/' } })).toBe(acme);
     expect(() => allowedRawPost(acme, { env: { BASE_URL: 'https://other.example/' } })).toThrow(/origin is not BASE_URL/);
@@ -238,7 +228,6 @@ test('encoded, dotted and empty path segments are refused for every mutating met
     expect(r.sent).toEqual([]);
 });
 
-/** A local env with this run's local-backend proof written (localStack needs it). */
 function provenLocalEnv(dir: string, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
     const env: NodeJS.ProcessEnv = { TIER_KIND: 'local', BASE_URL: 'http://localhost:3080', REG_STATE_DIR: dir, REG_RUN_ID: RUN, ...extra };
     fs.mkdirSync(dir, { recursive: true });
@@ -246,7 +235,6 @@ function provenLocalEnv(dir: string, extra: NodeJS.ProcessEnv = {}): NodeJS.Proc
     return env;
 }
 
-// localStack lifts the ownership rule and the platform deny-list on a PROVEN local stack only (@local rows)
 test('localStack lifts the ownership rule and platform deny-list on a proven local stack only', async ({}, testInfo) => {
     const r = raw();
     const onShared = guardApiWithSeams(r.api, { ...seams, localStack: true, env: { TIER_KIND: 'shared' } });
@@ -272,8 +260,6 @@ test('body vectors: string / Buffer bodies are parsed; unparseable, form and mul
     await expect(g.patch(`/api/v1/roles/${OWN_ROLE}/users`, { data: foreignUsers }), 'a JSON string body').rejects.toThrow(OwnObjectViolation);
     await expect(g.patch(`/api/v1/roles/${OWN_ROLE}/users`, { data: Buffer.from(foreignUsers) }), 'a Buffer body').rejects.toThrow(OwnObjectViolation);
     await expect(g.patch(`/api/v1/roles/${OWN_ROLE}/users`, { data: `\uFEFF${foreignUsers}` }), 'a BOM in front').rejects.toThrow(OwnObjectViolation);
-    // A string JSON.parse refuses is sent as Playwright sends it with a JSON content type — re-quoted as a
-    // JSON string — and judged as that string (a canonical uuid anywhere in it must be own).
     await expect(g.patch(`/api/v1/roles/${OWN_ROLE}/users`, { data: `${foreignUsers} trailing` }), 'trailing junk: a JSON string naming a foreign uuid').rejects.toThrow(OwnObjectViolation);
     await expect(g.patch(`/api/v1/roles/${OWN_ROLE}/users`, { data: Buffer.from(`${foreignUsers} trailing`) }), 'a Buffer is sent as is: not JSON').rejects.toThrow(/not JSON/);
     await expect(g.put(`/api/v1/roles/${OWN_ROLE}`, { data: Buffer.from('not json at all') })).rejects.toThrow(/not JSON/);
@@ -288,20 +274,16 @@ test('body vectors: string / Buffer bodies are parsed; unparseable, form and mul
     expect(bodyView(Buffer.from('{"a":1}'))).toEqual({ kind: 'json', value: { a: 1 }, raw: '{"a":1}' });
     expect(bodyView(Buffer.from('   '))).toEqual({ kind: 'none' });
     expect(bodyView(Buffer.from('{bad'))).toEqual({ kind: 'text', text: '{bad' });
-    // Strings: what Playwright sends with content-type application/json.
     expect(bodyView('')).toEqual({ kind: 'json', value: '' });
     expect(bodyView('{bad')).toEqual({ kind: 'json', value: '{bad' });
 });
 
-// every uuid-valued field is an association (singular *Uuid, uuid, any key), recognised like the server parses it
 test('every uuid-valued field is an association, recognised the way the server parses it', async () => {
     const r = raw();
     const g = guardApiWithSeams(r.api, seams);
     await expect(g.put(`/api/v1/roles/${OWN_ROLE}`, { data: { ownerUuid: FOREIGN_USER } }), 'a singular *Uuid').rejects.toThrow(OwnObjectViolation);
     await expect(g.put(`/api/v1/roles/${OWN_ROLE}`, { data: { objects: [{ uuid: FOREIGN_RA, allow: ['detail'] }] } }), 'a `uuid` key').rejects.toThrow(OwnObjectViolation);
     await expect(g.put(`/api/v1/roles/${OWN_ROLE}`, { data: { note: FOREIGN_RA } }), 'any key').rejects.toThrow(OwnObjectViolation);
-    // Java's UUID.fromString pads short groups; Jackson reads 24 base64 characters as the 16 bytes of a UUID.
-    // Such forms are recognised as uuid-like and REFUSED (kind request), never canonicalised.
     const short = '0-0-4000-8000-2'; // = FOREIGN_RA (00000000-0000-4000-8000-000000000002)
     const b64 = Buffer.from(FOREIGN_RA.replace(/-/g, ''), 'hex').toString('base64');
     expect([canonicalUuid(short), canonicalUuid(b64), canonicalUuid(FOREIGN_RA.toUpperCase()), canonicalUuid('qa-reg-20261013-120000-ab12-role')])
@@ -316,11 +298,10 @@ test('every uuid-valued field is an association, recognised the way the server p
     expect(r.sent).toEqual([]);
 });
 
-// reference fields may name pre-existing objects on an own create / update, never on a DELETE; everything else must be own
+// reference fields may name pre-existing objects on an own create / update, never on a DELETE.
 test('reference fields may name pre-existing objects on an own create or update, never on a DELETE', async () => {
     const r = raw();
     const g = guardApiWithSeams(r.api, seams);
-    // Creates: the body is checked.
     await expect(g.post('/api/v1/roles', { data: { name: `${RUN}-r`, userUuids: [FOREIGN_USER] } }), 'a new role with foreign members').rejects.toThrow(OwnObjectViolation);
     await expect(g.post(`/api/v1/tokens/${AUTH}/tokenProfiles/${AUTH}/keys/keyPair`, { data: { name: `${RUN}-k`, groupUuids: [FOREIGN_GROUP] } }), 'a new key in a foreign group')
         .rejects.toThrow(OwnObjectViolation);
@@ -368,7 +349,6 @@ test('a Request object is refused: the guard takes the URL as a string only', as
         url: () => `/api/v1/roles/${OWN_ROLE}/users`, method: () => method, headers: () => ({ 'content-type': 'application/json' }),
         postDataBuffer: () => Buffer.from(JSON.stringify(body)),
     });
-    // a Request-shaped object where the guard takes a URL string: the cast is the point of the case
     await expect(g.fetch(request('PATCH', [FOREIGN_USER]) as unknown as string)).rejects.toThrow(/a URL that is not a string/);
     await expect(g.fetch(request('GET', []) as unknown as string), 'a harmless one too').rejects.toThrow(/a URL that is not a string/);
     expect(r.sent).toEqual([]);
@@ -383,7 +363,6 @@ test('absolute URLs: a mutation goes to BASE_URL\'s origin only', async () => {
     await expect(guardApiWithSeams(r.api, seams).delete(`https://tier.example.test/api/v1/roles/${OWN_ROLE}`), 'BASE_URL unset').rejects.toThrow(/BASE_URL is unset/);
     expect(r.sent).toEqual([]);
     await g.delete(`https://tier.example.test/api/v1/roles/${OWN_ROLE}`);
-    // A GET to another origin is refused too (the context carries the run's token).
     await expect(g.get('https://elsewhere.example.test/api/v1/roles')).rejects.toThrow(/origin is not BASE_URL/);
     expect(r.sent).toEqual([`DELETE https://tier.example.test/api/v1/roles/${OWN_ROLE}`]);
     expect(originProblem('/api/v1/roles', {})).toBeUndefined();
@@ -427,15 +406,12 @@ test('refusals say why: ownership, derived, request', async () => {
     expect(r.sent).toEqual([]);
 });
 
-// the public guard reads the tier, ledger and environment from the process only: injected options are ignored
 test('the public guard reads tier, ledger and environment from the process only, ignoring injected options', async ({}, testInfo) => {
     const r = raw();
     const saved = { TIER_KIND: process.env.TIER_KIND, REG_STATE_DIR: process.env.REG_STATE_DIR };
     process.env.TIER_KIND = 'shared';
     process.env.REG_STATE_DIR = testInfo.outputPath('state'); // the process ledger: empty
     try {
-        // A caller that passes ledger lines, a run id and TIER_KIND=local cannot lift or forge anything.
-        // options the guard's public signature does not take (a caller forging the local proof): the cast is the point of the case
         const forged = { localStack: true, env: { TIER_KIND: 'local' }, lines, runId: RUN, tier: null } as unknown as Parameters<typeof guardApi>[1];
         const g = guardApi(r.api, forged);
         await expect(g.patch(`/api/v1/authorities/${AUTH}/raProfiles/${FOREIGN_RA}/disable`)).rejects.toThrow(OwnObjectViolation);

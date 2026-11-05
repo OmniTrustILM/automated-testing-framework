@@ -1,10 +1,5 @@
 /**
  * keyOnboardingSpecs — static checks over tests/key-onboarding/*.spec.ts (the `@dev-tests` block).
- *
- * Checks every spec calls describeLocalOnly and every test and describe carries devTests(...); no provisioning reader runs
- * at module scope (Playwright lists tests before the setup writes the summary); no password-like literal; every recordCreated
- * uses ledgerSpec; every removal from the inventory is followed by a recordDeleted in the same test or hook (a test expecting
- * the 422 refusal is exempt), as the run-end teardown leaves behind what the ledger does not know.
  */
 import { expect, test } from '@playwright/test';
 import * as fs from 'fs';
@@ -14,10 +9,8 @@ import { onboardedKey } from '../../utils/keyOnboarding/provisioning';
 const DIR = path.join(__dirname, '..', 'key-onboarding');
 const specs = fs.readdirSync(DIR).filter((f) => f.endsWith('.spec.ts')).sort();
 
-/** Readers of the summary (provisioning.ts): forbidden outside a test, hook or helper body. */
 const READERS = ['readSummary', 'provisioningOrSkip', 'summaryFile'];
 
-/** Index of the closer matching the opener at `open`, skipping strings, templates, comments and escapes. */
 function closerOf(src: string, open: number): number {
     const pairs: Record<string, string> = { '(': ')', '[': ']', '{': '}' };
     const stack: string[] = [pairs[src[open]]];
@@ -62,7 +55,6 @@ const TEST_CALLS = /(?<![.\w])(test(?:\.describe)?)\(/g;
 const BODY_CALLS = /(?<![.\w])(test(?:\.(?:beforeAll|afterAll|beforeEach|afterEach))?)\(/g;
 const HEADER = (call: Call): string => call.args.slice(0, call.args.indexOf('=>'));
 
-/** Spans where a reader may run: bodies of tests / hooks and of function declarations. */
 function bodySpans(src: string): Array<[number, number]> {
     const spans: Array<[number, number]> = calls(src, BODY_CALLS).map((c) => [c.start, c.end]);
     for (const m of src.matchAll(/\bfunction\s+\w+\s*\([^)]*\)[^{]*\{/g)) {
@@ -76,7 +68,6 @@ test('the block has its four specs, in file order', () => {
     expect(specs.map((s) => s.slice(0, 2))).toEqual(['10', '20', '25', '30']);
 });
 
-/** The end of the innermost test or hook body that contains `at` (the end of the source for a module-scope call). */
 function bodyEnd(src: string, at: number): number {
     const spans = calls(src, BODY_CALLS).filter((c) => at > c.start && at < c.end).sort((a, b) => b.start - a.start);
     return spans.length ? spans[0].end : src.length;
@@ -143,7 +134,6 @@ test('the scanner understands the shapes the specs use', () => {
     expect(HEADER(found[0])).toContain('devTests(');
 });
 
-// The ledger name of an onboarded key is the platform's own answer; a result without it fails instead of a guessed name.
 test('onboardedKey: the uuid and name of an onboarded result, or a clear failure when the answer lacks either', () => {
     const uuid = '55555555-5555-4555-8555-555555555555';
     expect(onboardedKey({ keyHandle: 'h1', onboarded: true, intoExistingKey: false, keyUuid: uuid, keyName: 'qa-reg-x-ko-rsa' })).toEqual({ uuid, name: 'qa-reg-x-ko-rsa' });

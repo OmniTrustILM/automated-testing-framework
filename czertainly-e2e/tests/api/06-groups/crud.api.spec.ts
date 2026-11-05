@@ -1,9 +1,6 @@
 /**
  * API-GEN-19 — Groups: name rules, duplicates, PUT semantics, uuids, delete, members and list against detail (ilm#428).
- *
- * An edit replaces custom attributes wholesale (core#1124). Members: core#2210, interfaces#950. Inputs the UI blocks but
- * the API accepts are recorded as today's behaviour (P3). Create-only on shared tiers; every create is ledgered before the
- * first assertion; the tier's required custom attributes are sent with every request.
+ * An edit replaces custom attributes wholesale (core#1124).
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { deleteOwnAndProveGone, expectGoneWith404, refused422, refusedWith } from '../../../utils/regression/inventory/configProbes';
@@ -23,15 +20,11 @@ import { API_OWN_OBJECTS_TEST_MS } from '../../../utils/regression/timeouts';
 
 const ISSUE = 'ilm#428';
 
-// ================================================================== API-GEN-18
-
 const NAME_ROWS: ReadonlyArray<readonly [row: string, value: string | null, what: string]> = [
     ['name-blank', '', 'a blank'],
     ['name-null', null, 'a null'],
     ['name-whitespace', '   ', 'a whitespace-only'],
 ];
-
-// ================================================================== API-GEN-19
 
 /** The custom attributes a group request must carry on this tier (the required ones), plus the ones a row adds. */
 async function groupCustom(api: GuardedApi, extra: JsonObject[] = []): Promise<JsonObject[]> {
@@ -83,7 +76,6 @@ test.describe('groups', { tag: tags.api }, () => {
             const before = (await readGroup(api, group.uuid)).json as JsonObject;
             expect(valuesOf(before, 'customAttributes', attribute.name), 'precondition: the attribute holds its value').toEqual(['v1']);
 
-            // Only the tier's required custom attributes are sent again: the own attribute and the e-mail are omitted.
             const put = await putGroup(api, group.uuid, { description: 'description three', customAttributes: await groupCustom(api) });
             expect(put.status, put.text.slice(0, 300)).toBe(200);
             const detail = (await readGroup(api, group.uuid)).json as JsonObject;

@@ -1,6 +1,6 @@
 /**
- * seedFull on the wire: ensureCertificateSeed / B / C build the certificate seeds through the guarded api on a stateful loopback fake
- * core (127.0.0.1 only); every create is in the ledger before the first assertion and a foreign group in a patch is refused.
+ * seedFull on the wire: ensureCertificateSeed / B / C build the certificate seeds through the guarded api on a stateful
+ * loopback fake core (127.0.0.1 only).
  */
 import { expect, test } from '@playwright/test';
 import * as crypto from 'crypto';
@@ -17,11 +17,8 @@ import { registerFakeCore } from './helpers/guardRig';
 
 type Json = Record<string, any>;
 
-// ------------------------------------------------------------------ wire: ensureCertificateSeed / B / C through the guard
-
 const U = (n: number) => `bbbbbbbb-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
-/** A stateful fake core for the seed builds: what the run creates is stored and answered. */
 class SeedCore extends BaseCore {
     protected uuidPrefix = 'bbbbbbbb-0000-4000-8000-';
     readonly uploads: Json[] = [];
@@ -108,7 +105,6 @@ test.describe('the certificate seeds build on the loopback fake core (every requ
         expect(w.filter((x) => x === 'POST /api/v1/users')).toHaveLength(1);
         // Upload order: ca-root first, then C01 … C23 by common name; created order = upload order.
         expect(core.uploads.map((u) => String(u.subject).replace(`CN=${m.prefix}`, ''))).toEqual(['ca-root', ...CERTIFICATE_SEED_ROWS.slice(0, 23).map((r) => r.token)]);
-        // Updates: groups on the first eight certificates, the owner on the first two, trustedCa on the CA; nothing else is patched.
         const byId = (uuid: string) => idsOfUuids(m, [uuid])[0];
         const patched = Object.fromEntries(core.patches.map((p) => [byId(p.uuid), p.body]));
         expect(Object.keys(patched).sort()).toEqual(['C01', 'C02', 'C03', 'C04', 'C05', 'C06', 'C07', 'C08', 'C24']);
@@ -116,13 +112,11 @@ test.describe('the certificate seeds build on the loopback fake core (every requ
         expect(patched.C03).toEqual({ groupUuids: [m.groupUuids.a, m.groupUuids.b] });
         expect(patched.C07).toEqual({ groupUuids: [m.groupUuids.b] });
         expect(patched.C24).toEqual({ trustedCa: true });
-        // Attribute values travel in the upload request, per the expected table; none for a seed without a value.
         const c01 = core.uploads.find((u) => String(u.subject).endsWith('alpha-web'))!;
         const vals = (c01.customAttributes as Json[]).map((a) => [a.name.replace(m.prefix, ''), a.content.map((x: Json) => x.data)]);
         expect(vals).toEqual([['txt', ['red']], ['num', [10]], ['day', [m.certificates[0].day]], ['flag', [true]], ['pick', ['a']]]);
         const c14 = core.uploads.find((u) => String(u.subject).endsWith('kappa-14'))!;
         expect(c14.customAttributes).toEqual([]);
-        // Ledger: every object (24 certificates + 24 derived keys, 5 attributes, 2 groups, 1 user), recorded.
         const ledger = readLedger().filter((l) => l.runId === runId());
         expect(ledger.filter((l) => l.type === 'certificates' && !l.derived)).toHaveLength(24);
         expect(ledger.filter((l) => l.type === 'keys' && l.derived)).toHaveLength(24);
@@ -130,11 +124,9 @@ test.describe('the certificate seeds build on the loopback fake core (every requ
         expect(ledger.filter((l) => l.type === 'groups')).toHaveLength(2);
         expect(ledger.filter((l) => l.type === 'users')).toHaveLength(1);
         expect(readRunState().inventorySeed?.certificateSeed).toBeTruthy();
-        // The manifest carries the API read-back and the fingerprint of each certificate.
         expect(certById(m, 'C03').fingerprint).toMatch(/^[0-9a-f]{64}$/);
         expect(certById(m, 'C03').notAfter).toBe(notAfterOf(m, 'C03'));
         expect(uuidsOfIds(m, ['C01', 'C02'])).toHaveLength(2);
-        // Second call: nothing is sent.
         server.reset();
         const again = await ensureCertificateSeed(api, 'T');
         expect(again.prefix).toBe(m.prefix);
@@ -164,13 +156,11 @@ test.describe('the certificate seeds build on the loopback fake core (every requ
         for (const uuid of created) expect(ledger.map((l) => l.uuid), `created ${uuid} is in the ledger`).toContain(uuid);
         expect(ledger.filter((l) => l.type === 'groups').map((l) => l.uuid)).toEqual(b.groups.map((g) => g.uuid));
         expect(ledger.filter((l) => l.type === 'certificates' && !l.derived).map((l) => l.uuid)).toEqual(b.certificates.map((c) => c.uuid));
-        // The manifest: one own group and three own certificates under the run's prefix.
         expect(b.kind).toBe('archive-seed');
         expect(b.runId).toBe(runId());
         expect(b.prefix.startsWith(`${runId()}-`)).toBe(true);
         expect(b.groups.map((g) => g.name)).toEqual([`${b.prefix}grp`]);
         expect(b.certificates.map((c) => c.commonName)).toEqual(['b1', 'b2', 'b3'].map((k) => `${b.prefix}${k}`));
-        // Every certificate is patched into the own group only.
         expect(core.patches.map((p) => p.uuid)).toEqual(b.certificates.map((c) => c.uuid));
         for (const p of core.patches) expect(p.body).toEqual({ groupUuids: [b.groups[0].uuid] });
         // A PATCH naming a group the run did not create is refused by the guard before it leaves.

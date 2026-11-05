@@ -10,7 +10,6 @@ import { loopbackServer, LoopbackServer } from './helpers/loopbackServer';
 const UU = '00000000-0000-4000-8000-000000000003';
 const rows = (n: number) => Array.from({ length: n }, (_, i) => ({ uuid: `10000000-0000-4000-8000-${String(i).padStart(12, '0')}`, name: `role ${i}` }));
 
-/** What the fake core answers: the detail status, and the list (status + body, or a dropped connection). */
 let detailStatus = 500;
 let list: { status: number; body?: unknown } | 'drop' = { status: 200, body: rows(3) };
 let core: LoopbackServer;
@@ -62,7 +61,6 @@ test('the absence table, judged on what the fake core answered', async () => {
         if (r.absent !== c.absent) wrong.push(`${c.name}: absent=${r.absent} (${r.detail})`);
         if (c.detailMatch && !c.detailMatch.test(r.detail)) wrong.push(`${c.name}: detail "${r.detail}"`);
         if (r.absent && c.detail !== 404 && r.knownBug?.bug !== 'core#2511') wrong.push(`${c.name}: absent through the list without the known-bug note`);
-        // What reached the wire: the detail read, plus the list read only for a 5xx of roles / users.
         const reads = core.arrived.map((a) => `${a.method} ${a.url}`);
         const listRead = c.detail >= 500 && (c.type === 'roles' || c.type === 'users');
         const expected = [`GET ${detailUrl}`, ...(listRead ? [`GET /api/v1/${c.type}`] : [])];
@@ -71,7 +69,7 @@ test('the absence table, judged on what the fake core answered', async () => {
     expect(wrong).toEqual([]);
 });
 
-// prototype keys are never a type: fullListOf, LIVE_READS and the teardown handler registry use own properties
+// prototype keys are never a type: fullListOf, LIVE_READS and the teardown handler registry use own properties.
 test('prototype keys are never a type: full lists, live reads and handlers use own properties', async () => {
     expect([fullListOf('roles')?.listUrl, fullListOf('constructor'), fullListOf('__proto__'), fullListOf('toString'), fullListOf(undefined)])
         .toEqual(['/api/v1/roles', undefined, undefined, undefined, undefined]);

@@ -1,12 +1,7 @@
 /**
- * REG-CERT-12, REG-CERT-13 — Pre-register a certificate and complete it (release checklist: Certificates 12 and 13; ilm#429).
- *
- * Pre-register with and without a challenge, then complete: a wrong secret is refused and the certificate stays Registered;
- * the right secret and a CSR issue it with the CSR's public key. The challenge appears nowhere: not on the page, not in the
- * detail JSON, not in the history.
- *
- * The registration settings are read, never set. Every certificate is recorded in the ledger from the Create answer, before
- * anything is asserted. The authority is the run's own RA profile; the Complete dialog acts only after the live check.
+ * REG-CERT-12, REG-CERT-13 — Pre-register a certificate and complete it (release checklist: Certificates 12 and 13;
+ * ilm#429). Pre-register with and without a challenge, then complete: a wrong secret is refused and the certificate
+ * stays Registered; the right secret and a CSR issue it with the CSR's public key.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { CertificateAddPage } from '../../../pages/CertificateAddPage';
@@ -23,7 +18,6 @@ import { waitIssued } from '../../../utils/regression/ownCertificates';
 import { testMeta, tags } from '../../../utils/regression/tags';
 import { ISSUE_MS, LIFECYCLE_MS, REGISTERED_WAIT_MS, REGISTRATION_EXPIRY_TOLERANCE_MS } from '../../../utils/regression/timeouts';
 import { waitForCertificateState } from '../../../utils/regression/wait/certificateState';
-
 
 test.describe('Pre-register and complete in the web UI', { tag: tags.regression }, () => {
     test('a pre-registration with a challenge is Registered with an Active registration and hides the secret',
@@ -52,15 +46,13 @@ test.describe('Pre-register and complete in the web UI', { tag: tags.regression 
                 await addPage.assertRegisterFields();
             });
 
-            // "Now" of the expiry rule is the server's clock (the Date header of a read made right before Create, the runner's clock
-            // when the answer has none), so a runner whose clock is off does not use up the tolerance.
+            // The expiry rule's "now" is the server's clock, so a runner clock that is off does not use up the tolerance.
             const clock = await apiJsonWithDate(api, 'GET', '/api/v1/settings/platform');
             const serverNow = (clock.serverAt ?? clock.startedAt).getTime();
             const uuid = await test.step('CN in Request Attributes, a 12+ character challenge, Create → the detail of a Registered certificate', async () => {
                 await addPage.fillRequestCommonName(cn);
                 await addPage.fillChallenge(secret);
                 await submitFormCreateRecorded(addPage, own, 'register', { cn: cn, note: 'pre-registered via UI with a challenge', ra: ra });
-                // This row accepts the "accepted with warnings" panel (the certificate is opened from it).
                 const id = (await addPage.waitForCreatedCertificate({ acceptWarnings: true })).uuid;
                 await waitForCertificateState(api, id, 'registered', REGISTERED_WAIT_MS, { failOn: ['failed', 'rejected', 'issued'] });
                 return id;
@@ -107,7 +99,6 @@ test.describe('Pre-register and complete in the web UI', { tag: tags.regression 
                 await certPage.selectRaProfile(ra.name);
                 await addPage.fillRequestCommonName(plainCn);
                 await submitFormCreateRecorded(addPage, own, 'register', { cn: plainCn, note: 'pre-registered via UI without a challenge', ra: ra });
-                // This row accepts the "accepted with warnings" panel (the certificate is opened from it).
                 const id = (await addPage.waitForCreatedCertificate({ acceptWarnings: true })).uuid;
                 await waitForCertificateState(api, id, 'registered', REGISTERED_WAIT_MS, { failOn: ['failed', 'rejected', 'issued'] });
                 expect((await getCertificate(api, id)).registration ?? null).toBeNull();
@@ -126,7 +117,6 @@ test.describe('Pre-register and complete in the web UI', { tag: tags.regression 
             ],
         }),
         async ({ signedIn: page, api, own, live, ownRaProfile }) => {
-            // The UI registration, two dialog rounds and the issuance (180 s).
             test.setTimeout(LIFECYCLE_MS);
             const ra = ownRaProfile;
             const certPage = new CertificatePage(page);
@@ -145,7 +135,6 @@ test.describe('Pre-register and complete in the web UI', { tag: tags.regression 
                 await addPage.fillRequestCommonName(cn);
                 await addPage.fillChallenge(secret);
                 await submitFormCreateRecorded(addPage, own, 'register', { cn: cn, note: 'pre-registered via UI with a challenge', ra: ra });
-                // This row accepts the "accepted with warnings" panel (the certificate is opened from it).
                 const id = (await addPage.waitForCreatedCertificate({ acceptWarnings: true })).uuid;
                 await waitForCertificateState(api, id, 'registered', REGISTERED_WAIT_MS, { failOn: ['failed', 'rejected', 'issued'] });
                 return id;

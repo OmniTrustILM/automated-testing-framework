@@ -21,7 +21,6 @@ interface Attempt {
   body: string;
 }
 
-/** Tries a signing profile on the family's non-qualified certificate; records and deletes it if Core creates one. */
 async function attemptSigningProfile(
   admin: AdminApi,
   env: Provisioning,
@@ -34,14 +33,12 @@ async function attemptSigningProfile(
   const formatting = await admin.get<Array<{ version: number }>>(
     `/v1/signingProfiles/signatureFormattingConnectors/${connector}/formattingAttributes`,
   );
-  // A run-prefixed name, recorded right after an (unexpected) successful create, so the teardown removes it.
   const name = runName(`signature-options-${Date.now().toString(36)}`);
   const response = await admin.raw('POST', '/v1/signingProfiles', {
     name,
     workflow: {
       type: 'timestamping',
       signatureFormattingConnectorUuid: connector,
-      // The definitions carry each attribute's default, which is what the setup script sends too.
       signatureFormattingConnectorAttributes: formatting.map((attribute) => ({
         ...attribute,
         version: `v${attribute.version}`,
@@ -73,12 +70,10 @@ async function attemptSigningProfile(
 }
 
 /**
- * A signing profile takes its signature scheme and digest from what its certificate's key
- * offers, and its tokens have to be signed exactly that way.
+ * A signing profile takes its signature scheme and digest from what its
+ * certificate's key offers, and its tokens have to be signed exactly that way.
  */
 test.describe('signature options', devTests(), () => {
-  // The v1 API offers a digest list of its own, MD5 and SHA-1 among it, so the offer and the
-  // refusals are checked on v2 providers. The plan has one provider for every family (TSA_CRYPTO_PROVIDER).
   const v2Families = timestampingConfig().cryptoProvider === SOFTWARE_V1 ? [] : plannedFamilies();
 
   for (const planned of v2Families) {
@@ -143,7 +138,6 @@ test.describe('signature options', devTests(), () => {
 
     test(`RSA's PSS scheme is refused on the ${plannedOther.label} certificate`, devTests(), async ({ admin, ts }, testInfo) => {
       const family = familyOrSkip(plannedOther);
-      // As in the source: the RSA family on the SAME connector (another connector's RSA offer proves nothing here).
       const rsa = provisionedFamilies().find(
         (candidate) => candidate.keyAlgorithm === RSA && candidate.connector.uuid === family.connector.uuid,
       );

@@ -11,11 +11,7 @@ import { plannedSets, primaryFamily, setOrSkip } from '../../utils/timestamping/
 import { devTests } from '../../utils/timestamping/tags';
 import { describeOutcome, requestTimestamp, TimestampOutcome, TspRoute } from '../../utils/timestamping/tsp';
 
-/**
- * The core regression: a timestamp is issued, is cryptographically verifiable against the
- * platform's own chain, and carries what the profile promised. A token that comes back but
- * does not verify is a failure — that is exactly what a broken signing engine looks like.
- */
+/** The core regression: a timestamp is issued, verifies against the platform's own chain and carries what the profile promised. */
 test.describe('TSP happy path', devTests(), () => {
   const routes: TspRoute[] = ['signing', 'tsp'];
 
@@ -107,8 +103,8 @@ test.describe('TSP happy path', devTests(), () => {
       expect(outcome.reply?.granted, describeOutcome(outcome)).toBe(true);
       expect(outcome.reply?.hashAlgorithm?.toLowerCase(), 'hash algorithm preserved in the token').toBe(digest);
 
-      // Verifying against the original data, not just the query, proves the message imprint
-      // in the token still matches the bytes the client hashed.
+      // Verifying against the original data, not just the query, proves the message imprint in the token still matches
+      // the bytes the client hashed.
       const trust = await admin.certificateTrustFiles(set.certificate.uuid, 'chain-non-qualified');
       const verification = verifyTimestamp(outcome.responsePath!, trust.caFile, {
         dataPath: outcome.dataPath,
@@ -156,7 +152,6 @@ test.describe('TSP happy path', devTests(), () => {
     expect(outcome.reply?.granted, describeOutcome(outcome)).toBe(true);
     const genTime = Date.parse(outcome.reply!.timestamp!);
     expect(Number.isNaN(genTime), `unparsable genTime '${outcome.reply?.timestamp}'`).toBe(false);
-    // openssl prints genTime at second precision, so allow a minute of slack either way.
     expect(genTime).toBeGreaterThan(before - 60_000);
     expect(genTime).toBeLessThan(after + 60_000);
   });
@@ -165,7 +160,6 @@ test.describe('TSP happy path', devTests(), () => {
     const primary = primaryFamily();
     const set = primary.nonQualified;
     const trust = await admin.certificateTrustFiles(set.certificate.uuid, 'chain-parallel');
-    // Core shares 20 connections per connector with all its traffic and drops a request that waits 10 s for one.
     const requestCount = 10;
 
     const outcomes = await Promise.all(

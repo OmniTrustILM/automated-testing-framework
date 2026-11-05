@@ -1,12 +1,10 @@
 /**
- * Unit tests of utils/regression/inventory/searchConsistency.ts: the relations between filtered searches against
- * an in-memory engine. A correct engine passes, mutants are caught, and one re-read absorbs a transient change.
+ * Unit tests of utils/regression/inventory/searchConsistency.ts: the
+ * relations between filtered searches against an in-memory engine.
  */
 import { expect, test } from '@playwright/test';
 import { CatalogueGroup, Filter } from '../../utils/regression/inventory/searchApi';
 import { andNarrows, anyOfBound, catalogueFields, contradictions, CountFn, emptyPartition, equalsPartition, FieldRef, filterOf, listValues, narrowingPairs, pickSample } from '../../utils/regression/inventory/searchConsistency';
-
-// ------------------------------------------------------------------ an in-memory engine over a small data set
 
 type Doc = Record<string, unknown>;
 
@@ -38,7 +36,6 @@ interface Mutations {
     notEqualsDropsNulls?: boolean;
     /** EMPTY returns every row (core#741). */
     emptyReturnsAll?: boolean;
-    /** AND acts as OR. */
     andIsOr?: boolean;
     /** A row appears once between two reads (a concurrent upload). */
     transientExtraRow?: boolean;

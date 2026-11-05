@@ -1,7 +1,6 @@
 /**
- * certificateDetailPage — offline checks of pages/CertificateDetailPage.ts on `page.setContent` documents shaped like the
- * admin UI: the toolbar states inside the Certificate / CSR Properties widget, the Registration widget rows and the state
- * badge. Each assertion is shown passing on the right page and failing on a wrong one.
+ * certificateDetailPage — offline checks of pages/CertificateDetailPage.ts on `page.setContent` documents shaped like
+ * the admin UI.
  */
 import { expect, test } from '@playwright/test';
 import { CertificateDetailPage } from '../../pages/CertificateDetailPage';
@@ -30,7 +29,6 @@ const registration = (rows: Record<string, string> | undefined) => `<div role="t
   </main>`;
 
 test('assertRegistration / assertNoRegistration read the Registration widget rows by id; a wrong state or count fails', async ({ page }) => {
-    // Four expected failures wait out the 5 s expect timeout each.
     test.setTimeout(90_000);
     const cert = new CertificateDetailPage(page);
     await page.setContent(registration({ registrationState: 'Active', registrationExpiresAt: '2026-10-21T10:00:00Z', registrationFailedAttempts: '0' }));

@@ -62,7 +62,6 @@ test.describe.serial('Removing an onboarded key from the inventory', devTests(),
   });
 });
 
-/** The pair a key holds, found by the key the listing names for it. */
 function heldBy(keys: TokenKey[], keyUuid: string): TokenKey {
   const found = keys.find((key) => key.inventoryKeyUuid === keyUuid);
   if (!found) {
@@ -79,7 +78,6 @@ test.describe.serial('Removing keys from the inventory in bulk', devTests(), () 
 
   const keyNames = new Map<string, string>();
 
-  // A hook reads the summary in its body (a skip here skips the group) and uses the worker-scoped admin.
   test.beforeAll(async ({ adminWorker: admin }, testInfo) => {
     const provisioned = provisioningOrSkip();
     const { token, tokenProfile, planted } = provisioned;

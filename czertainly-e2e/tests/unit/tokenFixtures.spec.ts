@@ -1,12 +1,6 @@
 /**
  * tokenFixtures — unit tests of the guarded fixtures `anonymousApi` and `adminToken` / `restrictedToken`, on the wire
  * and in a real Playwright run.
- *
- * Checks:
- *   - anonymousApi sends no credentials; a per-request `x-forwarded-for` is still refused
- *   - tokens: one grant per identity per validity window, cached; a 401 is remembered, so later tests skip with the
- *     reason
- *   - no token or secret appears in logs or messages; printing a token gives `[token]`
  */
 import { APIRequestContext, expect, request, test } from '@playwright/test';
 import { spawn } from 'child_process';
@@ -24,7 +18,6 @@ import { guardApiWithSeams } from '../../utils/regression/guard/createGuard';
 import { OwnObjectViolation, RefusalKind } from '../../utils/regression/ledger/ownership';
 import { Arrived, loopbackServer, LoopbackServer } from './helpers/loopbackServer';
 import { randomBytes } from 'node:crypto';
-// Run-scoped generated test passwords: no password-like literal in the file.
 const GEN_PW_1 = `qa-${randomBytes(9).toString('base64url')}`;
 const GEN_PW_2 = `qa-${randomBytes(9).toString('base64url')}`;
 const GEN_PW_3 = `qa-${randomBytes(9).toString('base64url')}`;
@@ -42,7 +35,6 @@ const jwt = (username: string, expInSeconds: number, nonce = 'n') =>
 let A: LoopbackServer;
 let BASE_URL: string;
 let raw: APIRequestContext;
-/** The token endpoint's answer per username (status, token), and the grants it received. */
 const grants: Array<{ username: string; form: URLSearchParams }> = [];
 let answer: (username: string) => { status: number; token?: string } = () => ({ status: 401 });
 
@@ -94,10 +86,6 @@ async function outcome(call: Promise<unknown>): Promise<RefusalKind | 'sent' | s
     }
 }
 
-// ------------------------------------------------------------------ anonymousApi
-
-// anonymousApi: the anonymous context carries no credential header; X-Forwarded-For only for a loopback / private BASE_URL or a
-// local tier; a per-request one is refused
 test('anonymousApi carries no credential header; X-Forwarded-For only on loopback, private or local tiers', async () => {
     expect(anonymousForwardedFor('http://127.0.0.1:8443/', {})).toBe(DOCUMENTATION_ADDRESS);
     expect(anonymousForwardedFor('https://localhost/', {})).toBe(DOCUMENTATION_ADDRESS);
@@ -120,7 +108,6 @@ test('anonymousApi carries no credential header; X-Forwarded-For only on loopbac
         expect(arrived.headers['x-forwarded-for'], 'a loopback BASE_URL: the documentation address goes along').toBe(DOCUMENTATION_ADDRESS);
         expect(arrived.headers.accept).toBe('application/json');
         expect(await outcome(g.put(`/api/v1/users/${g.probeUuid()}`, { data: { description: 'x' }, headers: { 'X-Forwarded-For': '127.0.0.1' } })), 'a per-request x-forwarded-for: refused (kind request)').toBe('request');
-        // u3: every guard rule still judges what it sends.
         expect(await outcome(g.delete(`/api/v1/roles/${FOREIGN_ROLE}`))).toBe('ownership');
         expect(await outcome(g.post('/api/v1/connector/register', { data: { name: 'x' } }))).toBe('request');
         expect(await outcome(g.put('/api/v1/settings/platform', { data: {} }))).toBe('request');
@@ -132,10 +119,7 @@ test('anonymousApi carries no credential header; X-Forwarded-For only on loopbac
     }
 });
 
-// ------------------------------------------------------------------ token fixtures
-
-// token fixtures: one grant per identity per validity window; a cached token is reused; one inside the 60 s margin is fetched
-// again; the form carries the identity's own credentials
+// token fixtures: one grant per identity per validity window; a cached token is reused.
 test('token fixtures: one grant per identity per validity window; cached token reused, refetched at 60 s', async () => {
     const tokens: Record<string, string> = { admin: jwt('admin', 3600, 'a1'), ded: jwt('ded', 3600, 'd1') };
     answer = (u) => ({ status: 200, token: tokens[u] });
@@ -170,8 +154,7 @@ test('token fixtures: one grant per identity per validity window; cached token r
     expect(grants.filter((g) => g.username === 'svc')).toHaveLength(2);
 });
 
-// token fixtures: a 401 throws once and is remembered — the second call throws without a request; the token and the secret
-// never reach the logger or a message
+// token fixtures: a 401 throws once and is remembered — the second call throws without a request.
 test('token fixtures: a 401 throws once and is remembered; token and secret never reach logs or messages', async () => {
     const lines: string[] = [];
     const original = Logger.prototype.error;
@@ -188,16 +171,13 @@ test('token fixtures: a 401 throws once and is remembered; token and secret neve
         expect(second).toBeInstanceOf(TokenGrantFailed);
         expect((second as TokenGrantFailed).cached).toBe(true);
         expect(grants, 'exactly one grant for the identity').toHaveLength(1);
-        // The skip wrapper names the reason and sends nothing more.
         expect(await tokenOrSkip(raw, e, { username: 'ded', password: GEN_PW_2 }, RESTRICTED_TOKEN_UNAVAILABLE)).toEqual({ skip: RESTRICTED_TOKEN_UNAVAILABLE });
         expect(await tokenOrSkip(raw, e, { username: 'admin', password: GEN_PW_1 }, ADMIN_TOKEN_UNAVAILABLE)).toEqual({ skip: ADMIN_TOKEN_UNAVAILABLE });
         expect(grants).toHaveLength(2);
-        // Another identity is independent; a success is logged without the token.
         const t = jwt('ok', 3600, 'o1');
         answer = () => ({ status: 200, token: t });
         const ok = await fetchAccessToken(raw, e, { username: 'ok', password: GEN_PW_3 });
         expect(ok.bearer()).toBe(t);
-        // A missing access_token is a failure too, remembered.
         answer = () => ({ status: 200, token: undefined });
         await expect(fetchAccessToken(raw, e, { username: 'empty', password: GEN_PW_4 })).rejects.toThrow(/no access_token/);
         await expect(fetchAccessToken(raw, e, { username: 'empty', password: GEN_PW_4 })).rejects.toThrow(/failed earlier/);
@@ -215,7 +195,6 @@ test('token fixtures: a 401 throws once and is remembered; token and secret neve
     }
 });
 
-// token fixtures u4: the opaque token prints as [token] everywhere; bearer() is the only way out
 test('token fixtures: the opaque token prints as [token] everywhere; bearer() is the only way out', () => {
     const rawToken = jwt('admin', 3600, 'p1');
     const token = opaqueToken(rawToken);
@@ -235,17 +214,12 @@ test('token fixtures: the opaque token prints as [token] everywhere; bearer() is
     expect(opaqueToken('garbage').expiresAt).toBe(0);
 });
 
-// ------------------------------------------------------------------ the failure memory outlives the worker
-
-// a refused grant is remembered in <run id>.token-failures.json — a second module load (another worker) makes no grant;
-// success clears it
 test('a failed grant is remembered in a token-failures file: a second module load makes no grant', async () => {
     const e = env();
     const file = tokenFailureFile();
     answer = () => ({ status: 401 });
     await expect(fetchAccessToken(raw, e, { username: 'ded', password: GEN_PW_2 })).rejects.toBeInstanceOf(TokenGrantFailed);
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ [`${BASE_URL}|ded`]: 'status 401' });
-    // Another worker: a fresh module instance with an empty process memory reads the file.
     const modulePath = require.resolve('../../utils/auth/accessToken');
     const cached = require.cache[modulePath];
     delete require.cache[modulePath];
@@ -260,7 +234,6 @@ test('a failed grant is remembered in a token-failures file: a second module loa
         if (cached) require.cache[modulePath] = cached;
     }
     expect(grants, 'one grant for the identity across both module instances').toHaveLength(1);
-    // Success clears the record: nothing is left for the identity (and an empty file is removed).
     answer = () => ({ status: 200, token: jwt('ok', 3600, 'f2') });
     await fetchAccessToken(raw, e, { username: 'ok', password: GEN_PW_3 });
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ [`${BASE_URL}|ded`]: 'status 401' });
@@ -269,10 +242,10 @@ test('a failed grant is remembered in a token-failures file: a second module loa
     expect(fs.existsSync(file), 'no failure left: the file is gone').toBe(false);
 });
 
-// a request that times out is NOT a credential verdict: it fails that call and is not remembered, the next call asks again; a
-// provider that cannot be reached is an error, not a skip, and is not remembered either
+// a request that times out is NOT a credential verdict: it fails
+// that call and is not remembered, the next call asks again.
 test('a timeout is not remembered as a credential failure; an unreachable provider is an error', async () => {
-    // A server that accepts the connection and never answers: the request left, the grant may or may not have been made.
+    // A server that accepts the connection and never answers.
     const sockets = new Set<net.Socket>();
     const hang = net.createServer((s) => void sockets.add(s));
     await new Promise<void>((r) => hang.listen(0, '127.0.0.1', () => r()));
@@ -308,7 +281,7 @@ test('a timeout is not remembered as a credential failure; an unreachable provid
     await expect(tokenOrSkip(raw, e2, { username: 'svc', password: GEN_PW_4 }, RESTRICTED_TOKEN_UNAVAILABLE)).rejects.toThrow(/ECONNREFUSED/);
 });
 
-// a 5xx from the identity provider is not a verdict on the credentials either; a 400 invalid_grant and a 401 are
+// a 5xx from the identity provider is not a verdict on the credentials either; a 400 invalid_grant and a 401 are.
 test('only a 401 or an invalid_grant refusal is remembered; a 5xx fails the call and is asked again', async () => {
     const e = env();
     answer = () => ({ status: 503 });
@@ -320,20 +293,14 @@ test('only a 401 or an invalid_grant refusal is remembered; a 5xx fails the call
     }
     expect(grants, 'a 5xx is retried by the next call').toHaveLength(2);
     expect(fs.existsSync(tokenFailureFile())).toBe(false);
-    // The provider recovers: the same identity gets its token.
     answer = () => ({ status: 200, token: jwt('ded', 3600, 'r1') });
     expect((await fetchAccessToken(raw, e, { username: 'ded', password: GEN_PW_2 })).claims().username).toBe('ded');
-    // The loopback answers every non-200 with `invalid_grant`: a 400 with that code is a credential refusal.
     answer = () => ({ status: 400 });
     await expect(fetchAccessToken(raw, e, { username: 'other', password: GEN_PW_3 })).rejects.toBeInstanceOf(TokenGrantFailed);
     await expect(fetchAccessToken(raw, e, { username: 'other', password: GEN_PW_3 })).rejects.toThrow(/failed earlier/);
     expect(grants.filter((g) => g.username === 'other')).toHaveLength(1);
 });
 
-// ------------------------------------------------------------------ the admin API context shares the cached token
-
-// getAuthenticatedApiContext: two contexts in one worker make ONE password grant; a remembered credential failure makes no second
-// grant; a timeout is not remembered; the smoke path (no REG_STATE_DIR) writes no failure file
 test('getAuthenticatedApiContext: one grant for two contexts, bearer on every call', async () => {
     const t = jwt('admin', 3600, 'c1');
     answer = () => ({ status: 200, token: t });
@@ -377,7 +344,6 @@ test('getAuthenticatedApiContext: a timeout of the token request is not remember
         const first = await fetchAccessToken(raw, hung, { username: 'admin', password: GEN_PW_1 }, { timeoutMs: 400 }).catch((x) => x);
         expect(first).not.toBeInstanceOf(TokenGrantFailed);
         expect(fs.existsSync(tokenFailureFile()), 'nothing is remembered for a timeout').toBe(false);
-        // The same identity on the same base URL, now with a provider that answers: no memory stands in the way.
         const t = jwt('admin', 3600, 't1');
         answer = () => ({ status: 200, token: t });
         const ctx = await getAuthenticatedApiContext(raw, env());
@@ -389,7 +355,6 @@ test('getAuthenticatedApiContext: a timeout of the token request is not remember
     }
 });
 
-/** Runs `body` with REG_STATE_DIR and REG_RUN_ID as given and HOME in a folder of the test (the default state dir lives under it). */
 async function withRunEnv(testInfo: { outputPath: (...p: string[]) => string }, vars: { REG_STATE_DIR?: string; REG_RUN_ID?: string }, body: (home: string) => Promise<void>): Promise<void> {
     const saved = { dir: process.env.REG_STATE_DIR, run: process.env.REG_RUN_ID, home: process.env.HOME };
     const home = testInfo.outputPath('home');
@@ -424,7 +389,6 @@ test('a regression or API run (REG_RUN_ID set, REG_STATE_DIR not) keeps the fail
         answer = () => ({ status: 401 });
         await expect(getAuthenticatedApiContext(raw, e)).rejects.toBeInstanceOf(TokenGrantFailed);
         expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ [`${BASE_URL}|admin`]: 'status 401' });
-        // Another worker: a fresh module instance with an empty process memory reads the file and makes no grant.
         const modulePaths = [require.resolve('../../utils/auth/accessToken'), require.resolve('../../utils/auth/apiContext')];
         const cached = modulePaths.map((m) => require.cache[m]);
         for (const m of modulePaths) delete require.cache[m];
@@ -450,7 +414,6 @@ test('a cached token is reused only while it outlives the requested minimum; the
     const e = env();
     const first = await fetchAccessToken(raw, e, { username: 'admin', password: GEN_PW_1 });
     expect(first.bearer()).toBe(t1);
-    // A test of 120 s fits a token that has about 300 s left: reused.
     expect((await fetchAccessToken(raw, e, { username: 'admin', password: GEN_PW_1 }, { minLifetimeMs: 120_000 })).bearer()).toBe(t1);
     expect(grants).toHaveLength(1);
     // A test of 400 s does not: a fresh token is granted (and then cached for the default callers).
@@ -460,7 +423,6 @@ test('a cached token is reused only while it outlives the requested minimum; the
     expect(grants).toHaveLength(2);
     expect((await fetchAccessToken(raw, e, { username: 'admin', password: GEN_PW_1 })).bearer(), 'the default call reuses the long-lived token').toBe(t2);
     expect(grants).toHaveLength(2);
-    // The admin API context takes the same option and sends the token that outlives the minimum.
     const t3 = jwt('admin', 7200, 'm3');
     answer = () => ({ status: 200, token: t3 });
     const ctx = await getAuthenticatedApiContext(raw, e, { minLifetimeMs: 5_000_000 });
@@ -473,13 +435,10 @@ test('a cached token is reused only while it outlives the requested minimum; the
     expect(grants).toHaveLength(3);
 });
 
-// ------------------------------------------------------------------ the real fixtures, a real run
-
 const FIXTURE_DIR = path.join(__dirname, 'fixtures', 'token-skip');
 const ROOT = path.resolve(__dirname, '..', '..');
 const DROP = /^(PW|PLAYWRIGHT|TEST_|REG_|API_|BASE_URL|AUTH_|SMOKE_|TIER_|CLEANUP_)/;
 
-/** `playwright test` in a child process, asynchronously: the parent's loopback identity provider keeps answering meanwhile. */
 function runFixtureConfig(env: NodeJS.ProcessEnv): Promise<{ status: number | null; stdout: string; stderr: string }> {
     return new Promise((resolve) => {
         const child = spawn(process.execPath, [require.resolve('@playwright/test/cli'), 'test', '-c', path.join(FIXTURE_DIR, 'token.fixture.config.ts'), '--reporter=json'], { cwd: ROOT, env });
@@ -495,8 +454,8 @@ function runFixtureConfig(env: NodeJS.ProcessEnv): Promise<{ status: number | nu
     });
 }
 
-// real fixtures: a 401 identity provider — the restricted grant is sent exactly once across three tests taking restrictedToken
-// (the admin grant once too) and every test is skipped with the named reason
+// real fixtures: a 401 identity provider — the restricted grant is sent exactly once across three tests taking
+// restrictedToken (the admin grant once too) and every test is skipped with the named reason.
 test('real fixtures with a 401 identity provider: one restricted grant across three tests, all skipped', { tag: '@integration' }, async ({}, testInfo) => {
     test.setTimeout(120_000);
     const env: NodeJS.ProcessEnv = {};
@@ -531,8 +490,8 @@ test('the api fixture asks for a token that lasts at least 300 s, whatever the p
     expect(minLifetimeForTest(60_000), 'the API project timeout').toBe(300_000);
     expect(minLifetimeForTest(240_000), 'the regression project timeout').toBe(300_000);
     expect(minLifetimeForTest(900_000), 'a test that raised its own timeout').toBe(900_000);
-    // With the floor, a token that has 200 s left is NOT reused for a 60 s project (a test may raise its timeout in its body); a long-lived
-    // one is.
+    // With the floor, a token that has 200 s left is NOT reused
+    // for a 60 s project (a test may raise its timeout in its body)
     const short = jwt('admin', 200, 'f1');
     answer = () => ({ status: 200, token: short });
     const e = env();

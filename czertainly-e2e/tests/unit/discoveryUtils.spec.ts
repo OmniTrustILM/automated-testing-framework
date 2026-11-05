@@ -1,7 +1,5 @@
 /**
- * discoveryUtils — the fail-fast wait of a discovery (waitForDiscoveryCompletion) against a fake request context:
- * completed / completed passes, failed ends the wait at once, a 404 or a third 5xx in a row ends it, and stop /
- * cancel can be chosen as the expected terminal state. No network.
+ * discoveryUtils — the fail-fast wait of a discovery (waitForDiscoveryCompletion) against a fake request context.
  */
 import { test, expect } from '@playwright/test';
 import { waitForDiscoveryCompletion } from '../../utils/discoveryUtils';

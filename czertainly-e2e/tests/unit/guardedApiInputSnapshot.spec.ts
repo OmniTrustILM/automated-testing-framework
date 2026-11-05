@@ -1,8 +1,6 @@
 /**
  * The guard reads every input of a request once and sends only that snapshot (options, params, headers, the serialised
- * body, the URL), on the wire, so a getter, toJSON or Proxy cannot change a request after it was judged. Also the
- * path-less mutations (only allow-listed creates and bulk routes with their DTO body), name-keyed routes, redirects
- * and the base64 uuid form under uuid-shaped keys only.
+ * body, the URL), on the wire, so a getter, toJSON or Proxy cannot change a request after it was judged.
  */
 import { APIRequestContext, expect, test } from '@playwright/test';
 import { allowedRawPost } from '../../utils/regression/guard/rawPost';
@@ -50,7 +48,6 @@ let A: LoopbackServer;
 let B: LoopbackServer;
 let raw: APIRequestContext;
 let BASE_URL: string;
-/** When set, the fake core answers every non-GET with a 307 to the other origin (the p10 redirect probe). */
 let redirectMutations = false;
 
 const coreAnswer = (a: Arrived) => {
@@ -84,7 +81,6 @@ registerGuardRig(
 const guard = () => guardApiWithSeams(raw, { lines, runId: RUN, tier: null, env: { BASE_URL } });
 const own = (suffix = '') => `/api/v1/roles/${OWN_ROLE}${suffix}`;
 
-/** The refusal kind of a guarded call, or 'sent' when it went through. */
 async function outcome(call: Promise<unknown> | (() => Promise<unknown>)): Promise<RefusalKind | 'sent' | string> {
     try {
         await (typeof call === 'function' ? call() : call);
@@ -94,12 +90,11 @@ async function outcome(call: Promise<unknown> | (() => Promise<unknown>)): Promi
     }
 }
 
-/** Mutations that reached the core: `METHOD path body`. */
 const wire = (s: LoopbackServer = A) => s.mutations().map((a) => `${a.method} ${a.url} ${a.body}`);
 /** Everything that reached a server except the guard's own live reads of the own objects. */
 const sentTo = (s: LoopbackServer) => s.arrived.filter((a) => !(a.method === 'GET' && live[a.url] !== undefined)).map((a) => `${a.method} ${a.url}`);
 
-// input snapshot: options the guard does not forward are refused; neither server sees anything (no url / request / encodedParams smuggling)
+// input snapshot: options the guard does not forward are refused.
 test('input snapshot: options the guard does not forward are refused and neither server sees anything', async () => {
     const g = looseApi(guard());
     const foreignUrl = `/api/v1/roles/${FOREIGN_ROLE}`;
@@ -151,14 +146,12 @@ test('input snapshot: options the guard does not forward are refused and neither
     expect(mismatches).toEqual([]);
     expect(A.arrived, 'refused before any request, not even a live read').toEqual([]);
     expect(B.arrived, 'the other origin saw nothing: no request, no token, no client certificate').toEqual([]);
-    // Controls: the forwarded options still work (failOnStatusCode: false keeps a 404 an answer).
     const res = await g.get(`/api/v1/roles/${U(99)}`, { failOnStatusCode: false, timeout: 5_000, ignoreHTTPSErrors: true });
     expect(res.status()).toBe(404);
     await g.patch(own('/users'), { data: [OWN_USER], params: { page: 1, all: false }, timeout: 5_000 });
     expect(wire()).toEqual([`PATCH ${own('/users')}?page=1&all=false ${JSON.stringify([OWN_USER])}`]);
 });
 
-// input snapshot: headers — content-type application/json, accept and if-* only; identity headers only with identityOverride
 test('input snapshot headers: only content-type, accept and if-*; identity headers need an override', async () => {
     const g = looseApi(guard());
     const refused: Array<[string, Record<string, string>, unknown?]> = [
@@ -174,7 +167,7 @@ test('input snapshot headers: only content-type, accept and if-*; identity heade
         ['content-type with a charset', { 'content-type': 'application/json; charset=Shift_JIS' }, JSON.stringify([OWN_USER])],
         ['content-type form, upper case', { 'Content-Type': 'Application/X-WWW-Form-Urlencoded; charset=utf-8' }, 'a=b'],
         ['content-type multipart', { 'CONTENT-TYPE': 'multipart/form-data; boundary=x' }, 'a=b'],
-        // text/plain is allowed for 415 negatives (guardedApiPlainTextAndHealth.spec.ts); another charset is not
+        // text/plain is allowed for 415 negatives (guardedApiPlainTextAndHealth.spec.ts); another charset is not.
         ['content-type text/plain with a charset other than utf-8', { 'content-type': 'text/plain; charset=utf-16' }, JSON.stringify([OWN_USER])],
         ['content-encoding gzip on a string body', { 'content-encoding': 'gzip' }, JSON.stringify([OWN_USER])],
         ['the same header twice in two cases', { Accept: 'application/json', accept: 'text/plain' }],
@@ -186,10 +179,8 @@ test('input snapshot headers: only content-type, accept and if-*; identity heade
     // A real gzipped foreign body (the server would inflate what the guard never read).
     const zlib = require('zlib') as typeof import('zlib');
     expect(await outcome(g.patch(own('/users'), { data: zlib.gzipSync(Buffer.from(JSON.stringify([FOREIGN_USER]))), headers: { 'content-encoding': 'gzip' } }))).toBe('request');
-    // A GET is held to the same list (the context carries the token there too).
     expect(await outcome(g.get('/api/v1/roles', { headers: { 'X-HTTP-Method-Override': 'DELETE' } }))).toBe('request');
     expect(A.arrived).toEqual([]);
-    // Controls: accept, if-match, a JSON content type in any case (sent normalised), and an identity override on purpose.
     await g.patch(own('/users'), { data: [OWN_USER], headers: { Accept: 'application/json', 'If-Match': '"v1"', 'Content-Type': 'Application/JSON' } });
     const [m] = A.mutations();
     expect([m.headers.accept, m.headers['if-match'], m.headers['content-type'], m.headers.authorization]).toEqual(['application/json', '"v1"', 'application/json', 'Bearer SECRET-TOKEN']);
@@ -197,7 +188,6 @@ test('input snapshot headers: only content-type, accept and if-*; identity heade
     const res = await g.get('/api/v1/roles', { headers: { Authorization: 'Bearer OTHER-IDENTITY' }, identityOverride: true });
     expect(res.status()).toBe(404);
     expect(A.arrived.map((a) => a.headers.authorization)).toEqual(['Bearer OTHER-IDENTITY']);
-    // A protocol POST may declare its protocol media type; its body goes byte for byte.
     A.reset();
     await g.post('/api/v1/protocols/acme/raProfile/x/new-order', { data: '{"protected":"x"}', headers: { 'content-type': 'application/jose+json' } });
     await g.post('/api/v1/protocols/scep/x/pkiclient.exe', { data: 'MIIB-not-json', headers: { 'content-type': 'application/x-pki-message' } });
@@ -209,7 +199,7 @@ test('input snapshot headers: only content-type, accept and if-*; identity heade
     ]);
 });
 
-// input snapshot: every input is read once — what was judged is what arrives (toJSON, getters, Proxies, params, Buffers)
+// input snapshot: every input is read once.
 test('input snapshot: every input is read once, so what was judged is what arrives', async () => {
     const g = looseApi(guard());
     let n = 0;
@@ -227,7 +217,6 @@ test('input snapshot: every input is read once, so what was judged is what arriv
         get: () => 'DELETE',
     });
     await g.patch(own('/users'), { data: [OWN_USER], headers });
-    // A shared Buffer changed after the call started: the guard sends its own copy.
     const buf = Buffer.from(JSON.stringify([OWN_KEY]));
     const pending = g.delete('/api/v1/keys', { data: buf });
     buf.write(JSON.stringify([FOREIGN_KEY]));
@@ -244,18 +233,15 @@ test('input snapshot: every input is read once, so what was judged is what arriv
     expect(A.mutations().every((a) => !a.headers['x-http-method-override'])).toBe(true);
     expect(JSON.stringify(A.arrived)).not.toContain(FOREIGN_USER);
     expect(JSON.stringify(A.arrived)).not.toContain(FOREIGN_KEY);
-    // params as a string / URLSearchParams REPLACE the URL's query (Playwright's encodedParams): judged on what is sent.
     A.reset();
     await g.delete(`${own()}?a=1`, { params: new URLSearchParams({ b: '2' }) });
     expect(await outcome(g.delete(`${own()}?a=1`, { params: `b=${FOREIGN_USER}` })), 'a foreign uuid in the replacing params').toBe('ownership');
     expect(wire()).toEqual([`DELETE ${own()}?b=2 `]);
 });
 
-// input snapshot: string and Buffer bodies are judged as sent — re-quoted strings, duplicate keys, raw-text uuids, nesting
 test('input snapshot: string and Buffer bodies are judged as sent, quirks included', async () => {
     const g = looseApi(guard());
     const J = { 'content-type': 'application/json' };
-    // Duplicate keys: refused in a string and in a Buffer, at any depth.
     for (const [name, body] of [
         ['foreign first, own last (a duplicate key may not hide the foreign list)', `{"uuids":["${FOREIGN_KEY}"],"uuids":["${OWN_KEY}"]}`],
         ['own first, foreign last', `{"uuids":["${OWN_KEY}"],"uuids":["${FOREIGN_KEY}"]}`],
@@ -265,11 +251,11 @@ test('input snapshot: string and Buffer bodies are judged as sent, quirks includ
         expect(await outcome(g.patch('/api/v1/keys/compromise', { data: body, headers: J })), `string: ${name}`).toBe('request');
         expect(await outcome(g.patch('/api/v1/keys/compromise', { data: Buffer.from(body) })), `Buffer: ${name}`).toBe('request');
     }
-    // A BOM string is not JSON for JSON.parse: Playwright re-quotes it; the guard judges (and sends) that JSON string.
+    // A BOM string is not JSON for JSON.parse: Playwright re-quotes it.
     const bomList = `﻿${JSON.stringify([OWN_KEY])}`;
     expect(await outcome(g.delete('/api/v1/keys', { data: bomList, headers: J })), 'a JSON string is no uuid list').toBe('request');
     expect(await outcome(g.patch(own('/users'), { data: `﻿${JSON.stringify([FOREIGN_USER])}` })), 'a foreign uuid inside the string').toBe('ownership');
-    // Raw text: every canonical uuid in it must be own — attribute subtrees and reference fields get no waiver there.
+    // Raw text: every canonical uuid in it must be own.
     const attr = { name: `${RUN}-r`, customAttributes: [{ content: [{ data: FOREIGN_USER }] }] };
     expect(await outcome(g.put(own(), { data: JSON.stringify(attr) })), 'string body').toBe('ownership');
     expect(await outcome(g.put(own(), { data: Buffer.from(JSON.stringify(attr)) })), 'Buffer body').toBe('ownership');
@@ -282,12 +268,9 @@ test('input snapshot: string and Buffer bodies are judged as sent, quirks includ
     expect(await outcome(g.put(own(), { data: deep })), 'a 300-deep object').toBe('request');
     expect(await outcome(g.put(own(), { data: '['.repeat(20_000) + ']'.repeat(20_000), headers: J })), 'a 20k-deep string').toBe('request');
     expect(wire()).toEqual([]);
-    // Sent as judged: a string with trailing junk on a create travels as the JSON string Playwright makes of it.
     const junk = `{"name":"${RUN}-x"} junk`;
     await g.post('/api/v1/roles', { data: junk, headers: J });
-    // ... a malformed-JSON negative case sends a Buffer, byte for byte, as application/json.
     await g.post('/api/v1/roles', { data: Buffer.from('{"name": ') });
-    // ... a valid JSON string and an object go out unchanged (the same bytes Playwright makes without the guard).
     await g.patch(own('/users'), { data: ` ${JSON.stringify([OWN_USER])}` });
     await g.post('/api/v1/roles', { data: { name: `${RUN}-y`, description: 'REG', customAttributes: [] } });
     // ... `null` is sent as `null`; an object literal's prototype is never serialised (harmless).
@@ -303,12 +286,9 @@ test('input snapshot: string and Buffer bodies are judged as sent, quirks includ
     ]);
 });
 
-// path-less mutations: path-less mutations need an allow-listed create or bulk route with its DTO body; names and deny
-// spellings are refused
 test('path-less mutations need an allow-listed create or bulk route with its DTO body', async () => {
     const g = looseApi(guard());
     const refused: Array<[string, string, string, unknown?]> = [
-        // The legacy name-keyed client API, whatever own list the body carries
         ['DELETE', '/api/v1/operations/Some-RA/endentity/some-user', 'name-keyed end entity', [OWN_CERT]],
         ['PUT', '/api/v1/operations/Some-RA/endentity/some-user/resetPassword', 'name-keyed reset', [OWN_CERT]],
         ['POST', '/api/v1/operations/Some-RA/endentity/some-user', 'name-keyed edit', { uuids: [OWN_CERT] }],
@@ -318,11 +298,9 @@ test('path-less mutations need an allow-listed create or bulk route with its DTO
         ['POST', '/api/v1/inspections', 'no create, no bulk route', [OWN_ROLE]],
         ['POST', '/api/v1/anything/else', 'an unknown path', [OWN_ROLE]],
         ['DELETE', '/api/v1/roles', 'no bulk role delete exists', { uuids: [OWN_ROLE] }],
-        // `.suffix` spellings of denied endpoints
         ['PUT', '/api/v1/settings.json', 'settings.json', [OWN_ROLE]],
         ['PUT', '/api/v1/auditLogs/purge.', 'purge.', [OWN_ROLE]],
         ['PUT', '/api/v1/auditLogs/purge.json', 'purge.json', [OWN_ROLE]],
-        // a segment that names an object
         ['PATCH', `/api/v1/roles/${OWN_ROLE}/someName`, 'a non-word segment', [OWN_USER]],
         ['PATCH', '/api/v1/roles/abcdefghijklmnopqrstuv/users', 'a 22-character segment', [OWN_USER]],
         ['PUT', '/api/v1/Roles/' + OWN_ROLE, 'a case variant of a word', {}],
@@ -339,7 +317,6 @@ test('path-less mutations need an allow-listed create or bulk route with its DTO
     for (const [method, url, name, data] of refused) expect(await outcome(g.fetch(url, { method, data })), name).toBe('request');
     expect(await outcome(g.patch('/api/v1/raProfiles/disable', { data: [OWN_RA, FOREIGN_RA] })), 'one foreign uuid in a bulk list').toBe('ownership');
     expect(A.mutations()).toEqual([]);
-    // Allow-listed bulk routes with their DTO bodies, and uuid-keyed operations, are sent.
     await g.patch('/api/v1/raProfiles/disable', { data: [OWN_RA] });
     await g.patch('/api/v1/keys/compromise', { data: { uuids: [OWN_KEY], reason: 'KEY_COMPROMISE' } });
     await g.post('/api/v1/certificates/delete', { data: { uuids: [OWN_CERT] } });
@@ -373,12 +350,10 @@ test('base64 forms: real enum values pass; base64 forms count only under a uuid-
         const url = name === 'keyUuid' ? `/api/v2/operations/authorities/${AUTH}/raProfiles/${OWN_RA}/certificates/${OWN_CERT}/issue` : own('/users');
         expect(await outcome(g.fetch(url, { method: name === 'keyUuid' ? 'POST' : 'PATCH', data, ...(params ? { params } : {}) })), name).toBe('request');
     }
-    // Lenient / padded / urn forms stay refused under any key.
     for (const v of ['0-0-4000-8000-2', ` ${FOREIGN_USER}`, `urn:uuid:${FOREIGN_USER}`]) expect(await outcome(g.put(own(), { data: { description: v } })), v).toBe('request');
     expect(A.mutations()).toHaveLength(7);
 });
 
-// minor cases: GETs that persist something run on own objects only; encoded spellings and raw contexts are the same endpoint
 test('minor cases: persisting GETs run on own objects only; encoded spellings are the same endpoint', async () => {
     const g = looseApi(guard());
     const probe = g.probeUuid();
@@ -403,17 +378,14 @@ test('minor cases: persisting GETs run on own objects only; encoded spellings ar
     }
     expect(await outcome(g.head(`/api/v1/certificates/${FOREIGN_CERT}/validate`)), 'the method HEAD').toBe('request');
     expect(sentTo(A)).toEqual([]);
-    // A raw authenticated GET (regressionApi apiJson) is refused too: it cannot prove ownership.
     await withProcessEnv({ BASE_URL }, async () => {
         await expect(apiJson(raw, 'GET', `/api/v1/certificates/${OWN_CERT}/validate`)).rejects.toThrow(/persists something/);
     });
     expect(sentTo(A)).toEqual([]);
-    // Controls: own and probe objects, and ordinary reads.
     await g.get(`/api/v1/certificates/${OWN_CERT}/validate`, { failOnStatusCode: false });
     await g.get(`/api/v1/certificates/${probe}/validate`, { failOnStatusCode: false });
     await g.get(`/api/v1/certificates/${FOREIGN_CERT}`, { failOnStatusCode: false });
     await g.get(`/api/v1/tokens/${FOREIGN_CERT}/tokenProfiles`, { failOnStatusCode: false });
-    // A connector's health check is a plain read (guardedApiPlainTextAndHealth.spec.ts).
     await g.get(`/api/v1/connectors/${FOREIGN_CERT}/health`, { failOnStatusCode: false });
     expect(sentTo(A)).toEqual([
         `GET /api/v1/certificates/${OWN_CERT}/validate`, `GET /api/v1/certificates/${probe}/validate`,
@@ -422,16 +394,14 @@ test('minor cases: persisting GETs run on own objects only; encoded spellings ar
     ]);
 });
 
-// input snapshot: redirects never carry the token elsewhere — a mutation follows none, a GET only same-origin ones the guard re-judges
+// input snapshot: redirects never carry the token elsewhere.
 test('input snapshot: redirects never carry the token elsewhere; a mutation follows none', async () => {
     const g = looseApi(guard());
     // GET 307 to another origin: not followed, the 3xx is the answer.
     expect((await g.get('/api/v1/redirect/elsewhere')).status()).toBe(307);
     // GET 302 to a side-effect GET of a foreign object: not followed.
     expect((await g.get('/api/v1/redirect/effect')).status()).toBe(302);
-    // A redirect loop ends after the guard's limit of hops (DEFAULT_MAX_REDIRECTS: one request more than hops).
     expect((await g.get('/api/v1/redirect/loop')).status()).toBe(302);
-    // GET 302 on the same origin: followed by the guard, which judged the target like any GET.
     const same = await g.get('/api/v1/redirect/same');
     expect([same.status(), (await same.json()).name]).toEqual([200, `${RUN}-role`]);
     expect(A.arrived.map((a) => `${a.method} ${a.url}`)).toEqual([
@@ -454,18 +424,15 @@ test('edge cases: URL forms, the string-only reference waiver, `_method` on a ra
     }
     expect(A.arrived).toEqual([]);
     expect(B.arrived).toEqual([]);
-    // A reference field waives a canonical STRING only; a list or an object under it is scanned like any value.
     expect(await outcome(g.put(`/api/v1/certificates/${OWN_CERT}`, { data: { raProfileUuid: [FOREIGN_RA] } }))).toBe('ownership');
     expect(await outcome(g.put(`/api/v1/certificates/${OWN_CERT}`, { data: { raProfileUuid: { a: FOREIGN_RA } } }))).toBe('ownership');
     await g.put(`/api/v1/certificates/${OWN_CERT}`, { data: { raProfileUuid: FOREIGN_RA } });
-    // `_method` (Spring's HiddenHttpMethodFilter) on a raw read POST, any case, URL or params.
     for (const u of ['/api/v1/certificates?_method=DELETE', '/api/v1/certificates?_METHOD=PUT']) expect(() => allowedRawPost(u, { env: { BASE_URL } }), u).toThrow(/_method/);
     expect(await outcome(g.post('/api/v1/certificates', { data: {}, params: { _Method: 'DELETE' } }))).toBe('request');
     await withProcessEnv({ BASE_URL }, async () => {
         await expect(apiJson(raw, 'POST', '/api/v1/certificates?_method=DELETE', {})).rejects.toThrow(/_method/);
     });
     expect(A.mutations().map((a) => `${a.method} ${a.url}`)).toEqual([`PUT /api/v1/certificates/${OWN_CERT}`]);
-    // Absolute URLs on BASE_URL's origin stay fine.
     await g.get(`${A.origin}/api/v1/roles/${OWN_ROLE}`);
     expect(A.arrived.at(-1)?.url).toBe(`/api/v1/roles/${OWN_ROLE}`);
 });

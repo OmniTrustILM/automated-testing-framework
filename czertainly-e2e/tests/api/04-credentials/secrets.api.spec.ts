@@ -1,9 +1,6 @@
 /**
- * API-GEN-17 — Credentials keep their secret (ilm#428).
- *
- * A SECRET attribute is serialised with data null (core#202, interfaces#125). An edit replaces the content wholesale, so a
- * required secret must be supplied again. Create-only on shared tiers with run-prefixed names and random secrets; every
- * create is ledgered before the first assertion. Skips when the tier has no credential connector.
+ * API-GEN-17 — Credentials keep their secret (ilm#428). A SECRET
+ * attribute is serialised with data null (core#202, interfaces#125).
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { credentialConnectorOrSkip, deleteOwnAndProveGone, expectGoneWith404, refused422 } from '../../../utils/regression/inventory/configProbes';
@@ -17,8 +14,6 @@ import { readAnswer } from '../../../utils/regression/inventory/searchApi';
 import { JsonObject } from '../../../utils/regression/json';
 
 const ISSUE = 'ilm#428';
-
-// ================================================================== API-GEN-17
 
 test.describe('credential secrets and immutability', { tag: tags.api }, () => {
     test('detail and list show the password as a secret without data',

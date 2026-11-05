@@ -1,10 +1,6 @@
 /**
- * tokenActivation — the activation request of an own v1 token.
- *
- * `activationAttributesFor` fills the token code of the live activation definitions with the code the token was created
- * with, and leaves optional attributes out. A request that carries another value, or an optional attribute the connector
- * never asked for, is refused or ignored and the v1 key row fails for the wrong reason. Pure; the definitions are the
- * shape the connector answers.
+ * tokenActivation — the activation request of an own v1 token. `activationAttributesFor` fills the token code of the
+ * live activation definitions with the code the token was created with, and leaves optional attributes out.
  */
 import { expect, test } from '@playwright/test';
 import { activationAttributesFor } from '../../utils/regression/platform/tokens';

@@ -1,7 +1,5 @@
 /**
- * The fail-fast certificate wait (waitForCertificateState) against a fake request context: a bad terminal state, a 404
- * after the read-after-write grace and a third 5xx in a row end the wait at once with the state and history; two 5xx
- * and 408 / 425 / 429 are tolerated in one streak, and a 5xx is never retried into a pass.
+ * The fail-fast certificate wait (waitForCertificateState) against a fake request context.
  */
 import { test, expect } from '@playwright/test';
 import { waitForCertificateState } from '../../utils/certificateUtils';
@@ -10,7 +8,6 @@ import { Answer, fakeRequestContext as fakeApi } from './helpers/fakeRequestCont
 
 const fast = { intervals: [1] };
 const cert = (state: string): Answer => ({ status: 200, body: { state } });
-// Two rows also check that the discovery wait shares the transient and read-after-write rules.
 const disc = (status: string, connectorStatus: string): Answer => ({ status: 200, body: { status, connectorStatus } });
 
 test('resolves when the expected state is reached', async () => {
@@ -67,7 +64,6 @@ test('an early 404 is read-after-write lag: polled again within the grace, a pas
     await waitForCertificateState(api, 'c-1', 'issued', 5_000, fast);
     expect(calls.filter((c) => !c.endsWith('/history'))).toHaveLength(4);
     await waitForDiscoveryCompletion(fakeApi([{ status: 404 }, disc('completed', 'completed')]).api, 'd-1', 5_000, fast);
-    // 401 / 403 / 400 cannot change by polling: still fail-fast.
     await expect(waitForCertificateState(fakeApi([{ status: 401 }, cert('issued')]).api, 'c-1', 'issued', 5_000, fast)).rejects.toThrow(/GET answered 401/);
     // A 404 that outlasts the grace ends the wait at the first poll after it.
     await expect(waitForCertificateState(fakeApi([{ status: 404 }]).api, 'c-1', 'issued', 5_000, { intervals: [5], notFoundGraceMs: 30 })).rejects.toThrow(/GET answered 404/);

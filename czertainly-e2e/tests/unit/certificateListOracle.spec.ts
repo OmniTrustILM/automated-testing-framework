@@ -1,6 +1,6 @@
 /**
- * Unit tests of utils/regression/inventory/certificateListOracle.ts: the comparison of the request a filter sends,
- * and the display formatters of the certificate list (dates in the browser time zone, cell text, forbidden words).
+ * Unit tests of utils/regression/inventory/certificateListOracle.ts: the comparison of the request a filter sends, and
+ * the display formatters of the certificate list (dates in the browser time zone, cell text, forbidden words).
  */
 import { expect, test } from '@playwright/test';
 import { PlatformLabels } from '../../utils/regression/inventory/fieldLabels';

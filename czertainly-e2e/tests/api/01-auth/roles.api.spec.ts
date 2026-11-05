@@ -1,8 +1,6 @@
 /**
- * API-AUTH-19, API-AUTH-20 — Role update and delete through the API (ilm#427).
- *
- * `PUT /v1/roles/{uuid}` accepts `name` and ignores it. A deleted role's detail answers 500 (core#2511), so absence is
- * read from the list. Every role and user is a new run object; deletes go through the own-object helper.
+ * API-AUTH-19, API-AUTH-20 — Role update and delete through the API
+ * (ilm#427). `PUT /v1/roles/{uuid}` accepts `name` and ignores it.
  */
 import { ACCOUNT_STEPS_TEST_MS, SEVERAL_STEPS_TEST_MS } from '../../../utils/regression/timeouts';
 import { expect, test } from '../../../fixtures/regressionFixtures';

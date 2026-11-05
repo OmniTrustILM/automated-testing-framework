@@ -1,8 +1,5 @@
 /**
- * Unit tests for projectFilters.ts (direct tests): `allOf()` / `anyOf()` build single RegExps with the
- * documented semantics, flags that cannot be combined are refused, `withTierFilters` folds the tier rules into every
- * project (infrastructure projects keep running in Phase B), and `resolveProjectFilters` mirrors Playwright's
- * takeFirst (a project's grep REPLACES the config's).
+ * Unit tests for projectFilters.ts: `allOf()` / `anyOf()` build single RegExps, `withTierFilters` folds the tier rules into every project.
  */
 import { test, expect } from '@playwright/test';
 import { allOf, anyOf, isMigratedBuildPhase, resolveProjectFilters, selectsTest, tierRules, withTierFilters } from '../../utils/regression/projectFilters';

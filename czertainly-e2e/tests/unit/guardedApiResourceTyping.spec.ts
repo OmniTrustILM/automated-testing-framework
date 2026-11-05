@@ -1,8 +1,5 @@
 /**
- * Path rules and resource typing of the guard, on the wire: reads and redirect hops obey the structural path rule; an
- * ownership claim counts only with a ledger line of the type of the resource the route acts on (path targets, bulk
- * routes, typed body fields); the base64 uuid forms. The `safety list:` rows pin the literal route and field tables of
- * utils/regression/guard/routes.ts: change those tables deliberately, and these rows with them.
+ * Path rules and resource typing of the guard, on the wire: reads and redirect hops obey the structural path rule.
  */
 import { APIRequestContext, expect, test } from '@playwright/test';
 import {
@@ -22,7 +19,6 @@ import { registerGuardRig, withProcessEnv, looseApi } from './helpers/guardRig';
 
 const RUN = 'qa-reg-20261014-150000-gh78';
 const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
-/** A pre-existing RA profile that a spec (wrongly) recorded under the id-named type `approvals`. */
 const PRE_RA = U(40);
 /** A pre-existing authority: a scope parent, never a target. */
 const AUTH = U(9);
@@ -31,13 +27,11 @@ const TOKEN = U(90);
 const ENTITY = U(91);
 const VAULT = U(92);
 
-/** One own object per ledger type (live-checked and id-named), U(100 + i). */
 const TYPES = [...Object.keys(LIVE_READS), ...ID_NAMED];
 const OWN: Record<string, string> = Object.fromEntries(TYPES.map((t, i) => [t, U(100 + i)]));
 // A key item (`keyItems`) is read live under its parent key.
 const PARENTS: Record<string, Record<string, string>> = {
     tokenProfiles: { token: TOKEN }, locations: { entity: ENTITY }, vaultProfiles: { vault: VAULT }, keyItems: { key: OWN.keys },
-    // An approval is decided only for an own certificate and an own approval profile, named here.
     approvals: { certificate: OWN.certificates, approvalProfile: OWN.approvalProfiles },
 };
 const nameOf = (t: string) => (t === 'certificates' ? `${RUN}.example.test` : `${RUN}-${t}`);
@@ -45,11 +39,9 @@ const line = (type: string, uuid: string, name = nameOf(type)): LedgerLine =>
     ({ at: 'a', runId: RUN, type, name, uuid, spec: 'T', event: 'created', ...(PARENTS[type] ? { parents: PARENTS[type] } : {}) });
 const lines: LedgerLine[] = [...TYPES.map((t) => line(t, OWN[t])), line('approvals', PRE_RA, `${RUN}-approval`)];
 
-/** One uuid, recorded as `approvals` in `lines` and as `groups` in `linesAsGroup`. */
 const X = U(300);
 const linesAsApproval: LedgerLine[] = [...lines, line('approvals', X)];
 const linesAsGroup: LedgerLine[] = [...lines, line('groups', X)];
-/** The same X recorded as a user / a role. */
 const linesAsUser: LedgerLine[] = [...lines, line('users', X)];
 const linesAsRole: LedgerLine[] = [...lines, line('roles', X)];
 
@@ -102,7 +94,6 @@ registerGuardRig(
 
 const guard = () => guardApiWithSeams(raw, { lines, runId: RUN, tier: null, env: { BASE_URL } });
 
-/** The refusal kind and reason of a guarded call ('sent' when it went through). */
 async function refusal(call: Promise<unknown>): Promise<{ kind: RefusalKind | 'sent' | string; reason: string }> {
     try {
         await call;
@@ -120,11 +111,8 @@ const url24 = (u: string) => b64(u).replace(/\+/g, '-').replace(/\//g, '_');
 const b22 = (u: string) => b64(u).replace(/=+$/, '');
 const url22 = (u: string) => url24(u).replace(/=+$/, '');
 
-// ------------------------------------------------------------------ read path rule
-
 /** GET paths that reached a side-effect endpoint (or another one) through a spelling the old rule did not normalise. */
 const G1_REFUSED: Array<[string, RegExp]> = [
-    // Tomcat-normalised spellings
     [`/api/v1//certificates/${FOREIGN}/validate`, /empty segment/],
     [`/api//v1/certificates/${FOREIGN}/validate`, /empty segment/],
     [`/api/v1/certificates//${FOREIGN}/validate`, /empty segment/],
@@ -132,7 +120,6 @@ const G1_REFUSED: Array<[string, RegExp]> = [
     [`/api/v1/certificates/${FOREIGN}/x/..;/validate`, /semicolon/],
     ['/api/v1/approvals;x', /semicolon/],
     ['/api/v1//approvals', /empty segment/],
-    // empty segments, /api spellings and semicolons anywhere in the path
     [`/api/v1/certificates/${FOREIGN}//validate`, /empty segment/],
     ['/api/v2//oauth2/providers/x/login', /empty segment/],
     [`/API/v1/certificates/${FOREIGN}/validate`, /spelling of \/api/],
@@ -145,7 +132,6 @@ const G1_REFUSED: Array<[string, RegExp]> = [
     [`/foo/..;/api/v1/certificates/${FOREIGN}/validate`, /semicolon/],
     [`/api;x/v1/certificates/${FOREIGN}/validate`, /semicolon/],
     [`/api/v1/certificates/${FOREIGN}/validate;a=b`, /semicolon/],
-    // encoded separators and dots, any case; plain dot segments; backslashes
     [`/api/v1/certificates%2F${FOREIGN}%2Fvalidate`, /encoded slash, backslash or dot/],
     [`/api/v1/certificates/${FOREIGN}%2fvalidate`, /encoded slash, backslash or dot/],
     [`/api/v1/certificates/${FOREIGN}/%2e/validate`, /encoded slash, backslash or dot/],
@@ -154,11 +140,9 @@ const G1_REFUSED: Array<[string, RegExp]> = [
     [`/api/v1/certificates/${FOREIGN}/./validate`, /dot segment/],
     [`/api/v1/certificates/${FOREIGN}/x/../validate`, /dot segment/],
     [`/api/v1/certificates/${FOREIGN}\\validate`, /backslash/],
-    // a path the URL parser re-encodes
     ['/api/v1/ro"les', /would change/],
 ];
 
-// read path rule: GET and assertSameOrigin refuse every non-normalised spelling; nothing is sent
 test('read path rule: GET and assertSameOrigin refuse non-normalised spellings, sending nothing', async () => {
     const g = looseApi(guard());
     const wrong: string[] = [];
@@ -173,7 +157,6 @@ test('read path rule: GET and assertSameOrigin refuse non-normalised spellings, 
         }
     }
     expect(wrong).toEqual([]);
-    // apiJson's raw GET goes through assertSameOrigin.
     await withProcessEnv({ BASE_URL }, async () => {
         await expect(apiJson(raw, 'GET', `/api/v1//certificates/${FOREIGN}/validate`)).rejects.toThrow(/empty segment/);
         await expect(apiJson(raw, 'GET', `/API/v1/certificates/${FOREIGN}/validate`)).rejects.toThrow(/spelling of \/api/);
@@ -182,8 +165,6 @@ test('read path rule: GET and assertSameOrigin refuse non-normalised spellings, 
     expect(B.arrived).toEqual([]);
 });
 
-// read path rule, controls: plain GETs, query strings (with `;`, `//`, `%2F` in the QUERY), other escapes and own side-effect
-// GETs are sent
 test('read path rule controls: plain GETs, query strings, other escapes and own side-effect GETs are sent', async () => {
     const g = looseApi(guard());
     const urls = [
@@ -195,7 +176,6 @@ test('read path rule controls: plain GETs, query strings, other escapes and own 
     ];
     for (const u of urls) {
         expect((await refusal(g.get(u, { failOnStatusCode: false }))).kind, u).toBe('sent');
-        // A raw GET is judged by the same rule; a side-effect GET (the own validate) stays for the guarded context.
         if (!u.includes('valid%61te')) expect(() => assertSameOrigin(u, 'unit', { BASE_URL }), u).not.toThrow();
     }
     expect(sentTo(A)).toEqual(urls.map((u) => `GET ${u.replace(A.origin, '')}`));
@@ -204,7 +184,6 @@ test('read path rule controls: plain GETs, query strings, other escapes and own 
     expect(B.arrived).toEqual([]);
 });
 
-// read path rule: a same-origin redirect hop is held to the same rule — a non-normalised Location is not followed (the 3xx is returned)
 test('read path rule: a redirect hop follows the same rule; a non-normalised Location is not followed', async () => {
     const g = looseApi(guard());
     const hops = [
@@ -213,14 +192,12 @@ test('read path rule: a redirect hop follows the same rule; a non-normalised Loc
     ];
     for (const h of hops) expect((await g.get(`/api/v1/redirect?to=${encodeURIComponent(h)}`)).status(), h).toBe(302);
     expect(A.arrived.map((a) => a.url), 'only the redirecting GETs arrived').toEqual(hops.map((h) => `/api/v1/redirect?to=${encodeURIComponent(h)}`));
-    // Control: a plain same-origin Location is followed.
     A.reset();
     const ok = await g.get(`/api/v1/redirect?to=${encodeURIComponent(`/api/v1/roles/${OWN.roles}`)}`);
     expect([ok.status(), (await ok.json()).name]).toEqual([200, nameOf('roles')]);
     expect(B.arrived).toEqual([]);
 });
 
-// read path rule: the shared rule is the first part of the mutation rule (readPathProblem ⊂ structuralPathProblem)
 test('read path rule: the shared rule is the first part of the mutation path rule', () => {
     const sent = (u: string) => {
         const r = resolveSentUrl(u, { env: { BASE_URL: 'http://127.0.0.1:1/' } });
@@ -231,9 +208,6 @@ test('read path rule: the shared rule is the first part of the mutation path rul
     for (const u of [`/api/v1/roles/${U(1)}`, '/api/v1/certificates?x=a;b//c', '/api/v1/approvals/', '/administrator/', '/']) expect(readPathProblem(sent(u)), u).toBeUndefined();
 });
 
-// ------------------------------------------------------------------ resource typing
-
-// resource typing: an id-named `approvals` line naming a pre-existing RA profile authorises nothing on an RA profile route
 test('resource typing: an id-named approvals line for an RA profile authorises nothing on RA routes', async () => {
     const g = looseApi(guard());
     const forged = [
@@ -260,7 +234,6 @@ test('resource typing: an id-named approvals line for an RA profile authorises n
     expect(B.arrived).toEqual([]);
 });
 
-// resource typing: every ledger type, live-checked or id-named, counts only for its own resource — before any live read
 test('resource typing: every ledger type counts only for its own resource, before any live read', async () => {
     const g = looseApi(guard());
     const wrong: string[] = [];
@@ -272,7 +245,6 @@ test('resource typing: every ledger type counts only for its own resource, befor
     }
     expect(wrong).toEqual([]);
     expect(A.arrived, 'no live read, no write').toEqual([]);
-    // Matching types are sent: id-named ones on their own routes too.
     await g.patch(`/api/v1/approvals/${OWN.approvals}/approve`, { data: {} });
     await g.patch(`/api/v1/acmeProfiles/${U(77)}/acmeAccounts/${OWN.acmeAccounts}/disable`);
     await g.patch('/api/v1/acmeAccounts/disable', { data: [OWN.acmeAccounts] });
@@ -289,8 +261,6 @@ test('resource typing: every ledger type counts only for its own resource, befor
     expect(B.arrived).toEqual([]);
 });
 
-// resource typing: an unresolvable target or bulk route is refused for an own uuid, sent for a probe (it names no object);
-// side-effect GETs too
 test('resource typing: unresolvable target or bulk route is refused for an own uuid, sent for a probe', async () => {
     const g = looseApi(guard());
     const RA = OWN.raProfiles;
@@ -319,7 +289,6 @@ test('resource typing: unresolvable target or bulk route is refused for an own u
     await g.patch('/api/v1/keys/items/disable', { data: [p] });
     await g.get(`/api/v1/proxies/${p}/instructions`, { failOnStatusCode: false });
     expect(sentTo(A)).toEqual([`DELETE /api/v1/signingRecords/${p}`, 'PATCH /api/v1/keys/items/disable', `GET /api/v1/proxies/${p}/instructions`]);
-    // A side-effect GET checks the type as well: an own role is no certificate.
     A.reset();
     const got = await refusal(g.get(`/api/v1/certificates/${OWN.roles}/validate`));
     expect([got.kind, got.reason]).toEqual(['ownership', 'the ledger records it as roles, but the request acts on certificates (an ownership claim counts only for the resource the request acts on)']);
@@ -353,7 +322,6 @@ test('resource typing: the route → ledger type resolver over the core routes w
         [`/v1/approvalProfiles/${a}/associations/raProfiles/${b}`, ['approvalProfiles', 'raProfiles']],
         [`/v2/complianceProfiles/${a}/associations/vaults/${b}`, ['complianceProfiles', 'vaultInstances']],
         [`/v1/comments/certificates/${a}`, ['certificates']], [`/v1/comments/${a}/resolve`, [undefined]], [`/v2/compliance/raProfiles/${a}`, ['raProfiles']],
-        // A Resource code that is no collection word of TARGET_TYPES: only the Resource context resolves it.
         [`/v1/approvalProfiles/${a}/associations/triggers/${b}`, ['approvalProfiles', 'triggers']], [`/v1/comments/rules/${a}`, ['rules']],
         [`/v2/compliance/jobs/${a}`, ['scheduledJobs']], [`/v1/approvalProfiles/${a}/associations/keyItems/${b}`, ['approvalProfiles', undefined]],
         [`/v2/complianceProfiles/rules/${a}`, [undefined]], [`/v2/complianceProfiles/${a}/groups`, ['complianceProfiles']],
@@ -370,7 +338,6 @@ test('resource typing: the route → ledger type resolver over the core routes w
         [`/v1/groups/${a}`, ['groups']], [`/v1/discoveries/${a}/stop`, ['discoveries']], [`/v1/keys/${a}/destroy`, ['keys']],
         [`/v1/notificationProfiles/${a}`, ['notificationProfiles']], [`/v1/notificationInstances/${a}`, ['notificationInstances']],
         [`/v1/roles/${a}`, ['roles']], [`/v1/secrets/${a}/enable`, ['secrets']], [`/v1/complianceProfiles/${a}/rules`, ['complianceProfiles']],
-        // Timestamping (tests/timestamping/SHARED-TIER.md): typed since the block runs on a shared tier; a signing record has no ledger type.
         [`/v1/tspProfiles/${a}/basicCredentials/${b}`, ['tspProfiles', 'tspBasicCredentials']], [`/v1/signingProfiles/${a}`, ['signingProfiles']],
         [`/v1/tspProfiles/${a}`, ['tspProfiles']], [`/v1/signingProfiles/${a}/protocols/tsp/activate/${b}`, ['signingProfiles', 'tspProfiles']],
         [`/v1/signingProfiles/${a}/protocols/tsp/deactivate`, ['signingProfiles']], [`/v1/signingRecords/${a}`, [undefined]],
@@ -379,15 +346,11 @@ test('resource typing: the route → ledger type resolver over the core routes w
     ];
     for (const [path, types] of rows) expect(pathTargets(path).map((t) => t.type), path).toEqual(types);
     expect(resourceTypeAt(['v1', 'raProfiles', a], 2)).toBe('raProfiles');
-    // The side-effect GET table: each object's type, read from its template (proxies: none, so refused unless a probe).
     expect(SIDE_EFFECT_GETS.map((t) => sideEffectGet(t.replace(/\{(id|parent)\}/g, a).replace('{seg}', 'pem'))?.types)).toEqual([
         ['certificates'], ['certificates'], ['certificates'], ['raProfiles'], ['acmeAccounts'], ['secrets'], ['tokens'], [], [], ['approvals'], [], [], [undefined],
     ]);
 });
 
-// ------------------------------------------------------------------ base64 forms
-
-/** The uuid-typed request DTO fields of `interfaces` 2b7962c7 (b0fix6/uuidfields.py): a missing one fails here. */
 const KNOWN_UUID_FIELDS = [
     'attributeDefinitionUuids', 'eabSecretUuids', // hidden by `List<@NotNull …>` from a plain field derivation
     'altKeyUuid', 'altTokenProfileUuid', 'connectorUuid', 'defaultSigningProfileUuid', 'groupUuid', 'groupUuids', 'groups', 'interfaceUuid',
@@ -396,8 +359,6 @@ const KNOWN_UUID_FIELDS = [
     'userUuid', 'uuid', 'uuids', 'vaultProfileUuid',
 ];
 
-// base64 forms: UUID_TYPED_FIELDS holds every uuid-typed request DTO field derived from interfaces (triggers, internalRules,
-// groups among them)
 test('safety list: UUID_TYPED_FIELDS holds every uuid-typed request DTO field derived from interfaces', () => {
     const missing = KNOWN_UUID_FIELDS.filter((f) => !UUID_TYPED_FIELDS.has(f));
     expect(missing).toEqual([]);
@@ -406,7 +367,6 @@ test('safety list: UUID_TYPED_FIELDS holds every uuid-typed request DTO field de
     for (const f of ['name', 'reason', 'event', 'description', 'usage']) expect(isUuidField(f), f).toBe(false);
 });
 
-// base64 forms: the base64 forms under triggers / internalRules / providerRules[].groups are refused; enum values and names pass
 test('base64 forms of uuid fields under triggers and rules are refused; enums and names pass', async () => {
     const g = looseApi(guard());
     const CP = OWN.complianceProfiles;
@@ -418,7 +378,6 @@ test('base64 forms of uuid fields under triggers and rules are refused; enums an
         rows.push([`PUT v2 complianceProfiles providerRules[].groups ${form}`,
             () => g.put(`/api/v2/complianceProfiles/${CP}`, { data: { providerRules: [{ connectorUuid: probe, groups: [v] }] } })]);
     }
-    // The 24-character form under ANY key, a map key, and a query value; the 22-character form under every uuid-typed field.
     rows.push(['24 under description', () => g.put(`/api/v1/roles/${OWN.roles}`, { data: { description: b64(FOREIGN) } })]);
     rows.push(['24 as a map key', () => g.put(`/api/v1/roles/${OWN.roles}`, { data: { customMap: { [b64(FOREIGN)]: 1 } } })]);
     rows.push(['24 in a query value', () => g.patch(`/api/v1/roles/${OWN.roles}/users?x=${url24(FOREIGN)}`, { data: [OWN.users] })]);
@@ -430,7 +389,6 @@ test('base64 forms of uuid fields under triggers and rules are refused; enums an
     }
     expect(wrong).toEqual([]);
     expect(A.mutations(), 'nothing refused reached the core').toEqual([]);
-    // Controls: enum values and names of 22 characters (non-uuid keys), an empty / own trigger list, `==` values of other lengths.
     await g.put(`/api/v1/roles/${OWN.roles}`, { data: { reason: 'CESSATION_OF_OPERATION', name: 'abcdefghijklmnopqrstuv', note: 'abc==' } });
     await g.post('/api/v1/discoveries', { data: { name: `${RUN}-d`, triggers: [] } });
     await g.post('/api/v1/discoveries', { data: { name: `${RUN}-d2`, triggers: [OWN.triggers] } });
@@ -440,9 +398,6 @@ test('base64 forms of uuid fields under triggers and rules are refused; enums an
     expect(B.arrived).toEqual([]);
 });
 
-// ------------------------------------------------------------------ nit: table-driven BULK_ROUTES and PLATFORM_DENY
-
-/** `METHOD path list type` — the whole BULK_ROUTES table (63 routes); deleting or retyping an entry fails below. */
 const EXPECTED_BULK = `
 PATCH /v1/acmeAccounts/disable array acmeAccounts | PATCH /v1/acmeAccounts/enable array acmeAccounts | PUT /v1/acmeAccounts/revoke array acmeAccounts
 DELETE /v1/acmeProfiles/delete array acmeProfiles | DELETE /v1/acmeProfiles/delete/force array acmeProfiles
@@ -473,8 +428,6 @@ DELETE /v1/tspProfiles array - | PATCH /v1/tspProfiles/disable array - | PATCH /
     return { method, path, list, type: type === '-' ? undefined : type };
 });
 
-// BULK_ROUTES, row by row: each route is listed with its list and ledger type; an own uuid of that type is sent, another type
-// or an untyped route refused
 test('safety list: BULK_ROUTES with list and ledger type; wrong type or untyped route refused', async () => {
     expect(EXPECTED_BULK).toHaveLength(63);
     expect(BULK_ROUTES.map((r) => `${r.method} ${r.path}`).sort()).toEqual(EXPECTED_BULK.map((r) => `${r.method} ${r.path}`).sort());
@@ -503,7 +456,6 @@ test('safety list: BULK_ROUTES with list and ledger type; wrong type or untyped 
         }
     }
     expect(wrong).toEqual([]);
-    // A route off the table is no bulk route.
     expect((await refusal(g.delete('/api/v1/roles', { data: [OWN.roles] }))).reason).toMatch(/neither an allow-listed create \(POST_CREATE\) nor an allow-listed bulk route/);
     expect(B.arrived).toEqual([]);
 });
@@ -528,7 +480,6 @@ const EXPECTED_DENY: Array<[string, string, unknown, string]> = [
     ['POST', '/v1/operations/Some-RA/certificate/revoke', {}, 'the legacy name-keyed client API (/v1/operations/{raProfileName}/…)'],
 ];
 
-// PLATFORM_DENY, entry by entry: each example is denied by its own entry, and the guard refuses it with that reason
 test('safety list: each PLATFORM_DENY example is denied by its own entry and refused with that reason', async () => {
     expect(PLATFORM_DENY.map((d) => d.why)).toEqual(EXPECTED_DENY.map(([, , , why]) => why));
     const g = looseApi(guard());
@@ -543,9 +494,10 @@ test('safety list: each PLATFORM_DENY example is denied by its own entry and ref
     expect(A.arrived).toEqual([]);
 });
 
-// ------------------------------------------------------------------ typed body fields
-
-/** Every uuid-bearing request DTO field name of `interfaces` 2b7962c7 (45 fields, plus the two of the timestamping workflow): each must be classified. */
+/**
+ * Every uuid-bearing request DTO field name of `interfaces` 2b7962c7 (45
+ * fields, plus the two of the timestamping workflow): each must be classified.
+ */
 const UUID_BEARING_FIELDS = [
     'attributeDefinitionUuids', 'eabSecretUuids',
     'actionsUuids', 'altKeyUuid', 'altTokenProfileUuid', 'attributeUuid', 'authorityInstanceUuid', 'caCertificateUuid', 'certificateUuid',
@@ -554,11 +506,11 @@ const UUID_BEARING_FIELDS = [
     'notificationProfileUuid', 'objectUuid', 'ownerUuid', 'parentUuid', 'proxyUuid', 'raProfileUuid', 'raProfileUuids', 'recipientUuids', 'roleUuid',
     'ruleUuid', 'rulesUuids', 'signingCertificateUuid', 'sourceCertificateUuid', 'sourceVaultProfileUuid', 'tokenProfileUuid', 'triggerUuids',
     'triggers', 'userUuid', 'uuid', 'uuids', 'vaultProfileUuid',
-    // The polymorphic `workflow` subtype of a signing profile (TimestampingWorkflowRequestDto) hid these two from the generic derivation.
     'signatureFormattingConnectorUuid', 'timeQualityConfigurationUuid',
 ];
 
-// typed body fields: every uuid-bearing request DTO field is typed (BODY_FIELD_TYPES), sibling-typed or listed as unmapped — exactly one
+// typed body fields: every uuid-bearing request DTO field is typed (BODY_FIELD_TYPES), sibling-typed or listed as
+// unmapped — exactly one.
 test('safety list: every uuid-bearing request DTO field is typed in BODY_FIELD_TYPES or unmapped', () => {
     const typed = Object.keys(BODY_FIELD_TYPES);
     const sibling = Object.keys(SIBLING_TYPED_FIELDS);
@@ -576,7 +528,6 @@ test('safety list: every uuid-bearing request DTO field is typed in BODY_FIELD_T
     expect(BODY_FIELD_TYPES.groupUuids).toBe('groups');
 });
 
-// typed body fields: an own uuid recorded as `approvals` under groupUuids is refused (ownership); recorded as `groups` it is sent
 test('typed body fields: an own uuid recorded as approvals under groupUuids is refused', async () => {
     const asApproval = looseApi(guardApiWithSeams(raw, { lines: linesAsApproval, runId: RUN, tier: null, env: { BASE_URL } }));
     const asGroup = looseApi(guardApiWithSeams(raw, { lines: linesAsGroup, runId: RUN, tier: null, env: { BASE_URL } }));
@@ -603,8 +554,6 @@ test('typed body fields: an own uuid recorded as approvals under groupUuids is r
     expect(B.arrived).toEqual([]);
 });
 
-// typed body fields: typed fields everywhere in the body; no-ledger-type fields take probes; the reference waiver and unmapped
-// fields are unchanged
 test('typed body fields apply everywhere in the body; no-ledger-type fields take probes; waiver unchanged', async () => {
     const g = looseApi(guard());
     const p = g.probeUuid();
@@ -627,7 +576,6 @@ test('typed body fields apply everywhere in the body; no-ledger-type fields take
     }
     expect(wrong).toEqual([]);
     expect(A.mutations(), 'nothing refused reached the core').toEqual([]);
-    // Sent: matching types, probes in no-ledger-type fields, the REFERENCE_FIELDS waiver, unmapped fields with any own type.
     const sent: Array<[string, string, unknown]> = [
         ['PUT', `/api/v1/certificates/${OWN.certificates}`, { ownerUuid: OWN.users, groupUuids: [OWN.groups] }],
         ['PUT', `/api/v2/complianceProfiles/${CP}`, { providerRules: [{ connectorUuid: OWN.connectors, groups: [p] }], internalRules: [p] }],
@@ -641,10 +589,7 @@ test('typed body fields apply everywhere in the body; no-ledger-type fields take
     expect(B.arrived).toEqual([]);
 });
 
-// ------------------------------------------------------------------ typed lists, raw bodies and literal tables
-
 const asLines = (l: LedgerLine[]) => looseApi(guardApiWithSeams(raw, { lines: l, runId: RUN, tier: null, env: { BASE_URL } }));
-/** Another own object's uuid of a type other than `t`. */
 const wrongFor = (t: string) => (t === 'roles' ? OWN.users : OWN.roles);
 const wrongName = (t: string) => (t === 'roles' ? 'users' : 'roles');
 
@@ -662,7 +607,7 @@ test('typed lists: the uuid list bodies of PATCH /roles/{id}/users and /users/{i
     expect(A.mutations().map((a) => `${a.method} ${a.url} ${a.body}`)).toEqual([
         `PATCH /api/v1/roles/${OWN.roles}/users ${JSON.stringify([X])}`, `PATCH /api/v1/users/${OWN.users}/roles ${JSON.stringify([X])}`,
     ]);
-    // A top-level uuid list on a route that is not in LIST_BODY_TYPES (target or create): refused; probes and empty lists are not.
+    // A top-level uuid list on a route that is not in LIST_BODY_TYPES (target or create): refused.
     A.reset();
     const g = looseApi(guard());
     for (const call of [() => g.put(`/api/v1/roles/${OWN.roles}`, { data: [OWN.users] }), () => g.post('/api/v1/roles', { data: [OWN.users] }),
@@ -677,7 +622,6 @@ test('typed lists: the uuid list bodies of PATCH /roles/{id}/users and /users/{i
     expect(B.arrived).toEqual([]);
 });
 
-/** `METHOD example-path type` — the whole LIST_BODY_TYPES table; deleting or retyping an entry fails below. */
 const EXPECTED_LISTS: Array<[string, string, string | null, string]> = [
     ['PATCH', '/v1/roles/{id}/users', 'users', `/v1/roles/${OWN.roles}/users`],
     ['PATCH', '/v1/users/{id}/roles', 'roles', `/v1/users/${OWN.users}/roles`],
@@ -691,7 +635,6 @@ const EXPECTED_LISTS: Array<[string, string, string | null, string]> = [
     ['PATCH', '/v1/tokens/{id}/keys/{id}/enable', 'keyItems', `/v1/tokens/${TOKEN}/keys/${OWN.keys}/enable`],
 ];
 
-// typed lists: LIST_BODY_TYPES row by row — the right type sent, a wrong type refused; untyped lists take probes only
 test('safety list: LIST_BODY_TYPES row by row, right type sent, wrong type refused', async () => {
     expect(LIST_BODY_TYPES.map((r) => [r.method, r.path, r.type])).toEqual(EXPECTED_LISTS.map(([m, p, t]) => [m, p, t]));
     const g = looseApi(guard());
@@ -702,7 +645,7 @@ test('safety list: LIST_BODY_TYPES row by row, right type sent, wrong type refus
         if (type) {
             const ok = await send(OWN[type]);
             if (ok.kind !== 'sent') wrong.push(`${method} ${path} own ${type}: ${ok.kind} ${ok.reason.slice(0, 80)}`);
-            // An own approval (id-named: no live read could catch it) — not the target's type, so no two-types refusal first.
+            // An own approval (id-named: no live read could catch it)
             const bad = await send(OWN.approvals);
             if (bad.kind !== 'ownership' || !bad.reason.includes(`records it as approvals, but the list body of ${path} names ${type}`)) wrong.push(`${method} ${path} wrong: ${bad.kind}`);
         } else {
@@ -728,15 +671,12 @@ test('raw bodies: a uuid in a body the server does not read as JSON may not be b
             'named in a body the server does not read as JSON, backed by an id-named ledger line (approvals: no live check, so the resource it names cannot be proven)']);
     }
     expect(A.mutations()).toEqual([]);
-    // X as a live-checked own group: unchanged (free text names any LIVE-checked own object).
     for (const call of calls(asLines(linesAsGroup))) expect((await refusal(call())).kind).toBe('sent');
     expect(A.mutations()).toHaveLength(3);
-    // The same body as JSON is typed (ownerUuid → users, groupUuids → groups): one uuid as two resources.
     expect((await refusal(asLines(linesAsGroup).post('/api/v1/groups', { data: JSON.parse(body) }))).reason).toBe('one uuid named as two different resources in one request');
     expect(B.arrived).toEqual([]);
 });
 
-// sibling-typed fields: objectUuid is typed by its sibling `resource` code; an unknown, missing or untyped code takes probes only
 test('sibling-typed fields: objectUuid is typed by its sibling resource code; others take probes only', async () => {
     const g = looseApi(guard());
     const ev = (resource: unknown, objectUuid: string) => g.post('/api/v1/workflows/events',
@@ -754,7 +694,6 @@ test('sibling-typed fields: objectUuid is typed by its sibling resource code; ot
     expect(A.mutations()).toHaveLength(3);
 });
 
-/** BODY_FIELD_TYPES as a literal: a deleted or retyped entry fails the rows below. */
 const EXPECTED_BODY_FIELDS: Record<string, string | null> = {
     actionsUuids: 'actions', altKeyUuid: 'keys', altTokenProfileUuid: 'tokenProfiles', authorityInstanceUuid: 'authorities', caCertificateUuid: 'certificates',
     certificateUuid: 'certificates', certificateUuids: 'certificates', conditionsUuids: 'conditions', connectorUuid: 'connectors', customAttributeUuid: 'customAttributes',
@@ -766,7 +705,6 @@ const EXPECTED_BODY_FIELDS: Record<string, string | null> = {
     groups: null, internalRules: null, ruleUuid: null, parentUuid: null,
     proxyUuid: null,
 };
-/** RESOURCE_TYPES as a literal. */
 const EXPECTED_RESOURCES: Record<string, string> = {
     acmeAccounts: 'acmeAccounts', acmeProfiles: 'acmeProfiles', actions: 'actions', approvalProfiles: 'approvalProfiles', approvals: 'approvals', authorities: 'authorities',
     certificates: 'certificates', cmpProfiles: 'cmpProfiles', complianceProfiles: 'complianceProfiles', conditions: 'conditions', connectors: 'connectors', credentials: 'credentials',
@@ -776,7 +714,6 @@ const EXPECTED_RESOURCES: Record<string, string> = {
     triggers: 'triggers', users: 'users', vaultProfiles: 'vaultProfiles', vaults: 'vaultInstances',
 };
 
-// literal tables: BODY_FIELD_TYPES value by value — the right type sent, a wrong type refused, a no-ledger-type field probes only
 test('safety list: BODY_FIELD_TYPES value by value, right type sent, wrong type refused', async () => {
     const g = looseApi(guard());
     const CERT = OWN.certificates;
@@ -800,7 +737,6 @@ test('safety list: BODY_FIELD_TYPES value by value, right type sent, wrong type 
     expect(B.arrived).toEqual([]);
 });
 
-// literal tables: RESOURCE_TYPES entry by entry on the associations, comments, compliance and custom-attribute-objects routes
 test('safety list: RESOURCE_TYPES entry by entry on association, comment, compliance and attribute routes', async () => {
     const g = looseApi(guard());
     const routes: Array<(c: string, x: string) => Promise<unknown>> = [
@@ -816,7 +752,6 @@ test('safety list: RESOURCE_TYPES entry by entry on association, comment, compli
             const ok = await refusal(r(code, OWN[t]));
             const bad = await refusal(r(code, wrongFor(t)));
             if (t === 'approvals') {
-                // An approval may only be decided; every other route that names one is refused first.
                 for (const [arm, got] of [['own', ok], ['wrong', bad]] as const) {
                     if (got.kind !== 'request' || !got.reason.includes('an approval may only be decided')) wrong.push(`${code} route ${i} ${arm}: ${got.kind} ${got.reason.slice(0, 80)}`);
                 }
@@ -840,14 +775,10 @@ const EXPECTED_CREATES = [
     '/v1/vaults', '/v1/vaults/{id}/vaultProfiles', '/v1/vaults/{id}/vaultProfiles/{id}/secrets', '/v1/complianceProfiles',
     '/v1/approvalProfiles', '/v1/connectors', '/v1/certificates/upload', '/v1/certificates/upload/async',
     '/v2/operations/authorities/{id}/raProfiles/{id}/certificates', '/v1/workflows/events',
-    // Inspections, certificate import, certificate register, POST /v2/connectors as a create (tests/unit/guardedApiAllowedRequests.spec.ts
-    // has their limits).
     '/v1/inspections', '/v1/certificates/import', '/v2/operations/authorities/{id}/raProfiles/{id}/certificates/register', '/v2/connectors', '/v2/complianceProfiles',
-    // Timestamping: a time-quality configuration, a TSP profile and a signing profile (tests/unit/guardedApiTimestamping.spec.ts has the limits).
     '/v1/timeQualityConfigurations', '/v1/tspProfiles', '/v1/signingProfiles',
 ];
 
-// literal tables: POST_CREATE entry by entry — every example is a create and is sent under foreign scope parents
 test('safety list: POST_CREATE entry by entry, every example is a create sent under foreign scope parents', async () => {
     expect([...POST_CREATE]).toEqual(EXPECTED_CREATES);
     const g = looseApi(guard());
@@ -868,9 +799,6 @@ test('safety list: POST_CREATE entry by entry, every example is a create sent un
     expect(B.arrived).toEqual([]);
 });
 
-// ------------------------------------------------------------------ typed list values and the read POST table
-
-// typed lists: a typed list body takes strings only — nested lists, objects, numbers and null are refused on both routes
 test('typed lists: a typed list body takes strings only; nested lists, objects and null are refused', async () => {
     const g = looseApi(guard());
     const wrong: string[] = [];
@@ -886,13 +814,11 @@ test('typed lists: a typed list body takes strings only; nested lists, objects a
         A.reset();
     }
     expect(wrong).toEqual([]);
-    // A key-item list route (null type) refuses a non-string element the same way; probes stay sendable.
     expect((await refusal(g.patch(`/api/v1/keys/${OWN.keys}/disable`, { data: [[g.probeUuid()]] }))).kind).toBe('request');
     expect((await refusal(g.patch(`/api/v1/keys/${OWN.keys}/disable`, { data: [g.probeUuid()] }))).kind).toBe('sent');
     expect(B.arrived).toEqual([]);
 });
 
-/** The whole POST_READ table as a literal: deleting or changing an entry fails the row below. */
 const EXPECTED_READS: Array<[string, string[]]> = [
     ['/v1/certificates', ['/v1/certificates']],
     ['/v1/keys', ['/v1/keys']],
@@ -911,7 +837,6 @@ const EXPECTED_READS: Array<[string, string[]]> = [
     ['/v1/({seg}/)*attributes(/{seg})?/validate', ['/v1/attributes/validate', '/v1/connectors/auth/attributes/basic/validate',
         `/v1/authorities/${FOREIGN}/attributes/raProfile/validate`, `/v1/entities/${FOREIGN}/attributes/location/validate`]],
     ['/v1/connectors/{id}/{seg}/{seg}/validate', [`/v1/connectors/${FOREIGN}/authorityProvider/ejbca/validate`]],
-    // Timestamping: lists (tests/unit/guardedApiTimestamping.spec.ts has the limits). The attribute callbacks are no reads: POST_CALLBACK.
     ['/v2/connectors/list', ['/v2/connectors/list']],
     ['/v1/signingProfiles/list', ['/v1/signingProfiles/list']],
     ['/v1/tspProfiles/list', ['/v1/tspProfiles/list']],
@@ -920,7 +845,8 @@ const EXPECTED_READS: Array<[string, string[]]> = [
     ['/v1/signingProfiles/{id}/signingRecords', [`/v1/signingProfiles/${FOREIGN}/signingRecords`]],
 ];
 
-// literal table: POST_CALLBACK — three routes, each a kind of its own (not a read: no raw context may send them, the body is scanned)
+// literal table: POST_CALLBACK — three routes, each a kind of its own (not a read: no raw context may send them, the
+// body is scanned)
 test('safety list: POST_CALLBACK is exactly the three form callbacks, each of kind callback and refused to a raw context', () => {
     expect([...POST_CALLBACK]).toEqual(['/v1/raProfiles/{id}/callback', '/v1/keys/{id}/callback', '/v2/connectors/{id}/callback']);
     for (const [path, parent] of [[`/v1/raProfiles/${FOREIGN}/callback`, 'authority'], [`/v1/keys/${FOREIGN}/callback`, 'tokenProfile'], [`/v2/connectors/${FOREIGN}/callback`, 'connector']] as const) {
@@ -934,7 +860,6 @@ test('safety list: POST_CALLBACK is exactly the three form callbacks, each of ki
     }
 });
 
-// literal tables: POST_READ entry by entry — every example is a read POST, sent with a body naming a foreign uuid (reads are not judged)
 test('safety list: POST_READ entry by entry, each example is a read POST sent with a foreign uuid', async () => {
     expect([...POST_READ]).toEqual(EXPECTED_READS.map(([e]) => e));
     const g = looseApi(guard());

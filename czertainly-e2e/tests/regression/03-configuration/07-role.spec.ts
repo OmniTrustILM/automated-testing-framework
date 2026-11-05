@@ -1,12 +1,7 @@
 /**
- * REG-CFG-07 — Roles in the admin UI (release checklist: Configuration 7; ilm#427).
- *
- * Creates a role, refuses a duplicate name (.a), edits it with the name locked (.b) and deletes it (.c).
- * core#2297: a duplicate name answers 500 instead of a message (test.fail on the message only).
- * A deleted role's detail answers 500 (core#2511), so absence is read from the list.
- *
- * Only roles this run created are edited or deleted; the live check runs before the browser acts. The ledger line is
- * written before the first assertion.
+ * REG-CFG-07 — Roles in the admin UI (release checklist: Configuration 7; ilm#427). Creates a role, refuses a duplicate
+ * name (.a), edits it with the name locked (.b) and deletes it (.c). core#2297: a duplicate name answers 500 instead of a message
+ * (test.fail on the message only).
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { RolePage } from '../../../pages/RolePage';
@@ -75,8 +70,6 @@ test.describe('Role configuration', { tag: tags.regression }, () => {
                     { type: 'roles', name: role.name, spec: own.spec, note, lookup: lookupInList(api, '/api/v1/roles') },
                     () => roles.submitCreateForm());
             });
-            // Ledger first: a duplicate the platform accepted is this run's object, whatever the status says. The answer may carry no id:
-            // the rows of the name are adopted from the list as well.
             own.probe('roles', answer, { name: role.name, note });
             await own.adoptNamed('roles', role.name, { note });
 

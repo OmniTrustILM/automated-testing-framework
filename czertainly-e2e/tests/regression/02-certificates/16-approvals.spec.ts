@@ -1,14 +1,7 @@
 /**
  * REG-CERT-16, REG-CERT-17 — Issue under an approval profile, then approve or reject by override (release checklist:
- * Certificates 16 and 17; ilm#429).
- *
- * A certificate issued on an RA profile with an approval profile waits as Pending approval. Override Approve issues it;
- * override Reject makes it Rejected, keeps its Request tab, and leaves Issue, Renew, Rekey and Revoke disabled.
- *
- * The approval profile is tied to an own clone of the run's RA profile only, and released at the end (also on failure).
- * Certificates and approvals are recorded in the ledger before any assertion; the live check runs before the toolbar
- * acts.
- * Without a CA the tests skip with the reason.
+ * Certificates 16 and 17; ilm#429). A certificate issued on an
+ * RA profile with an approval profile waits as Pending approval.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { ApprovalsPage } from '../../../pages/ApprovalsPage';
@@ -28,7 +21,6 @@ import { APPROVAL_REJECT_TEST_MS, APPROVAL_STATE_WAIT_MS, LIFECYCLE_MS } from '.
 import { waitForCertificateState } from '../../../utils/regression/wait/certificateState';
 import { escapeRegExp } from '../../../utils/regression/text';
 
-
 test.describe('Approvals in the web UI', { tag: tags.regression }, () => {
     test('a gated issue waits for approval and the override Approve in the Approvals list issues it',
         testMeta({
@@ -39,9 +31,7 @@ test.describe('Approvals in the web UI', { tag: tags.regression }, () => {
             ],
         }),
         async ({ signedIn: page, api, own, live, ownRaProfile }) => {
-            // The gated issue (60 s approval), the list, the issuance after the approve (180 s) and the tab checks.
             test.setTimeout(LIFECYCLE_MS);
-            // ownRaProfile: requested for its skip without a CA (the gate clones the run RA profile).
             const gate = await test.step('Prerequisite: an own clone of the run RA profile with the run approval profile associated', async () => openApprovalGate(api, own.spec, 'ui16'));
             try {
                 const certPage = new CertificatePage(page);
@@ -60,7 +50,6 @@ test.describe('Approvals in the web UI', { tag: tags.regression }, () => {
                     await certPage.selectKeySourceExternal();
                     await certPage.pasteCsr(csr.pem);
                     await submitFormCreateRecorded(addPage, own, 'issue', { cn: cn, note: 'issued via UI under an approval profile', ra: gate.ra });
-                    // This row accepts the "accepted with warnings" panel (the certificate is opened from it).
                     const id = (await addPage.waitForCreatedCertificate({ acceptWarnings: true })).uuid;
                     return id;
                 });
@@ -114,7 +103,6 @@ test.describe('Approvals in the web UI', { tag: tags.regression }, () => {
         }),
         async ({ signedIn: page, api, own, live, ownRaProfile }) => {
             test.setTimeout(APPROVAL_REJECT_TEST_MS);
-            // ownRaProfile: requested for its skip without a CA (the gate clones the run RA profile).
             const gate = await test.step('Prerequisite: an own clone of the run RA profile with the run approval profile associated', async () => openApprovalGate(api, own.spec, 'ui17'));
             try {
                 const certPage = new CertificatePage(page);
@@ -133,10 +121,8 @@ test.describe('Approvals in the web UI', { tag: tags.regression }, () => {
                     await certPage.selectKeySourceExternal();
                     await certPage.pasteCsr(csr.pem);
                     await submitFormCreateRecorded(addPage, own, 'issue', { cn: cn, note: 'issued via UI under an approval profile', ra: gate.ra });
-                    // This row accepts the "accepted with warnings" panel (the certificate is opened from it).
                     const id = (await addPage.waitForCreatedCertificate({ acceptWarnings: true })).uuid;
                     await waitForCertificateState(api, id, 'pending_approval', APPROVAL_STATE_WAIT_MS);
-                    // Core links a key at request time and leaves it behind on the rejected path: record it now.
                     await own.derivedKey(id, createdAfter17);
                     return id;
                 });

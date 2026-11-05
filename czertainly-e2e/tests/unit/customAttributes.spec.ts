@@ -1,7 +1,5 @@
 /**
- * customAttributes — the request attributes the helpers send for custom and required attributes: the response →
- * request copy (`toRequestAttribute`), the one filler of required custom attributes and its version / contentType
- * rules. Pure, no environment.
+ * customAttributes — the request attributes the helpers send for custom and required attributes.
  */
 import type { APIRequestContext } from '@playwright/test';
 import { fakeResponse } from './helpers/fakeResponse';
@@ -21,19 +19,15 @@ test('toRequestAttribute copies uuid, name, content type, content and the versio
     expect(toRequestAttribute({ uuid: 'u', name: 'n', contentType: 'string', content: [{ data: 'x' }] }).version).toBe('v2');
 });
 
-// ------------------------------------------------------------------ requiredAttributeItems: the one required-custom-attribute filler
-
 const NOW = new Date('2026-10-15T13:45:56.789Z');
 const def = (o: Json): Json => ({ uuid: 'aaaaaaaa-0000-4000-8000-000000000001', name: 'attr', properties: { required: true }, ...o });
 
-// requiredAttributeItems: version v3 by default (the definition's own kept) and the contentType on the attribute AND on every item
 test('requiredAttributeItems defaults to v3 and sets the contentType on attribute and every item', () => {
     const out = requiredAttributeItems([def({ contentType: 'string' }), def({ contentType: 'string', version: 'v2', uuid: 'aaaaaaaa-0000-4000-8000-000000000002' })], 'users', 'val', NOW);
     expect(out[0]).toMatchObject({ version: 'v3', contentType: 'string', content: [{ data: 'val', contentType: 'string' }] });
     expect(out[1].version).toBe('v2');
 });
 
-// requiredAttributeItems: one value per content type (string, text, codeblock, integer, float, boolean, date, time, datetime)
 test('requiredAttributeItems fills one value per content type, from string to datetime', () => {
     const data = (contentType: string): unknown => contentOf(requiredAttributeItems([def({ contentType })], 'groups', 'val', NOW)[0])[0].data;
     expect(['string', 'text', 'codeblock'].map(data)).toEqual(['val', 'val', 'val']);
@@ -46,8 +40,6 @@ test('requiredAttributeItems fills one value per content type, from string to da
     for (const t of ['time', 'datetime', 'date']) expect(contentOf(requiredAttributeItems([def({ contentType: t })], 'groups', 'val', NOW)[0])[0].contentType).toBe(t);
 });
 
-// requiredAttributeItems: a list copies its first predefined item as is and completes the contentType; optional attributes are
-// left out; an unfillable type throws
 test('requiredAttributeItems copies the first predefined list item, skips optional, throws if unfillable', () => {
     const list = def({ contentType: 'string', properties: { required: true, list: true }, content: [{ reference: 'r1', data: 'd1', contentType: 'string' }, { reference: 'r2', data: 'd2' }] });
     expect(requiredAttributeItems([list], 'users', 'val', NOW)[0].content).toEqual([{ reference: 'r1', data: 'd1', contentType: 'string' }]);
@@ -57,8 +49,6 @@ test('requiredAttributeItems copies the first predefined list item, skips option
     expect(() => requiredAttributeItems([def({ contentType: 'secret' })], 'users', 'val', NOW)).toThrow(/cannot fill/);
     expect(() => requiredAttributeItems([def({ contentType: 'secret' })], 'users', 'val', NOW), 'a typed error, so a spec skips on it and on nothing else').toThrow(UnfillableAttributeError);
 });
-
-// ------------------------------------------------------------------ every caller of the one filler sends v3 items with the contentType
 
 function fakeApi(handler: (url: string) => { status: number; body?: unknown }) {
     const calls: string[] = [];
@@ -82,7 +72,6 @@ const definitions = () => fakeApi((url) => (url.includes('/attributes/custom/res
 for (const [label, fill] of [
     ['regressionApi.requiredCustomAttributes', (api: any) => requiredCustomAttributes(api, 'groups', 'val')],
 ] as const) {
-    // ${label} is the one filler: a time and a datetime definition give v3 items with the contentType on the attribute and the item
     test(`${label} is the one filler: time and datetime definitions give v3 items`, async () => {
         const { api } = definitions();
         const out = await fill(api);
@@ -105,8 +94,6 @@ test('attributeRequest: a predefined-list value carries reference, data and cont
     expect(attributeRequest({ uuid: U(9), name: 'txt', contentType: 'string', data: ['red'] }).content, 'a free value has no reference').toEqual([{ data: 'red', contentType: 'string' }]);
 });
 
-// ------------------------------------------------------------------ a fifth copy fails the suite
-
 /**
  * Functions of utils/ that read connector attribute DEFINITIONS (not custom attributes) and fill their own required ones: a different
  * contract (v2 data attributes).
@@ -117,7 +104,6 @@ function sourceFiles(dir: string): string[] {
     return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? sourceFiles(path.join(dir, e.name)) : e.name.endsWith('.ts') ? [path.join(dir, e.name)] : []));
 }
 
-/** Top-level blocks of a file: a block starts at a column-0 `function` / `export` / `const` line. */
 function blocks(text: string): Array<{ name: string; body: string }> {
     const out: Array<{ name: string; body: string }> = [];
     let cur: { name: string; lines: string[] } | undefined;
@@ -133,8 +119,6 @@ function blocks(text: string): Array<{ name: string; body: string }> {
     return out;
 }
 
-// utils/ holds ONE required-custom-attribute filler (customAttributes.requiredAttributeItems): no other function builds
-// `content: [{ data ... }]` items from required attribute definitions
 test('utils/ holds one required-custom-attribute filler and no other function builds its content items', () => {
     const utils = path.resolve(__dirname, '../../utils');
     const shared = path.join(utils, 'regression', 'customAttributes.ts');

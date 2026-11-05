@@ -1,9 +1,6 @@
 /**
- * ownCrud on the wire: a real Playwright APIRequestContext through the guard to a loopback fake core, with assertions on the
- * ledger LINES. `createOwn` records before it returns and records nothing for a refusal; `recordIfAccepted` and
- * `probeCollectionCreate` record an accepted create (a foreign name included) and nothing on a 4xx; `deleteOwn` removes an
- * own live object and writes the `deleted` line only on 200 / 204 (or an accepted extra status) after the read-back, hands a
- * refusal back, and refuses a foreign object or a raw context before anything is sent.
+ * ownCrud on the wire: a real Playwright APIRequestContext through the guard to a loopback fake core, with assertions on
+ * the ledger LINES.
  */
 import { APIRequestContext, expect, test } from '@playwright/test';
 import { GuardedApi } from '../../utils/regression/guard/types';
@@ -20,7 +17,6 @@ const SPEC = 'ownCrud.spec';
 const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const GROUPS = '/api/v1/groups';
 
-/** Detail URLs in the store; a DELETE answers `deleteStatus` and removes the object on a 2xx; a POST answers `createAnswer`. */
 class OwnCrudCore extends FakeCore {
     deleteStatus = 204;
     createAnswer: Answer = { status: 201, body: { uuid: U(77) } };

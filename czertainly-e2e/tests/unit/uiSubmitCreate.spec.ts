@@ -1,11 +1,6 @@
 /**
- * uiSubmitCreate — `submitCreate` hands back the create answer before any redirect, and `setSwitch` proves the state it sets.
- *
- * Checks, on a stand-in form whose Create button POSTs and whose route never changes: `submitCreate` returns status, uuid,
- * request, body and `ApiAnswer` at once; `waitForDetailRoute` is the step that fails, and returns the uuid once the route
- * arrives (also for a two-uuid route); the wait is registered BEFORE the click; a double click sends two requests and
- * returns the first answer. `setSwitch` clicks the label of a hidden input, never forces it, and fails when the state does
- * not follow. The ledger line is written between the steps, so a redirect timeout never leaves a created object off the ledger.
+ * uiSubmitCreate — `submitCreate` hands back the create answer
+ * before any redirect, and `setSwitch` proves the state it sets.
  */
 import { expect, test } from '@playwright/test';
 import { submitCreate, waitForDetailRoute } from '../../pages/ui/detailRoute';
@@ -52,7 +47,6 @@ test('submitCreate returns the answer although the redirect never comes; waitFor
 const switchPage = (follows: boolean) => `<!doctype html><html><body><div id="scope"><label for="flag">Flag</label>
   <label for="flag"><input type="checkbox" id="flag" data-testid="switch-flag-input" style="position:absolute;opacity:0;width:1px;height:1px" ${follows ? '' : 'onclick="event.preventDefault()"'}></label></div></body></html>`;
 
-/** A form whose Create handler sends a SYNCHRONOUS request: the answer is complete before `click()` returns. */
 const syncForm = `<!doctype html><html><body><main><div role="dialog" aria-label="Create Thing">
   <button data-testid="progress-button" onclick="const x = new XMLHttpRequest(); x.open('POST', '/api/v1/things', false); x.send('{}')">Create</button>
   </div></main></body></html>`;

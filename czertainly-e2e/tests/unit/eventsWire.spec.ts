@@ -1,8 +1,6 @@
 /**
- * The events and discovery helpers on the wire: requests go through a real APIRequestContext to a stateful loopback fake core
- * (the pattern of configWire.spec.ts), and each test asserts what ARRIVED — own-object checks before anything is sent, ledger
- * lines before the request (associations) or right after it (creates), platform-level associations and schedules refused
- * without `localStack`, notification deletes recorded only when accepted, discovery creates / controls / onboarded records.
+ * The events and discovery helpers on the wire: requests go through a real APIRequestContext to a stateful loopback fake
+ * core (the pattern of configWire.spec.ts), and each test asserts what ARRIVED.
  */
 import { APIRequestContext, expect, test } from '@playwright/test';
 import { controlDiscovery, createOwnDiscovery, DiscoveryConnector, probeDiscovery, recordOnboarded } from '../../utils/regression/discovery/discoveryApi';
@@ -40,7 +38,6 @@ const CONNECTOR: DiscoveryConnector = { uuid: U(5), name: 'ip-v2', generation: '
 
 class EventsCore extends BaseCore {
     readonly assoc = new Map<string, Record<string, string[]>>();
-    /** `true` per association POST that arrived while the ledger already held its `eventAssociations` line. */
     readonly recordedBeforeSend: boolean[] = [];
     assocStatus = 204;
     profileDeleteStatus = 204;
@@ -117,7 +114,6 @@ async function refusal(call: Promise<unknown>): Promise<string> {
     }
 }
 
-/** The guard's refusal of a call with its message (a mutant that is refused for ANOTHER reason is caught by the text). */
 async function refusalMessage(call: Promise<unknown>): Promise<string> {
     try {
         await call;
@@ -134,8 +130,6 @@ function ledgerOwnGroup(): OwnRef {
     return ref;
 }
 const stranger = (uuid: string): OwnRef => ({ uuid, name: 'not-this-run', kind: 'own' });
-
-// ------------------------------------------------------------------ workflow chain and associations
 
 test('createOwnChain POSTs condition, rule, execution, action and trigger, each recorded in the ledger; nothing is associated', async () => {
     const chain = await createOwnChain(api, SPEC, 'wire', { items: [{ fieldSource: 'property', fieldIdentifier: 'COMMON_NAME', operator: 'EQUALS', value: 'x' }], executionItems: [] });
@@ -188,7 +182,6 @@ test('a foreign group or a foreign trigger is refused before anything is sent', 
     const group = ledgerOwnGroup();
     const { trigger } = await createOwnChain(api, SPEC, 'foreign', { ignore: true });
     server.reset();
-    // The refusal kind is the evidence (a mutant that lets the call through, or one that fails for another reason, is caught here).
     expect(await refusal(associateTriggers(api, SPEC, { event: EVENT.actionPerformed, resource: 'groups', object: stranger(FOREIGN_GROUP), triggers: [trigger] })), 'a foreign scope object').toBe('ownership');
     expect(await refusal(associateTriggers(api, SPEC, { event: EVENT.actionPerformed, resource: 'groups', object: group, triggers: [stranger(FOREIGN_TRIGGER)] })), 'a foreign trigger').toBe('ownership');
     expect(server.mutations(), 'nothing left the runner').toEqual([]);
@@ -222,8 +215,6 @@ test('scheduling a discovery (a platform endpoint) is refused without localStack
     expect(server.mutations()).toEqual([]);
 });
 
-// ------------------------------------------------------------------ notification profiles
-
 test('an internal-only profile is POSTed without an instance and recorded; a delete is recorded only when the platform accepted it', async () => {
     const profile = await createOwnInternalProfile(api, SPEC, 'np', { recipientType: 'owner' });
     const body = JSON.parse(server.arrived.find((a) => a.url === '/api/v1/notificationProfiles')!.body);
@@ -237,8 +228,6 @@ test('an internal-only profile is POSTed without an instance and recorded; a del
     expect((await deleteOwnProfile(api, profile, SPEC)).status).toBe(204);
     expect(readLedger().filter((l) => l.event === 'deleted').map((l) => l.type)).toEqual(['notificationProfiles']);
 });
-
-// ------------------------------------------------------------------ discovery
 
 test('createOwnDiscovery (v2): the body follows the live definitions, the run is recorded with the server clock; controls pass for own / probe uuids only', async () => {
     const run = await createOwnDiscovery(api, SPEC, 'disc', { connector: CONNECTOR, target: { hosts: ['192.0.2.0/24'], ports: ['443'], parallel: 2 } });
@@ -270,7 +259,6 @@ test('recordOnboarded records the NEW certificates (and their keys) as derived l
         { uuid: U(1), inventoryUuid: NEW_CERT, commonName: 'new.example.test', newlyDiscovered: true, processed: true },
         { uuid: U(2), inventoryUuid: EXISTING_CERT, commonName: 'old.example.test', newlyDiscovered: false, processed: true },
     ];
-    // the fake only filters by the query's flag: serve the NEW row for newlyDiscovered=true
     const answer = core.answer;
     core.answer = (a) => (/\/certificates\?/.test(a.url) && /newlyDiscovered=true/.test(a.url) ? { status: 200, body: { certificates: core.discovered.filter((r) => r.newlyDiscovered), totalPages: 1 } } : answer(a));
     core.certificates.set(NEW_CERT, { uuid: NEW_CERT, key: { uuid: NEW_KEY } });
@@ -284,8 +272,6 @@ test('recordOnboarded records the NEW certificates (and their keys) as derived l
     await recordOnboarded(api, SPEC, run);
     expect(readLedger().filter((l) => l.derived)).toHaveLength(2);
 });
-
-// ------------------------------------------------------------------ custom attribute value, platform trigger gate
 
 test('setOwnCustomAttribute PATCHes the attribute endpoint with the content list; a foreign certificate or attribute is refused before anything leaves', async () => {
     const cert = recordCreated('certificates', { uuid: U(801), name: runName('cert') }, { spec: SPEC });

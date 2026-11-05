@@ -1,11 +1,5 @@
 /**
  * regressionProjects — unit tests of the regression config's project table (utils/regression/regressionProjects.ts).
- *
- * Checks:
- *   - the logout file runs only in the `logout` project, and `logout` is the teardown of `regression`, so it runs
- *     after failed rows
- *   - `run-setup` depends on `snapshot` and `regression` on it; the API config does not depend on it
- *   - order: snapshot, run-setup, regression, logout, then non-interference
  */
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
@@ -28,7 +22,6 @@ test('the logout file is selected by logout only, every other REG spec by regres
         const names = projectsSelectingFile(projects.filter((p) => p.name === 'regression' || p.name === 'logout'), f);
         expect(names, f).toEqual(LOGOUT_FILE.test(f) ? ['logout'] : ['regression']);
     }
-    // The logout file is the sign-out spec of the sign-in and access folder, anchored at a path boundary.
     expect(LOGOUT_FILE.test('tests/regression/01-sign-in-and-access/99-sign-out.spec.ts')).toBe(true);
     expect(LOGOUT_FILE.test('tests/regression/01-sign-in-and-access/98-sign-out.spec.ts')).toBe(false);
     expect(LOGOUT_FILE.test('tests/regression/03-configuration/99-sign-out.spec.ts')).toBe(false);
@@ -58,7 +51,6 @@ test('run-setup runs after snapshot and before regression, and is infrastructure
     };
     for (const p of projects.filter((x) => x.name !== 'logout' && x.name !== 'non-interference')) place(p.name!);
     expect(order).toEqual(['snapshot', 'run-setup', 'regression']);
-    // REG_PHASE=B keeps the setup (infrastructure: no @phaseB grep), and the @local invert still applies to it.
     const [, , setupB] = resolveProjectFilters({ projects: regressionProjects({ REG_PHASE: 'B' }) });
     expect(setupB.name).toBe('run-setup');
     expect(selectsTest(setupB, 'REG-RUN-01 @regression')).toBe(true);
@@ -78,7 +70,6 @@ test('logout is the teardown project of regression, has no dependencies and shar
     expect(logout.use).toEqual(regression.use);
     expect(logout.timeout).toEqual(regression.timeout);
     expect(projects.find((p) => p.name === 'snapshot')!.teardown).toBe('non-interference');
-    // Playwright 1.58 refuses a teardown with dependencies and a dependency on a teardown: neither is declared.
     expect(projects.filter((p) => p.dependencies?.includes('logout') || p.dependencies?.includes('non-interference'))).toEqual([]);
 });
 
@@ -98,7 +89,6 @@ test('logout is not infrastructure: the @local invert and @phaseB grep apply to 
     expect(selectsTest(snapshot, 'setup')).toBe(true);
 });
 
-// the API projects: snapshot → gate → first and rest API projects, the regexes shared with the regression config
 test('the API projects: snapshot, gate, then the first and rest projects share the config regexes', () => {
     const projects = apiProjects({});
     expect(projects.map((p) => p.name)).toEqual(['snapshot', 'non-interference', 'gate', 'api-p1', 'api-rest']);
@@ -123,13 +113,12 @@ test('the API projects: snapshot, gate, then the first and rest projects share t
 
 test('in the real tree the sign-out spec is the only file of the logout project and no other regression test file matches', () => {
     const root = path.resolve(__dirname, '..', '..');
-    // every file Playwright's default testMatch would pick up: *.spec / *.test with a ts, js, tsx, jsx, mts, cts, mjs or cjs extension
+    // every file Playwright's default testMatch would pick up.
     const PLAYWRIGHT_TEST_FILE = /\.(spec|test)\.[cm]?[jt]sx?$/;
     const walk = (dir: string): string[] => fs.readdirSync(path.join(root, dir), { withFileTypes: true })
         .flatMap((e) => (e.isDirectory() ? walk(path.posix.join(dir, e.name)) : PLAYWRIGHT_TEST_FILE.test(e.name) ? [path.posix.join(dir, e.name)] : []));
     const specs = walk('tests/regression');
     expect(specs.length, 'the regression tree holds specs').toBeGreaterThan(15);
-    // The sign-out spec lives in the secondary tree; the main-flow branch has none and its logout project selects nothing.
     const signOut = specs.filter((f) => LOGOUT_FILE.test(f));
     expect(signOut).toEqual(signOut.length ? ['tests/regression/01-sign-in-and-access/99-sign-out.spec.ts'] : []);
     const projects = regressionProjects({}).filter((p) => p.name === 'regression' || p.name === 'logout');

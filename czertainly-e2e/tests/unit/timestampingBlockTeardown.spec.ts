@@ -1,7 +1,7 @@
 /**
  * The timestamping block's tear-down (utils/timestamping/blockTeardown.ts): it selects exactly the block's ledger lines
- * of this run (spec `timestamping/…`, plus every later line about the same uuids), and it follows the run-end
- * teardown's switches — nothing to delete means no login, the dry run and API_DELETE_OWN=off delete nothing.
+ * of this run (spec `timestamping/…`, plus every later line about the same uuids), and it follows the run-end teardown's
+ * switches — nothing to delete means no login, the dry run and API_DELETE_OWN=off delete nothing.
  */
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { readLedger, type LedgerLine } from '../../utils/regression/ledger/ledger';
@@ -67,8 +67,6 @@ test('blockLines: a derived object of a block object (the certKey_ key of a bloc
     expect(blockLines([certificate, derivedKey, foreignDerived], RUN)).toEqual([certificate, derivedKey]);
 });
 
-// ------------------------------------------------------------------ the delete path, through the run-end engine
-
 const ENV_KEYS = ['REG_STATE_DIR', 'CLEANUP_LEDGER_FILE'];
 const saved: Record<string, string | undefined> = {};
 test.beforeEach(({}, testInfo) => {
@@ -123,8 +121,6 @@ test('a failed delete makes the teardown red, naming type and uuid only (the run
     expect(readLedger().filter((l) => l.event === 'deleted')).toEqual([]);
 });
 
-// ------------------------------------------------------------------ a shared tier: the identity of the tier and of the object decide
-
 test('shared tier: a line recorded on another tier is left alone; an own line of this tier is deleted (the four timestamping types)', async () => {
     const here = env({ BASE_URL: 'https://tier-a.example/' });
     const hereTier = tierIdentity(here)!;
@@ -132,7 +128,7 @@ test('shared tier: a line recorded on another tier is left alone; an own line of
         line({ type, name: `${RUN}-${type}`, tier: hereTier, ...(type === 'tspBasicCredentials' ? { parents: { tspProfile: uuid() } } : {}) }));
     const elsewhere = line({ type: 'timeQualityConfigurations', name: `${RUN}-tqc-elsewhere`, tier: tierIdentity({ BASE_URL: 'https://tier-b.example/' })! });
     const removed: string[] = [];
-    // The engine reports a line of another tier as an object it could not delete (the run is red, naming it); it never sends a delete for it.
+    // The engine reports a line of another tier as an object it could not delete (the run is red, naming it)
     const run = teardownBlock({ env: here, readLines: () => [...mine, elsewhere], authenticate: fakeAuthenticate({ count: 0 }), handler: stub(removed), retryDelayMs: 1 });
     await expect(run).rejects.toThrow(new RegExp(`could not delete 1 object\\(s\\).*timeQualityConfigurations ${elsewhere.uuid}$`));
     expect(removed.sort(), 'the lines of this tier, none of the other tier').toEqual(mine.map((l) => l.uuid).sort());

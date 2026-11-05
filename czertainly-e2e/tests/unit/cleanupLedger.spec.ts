@@ -1,9 +1,7 @@
 /**
- * Unit tests for the cleanup ledger — the mechanism that stops a leaking run from reporting green.
- *
- * These are deliberately environment-free: the ledger is a file and a few pure helpers, and the
- * behaviour worth pinning down is how a failure is classified, whether a retry is given, and
- * whether a cascade is reported as one cause rather than three.
+ * Unit tests for the cleanup ledger — the mechanism that stops a leaking run from reporting green. These are
+ * deliberately environment-free: they pin how a failure is classified, whether a retry is given, and that a cascade is
+ * reported as one cause.
  */
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';

@@ -1,8 +1,6 @@
 /**
  * The run-end teardown with fake handlers and no environment: the delete order and its reference graph, refusal of
- * anything the guard does not accept (another tier included), cascade reporting, the ledger re-read between steps, a
- * fresh context per object, kept objects, the run-id checks, the dry run on every path, the cleanup report text, and a
- * missing before snapshot on a shared tier.
+ * anything the guard does not accept.
  */
 import { randomUUID } from 'node:crypto';
 import { request, test, expect } from '@playwright/test';
@@ -22,7 +20,6 @@ import { RESOURCE_REGISTRY, TEARDOWN_STEPS } from '../../utils/regression/resour
 import { loopbackServer } from './helpers/loopbackServer';
 import { useEnv, fakeContext } from './helpers/guardRig';
 
-// Each test loads the handler modules afresh (a test may register a module of its own).
 test.afterEach(() => resetHandlerModulesForTests());
 
 const RUN = 'qa-reg-20261013-120000-ab12';
@@ -47,7 +44,6 @@ function recorder(fail: Record<string, Error> = {}): { handler: (type: string) =
 }
 
 const fakeApi = fakeContext({ dispose: async () => undefined });
-/** Defaults of every executeTeardown call here: no tier check (no BASE_URL in unit tests), no retry delay. */
 const quick = { tier: null, retryDelayMs: 1 } as const;
 
 test('the plan follows the delete order and leaves other runs and deleted objects out', () => {
@@ -180,7 +176,6 @@ test('failures are recorded with the object that blocks them', async () => {
     expect(failures.find((f) => f.uuid === ra.uuid)).toMatchObject({ resource: 'raProfiles', uuid: ra.uuid, status: 422, blockedBy: `certificates ${cert.uuid}` });
 });
 
-// the ledger is re-read before each step: a derived line added by a discovery is deleted in the certificate step
 test('the ledger is re-read before each step: a derived line from a discovery is deleted', async () => {
     const lines: LedgerLine[] = [line('discoveries')];
     const removed: string[] = [];
@@ -295,7 +290,8 @@ test('API_DELETE_OWN=0 keeps the objects and still reports what specs failed to 
     await expect(runTeardown()).rejects.toThrow(/Cleanup did not complete/);
 });
 
-// known bugs worked around during the deletes (the role / user detail-500 case) are collected and listed in the kept report
+// known bugs worked around during the deletes (the role / user
+// detail-500 case) are collected and listed in the kept report.
 test('known bugs worked around during the deletes are collected and listed in the kept report', async ({}, testInfo) => {
     const role = line('roles');
     const handler = (): TeardownHandler => ({
@@ -331,8 +327,7 @@ test('known bugs of the setup and of the teardown reach the run summary through 
     const role = line('roles', { uuid: '00000000-0000-4000-8000-0000000000a1' });
     const detail = `/api/v1/roles/${role.uuid}`;
     let deleted = false;
-    // A loopback core with core#2511: the own role reads before the delete; after it the detail answers 500 and the
-    // full list (pre-existing rows only) no longer names it.
+    // A loopback core with core#2511: the own role reads before the delete; after it the detail answers 500.
     const core = await loopbackServer((a) => {
         if (a.method === 'DELETE' && a.url === detail) {
             deleted = true;
@@ -345,7 +340,6 @@ test('known bugs of the setup and of the teardown reach the run summary through 
     const raw = await request.newContext({ baseURL: core.origin });
     try {
         expect(formatRunSummary(RUN, undefined)).toMatch(/known product bugs worked around: none/);
-        // The setup's path (API-GEN-33[guard]): removeOwnObject with the default known-bug sink records it for the run.
         await removeOwnObject({ api: raw, runId: RUN, ledger: [role] }, role, 'API-GEN-33');
         expect(core.arrived.map((a) => `${a.method} ${a.url}`)).toEqual([`GET ${detail}`, `DELETE ${detail}`, `GET ${detail}`, 'GET /api/v1/roles']);
         expect(readKeptReport(RUN)?.knownBugs).toEqual([expect.objectContaining({ bug: 'core#2511', type: 'roles', uuid: role.uuid })]);
@@ -368,9 +362,8 @@ test('known bugs of the setup and of the teardown reach the run summary through 
     }
 });
 
-// ------------------------------------------------------------------ delete order, pre-step hooks, kept approvals
-
-// DELETE_ORDER pins the workflow step as triggers → rules → conditions → actions → executions, then notification profiles → instances
+// DELETE_ORDER pins the workflow step as triggers → rules → conditions → actions → executions, then notification
+// profiles → instances.
 test('DELETE_ORDER pins the workflow step order from triggers to executions, then notification profiles', () => {
     const workflow = DELETE_ORDER.find((s) => s.types.includes('triggers'))!;
     expect(workflow.types).toEqual(['triggers', 'rules', 'conditions', 'actions', 'executions']);
@@ -378,7 +371,6 @@ test('DELETE_ORDER pins the workflow step order from triggers to executions, the
     const notification = DELETE_ORDER.find((s) => s.types.includes('notificationProfiles'))!;
     expect(notification.types).toEqual(['notificationProfiles', 'notificationInstances']);
     expect(notification.step).toBeGreaterThan(workflow.step);
-    // Mutant: executions before actions, or the notification step before the workflow step, breaks the rows below too.
     expect(isDeletedBefore('actions', 'executions')).toBe(true);
     expect(isDeletedBefore('executions', 'actions')).toBe(false);
     expect(isDeletedBefore('executions', 'notificationProfiles')).toBe(true);
@@ -388,18 +380,17 @@ test('DELETE_ORDER pins the workflow step order from triggers to executions, the
     expect(isDeletedBefore('tokenProfiles', 'tokens')).toBe(true);
 });
 
-// the reference graph core enforces (REFERENCED_BY, each pair with its core citation) is satisfied by DELETE_ORDER
+// the reference graph core enforces (REFERENCED_BY, each pair with its core citation) is satisfied by DELETE_ORDER.
 test('the reference graph core enforces (REFERENCED_BY, each pair cited) is satisfied by DELETE_ORDER', () => {
     expect(REFERENCED_BY.length).toBeGreaterThanOrEqual(12);
     const wrong = REFERENCED_BY.filter((p) => !isDeletedBefore(p.b, p.a)).map((p) => `${p.b} must be deleted before ${p.a} (${p.core})`);
     expect(wrong).toEqual([]);
     for (const p of REFERENCED_BY) expect(p.core, `${p.a} ← ${p.b} cites a core class or the handler order`).toMatch(/[A-Z]\w*(Impl|Writer|Service)\b|handler order/);
-    // Every pair names types the table knows.
     const known = new Set(DELETE_ORDER.flatMap((s) => s.types));
     for (const p of REFERENCED_BY) expect(known.has(p.a) && known.has(p.b), `${p.a} / ${p.b} are in DELETE_ORDER`).toBe(true);
 });
 
-// every type with a handler module is in exactly one DELETE_ORDER step; every live-read / id-named ledger type has a step
+// every type with a handler module is in exactly one DELETE_ORDER step.
 test('every type with a handler module is in exactly one DELETE_ORDER step; read types have one', () => {
     const counts = new Map<string, number>();
     for (const s of DELETE_ORDER) for (const t of s.types) counts.set(t, (counts.get(t) ?? 0) + 1);
@@ -409,7 +400,6 @@ test('every type with a handler module is in exactly one DELETE_ORDER step; read
     expect(DELETE_ORDER.map((s) => s.step)).toEqual(DELETE_ORDER.map((_s, i) => i + 1));
 });
 
-/** A fake core that applies core's reference refusals (422 while a dependant exists) to a full workflow / notification chain. */
 function chainCore(): { handler: (type: string) => TeardownHandler | undefined; deleted: string[] } {
     const deleted: string[] = [];
     const refs: Record<string, string[]> = {
@@ -429,8 +419,8 @@ function chainCore(): { handler: (type: string) => TeardownHandler | undefined; 
     return { handler, deleted };
 }
 
-// a full trigger / rule / condition / action / execution / notification profile / instance chain against a core that refuses
-// out-of-order deletes: all deleted, 0 kept, 0 failed
+// a full trigger / rule / condition / action / execution / notification profile / instance chain against a core that
+// refuses out-of-order deletes: all deleted, 0 kept, 0 failed.
 test('a full workflow chain against a core refusing out-of-order deletes: all deleted, 0 kept, 0 failed', async () => {
     const lines = ['notificationInstances', 'notificationProfiles', 'executions', 'actions', 'conditions', 'rules', 'triggers', 'eventAssociations'].map((t) => line(t));
     const { handler, deleted } = chainCore();
@@ -441,8 +431,7 @@ test('a full workflow chain against a core refusing out-of-order deletes: all de
     expect(readCleanupFailures()).toEqual([]);
 });
 
-// pre-step hooks: a pre-step runs once before its step with a fresh context, only when `when` says so; its failure is a cleanup
-// failure and the step still runs
+// pre-step hooks: a pre-step runs once before its step with a fresh context, only when `when` says so.
 test('pre-step hooks run once before their step with a fresh context; a failure is a cleanup failure', async () => {
     const lines = [line('certificates'), line('roles')];
     const order: string[] = [];
@@ -463,20 +452,16 @@ test('pre-step hooks run once before their step with a fresh context; a failure 
     expect(result.failed).toEqual([]);
     expect(result.warnings).toEqual([expect.stringMatching(/pre-step "boom" failed: refused by core/)]);
     expect(readCleanupFailures()).toEqual([expect.objectContaining({ resource: 'pre-step:boom', message: expect.stringMatching(/refused by core/) })]);
-    // The default hook: the approval ungate before the certificate step, applicable only with own approval profiles AND RA profiles.
     const [ungate] = defaultPrepSteps();
     expect(ungate.before).toBe(deleteStepOf('certificates'));
     expect(ungate.when([line('approvalProfiles'), line('raProfiles')], RUN)).toBe(true);
     expect(ungate.when([line('approvalProfiles')], RUN)).toBe(false);
     expect(ungate.when([line('raProfiles')], RUN)).toBe(false);
-    // Without applicable hooks no context is opened for them (the existing fresh-context rows count contexts per object only).
     contexts = 0;
     await executeTeardown({ ...quick, runId: RUN, newApi, readLines: () => [line('roles')], handler, onDeleted: () => undefined });
     expect(contexts).toBe(1);
 });
 
-// approvals / approval profiles the platform retains may be answered `kept` — a warning and a kept-report line, never a
-// failure; REG_KEPT_STRICT=1 turns it red
 test('approvals the platform retains may be answered kept, as a warning; REG_KEPT_STRICT=1 turns it red', async ({}, testInfo) => {
     const ap = line('approvalProfiles');
     const approval = line('approvals');
@@ -491,8 +476,6 @@ test('approvals the platform retains may be answered kept, as a warning; REG_KEP
     expect(isKeptStrict({ REG_KEPT_STRICT: '1' })).toBe(true);
 });
 
-// importing runTeardown loads no env file: utils/env.ts (which loads the dotenv file when imported) is required only when the teardown
-// authenticates
 test('importing runTeardown loads no env file; utils/env.ts is required only when authenticating', ({}, testInfo) => {
     const utilsRoot = path.resolve(__dirname, '../../utils') + path.sep;
     const ours = (k: string) => k.startsWith(utilsRoot);
@@ -515,13 +498,11 @@ test('importing runTeardown loads no env file; utils/env.ts is required only whe
         for (const k of Object.keys(require.cache)) if (ours(k)) delete require.cache[k];
         for (const [k, v] of saved) require.cache[k] = v;
     }
-    // The source keeps the require inside authenticatedApi (no top-level import of the env module).
     const src = fs.readFileSync(path.resolve(__dirname, '../../utils/regression/teardown/runTeardown.ts'), 'utf8');
     expect(src).not.toMatch(/^import [^;]*from '\.\.\/env';/m);
 });
 
-// A handler module that cannot be loaded must stop the run at import, before any object is touched: the handlers are imported
-// statically, so a broken module makes runTeardown itself fail to load (fail closed), never a silent run without that handler.
+// A handler module that cannot be loaded must stop the run at import, before any object is touched.
 test('a teardown handler module that fails to load fails the import of runTeardown instead of being skipped', () => {
     const utilsRoot = path.resolve(__dirname, '../../utils') + path.sep;
     const ours = (k: string) => k.startsWith(utilsRoot);
@@ -547,14 +528,10 @@ test('a teardown handler module that fails to load fails the import of runTeardo
     }
 });
 
-// ----------------------------------- the cleanup report and the run summary keep the full error text; the compliance-profile delete order
-
 const PROFILE = 'bbbbbbbb-0000-4000-8000-000000000001';
 
 const WRAPPER = randomUUID();
 
-// failures keep the full error text: the cleanup report prints the message under the object line, the run summary lists every
-// failed removal with its text
 test('failures keep the full error text in the cleanup report and the run summary', () => {
     const report = formatCleanupReport([{ resource: 'complianceProfiles', uuid: PROFILE, name: 'own', message: 'Error: Failed to delete compliance profile: 422 - Object is associated with other items' }]);
     expect(report).toContain('no status');
@@ -565,24 +542,18 @@ test('failures keep the full error text in the cleanup report and the run summar
     expect(summary).toContain(`failed keys ${WRAPPER}: (no error text)`);
 });
 
-// dangling association: DELETE_ORDER deletes compliance profiles BEFORE RA profiles (a deleted RA profile leaves a dangling
-// association, unexpected core behaviour); the pair is in REFERENCED_BY; approval profiles stay valid
+// dangling association: DELETE_ORDER deletes compliance profiles BEFORE RA profiles.
 test('dangling association: compliance profiles are deleted before RA profiles (REFERENCED_BY pair)', () => {
     expect(isDeletedBefore('complianceProfiles', 'raProfiles')).toBe(true);
     expect(isDeletedBefore('raProfiles', 'complianceProfiles')).toBe(false);
     expect(REFERENCED_BY.some((r) => r.a === 'raProfiles' && r.b === 'complianceProfiles' && /suspected defect/.test(r.core))).toBe(true);
     const step = DELETE_ORDER.find((x) => x.types.includes('complianceProfiles'))!;
     expect(step.types.indexOf('complianceProfiles')).toBeLessThan(step.types.indexOf('raProfiles'));
-    // The other edges around it hold: certificates → RA profiles, RA profiles → authorities, approval profiles stay after their RA profiles
-    // (ungated by the pre-step).
     expect(isDeletedBefore('certificates', 'raProfiles')).toBe(true);
     expect(isDeletedBefore('raProfiles', 'authorities')).toBe(true);
     expect(isDeletedBefore('approvals', 'approvalProfiles')).toBe(true);
 });
 
-// ------------------------------------------------------------------ the final retry pass
-
-/** A certificate that core refuses (500) while an own SCEP profile still references it (live: API-PROT-35, step 4 before step 7). */
 function referencedCertificate(): { cert: LedgerLine; scep: LedgerLine; handler: (type: string) => TeardownHandler | undefined; calls: string[]; state: { scepGone: boolean } } {
     const cert = line('certificates');
     const scep = line('acmeProfiles'); // a step-7 type of the recorder set
@@ -737,7 +708,6 @@ test('final pass: the deleted ledger line is written first; when it throws, the 
         ...quick, runId: RUN, newApi: async () => fakeApi, readLines: () => [cert, scep], preSteps: [], onDeleted,
         handler: (type) => {
             const h = handler(type)!;
-            // the record as the first pass left it, read right before the pass attempt
             return { action: h.action, remove: async (c, l) => { if (l.uuid === cert.uuid && before.length === 0 && readCleanupFailures().length) before.push(...readCleanupFailures()); return h.remove(c, l); } };
         },
     });

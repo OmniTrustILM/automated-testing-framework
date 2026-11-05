@@ -1,11 +1,5 @@
 /**
  * timestampingGate — how the timestamping block is selected on a shared tier (tests/timestamping/SHARED-TIER.md).
- *
- * Checks a shared-tier row carries `@needs:timestamping` and no `@local`, a docker-bound or disruptive row carries `@local`,
- * and the block's four projects select the first on every tier and the second on a local one only. The `timestamping` need
- * answers `undefined` for a tier with the connectors, authority and vault instance, and a `deploy gate` reason for each
- * missing piece, after reads only; the `needs` fixture turns that reason into a skip. Nothing may be written before the need
- * is met. Runs the real guard over a fake request context that answers the need's four reads.
  */
 import { APIRequestContext, expect, test } from '@playwright/test';
 import * as fs from 'fs';
@@ -44,11 +38,9 @@ interface Tier {
     v2?: Json[];
     authorities?: Json[];
     vaults?: Json[];
-    /** `METHOD /path` → a status answered instead. */
     status?: Record<string, number>;
 }
 
-/** A guarded context over a fake core that serves the reads of the need and records every request. */
 function guarded(tier: Tier = {}): { api: GuardedApi; sent: string[] } {
     const sent: string[] = [];
     const answer = (method: string, url: string) => {
@@ -82,8 +74,6 @@ const withoutOpenssl = { requireTool: () => 'OpenSSL 3.x required, found "LibreS
 
 test.beforeEach(() => resetTimestampingNeedForTests());
 
-// ------------------------------------------------------------------ the tags
-
 test('a shared-tier row carries the need and no @local; a docker-bound or disruptive one is @local; the setup and teardown carry neither', () => {
     const base = ['@dev-tests', '@timestamping', '@issue:automated-testing-framework#41'];
     expect(devTests().tag).toEqual([...base, '@needs:timestamping']);
@@ -106,8 +96,6 @@ test('the block\'s projects select a shared-tier row on every tier and a local r
         expect(filters.map((f) => selectsTest(f, setup)), `${name}: setup and teardown`).toEqual([true, true, true, true]);
     }
 });
-
-// ------------------------------------------------------------------ the need: a tier without the components skips with a reason
 
 test('a tier with every component meets the need after reads only; the second ask reads nothing', async () => {
     const { api, sent } = guarded();
@@ -137,7 +125,6 @@ test('every missing component is a named deploy-gate reason, found by reads only
     expect(await reason({ vaults: [] })).toBe('deploy gate: no vault instance has the name TSA_VAULT_INSTANCE_NAME gives; the setup never creates one (@needs:timestamping)');
     // A reason names the variable, never the configured value.
     expect(await reason({ authorities: [] })).not.toContain(AUTHORITY_NAME);
-    // The tier answering a read with an error is the tier's "no" (a named reason); a refused identity is the run's failure.
     expect(await reason({ status: { 'GET /v1/connectors': 503 } })).toMatch(/^deploy gate: the tier did not answer a read of the timestamping components \(GET \/v1\/connectors answered HTTP 503\) \(@needs:timestamping\)$/);
     resetTimestampingNeedForTests();
     await expect(timestampingNeedProblem(guarded({ status: { 'GET /v1/connectors': 401 } }).api, env(), cfg(), withOpenssl)).rejects.toThrow(SetupError);
@@ -152,8 +139,6 @@ test('a runner without OpenSSL 3, a software-v1 or pkcs11 provider off a local s
     expect(await timestampingNeedProblem(api, pkcsEnv, cfg(pkcsEnv), withOpenssl)).toMatch(/^deploy gate: TSA_CRYPTO_PROVIDER=pkcs11 is not provisioned/);
     expect(sent).toEqual([]);
 });
-
-// ------------------------------------------------------------------ through the fixture: the row skips with the reason
 
 test('the needs fixture skips a row with the reason when the tier lacks a component, and does not skip when it has them', async ({}, testInfo) => {
     const bin = testInfo.outputPath('openssl');

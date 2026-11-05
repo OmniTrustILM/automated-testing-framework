@@ -1,11 +1,7 @@
 /**
- * REG-CFG-06 — A certificate group created through the UI (release checklist: Configuration 6; ilm#428).
- *
- * Creates the group, checks it exists with that e-mail, and that the detail tabs Users, Events and Event History open without
- * an error. The same name again is refused, and exactly one group has that name.
- *
- * Create-only: nothing is deleted. The create answer is put in the ledger before the dialog or the list is waited for; a
- * duplicate the platform accepted is recorded too, so the test then fails on it.
+ * REG-CFG-06 — A certificate group created through the UI (release checklist: Configuration 6; ilm#428). Creates the
+ * group, checks it exists with that e-mail, and that the detail
+ * tabs Users, Events and Event History open without an error.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { GroupPage } from '../../../pages/GroupPage';
@@ -34,7 +30,6 @@ test.describe('Certificate group configuration', { tag: tags.regression }, () =>
 
             const uuid = await test.step('Create → the group exists', async () => {
                 const answer = await submitRecordingByNameOnFailure({ type: 'groups', name, spec: own.spec, lookup }, () => groups.submitCreateForm());
-                // Ledger before assertion: from the create answer, before the dialog or the list is waited for.
                 const created = own.record('groups', answer, { name });
                 await expect(groups.createGroupDialog).toBeHidden();
                 await expect.poll(async () => (await findByName(api, '/api/v1/groups', name))?.uuid ?? '').not.toBe('');
@@ -57,8 +52,6 @@ test.describe('Certificate group configuration', { tag: tags.regression }, () =>
                 await groups.openCreateDialog();
                 await groups.fillCreateForm(form);
                 const again = await submitRecordingByNameOnFailure({ type: 'groups', name, spec: own.spec, note, lookup }, () => groups.submitCreateForm());
-                // A duplicate the platform accepted is this run's object too; the assertions below then fail. The answer may carry no id:
-                // the rows of the name are adopted from the list as well.
                 own.probe('groups', again, { name, note });
                 await own.adoptNamed('groups', name, { note });
                 await groups.assertDuplicateNameRefused();

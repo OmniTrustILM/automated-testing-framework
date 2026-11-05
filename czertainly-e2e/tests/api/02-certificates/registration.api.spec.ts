@@ -1,10 +1,7 @@
 /**
- * API-CERT-21, 22, 23 — Platform-level pre-registration through the v2 API (ilm#429).
- *
- * Rules: core#1820; ilm#279 (wrong secret). A CN with RFC 4514 special characters: core#2258, core#2509 (test.fail while open).
- * Only new own certificates, ledgered before any assertion. Event rows use an own trigger on an own clone of the run RA
- * profile and skip while a platform-level trigger on the event exists. Rows skip when maxFailedAttempts is not above 2
- * (settings are read, never set).
+ * API-CERT-21, 22, 23 — Platform-level pre-registration through
+ * the v2 API (ilm#429). Rules: core#1820; ilm#279 (wrong secret).
+ * Settings are read, never set; the event rows use an own trigger on an own clone of the run's RA profile.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { historyMessages, historyOf } from '../../../utils/regression/lifecycle/certificateHistory';
@@ -30,7 +27,6 @@ import { cloneRunRaProfile, OwnRaProfile } from '../../../utils/regression/ownRa
 import type { GuardedApi } from '../../../utils/regression/guard/types';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-/** How long a firing of an event is awaited. */
 const FIRING_WAIT = { timeoutMs: EVENT_FIRING_WAIT_MS };
 
 test.describe('Certificate pre-registration through the v2 API', { tag: tags.api }, () => {
@@ -80,13 +76,6 @@ test.describe('Certificate pre-registration through the v2 API', { tag: tags.api
             });
         });
 
-    // The two event arms observe through an own trigger on `Certificate registered`, associated on an own clone of the run RA
-    // profile (the run RA profile is shared by the run's other specs and is never associated): a firing in that scope is the event.
-    // A platform-level trigger on the event would act on these certificates too, so the arms skip then; the gate is read first.
-    /**
-     * An own clone of the run RA profile with an own trigger on `Certificate registered` associated on it; firings in its scope are the
-     * event.
-     */
     async function ownRegisteredObserver(api: GuardedApi, own: OwnObjects, suffix: string): Promise<{ ra: OwnRaProfile; scope: { resource: 'raProfiles'; objectUuid: string } }> {
         const clone = await cloneRunRaProfile(api, own.spec, suffix);
         const attr = await own.customAttribute(`${suffix}-mark`, { resources: ['certificates'] });
@@ -133,8 +122,6 @@ test.describe('Certificate pre-registration through the v2 API', { tag: tags.api
                 return r;
             });
             await test.step('A later challenge-protected registration bounds the wait; the one without a challenge never fired', async () => {
-                // A later challenge-protected registration in the same scope bounds the wait: once its firing is finished, the
-                // registration before it has been handled too; a short grace window then holds the absence.
                 const after = await registerOwnCertificate(api, observer.ra, own.spec, { suffix: 'c21evs', secret: newChallenge(), note: 'API-CERT-21 event arm: the registration after the one without a challenge' });
                 expect(after.answer.status, after.answer.text.slice(0, 300)).toBe(200);
                 const page = await waitForFinishedFirings(api, { event: EVENT.registered, scope, pageSize: 50 }, 2, FIRING_WAIT);
@@ -156,10 +143,8 @@ test.describe('Certificate pre-registration through the v2 API', { tag: tags.api
         }),
         async ({ api, own, ownRaProfile }) => {
             test.skip(isLocalTier(), 'local stack: the dev proxy (AUTH_MODE=header) or the localhost identity may authenticate a call with an invalid bearer token, so the 401 is not asserted there');
-            // The name is built (and checked) before the request: a failing name check cannot leave an accepted register unrecorded.
             const name = ownCommonName('c21-anon');
             const a = await sendRaw(api, 'POST', `${opsBase(ownRaProfile)}/certificates/register`, { csrAttributes: [], attributes: [] }, { headers: { authorization: 'Bearer invalid' }, identityOverride: true });
-            // Ledger first: a register accepted without credentials made a certificate of this run.
             own.probe('certificates', a, { name, note: 'register accepted with an invalid bearer', parents: { raProfile: ownRaProfile.uuid, authority: ownRaProfile.authorityUuid } });
             expect(a.status, a.text.slice(0, 200)).toBe(401);
         });
@@ -173,15 +158,11 @@ test.describe('Certificate pre-registration through the v2 API', { tag: tags.api
             test.setTimeout(MANY_STEPS_TEST_MS);
             const ra = ownRaProfile;
             const cn = checkedCommonName(specialCharCn(ownName('c21dn')));
-            // The bugs break the register itself (422 "Invalid subject DN … badly formatted directory string"), so the marker sits right
-            // before it; the setup above runs outside it. The test turns red when the bugs are fixed (then drop the pin).
             test.fail(true, 'core#2258 / core#2509: the subject DN built from request attributes is malformed and not RFC 4514 escaped (open)');
             const r = await registerOwnCertificate(api, ra, own.spec, { suffix: 'c21dn', cn, secret: newChallenge(), note: 'API-CERT-21 special-character CN (core#2258 / core#2509)' });
             expect(r.answer.status, r.answer.text.slice(0, 300)).toBe(200);
             await waitForCertificateState(api, r.cert!.uuid, 'registered', QUICK_STATE_WAIT_MS, { failOn: ['failed', 'rejected', 'issued'] });
             const detail = await getCertificate(api, r.cert!.uuid);
-            // RFC 4514 §2.4: a comma and a plus inside a value are escaped with a backslash. The CN keeps the run prefix at its start
-            // (a leading space would make the teardown refuse the certificate).
             expect(String(detail.subjectDn)).toContain(`CN=${cn.split(',')[0]}\\, O= QA\\+Team`);
         });
 
@@ -241,8 +222,7 @@ test.describe('Certificate pre-registration through the v2 API', { tag: tags.api
         async ({ api, own, ownRaProfile, needs }) => {
             test.setTimeout(LIFECYCLE_MS);
             const ra = ownRaProfile;
-            // Two wrong secrets are sent before the right one: a tier whose maxFailedAttempts is 2 or less would LOCK the
-            // authorization and the table could not be judged (settings are read, never set).
+            // Two wrong secrets are sent before the right one; a tier allowing 2 or fewer attempts would lock the authorization.
             await needs.registrationSettings({ minFailedAttempts: 3 });
             // 422, exactly one message that contains the text (the rest of the message names the certificate).
             const refused = (a: ApiAnswer, text: string) => {

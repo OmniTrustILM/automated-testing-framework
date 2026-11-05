@@ -15,18 +15,11 @@ import { primaryFamily } from '../../utils/timestamping/provisioning';
 import { devTests } from '../../utils/timestamping/tags';
 import { describeOutcome, requestTimestamp, TimestampOutcome } from '../../utils/timestamping/tsp';
 
+/** A connector outage reaches the client as an in-band failure, never an HTTP error or a token, and issuing resumes when it is back. */
 describeLocalOnly(test);
 
-/**
- * Core reaches the cryptography provider and the formatting connector over the connector wire. An
- * outage of either must reach the client as an in-band system failure, never as an HTTP error or a
- * token, and issuing must resume as soon as the connector is back.
- *
- * Tagged @slow: it stops a connector and waits for it to become healthy again.
- */
 test.describe('connector outage @slow', { tag: [...devTests({ slow: true, disruptive: true }).tag, DOCKER] }, () => {
   test.describe.configure({ timeout: 480_000 });
-  // The tests stop containers: a local stack with a docker daemon, and the explicit opt-in.
   test.skip(!timestampingConfig().allowDisruption, 'disruptive: set TSA_ALLOW_DISRUPTION=true');
   test.skip(() => !dockerAvailable(), 'docker is not available');
 

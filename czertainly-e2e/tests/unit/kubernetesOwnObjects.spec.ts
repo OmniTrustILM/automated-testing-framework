@@ -1,8 +1,6 @@
 /**
  * kubernetesOwnObjects — the Kubernetes ledger contract of utils/regression/kubernetesOwnObjects.ts with a fake kubectl
- * (REG_KUBECTL_BIN, a Node script that logs its arguments): an object is recorded as `k8s:<Kind>` before its apply, names
- * carry the run prefix, and `removeOwnK8sObject` deletes only ledger-proven own objects (newest first), proves them gone and
- * appends the `deleted` line; anything else is a cleanup failure, never a delete.
+ * (REG_KUBECTL_BIN). `removeOwnK8sObject` deletes only ledger-proven own objects.
  */
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
@@ -21,9 +19,6 @@ test.beforeEach(({}, testInfo) => {
     const dir = testInfo.outputPath('k8s');
     fs.mkdirSync(dir, { recursive: true });
     const bin = path.join(dir, 'fake-kubectl');
-    // Logs argv; `apply` fails with FAKE_KUBECTL_FAIL_APPLY; `get … -o name` prints FAKE_KUBECTL_LEFT (empty = gone) and
-    // fails for a resource named in FAKE_KUBECTL_NO_LIST; `auth can-i <verb> <resource>` answers yes unless
-    // "<verb> <resource>" is in FAKE_KUBECTL_CANNOT (then "no", exit 1, like kubectl).
     fs.writeFileSync(bin, `#!${process.execPath}
 const fs = require('fs');
 const args = process.argv.slice(2);

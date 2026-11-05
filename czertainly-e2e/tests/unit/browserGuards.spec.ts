@@ -1,6 +1,6 @@
 /**
- * Unit tests of utils/regression/browserGuards.ts: classification, the allow-list, console noise, write detection,
- * the error texts, and the per-label counts on a static page. A browser context answers every request itself.
+ * Unit tests of utils/regression/browserGuards.ts: classification, the allow-list, console noise, write detection, the
+ * error texts, and the per-label counts on a static page.
  */
 import { Browser, BrowserContext, expect, Page, Route, test } from '@playwright/test';
 import { BrowserGuards, classify, ignorableConsole, isUnexpectedWrite, isWriteMethod, listShapeProblems, matchAllowed, scanForErrorText } from '../../utils/regression/browserGuards';
@@ -9,8 +9,6 @@ test.describe.configure({ timeout: 60_000 });
 
 const failsFast = async (call: Promise<unknown>): Promise<boolean> => call.then(() => false, () => true);
 const BASE = 'http://127.0.0.1:9/';
-
-// ------------------------------------------------------------------ a context that is the "server"
 
 interface Served {
     inspection: { status: number; body: unknown };
@@ -52,9 +50,6 @@ const newServed = (html: string, patch: Partial<Served> = {}): Served => ({
     ...patch,
 });
 
-// ------------------------------------------------------------------ BrowserGuards
-
-/** The page the stand-in serves defines `run` on its window (the browser-side test hook). */
 declare global {
     interface Window {
         run(x: string): Promise<void>;
@@ -159,7 +154,6 @@ test('BrowserGuards counts console errors, page errors, 5xx, unexpected 4xx, wri
         guards.mark('clean2');
         await page.evaluate(() => { document.getElementById('out')!.textContent = ''; });
         expect(await guards.scanText()).toEqual([]);
-        // assertZero names every finding of a label, and passes for a clean one.
         guards.assertZero('clean');
         expect(await failsFast(Promise.resolve().then(() => guards.assertZero('client')))).toBe(true);
         expect(await failsFast(Promise.resolve().then(() => guards.assertZero()))).toBe(true);

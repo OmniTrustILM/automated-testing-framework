@@ -1,9 +1,6 @@
 /**
- * API-CERT-16 — Certificate approvals through the v2 API: override approve and reject (ilm#429).
- *
- * The approval profile is tied to an own RA profile clone only, never the run RA profile; the test skips without a CA.
- * Certificates, approvals and the clone are ledgered before any assertion, and the gate is released in `finally`.
- * The approval comment is recorded on the recipient (core#1453) and the history names the final status (core#1449).
+ * API-CERT-16 — Certificate approvals through the v2 API: override approve and reject (ilm#429). The approval profile is
+ * tied to an own RA profile clone only, never the run RA profile; the test skips without a CA.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { approvalDetail, approvalStatusLabel, decideApproval, findApproval, openApprovalGate, recipientComments, waitForApprovalStatus } from '../../../utils/regression/lifecycle/approvals';
@@ -29,7 +26,6 @@ test.describe('Certificate approvals through the v2 API', { tag: tags.api }, () 
             ],
         }),
         async ({ api, own }) => {
-            // Two gated issues (each a 60 s approval wait), one 180 s issuance, the reads.
             test.setTimeout(SLOW_LIFECYCLE_MS);
             const gate = await test.step('Prerequisite: an own RA profile clone with the run approval profile associated', async () => openApprovalGate(api, own.spec, 'g16'));
             try {

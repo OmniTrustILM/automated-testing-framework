@@ -1,12 +1,5 @@
 /**
- * tier — unit tests for the TIER_KIND guard.
- *
- * An unset or unknown kind is a shared tier. TIER_KIND=local needs positive proof of a local backend: a local BASE_URL
- * (loopback, or a TIER_LOCAL_HOSTS entry that is or resolves to a private address), a local REG_LOCAL_CORE_URL, the core's
- * /api/v1/info build marker, a container publishing the core port, and in the setup BASE_URL's authenticated /api/v1/info
- * naming the same build. The probe, resolver and container proof are injected, so a dev proxy, tunnel or port-forward cannot
- * switch on destructive @local rows against a shared tier. Also: header auth only on a local BASE_URL, the instance round
- * trip, the proof file's expiry and removal, and `*.localhost` resolved like any other name.
+ * tier — unit tests for the TIER_KIND guard. An unset or unknown kind is a shared tier.
  */
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
@@ -30,12 +23,10 @@ import { ContainerProof, containerPublishes, dockerHostName, publishedHostPorts 
 import { freezeTierEnv, isLocalTier, tierIdentity, tierKind } from '../../utils/regression/tier/kind';
 import { isLocalHost, isLoopbackHost, isPrivateAddress, Resolver, resetResolvedHostsForTests } from '../../utils/regression/tier/dns';
 
-// Each test resolves its hosts afresh (the resolver is injected per test).
 test.afterEach(() => resetResolvedHostsForTests());
 
 const INFO = { app: { name: 'core', version: '2.15.0' }, build: { branch: 'main', commitId: 'abc', timestamp: 't' }, db: {} };
 
-/** A probe answering per URL prefix; records the URLs it was asked for. */
 function probe(answers: Record<string, HttpProbeResult>): { probe: HttpProbe; urls: string[] } {
     const urls: string[] = [];
     return {
@@ -93,20 +84,18 @@ test('the build marker needs the commit id or the build time next to the version
     expect(() => assertLocalAllowed({ ...LOCAL }, proofOk({ probe: versionOnly.probe }))).toThrow(/did not answer \/api\/v1\/info with a build marker/);
 });
 
-// the container proof must read the daemon of the core's machine: this machine, or DOCKER_HOST pointing at the core host
+// the container proof must read the daemon of the core's machine.
 test('the container proof must read the docker daemon of the core machine, local or via DOCKER_HOST', () => {
     const lan = resolver({ 'compose-box.lan': ['192.168.1.20'], 'other-box.lan': ['192.168.1.30'] });
     const remote = { TIER_KIND: 'local', TIER_LOCAL_HOSTS: 'compose-box.lan', BASE_URL: 'http://compose-box.lan:3080', REG_LOCAL_CORE_URL: 'http://compose-box.lan:8280' };
     const ok = probe({ 'http://compose-box.lan:8280/api/v1/info': { ok: true, status: 200, body: INFO }, 'http://compose-box.lan:3080/api/v1/info': { ok: false, status: 401 } });
     const notMine = () => ['127.0.0.1', '::1', '192.168.1.99'];
     const opts = { probe: ok.probe, resolve: lan, containers: containersOk, interfaces: notMine, dockerContext: localSocket };
-    // A private core on another machine with the local daemon: an unrelated local container on the same port proves nothing.
     expect(() => assertLocalAllowed({ ...remote }, opts)).toThrow(/not an address of this machine, and DOCKER_HOST does not point at that host/);
     expect(() => assertLocalAllowed({ ...remote, DOCKER_HOST: 'tcp://other-box.lan:2376' }, opts), 'a daemon on a third machine').toThrow(/DOCKER_HOST does not point/);
     expect(() => assertLocalAllowed({ ...remote, DOCKER_HOST: 'tcp://compose-box.lan:2376' }, opts)).not.toThrow();
     expect(() => assertLocalAllowed({ ...remote, DOCKER_HOST: 'ssh://qa@192.168.1.20' }, opts), 'by address').not.toThrow();
     expect(() => assertLocalAllowed({ ...remote }, { ...opts, interfaces: () => ['192.168.1.20'] }), 'the core host is this machine').not.toThrow();
-    // A loopback core needs a local daemon: DOCKER_HOST pointing elsewhere is refused, a socket is fine.
     expect(() => assertLocalAllowed({ ...LOCAL, DOCKER_HOST: 'tcp://other-box.lan:2376' }, { ...proofOk(), resolve: lan, interfaces: notMine })).toThrow(/points at another daemon/);
     expect(() => assertLocalAllowed({ ...LOCAL, DOCKER_HOST: 'unix:///var/run/docker.sock' }, { ...proofOk(), interfaces: notMine })).not.toThrow();
     expect(() => assertLocalAllowed({ ...LOCAL, DOCKER_HOST: '::not a url' }, { ...proofOk(), interfaces: notMine })).toThrow(/DOCKER_HOST is not a readable URL/);
@@ -127,7 +116,7 @@ test('TIER_KIND=local needs a loopback BASE_URL', () => {
     expect(() => assertLocalAllowed({ TIER_KIND: 'local', BASE_URL: 'not a url' })).toThrow(/not a valid URL/);
 });
 
-// a loopback BASE_URL is not enough: REG_LOCAL_CORE_URL must be local and answer /api/v1/info with a marker
+// a loopback BASE_URL is not enough: REG_LOCAL_CORE_URL must be local and answer /api/v1/info with a marker.
 test('a loopback BASE_URL is not enough: REG_LOCAL_CORE_URL must be local and answer with a marker', () => {
     expect(() => assertLocalAllowed({ TIER_KIND: 'local', BASE_URL: 'http://localhost:3080' }, proofOk())).toThrow(/needs REG_LOCAL_CORE_URL/);
     expect(() => assertLocalAllowed({ ...LOCAL, REG_LOCAL_CORE_URL: 'https://core.example.com' }, proofOk())).toThrow(/REG_LOCAL_CORE_URL is not a loopback/);
@@ -145,20 +134,18 @@ test('liveness alone is no longer a proof: the build marker is required', () => 
     expect(live.urls, 'liveness is never asked').toEqual(['http://localhost:8280/api/v1/info']);
 });
 
-// BASE_URL served by a different core build than REG_LOCAL_CORE_URL is refused (a proxy to a shared core)
 test('BASE_URL served by a different core build than REG_LOCAL_CORE_URL is refused as a proxy', () => {
     const shared = { ...INFO, app: { name: 'core', version: '2.14.1' }, build: { branch: 'main', commitId: 'zzz', timestamp: 'u' } };
     const p = probe({ 'http://localhost:8280/api/v1/info': { ok: true, status: 200, body: INFO }, 'http://localhost:3080/api/v1/info': { ok: true, status: 200, body: shared } });
     expect(() => assertLocalAllowed({ ...LOCAL }, proofOk({ probe: p.probe }))).toThrow(/different core build/);
-    // Not readable anonymously through BASE_URL (an IdP in front): the config load passes; the setup's authenticated
-    // read decides (assertLocalBackend below).
+    // Not readable anonymously through BASE_URL (an IdP in front): the config load passes.
     const p2 = probe({ 'http://localhost:8280/api/v1/info': { ok: true, status: 200, body: INFO }, 'http://localhost:3080/api/v1/info': { ok: false, status: 401 } });
     const env: NodeJS.ProcessEnv = { ...LOCAL };
     expect(() => assertLocalAllowed(env, proofOk({ probe: p2.probe }))).not.toThrow();
     expect(env.REG_LOCAL_CORE_MARKER, 'the core marker is kept for the run').toBe(JSON.stringify(['2.15.0', 'abc', 't']));
 });
 
-// the container proof: a running container must publish the core port (and carry the compose label when asked); no docker ⇒ refused
+// the container proof: a running container must publish the core port (and carry the compose label when asked)
 test('the container proof: a running container must publish the core port; no docker is refused', () => {
     const calls: Array<[number, string | undefined]> = [];
     const none: ContainerProof = (port, compose) => {
@@ -169,7 +156,6 @@ test('the container proof: a running container must publish the core port; no do
     expect(calls).toEqual([[8280, 'ilm']]);
     const noDocker: ContainerProof = () => ({ ok: false, error: 'the docker CLI is not usable (ENOENT); set REG_DOCKER_BIN or install docker' });
     expect(() => assertLocalAllowed({ ...LOCAL }, { probe: coreUp().probe, containers: noDocker, dockerContext: localSocket })).toThrow(/docker CLI is not usable/);
-    // The pure parts of the default proof.
     expect(publishedHostPorts('0.0.0.0:8280->8080/tcp, [::]:8280->8080/tcp, 5432/tcp')).toEqual([8280, 8280]);
     expect(publishedHostPorts('127.0.0.1:8000-8002->8000-8002/tcp')).toEqual([8000, 8001, 8002]);
     const rows = [{ Ports: '0.0.0.0:8280->8080/tcp', Labels: 'com.docker.compose.project=ilm,com.docker.compose.service=core' }, { Ports: '5432/tcp' }];
@@ -181,7 +167,6 @@ test('the container proof: a running container must publish the core port; no do
 
 const reader = (status: number, body?: unknown): InfoReader => ({ get: async () => ({ ok: () => status < 300, status: () => status, json: async () => body }) });
 
-// tunnel: BASE_URL info unreadable with authentication ⇒ refused; the marker check alone writes no proof
 test('tunnel: BASE_URL info unreadable with authentication is refused; the marker alone writes no proof', async ({}, testInfo) => {
     const env: NodeJS.ProcessEnv = { ...LOCAL, REG_STATE_DIR: testInfo.outputPath('state'), REG_RUN_ID: 'qa-reg-20261014-100000-ab12' };
     await expect(assertLocalBackend(reader(401), env, { probe: coreUp().probe })).rejects.toThrow(/answered 401 with the run's authentication/);
@@ -190,11 +175,11 @@ test('tunnel: BASE_URL info unreadable with authentication is refused; the marke
     await expect(assertLocalBackend(reader(200, shared), env, { probe: coreUp().probe })).rejects.toThrow(/different core build/);
     expect(await assertLocalBackend(reader(200, INFO), env, { probe: coreUp().probe })).toBe(JSON.stringify(['2.15.0', 'abc', 't']));
     expect(hasLocalProof(env), 'the same build is not the same instance: no proof without the round trip').toBe(false);
-    // A shared tier sends nothing.
     await assertLocalBackend({ get: async () => { throw new Error('no request expected'); } }, { BASE_URL: 'https://qa.example.com' });
 });
 
-// instance identity: a role created through BASE_URL must be read back through REG_LOCAL_CORE_URL before the proof is written
+// instance identity: a role created through BASE_URL must be read
+// back through REG_LOCAL_CORE_URL before the proof is written.
 test('instance identity: a role created through BASE_URL must be read back via REG_LOCAL_CORE_URL', async ({}, testInfo) => {
     const env: NodeJS.ProcessEnv = { ...LOCAL, REG_STATE_DIR: testInfo.outputPath('state'), REG_RUN_ID: 'qa-reg-20261014-100000-ab12', AUTH_CLIENT_CERT: 'cert%2B' };
     const role = { uuid: '00000000-0000-4000-8000-0000000000aa', name: 'qa-reg-20261014-100000-ab12-instance-x' };
@@ -214,9 +199,7 @@ test('instance identity: a role created through BASE_URL must be read back via R
     // A tunnel to a shared core of the same build: the role is not there.
     await expect(proveLocalInstance(reader(200, INFO), env, { probe: core({ ok: false, status: 404 }), createRole, ...docker })).rejects.toThrow(/not the same instance/);
     expect(hasLocalProof(env)).toBe(false);
-    // Another object behind the uuid (or another name): refused too.
     await expect(proveLocalInstance(reader(200, INFO), env, { probe: core({ ok: true, status: 200, body: { uuid: role.uuid, name: 'other' } }), createRole, ...docker })).rejects.toThrow(/not the same instance/);
-    // Found with the header-mode admin certificate: the proof is written.
     await proveLocalInstance(reader(200, INFO), env, { probe: core({ ok: true, status: 200, body: { uuid: role.uuid, name: role.name } }), createRole, ...docker });
     expect(hasLocalProof(env)).toBe(true);
     expect(JSON.parse(fs.readFileSync(localProofFile(env), 'utf8'))).toMatchObject({ runId: env.REG_RUN_ID, tier: tierIdentity(env), instanceRole: role.uuid });
@@ -224,12 +207,10 @@ test('instance identity: a role created through BASE_URL must be read back via R
     expect(created).toBe(3);
     expect(hasLocalProof({ ...env, REG_RUN_ID: 'qa-reg-20261014-100000-zz99' }), 'another run id has no proof').toBe(false);
     expect(hasLocalProof({ ...env, BASE_URL: 'http://localhost:3999/' }), 'another tier has no proof').toBe(false);
-    // Without the certificate the core cannot be read: refused before anything is created.
     const { AUTH_CLIENT_CERT: _c, ...noCert } = env;
     await expect(proveLocalInstance(reader(200, INFO), noCert, { probe: core({ ok: true, status: 200 }), createRole, ...docker })).rejects.toThrow(/AUTH_CLIENT_CERT is unset/);
     expect(created).toBe(3);
     expect(hasLocalProof(env), 'a refused attempt removes the earlier proof').toBe(false);
-    // A shared tier: nothing is created or read.
     await proveLocalInstance(reader(200, INFO), { BASE_URL: 'https://qa.example.com' }, { createRole });
     expect(created).toBe(3);
 });
@@ -258,7 +239,6 @@ test('a shared tier sends no probe', () => {
     expect(p.urls).toEqual([]);
 });
 
-// TIER_LOCAL_HOSTS admits a private compose host on another machine (its daemon through DOCKER_HOST), and nothing else
 test('TIER_LOCAL_HOSTS admits a private compose host on another machine through DOCKER_HOST only', () => {
     const env = { TIER_KIND: 'local', TIER_LOCAL_HOSTS: ' compose-box.lan , other.lan ', REG_LOCAL_CORE_URL: 'http://compose-box.lan:8280', DOCKER_HOST: 'tcp://compose-box.lan:2376' };
     const ok = probe({ 'http://compose-box.lan:8280/api/v1/info': { ok: true, status: 200, body: INFO } });
@@ -268,7 +248,6 @@ test('TIER_LOCAL_HOSTS admits a private compose host on another machine through 
     expect(() => assertLocalAllowed({ ...env, BASE_URL: 'https://qa.example.com' }, opts)).toThrow(/loopback/);
 });
 
-// TIER_LOCAL_HOSTS with a public name is refused; only RFC 1918 / link-local / loopback literals or names resolving to them count
 test('TIER_LOCAL_HOSTS with a public name is refused; only private, link-local or loopback count', () => {
     const table = resolver({ 'shared.example.com': ['203.0.113.10'], 'mixed.lan': ['192.168.1.5', '198.51.100.7'], 'box.lan': ['192.168.1.5'], 'v6.lan': ['fe80::1'] });
     const listed = (h: string) => ({ TIER_LOCAL_HOSTS: h });

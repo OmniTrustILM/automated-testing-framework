@@ -1,8 +1,6 @@
 /**
  * The pure helpers of the events area: workflow request builders (trigger body, Set field items, condition items), the
- * association ledger notes, the event labels, the absence window, and the notification request attributes (the connector's
- * uuid per content type of the webhook template attribute, e-mail / webhook attributes, ISO-8601 durations), and the notification
- * connector choice over a fake connector list. No network: a change in a builder fails here before it fails a run against a tier.
+ * association ledger notes, the event labels, the absence window, and the notification request.
  */
 import { expect, test } from '@playwright/test';
 import { durationSeconds } from '../../utils/regression/events/notificationProfiles';
@@ -22,8 +20,6 @@ import { partialOf } from './helpers/guardRig';
 
 type Json = Record<string, any>;
 
-// ------------------------------------------------------------------ workflow builders
-
 test('a trigger with an event is type event; without one it is manual and carries no event', () => {
     const withEvent = triggerBody({ event: EVENT.actionPerformed, rules: [{ uuid: 'r1' }], actions: [{ uuid: 'a1' }] });
     expect(withEvent).toMatchObject({ type: 'event', event: 'certificate_action_performed', resource: 'certificates', ignoreTrigger: false, rulesUuids: ['r1'], actionsUuids: ['a1'] });
@@ -40,7 +36,6 @@ test('Set field items: group list, owner (or null), RA profile, custom attribute
     expect(setOwnerAction('u1')).toMatchObject({ fieldIdentifier: 'OWNER', data: 'u1' });
     expect(setOwnerAction(null).data).toBeNull();
     expect(setRaProfileAction('p1')).toMatchObject({ fieldIdentifier: 'RA_PROFILE_NAME', data: 'p1' });
-    // core ActionServiceImpl: `<name>|<CONTENT TYPE ENUM NAME>`, the data a string
     expect(setCustomAttributeAction('marker', 'string', 42)).toEqual({ fieldSource: 'custom', fieldIdentifier: 'marker|STRING', data: '42' });
     expect(sendNotificationItem('np1')).toEqual({ notificationProfileUuid: 'np1' });
 });
@@ -75,8 +70,6 @@ test('error texts: array bodies, message bodies, anything else', () => {
     expect(errorShapeOf(sent({ other: 1 }))).toBe('other');
 });
 
-// ------------------------------------------------------------------ absence window
-
 test('assertHeldFor reads through the whole window and once at its end; a violation fails at the first read that sees it', async () => {
     let reads = 0;
     const startedAt = Date.now();
@@ -97,12 +90,9 @@ test('assertHeldFor reads through the whole window and once at its end; a violat
     expect(Date.now() - t0, 'failed long before the window ended').toBeLessThan(1_000);
 });
 
-// ------------------------------------------------------------------ notification builders
-
 test('the webhook template attribute: the connector uuid per content type, codeblock content with a base64 template', () => {
     const json = webhookTemplateAttribute('JSON', '{"a":"${event}"}');
     expect(json.name).toBe('data_contentTemplate_json');
-    // Java UUID.nameUUIDFromBytes of the connector's template uuid + the content type code (webhook Attributes.java)
     expect(json.uuid).toBe('77ddf598-724a-31d4-943b-79ee71c854c5');
     expect(webhookTemplateAttribute('XML', '<a/>').uuid).toBe('610ed4fa-0b1f-33a9-9a31-0be332673a58');
     expect(webhookTemplateAttribute('RAW_JSON', '{}').uuid).toBe('07ea053b-3515-3ce8-a8a5-acfca3d4ed15');

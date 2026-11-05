@@ -1,10 +1,6 @@
 /**
  * timestampingProvision — the timestamping setup (utils/timestamping/provision) against an in-process fake core, through
- * the REAL, STRICT guard (`guardApiWithSeams` judging against the run's own ledger and the fake's live objects, no `localStack`;
- * a second `localStack` guard exists on a proven local stack only, for the two requests the strict one refuses): what the preflight refuses and why, the
- * creation order of timestamping-setup.sh, one ledger line per created object right after its create (run-prefixed name,
- * spec `timestamping/setup`, the parents the teardown handlers read), the summary's shape and mode, and generated
- * secrets. No network, no tier: the fake records method + path + body and answers canned JSON.
+ * the REAL, STRICT guard.
  */
 import { APIRequestContext, expect, test } from '@playwright/test';
 import * as fs from 'fs';
@@ -51,7 +47,6 @@ interface FakeOptions {
     authorities?: Json[];
     cas?: string[];
     caTrusted?: boolean;
-    /** The CN fragment whose issuance fails (history: "CA refused"). */
     failIssuanceOf?: string;
     /** The CN fragment whose certificate never leaves `requested` (the issuance wait runs out). */
     neverIssue?: string;
@@ -59,13 +54,9 @@ interface FakeOptions {
     statusFor?: Record<string, number>;
     /** The ML-DSA leaves' issuer: not self-signed, or a self-signed certificate without a trustedCa flag. */
     mldsaIssuer?: 'notSelfSigned' | 'noTrustFlag';
-    /** The key create answers no items; the detail has them. */
     keyWithoutItems?: boolean;
-    /** The root CA's first history event (default: long before the run, a pre-existing CA). */
     rootCreatedAt?: string;
-    /** The name of the ML-DSA level field the connector offers (default data_mldsaLevel). */
     mldsaLevelName?: string;
-    /** The status the three inventory lists answer (default 200: one pre-existing row each). */
     listStatus?: number;
 }
 
@@ -77,11 +68,8 @@ interface Sent {
     method: string;
     path: string;
     body: unknown;
-    /** Ledger lines in the file when the request was sent. */
     ledgerLines: number;
-    /** The uuid the answer created, when it was a create. */
     created?: string;
-    /** The answer as sent (a create's items are made with it). */
     answer?: string;
     date: string;
 }
@@ -97,7 +85,6 @@ const defaultV2 = (): Json[] => [
     { uuid: C_VAULT, name: 'common-credential-provider-v2', version: 'v2', status: 'connected', url: 'http://connectors.local:8200', interfaces: [{ uuid: U(32), code: 'secret' }] },
 ];
 
-/** A fake core: canned answers for every route the setup uses; creates answer fresh uuids; every request is recorded. */
 function fakeCore(opts: FakeOptions = {}) {
     const sent: Sent[] = [];
     let seq = 1000;
@@ -126,7 +113,6 @@ function fakeCore(opts: FakeOptions = {}) {
         ['POST', new RegExp(`^/v1/raProfiles/${UUID}/callback$`), (_m, b) => [200, b.name === 'certificateProfile'
             ? [{ data: { id: 11, name: 'DemoTSAEECertificateProfile' } }, { data: { id: 12, name: 'DemoTSAQCEECertificateProfile' } }]
             : cas.map((name, i) => ({ data: { id: 21 + i, name } }))]],
-        // provisioning
         ['POST', new RegExp(`^/v1/vaults/${UUID}/vaultProfiles$`), () => [200, create()]],
         ['PATCH', new RegExp(`^/v1/vaults/${UUID}/vaultProfiles/${UUID}/enable$`), () => [204, undefined]],
         ['GET', new RegExp(`^/v1/tokens/${UUID}/attributes$`), () => [200, [
@@ -183,7 +169,6 @@ function fakeCore(opts: FakeOptions = {}) {
             c.reads += 1;
             const failed = opts.failIssuanceOf && c.cn.includes(opts.failIssuanceOf);
             const stuck = opts.neverIssue && c.cn.includes(opts.neverIssue);
-            // The first read still sees the request in flight: the poll has to wait for it.
             const state = c.reads === 1 || stuck ? 'requested' : failed ? 'failed' : 'issued';
             const issuer = opts.mldsaIssuer && c.cn.includes('mldsa65') ? OTHER_CA : ROOT_CA;
             return [200, { uuid: m[1], commonName: c.cn, state, subjectDn: `CN=${c.cn}`, issuerDn: 'CN=Demo Root', ...(state === 'issued' ? { issuerCertificateUuid: issuer } : {}) }];
@@ -224,7 +209,7 @@ function fakeCore(opts: FakeOptions = {}) {
                 }
             }
         }
-        // A GET of an object the run created (the guard's live read of an own object): its name, as the platform names it.
+        // A GET of an object the run created (the guard's live read of an own object)
         if (status === 404 && method === 'GET' && !forced) {
             const uuid = apiPath.match(new RegExp(UUID, 'g'))?.pop();
             const name = uuid ? names.get(uuid) : undefined;
@@ -263,7 +248,6 @@ function signatureDefs(alg: string | undefined): Json[] {
 let stateDir = '';
 const ledgerPath = () => path.join(stateDir, 'created-objects.jsonl');
 
-/** A local env with this run's local-backend proof written (the guard's localStack needs it). */
 function provenLocalEnv(dir: string, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
     const env: NodeJS.ProcessEnv = { TIER_KIND: 'local', BASE_URL: 'http://localhost:3080', REG_STATE_DIR: dir, REG_RUN_ID: runId(), TSA_RUN_SECRET: newRunSecret(), ...extra };
     fs.mkdirSync(dir, { recursive: true });
@@ -279,13 +263,9 @@ interface Run {
     isCaTrusted: () => boolean;
 }
 
-/** A shared tier: no TIER_KIND=local, no proof (the strict guard is all there is). */
 const sharedEnv = (dir: string, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv => ({ TIER_KIND: 'shared', BASE_URL: 'https://tier.example/', REG_STATE_DIR: dir, REG_RUN_ID: runId(), TSA_RUN_SECRET: newRunSecret(), ...extra });
 
-/**
- * Runs the setup against a fake core, through the real STRICT guard judging against the run's own ledger file and the fake's live objects
- * (what a shared tier does); on a proven local stack a second, `localStack` guard is handed over as the setup test does.
- */
+/** Runs the setup against a fake core, through the real STRICT guard judging against the run's own ledger file. */
 async function runSetup(testInfo: { outputPath: (p: string) => string }, fake: FakeOptions = {}, envOf: (dir: string) => NodeJS.ProcessEnv = (d) => provenLocalEnv(d)): Promise<Run> {
     stateDir = testInfo.outputPath('state');
     const env = envOf(stateDir);
@@ -305,8 +285,6 @@ const ready = (s: TimestampingSummary) => {
     return s as Extract<TimestampingSummary, { status: 'ready' }>;
 };
 
-// ------------------------------------------------------------------ the offline blockers: no request at all
-
 test('pkcs11, and software-v1 off a proven local stack, are unavailable without a single request', async ({}, testInfo) => {
     const pkcs11 = await runSetup(testInfo, {}, (d) => provenLocalEnv(d, { TSA_CRYPTO_PROVIDER: 'pkcs11' }));
     expect(pkcs11.summary.status === 'unavailable' && pkcs11.summary.reason).toMatch(/pkcs11/);
@@ -325,26 +303,20 @@ test('a local stack without its proof is a shared tier for software-v1: unavaila
     expect(unprovenV1.sent).toEqual([]);
 });
 
-// A shared tier is all there is to the strict guard: the same fake core, the same setup, no `localStack` guard at all. The full-run tests
-// below (a proven local stack: strict `api` + `localApi`) prove the strict guard lets every request of the setup through; this one proves
-// it without the local-stack guard being there, and that the setup reads before it writes.
 test('a shared tier runs the whole setup through the strict guard alone, when the issuing CA is already trusted', async ({}, testInfo) => {
     const run = await runSetup(testInfo, { caTrusted: true }, (d) => sharedEnv(d));
     const s = ready(run.summary);
     expect(Object.keys(s.provisioning.sets)).toEqual(['rsa', 'mldsa65']);
     expect(run.sent.filter((x) => x.method === 'PATCH' && x.path.startsWith('/v1/certificates/')), 'nothing pre-existing is patched').toEqual([]);
     expect(run.ledger.length, 'every created object is in the ledger').toBeGreaterThan(30);
-    // Reads came first: the first write is the vault profile, after the connectors, the vault list and the RA-profile reads.
     const firstWrite = run.sent.findIndex((x) => x.method !== 'GET' && !/\/list$|\/callback$/.test(x.path));
     expect(run.sent.slice(0, firstWrite).every((x) => x.method === 'GET' || /\/list$|\/callback$/.test(x.path))).toBe(true);
     expect(run.sent[firstWrite].path).toMatch(/^\/v1\/vaults\/.*\/vaultProfiles$/);
 });
 
-// The one pre-existing object a local setup changes stays out of a shared tier: its root CA must be trusted beforehand.
 test('a shared tier with an issuing root CA that is not trusted fails the required RSA family and patches nothing; a proven local stack trusts it', async ({}, testInfo) => {
     const shared = runSetup(testInfo, { caTrusted: false }, (d) => sharedEnv(d));
     await expect(shared).rejects.toThrow(/the RSA family stopped at step 16 \(trust chain, non-qualified\): the issuing CA is not trusted, and the setup marks it trusted on a proven local stack only \(a shared tier needs the CA trusted beforehand\)/);
-    // The same fake, shared again, to read what was sent: nothing pre-existing was written, what was created is in the ledger.
     const ledgerBefore = readLedger(ledgerPath()).length;
     expect(ledgerBefore, 'the objects created before the failure are recorded for the teardown').toBeGreaterThan(5);
     const local = await runSetup(testInfo, { caTrusted: false });
@@ -352,7 +324,6 @@ test('a shared tier with an issuing root CA that is not trusted fails the requir
     expect(local.sent.filter((x) => x.method === 'PATCH' && x.path === `/v1/certificates/${ROOT_CA}`).map((x) => x.body), 'the local-stack guard sends it once').toEqual([{ trustedCa: true }]);
 });
 
-// Without the local-stack guard the strict one refuses the trust request itself (nothing reaches the core), whatever the setup does.
 test('the strict guard refuses to mark a pre-existing root CA trusted (it is not an own object)', async ({}, testInfo) => {
     stateDir = testInfo.outputPath('state');
     const env = sharedEnv(stateDir);
@@ -364,8 +335,6 @@ test('the strict guard refuses to mark a pre-existing root CA trusted (it is not
     expect(core.sent.filter((s) => s.method === 'PATCH')).toEqual([]);
 });
 
-// The inventory check (utils/timestamping/inventory.ts): the setup reads the three lists once the preflight found the components, before it
-// creates anything, and stores counts and hashes only.
 test('the setup takes its inventory baseline after the preflight and before the first write; an unavailable tier takes none', async ({}, testInfo) => {
     const run = await runSetup(testInfo, { caTrusted: true }, (d) => sharedEnv(d));
     ready(run.summary);
@@ -386,8 +355,6 @@ test('the setup takes its inventory baseline after the preflight and before the 
     ready(missing.summary);
     await withProcessEnv({ REG_STATE_DIR: stateDir, REG_RUN_ID: runId() }, async () => expect(readBaseline()).toMatchObject({ status: 'skipped', reason: expect.stringMatching(/cannot list the signing profiles/) }));
 });
-
-// ------------------------------------------------------------------ the preflight's reasons: read-only
 
 test('preflight: a missing connector, a connector waiting for approval and a missing authority are named reasons; nothing is written', async ({}, testInfo) => {
     const noFormatter = await runSetup(testInfo, { v2: defaultV2().filter((c) => c.uuid !== C_TFC) });
@@ -419,8 +386,6 @@ test('preflight: a missing ML-DSA CA moves only that family to missingFamilies; 
     expect(run.sent.filter((x) => /keys\/keyPair$/.test(x.path) && x.method === 'POST').map((x) => (x.body as Json).attributes.find((a: Json) => a.name === 'data_keyAlgorithm').content[0].data))
         .toEqual(['RSA', 'RSA']);
 });
-
-// ------------------------------------------------------------------ the full run
 
 test('provisioning follows timestamping-setup.sh order and records every object once, right after its create', async ({}, testInfo) => {
     const run = await runSetup(testInfo);
@@ -465,7 +430,6 @@ test('provisioning follows timestamping-setup.sh order and records every object 
         expect(run.sent[at].ledgerLines, `${line.type}: no line before its create`).toBeLessThanOrEqual(i);
         expect(run.sent[at + 1].ledgerLines, `${line.type}: recorded before the next request`).toBeGreaterThan(i);
     }
-    // Parents as the teardown handlers read them.
     const byType = (t: string) => run.ledger.filter((l) => l.type === t);
     const token = byType('tokens')[0].uuid;
     const tokenProfile = byType('tokenProfiles')[0].uuid;
@@ -594,7 +558,6 @@ test('secrets are generated: no literal password in any body or in the provision
     expect(all).toHaveLength(10);
     expect(new Set(all).size, 'every secret differs (per credential, per run)').toBe(all.length);
     for (const p of all) expect(p).toMatch(/^Ts[A-Za-z0-9_-]{24}$/);
-    // The summary keeps no password (it may become a CI artifact): the specs derive what was sent from the run secret, the profile uuid and the username.
     const s = ready(first.summary);
     const halves = Object.values(s.provisioning.sets).flatMap((f) => [f.nonQualified, f.qualified]);
     expect(halves.map((h) => basicPassword(h.tspProfile.uuid, h.basicCredential.username, first.env))).toEqual(passwords(first));
@@ -604,7 +567,6 @@ test('secrets are generated: no literal password in any body or in the provision
         for (const secret of [...passwords(first), ...codes(first), first.env.TSA_RUN_SECRET!]) expect(text, 'no secret in the summary file').not.toContain(secret);
         expect(`${text}${JSON.stringify(first.ledger)}`, 'nor in the ledger').not.toMatch(/Ts[A-Za-z0-9_-]{24}/);
     });
-    // What a spec gets (provisioning.ts halfOf) is the password the setup sent, with the key algorithm of its family.
     expect(halves.map((h) => halfOf(h, 'RSA', first.env).basicCredential.password)).toEqual(passwords(first));
     // The derivation is per run secret, per profile and per username, and refuses to run without the secret.
     expect(basicPassword(halves[0].tspProfile.uuid, 'a', first.env)).not.toBe(basicPassword(halves[0].tspProfile.uuid, 'b', first.env));
@@ -648,8 +610,6 @@ test('an already trusted issuing CA is left alone (the only pre-existing object 
     const run = await runSetup(testInfo, { caTrusted: true });
     ready(run.summary);
     expect(run.sent.filter((x) => x.method === 'PATCH' && x.path.startsWith('/v1/certificates/'))).toEqual([]);
-    // Every other write targets an own object: the last uuid of the path is in the ledger, unless the path creates
-    // under a parent (a vault profile under the vault, an RA profile under the authority, …).
     const own = new Set(run.ledger.map((l) => l.uuid));
     for (const m of mutations(run.sent)) {
         if (/\/(vaultProfiles|tokenProfiles|raProfiles|certificates|keyPair|basicCredentials)$/.test(m.path)) continue;
@@ -671,8 +631,6 @@ test('permissionDocument merges the sets like merge_permissions: grouped, sorted
     expect(doc.resources.find((r: Json) => r.name === 'tokens').objects, 'one object per uuid').toEqual([{ uuid: U(1), name: 't', allow: ['detail'], deny: [] }]);
     expect(permissionDocument([])).toEqual({ allowAllResources: false, resources: [] });
 });
-
-// ------------------------------------------------------------------ failures: the tier's answer, or the setup's own error
 
 test('a 4xx on one of the setup\'s creates or a refused identity is a hard failure, never a tier reason; no answer text in it', async ({}, testInfo) => {
     const refusedBody = runSetup(testInfo, { statusFor: { 'POST /v1/tspProfiles': 422 } });

@@ -1,7 +1,7 @@
 /**
  * titleLint — the title and details rules specGuards runs over the REG and API specs (no tag in a describe title; no id
- * prefix, at most 100 characters, one clause, lower-case start, unique per file, testMeta() on every test) and the reader of
- * a test's testMeta() row that the structure checks name tests by.
+ * prefix, at most 100 characters, one clause, lower-case start, unique per file, testMeta() on every test) and the
+ * reader of a test's testMeta() row that the structure checks name tests by.
  */
 import { test, expect } from '@playwright/test';
 import { listedTitleProblems, metaRowOf, seedCodeProblems, testKey, titleProblems } from '../../utils/regression/specLint/titleLint';

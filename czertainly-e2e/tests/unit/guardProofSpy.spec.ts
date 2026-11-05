@@ -1,11 +1,6 @@
 /**
- * guardProofSpy — unit tests of the live guard proof's safety net, against a fake raw context that records every request.
- *
- * Checks:
- *   - the blocking spy forwards GET / HEAD only and never lets anything else reach the raw context
- *   - a guarded helper handed a pre-existing RA profile, and the guarded PATCH / DELETE, are refused with an ownership
- *     violation (also under the dry run) and send nothing
- *   - `apiJson` sends a mutating method only through a guarded context
+ * guardProofSpy — unit tests of the live guard proof's safety
+ * net, against a fake raw context that records every request.
  */
 import { APIRequestContext, test, expect } from '@playwright/test';
 import { guardApi } from '../../utils/regression/guard/createGuard';
@@ -20,7 +15,6 @@ import { useEnv, fakeContext, rawAsGuarded } from './helpers/guardRig';
 const FOREIGN_RA = '00000000-0000-4000-8000-000000000002';
 const AUTH = '00000000-0000-4000-8000-000000000009';
 
-/** A raw context that answers every request 200 and records what reached it. */
 function raw(): { api: APIRequestContext; reached: string[] } {
     const reached: string[] = [];
     const reply = (body: unknown = {}) => ({ status: () => 200, ok: () => true, json: async () => body, text: async () => JSON.stringify(body), headers: () => ({}) });
@@ -55,11 +49,9 @@ test('the spy forwards reads and refuses every mutating request without sending 
     await expect(spy.api.put('/api/v1/roles/x')).rejects.toThrow(GuardSpyBlocked);
     await expect(spy.api.fetch('/api/v1/roles/x', { method: 'delete' })).rejects.toThrow(GuardSpyBlocked);
     const request = { url: () => '/api/v1/roles/y', method: () => 'PATCH' };
-    // a Request-shaped object where the guard takes a URL string: the cast is the point of the case
     await expect(spy.api.fetch(request as unknown as string)).rejects.toThrow(GuardSpyBlocked);
     // GET / HEAD only — any other verb, and any method the spy does not know, is refused too.
     await expect(spy.api.fetch('/api/v1/roles', { method: 'OPTIONS' })).rejects.toThrow(GuardSpyBlocked);
-    // `options` is no method of the guarded API: reached through a cast to prove the spy refuses a verb it does not know
     await expect((spy.api as unknown as { options(u: string): Promise<unknown> }).options('/api/v1/roles')).rejects.toThrow(GuardSpyBlocked);
     await spy.api.dispose();
     expect(r.reached, 'only the reads reached the raw context').toEqual([
@@ -71,7 +63,6 @@ test('the spy forwards reads and refuses every mutating request without sending 
     ]);
 });
 
-// the proof: helper and guarded PATCH / DELETE refuse a pre-existing RA profile with OwnObjectViolation, also under the dry run
 test('the proof: helper and guarded PATCH / DELETE refuse a pre-existing RA profile, also on dry run', async () => {
     for (const dryRun of [false, true]) {
         if (dryRun) process.env.API_TEARDOWN_DRY_RUN = '1';
@@ -87,7 +78,8 @@ test('the proof: helper and guarded PATCH / DELETE refuse a pre-existing RA prof
     }
 });
 
-// a regressed guard is caught: the spy refuses with GuardSpyBlocked, which is not the OwnObjectViolation the proof requires
+// a regressed guard is caught: the spy refuses with GuardSpyBlocked,
+// which is not the OwnObjectViolation the proof requires.
 test('a regressed guard is caught: the spy refuses with GuardSpyBlocked, not OwnObjectViolation', async () => {
     const r = raw();
     const watched = readOnlySpy(r.api);
@@ -112,7 +104,6 @@ test('expectOwnershipRefusal accepts only an ownership refusal: not a pass, not 
     expect(r.reached.filter((x) => !x.startsWith('GET '))).toEqual([]);
 });
 
-// apiJson: a raw context may GET and POST to the allow-list; any other method needs the guarded context
 test('apiJson: a raw context may only GET and POST to the allow-list; other methods need the guarded one', async () => {
     const r = raw();
     await apiJson(r.api, 'GET', '/api/v1/roles');
@@ -120,7 +111,6 @@ test('apiJson: a raw context may only GET and POST to the allow-list; other meth
     await expect(apiJson(r.api, 'PATCH', `/api/v1/authorities/${AUTH}/raProfiles/${FOREIGN_RA}/disable`)).rejects.toThrow(/needs the guarded API context/);
     await expect(apiJson(r.api, 'DELETE', '/api/v1/roles/x')).rejects.toThrow(OwnObjectViolation);
     await expect(apiJson(r.api, 'POST', `/api/v1/certificates/${FOREIGN_RA}/renew`)).rejects.toThrow(OwnObjectViolation);
-    // A create needs the guard too (its body is checked there).
     await expect(apiJson(r.api, 'POST', '/api/v1/roles', { name: 'x', userUuids: [FOREIGN_RA] })).rejects.toThrow(/needs the guarded API context/);
     expect(r.reached).toEqual(['GET /api/v1/roles', 'POST /api/v1/certificates']);
     // Through the guard the same PATCH is judged on ownership (a foreign RA profile: refused, not sent).

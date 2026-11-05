@@ -1,7 +1,6 @@
 /**
- * LoginPage's session cookie and `expectRolesAfterSignIn` on a served stand-in page shaped like the admin UI (header user
- * menu, the sidebar). No server: every request of the context is fulfilled by the test (`context.route`); the profile the
- * role check reads comes from a loopback server.
+ * LoginPage's session cookie and `expectRolesAfterSignIn` on a served stand-in page shaped like the admin UI (header
+ * user menu, the sidebar).
  */
 import { Browser, BrowserContext, expect, Page, test } from '@playwright/test';
 import { LoginPage } from '../../pages/LoginPage';
@@ -9,12 +8,10 @@ import { TestEnv } from '../../utils/env';
 import { expectRolesAfterSignIn } from '../../utils/regression/rbac/identities';
 import { loopbackServer } from './helpers/loopbackServer';
 import { randomBytes } from 'node:crypto';
-// Run-scoped generated test passwords: no password-like literal in the file.
 const GEN_PW_1 = `qa-${randomBytes(9).toString('base64url')}`;
 
 const ENV = { baseUrl: 'http://127.0.0.1:9/', authMode: 'local', username: 'qa-user', password: GEN_PW_1, localAuthProviderName: 'Internal' } as unknown as TestEnv;
 
-/** A context whose every request is answered by `serve(path)` (document or JSON), so a test controls what "the server" says. */
 async function served(browser: Browser, serve: (path: string, method: string) => { status?: number; type?: string; body: string }, body: (page: Page, context: BrowserContext) => Promise<void>): Promise<void> {
     const context = await browser.newContext({ baseURL: 'http://127.0.0.1:9/' });
     try {
@@ -48,7 +45,7 @@ test('LoginPage.readSessionCookie reads the session-id cookie (value and path); 
 test('expectRolesAfterSignIn: the signed-in profile holds exactly the roles the API set; a rewritten role list fails with the sync-policy message', async ({ browser }) => {
     const ROLE = '00000000-0000-4000-8000-0000000000f1';
     let held = [ROLE];
-    // `page.request` is an API request context (not intercepted by `context.route`): a real loopback server answers the profile.
+    // `page.request` is an API request context (not intercepted by `context.route`)
     const server = await loopbackServer((a) => (a.url === '/api/v1/auth/profile' ? {
         status: 200,
         body: { uuid: '00000000-0000-4000-8000-000000000001', username: 'qa-user', enabled: true, roles: held.map((uuid) => ({ uuid, name: 'r' })), permissions: { allowedListings: [], allowedActions: [] } },

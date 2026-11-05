@@ -1,13 +1,5 @@
 /**
- * REG-DEP-01 — The QA post-install check of a new ILM deployment (release checklist: Deployment 1; ilm#425).
- *
- * Checks the core version, the required connectors, the Version Info dialog and each connector's detail page. Rows: (.a)
- * anonymous liveness and readiness; (.b) anonymous /health; (.c) /info for an authenticated caller, 401 for an anonymous
- * one (not asserted on a local stack); (.d) every required connector answers its live health, not only the stored
- * `connected` (core#2461).
- *
- * Read-only. Settings: the REG_* connector and version settings (see .env.example); a connector named as blocked skips
- * with its reason. The 5 s latency budget is measured from the runner, which adds DNS, TLS and ingress time.
+ * REG-DEP-01 — The QA post-install check of a new ILM deployment (release checklist: Deployment 1; ilm#425). Read-only.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { ACCEPT_JSON, blockedConnectors, describeHealth, findConnector, healthByVersion, listConnectors, PROBE_PATHS, probeAttributes, requiredConnectors } from '../../../utils/regression/platform/connectorApi';
@@ -17,12 +9,6 @@ import { isLocalTier } from '../../../utils/regression/tier/kind';
 
 const required = requiredConnectors();
 const majorMinor = (v: string) => /(\d+\.\d+)/.exec(v)?.[1] ?? v;
-/**
- * The liveness / readiness latency budget, measured from the RUNNER: 2 s was the first server-side budget of
- * a probe that answers from memory; a runner outside the cluster adds DNS, TLS and the ingress / VPN round trip (a few
- * hundred ms each on a remote tier). 5 s keeps a hard bound that still catches a hanging probe; the measured time is
- * annotated on every run so the budget can be tightened from data later.
- */
 const HEALTH_BUDGET_MS = 5_000;
 
 interface CoreInfo {
@@ -31,7 +17,6 @@ interface CoreInfo {
     db: { system: string; version: string };
 }
 
-/** The registered required connectors by name; a missing one fails the test that asks. */
 async function registeredRequired(api: Parameters<typeof listConnectors>[0]): Promise<Record<string, string>> {
     const connectors = await listConnectors(api);
     const uuids: Record<string, string> = {};
@@ -44,8 +29,7 @@ async function registeredRequired(api: Parameters<typeof listConnectors>[0]): Pr
 }
 
 test.describe('Post-install check', { tag: tags.regression }, () => {
-    // The release check does not pass on the STORED `connected` flag: whether the connectors are alive is the
-    // per-connector test below.
+    // The release check does not pass on the STORED `connected` flag.
     test('core version, Version Info dialog and the registry of the required connectors are as released',
         testMeta({
             id: 'REG-DEP-01', prio: 'P1', issue: 'ilm#425',
@@ -69,7 +53,6 @@ test.describe('Post-install check', { tag: tags.regression }, () => {
                 const dialog = page.getByRole('dialog').last();
                 await expect(dialog).toContainText('ILM Core');
                 await expect(dialog).toContainText(coreVersion);
-                // The UI half of the /info contract: the dialog shows the same database version as /v1/info.
                 await expect(dialog).toContainText(info.db.version);
                 await expect(dialog).toContainText('ILM Frontend');
                 const text = (await dialog.innerText()).replace(/\s+/g, ' ');

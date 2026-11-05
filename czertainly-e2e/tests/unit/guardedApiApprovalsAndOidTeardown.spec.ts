@@ -1,7 +1,6 @@
 /**
  * The guard on approval decisions and the caller named as approver in an own approval profile, on the wire (a real
- * Playwright context, a loopback fake core, a second origin that must see nothing): own approvals are sent, foreign
- * ones and every other shape refused. Also the oidEntries teardown handler.
+ * Playwright context, a loopback fake core, a second origin that must see nothing).
  */
 import { APIRequestContext, expect, test } from '@playwright/test';
 import * as fs from 'fs';
@@ -17,7 +16,6 @@ import { registerGuardRig, withProcessEnv, looseApi } from './helpers/guardRig';
 
 const RUN = 'qa-reg-20261016-120000-p1d0';
 const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
-/** The caller: hex letters, so a lower / upper case slip shows (an all-digit uuid reads the same in both). */
 const SELF = '0a0b0c0d-0e0f-4000-8000-00000000abcd';
 const OTHER_USER = U(2);
 const OWN_CERT = U(10);
@@ -47,7 +45,6 @@ const lines: LedgerLine[] = [
     mk('approvals', APR.derivedCert, `${RUN}-approval`, { certificate: DERIVED_CERT, approvalProfile: OWN_AP }),
     mk('approvals', APR.liveOtherCert, `${RUN}-approval`, both), mk('approvals', APR.liveOtherAp, `${RUN}-approval`, both),
     mk('approvals', APR.liveNotCert, `${RUN}-approval`, both), mk('approvals', APR.live404, `${RUN}-approval`, both),
-    // The approval-profile parent names an own CERTIFICATE line; the certificate parent is own in the ledger but renamed live.
     mk('approvals', APR.apIsCert, `${RUN}-approval`, { certificate: OWN_CERT, approvalProfile: OWN_CERT }),
     mk('certificates', RENAMED_CERT, `${RUN}.renamed.test`), mk('approvals', APR.certRenamed, `${RUN}-approval`, { certificate: RENAMED_CERT, approvalProfile: OWN_AP }),
 ];
@@ -74,9 +71,7 @@ const live: Record<string, unknown> = {
     [`/api/v1/approvals/${APR.certRenamed}`]: detail(RENAMED_CERT, OWN_AP),
 };
 
-/** The auth profile's answer, mutable per test. */
 let profile: { status: number; body?: unknown } = { status: 200, body: { uuid: SELF, username: 'qa-admin' } };
-/** OID entries by OID (teardown rows). */
 const oids = new Map<string, { oid: string; displayName: string }>();
 let keepOnDelete = false;
 
@@ -134,9 +129,6 @@ async function refusal(call: Promise<unknown>): Promise<{ kind: RefusalKind | 's
 const mutations = () => A.mutations().map((a) => `${a.method} ${a.url}${a.body ? ` ${a.body}` : ''}`);
 const gets = (url: string) => A.arrived.filter((a) => a.method === 'GET' && a.url === url).length;
 
-// ------------------------------------------------------------------ approval decisions
-
-// approval decision: an own approval of an own certificate and an own approval profile is decided on the override and the recipient path
 test('approval decision: an own approval of an own certificate and profile is decided on the override path', async () => {
     const g = guard();
     await g.patch(`/api/v1/approvals/${APR.own}/approve`);
@@ -155,13 +147,12 @@ test('approval decision: an own approval of an own certificate and profile is de
     expect(gets(`/api/v1/approvals/${APR.own}`)).toBe(5);
     expect(gets(`/api/v1/certificates/${OWN_CERT}`)).toBe(5);
     expect(gets(`/api/v1/approvalProfiles/${OWN_AP}`)).toBe(5);
-    // A probe uuid keeps its 404 allowance (it names nothing).
     expect((await refusal(g.patch(`/api/v1/approvals/${g.probeUuid()}/approve`))).kind).toBe('sent');
     expect(B.arrived).toEqual([]);
 });
 
-// approval decision: a foreign approval, foreign or missing parents and a live detail that disagrees are refused for ownership;
-// nothing is sent
+// approval decision: a foreign approval, foreign or missing parents and a live detail that disagrees are refused for
+// ownership; nothing is sent.
 test('approval decision: foreign approval, foreign parents or a disagreeing detail are refused unsent', async () => {
     const g = guard();
     const rows: Array<[string, string, RegExp]> = [
@@ -189,7 +180,8 @@ test('approval decision: foreign approval, foreign parents or a disagreeing deta
     expect(B.arrived).toEqual([]);
 });
 
-// approval decision: every other route, method, identity and body on an approval is refused as a request, before any live read
+// approval decision: every other route, method, identity and body
+// on an approval is refused as a request, before any live read.
 test('approval decision: every other route, method, identity and body is refused before any read', async () => {
     const g = guard();
     const own = APR.own;
@@ -218,18 +210,14 @@ test('approval decision: every other route, method, identity and body is refused
     expect(B.arrived).toEqual([]);
 });
 
-// ------------------------------------------------------------------ the caller as approver
-
 const apBody = (step: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
     ({ name: `${RUN}-ap-self`, enabled: true, expiry: 24, approvalSteps: [{ order: 1, requiredApprovals: 1, ...step }], ...extra });
 
-// caller as approver: an own approval profile step may name the caller (create and update of an own profile); the profile is read once
 test('caller as approver: an own approval profile step may name the caller on create and update, read once', async () => {
     const g = guard();
     await g.post('/api/v1/approvalProfiles', { data: apBody({ userUuid: SELF }) });
     await g.post('/api/v1/approvalProfiles', { data: apBody({ userUuid: SELF.toUpperCase() }) });
     await g.put(`/api/v1/approvalProfiles/${OWN_AP}`, { data: apBody({ userUuid: SELF }) });
-    // Two steps: the caller and an own role.
     await g.post('/api/v1/approvalProfiles', { data: { ...apBody({ userUuid: SELF }), approvalSteps: [{ order: 1, requiredApprovals: 1, userUuid: SELF }, { order: 2, requiredApprovals: 1, roleUuid: OWN_ROLE }] } });
     expect(A.mutations().map((a) => `${a.method} ${a.url}`)).toEqual([
         'POST /api/v1/approvalProfiles', 'POST /api/v1/approvalProfiles', `PUT /api/v1/approvalProfiles/${OWN_AP}`, 'POST /api/v1/approvalProfiles',
@@ -239,8 +227,6 @@ test('caller as approver: an own approval profile step may name the caller on cr
     expect(B.arrived).toEqual([]);
 });
 
-// caller as approver: another user, the caller anywhere else, another identity, an unreadable profile, a string body or a
-// foreign profile stay refused
 test('caller as approver: another user, other places, identity or profile problems stay refused', async () => {
     const wrong: string[] = [];
     const rows: Array<[string, () => Promise<unknown>, RefusalKind]> = [
@@ -268,7 +254,6 @@ test('caller as approver: another user, other places, identity or profile proble
     if (noUuid.kind !== 'ownership') wrong.push(`profile without uuid: ${noUuid.kind}`);
     expect(wrong).toEqual([]);
     expect(A.mutations()).toEqual([]);
-    // A probe as the step user is still sent (no profile read needed).
     A.reset();
     const g = guard();
     await g.post('/api/v1/approvalProfiles', { data: apBody({ userUuid: g.probeUuid() }) });
@@ -277,11 +262,8 @@ test('caller as approver: another user, other places, identity or profile proble
     expect(B.arrived).toEqual([]);
 });
 
-// ------------------------------------------------------------------ teardown handler oidEntries
-
 const OID = '1.3.6.1.4.1.99999.1.7';
 
-/** Runs a teardown handler as runTeardown does (wrapHandlerWithGuard wrapper), with the process ledger the guard reads. */
 async function teardown(type: string, l: LedgerLine, env: Record<string, string> = {}, testDir: string): Promise<{ result?: unknown; error?: unknown }> {
     const state = path.join(testDir, 'state');
     return withProcessEnv({ REG_STATE_DIR: state, REG_RUN_ID: RUN, BASE_URL, ...env }, async () => {
@@ -299,11 +281,10 @@ async function teardown(type: string, l: LedgerLine, env: Record<string, string>
     });
 }
 
-// teardown oidEntries: only on a proven local stack, with a live run-prefixed displayName and a matching key; absence proven by GET
+// teardown oidEntries: only on a proven local stack, with a live run-prefixed displayName and a matching key.
 test('teardown oidEntries: proven local stack only, run-prefixed entry; absence proven by GET', async ({}, testInfo) => {
     const own = mk('oidEntries', oidEntryLedgerUuid(OID), `${RUN}-oid`, undefined, { key: OID });
     oids.set(OID, { oid: OID, displayName: `${RUN}-oid` });
-    // A shared tier: refused before any request, even with a local-backend proof file of this run on disk.
     const shared = await teardown('oidEntries', own, {}, testInfo.outputPath('a'));
     expect(shared.error).toBeInstanceOf(OwnObjectViolation);
     const sharedWithProof = await withProcessEnv({ REG_STATE_DIR: testInfo.outputPath('a2'), REG_RUN_ID: RUN, BASE_URL }, async () => {
@@ -314,7 +295,6 @@ test('teardown oidEntries: proven local stack only, run-prefixed entry; absence 
     });
     expect(sharedWithProof.kind).toBe('request');
     expect(A.arrived).toEqual([]);
-    // TIER_KIND=local without the run's proof: refused.
     const noProof = await withProcessEnv({ TIER_KIND: 'local' }, async () => {
         const state = testInfo.outputPath('b');
         return withProcessEnv({ REG_STATE_DIR: state, REG_RUN_ID: RUN, BASE_URL }, async () => {
@@ -330,7 +310,6 @@ test('teardown oidEntries: proven local stack only, run-prefixed entry; absence 
     expect((await teardown('oidEntries', own, { TIER_KIND: 'local' }, testInfo.outputPath('b2'))).error).toBeInstanceOf(LiveObjectMissing);
     oids.set(OID, { oid: OID, displayName: `${RUN}-oid` });
     A.reset();
-    // A proven local stack: deleted through the guard (localStack), absence proven.
     expect((await teardown('oidEntries', own, { TIER_KIND: 'local' }, testInfo.outputPath('c'))).error).toBeUndefined();
     expect(mutations()).toEqual([`DELETE /api/v1/oids/${OID}`]);
     expect(oids.size).toBe(0);

@@ -1,10 +1,5 @@
 /**
  * settings — the reader of the regression and API environment (utils/regression/run/settings.ts).
- *
- * Checks `settings(env)` members (defaults, the two spellings of the local-stack variables, an injected `env`), and that
- * every variable the reader names is documented in .env.example (the internal pins in a line that says the run sets
- * them). A variable read in code but missing from .env.example, or a documented one the code ignores under another
- * spelling, is the drift this reader exists to stop. Pure; the source of settings.ts and .env.example are read as text.
  */
 import { expect, test } from '@playwright/test';
 import * as fs from 'fs';
@@ -51,11 +46,9 @@ test('members read the injected env lazily, not process.env', () => {
 });
 
 test('the real docker CLI stays disabled under the unit tests even when an injected env does not say so', () => {
-    // the unit config sets REG_UNIT_NO_DOCKER for every worker: an injected env cannot lift it
     expect(process.env.REG_UNIT_NO_DOCKER).toBe('1');
     expect(settings({}).unitNoDocker).toBe(true);
     expect(settings({ REG_UNIT_NO_DOCKER: '0' }).unitNoDocker).toBe(true);
-    // without the process value the injected env decides (the lift-proof is the process value)
     const saved = process.env.REG_UNIT_NO_DOCKER;
     delete process.env.REG_UNIT_NO_DOCKER;
     try {

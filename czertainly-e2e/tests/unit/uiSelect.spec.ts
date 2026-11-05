@@ -1,7 +1,6 @@
 /**
  * The Select choice rule (pages/ui/select.ts) on a static page: a text choice matches the option's EXACT accessible name
- * only; a label that only starts an option's text is chosen only with an explicit `{ prefix, reason }`; there is no
- * "contains" fallback; `{ value }` matches `data-value` exactly.
+ * only; a label that only starts an option's text needs an explicit `{ prefix, reason }`.
  */
 import { expect, Page, test } from '@playwright/test';
 import { chooseOption, chooseOptions, describeChoice, OptionChoice, SelectHandle } from '../../pages/ui/select';
@@ -21,11 +20,10 @@ async function render(page: Page): Promise<void> {
 }
 
 const picked = (page: Page) => page.locator('#picked').textContent();
-/** The stand-in's select `select-x`; its portalled content `select-x-content` is looked up page-wide. */
 const selectX = (page: Page): SelectHandle => ({ trigger: page.locator('main').getByTestId('select-x-trigger'), content: page.getByTestId('select-x-content'), name: 'x' });
 const failsWithin = async (p: Promise<unknown>): Promise<boolean> => p.then(() => false, () => true);
 
-// a text choice is the exact accessible name: "Equals" is never "Not equals", "x-ra-2" is chosen by its own name
+// a text choice is the exact accessible name: "Equals" is never "Not equals", "x-ra-2" is chosen by its own name.
 test('a text choice is the exact accessible name: Equals is never Not equals', async ({ page }) => {
     await render(page);
     const sel = selectX(page);
@@ -35,7 +33,6 @@ test('a text choice is the exact accessible name: Equals is never Not equals', a
     expect(await picked(page)).toBe('Equals;x-ra-2;Starts with;Not equals;');
 });
 
-// a label that only starts or only appears in an option fails: no prefix, no "contains" fallback without the opt-in
 test('a label that only starts or only appears in an option fails, with no contains fallback', async ({ page }) => {
     test.setTimeout(20_000);
     await render(page);

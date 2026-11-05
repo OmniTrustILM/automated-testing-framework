@@ -1,13 +1,11 @@
 /**
  * pkiBuilders — pure checks of utils/regression/pkiBuilders.ts: the DNS + IP SAN CSR, the same-key CSR, the EC P-256
- * CSR, the issued subject as a CSR subject, certificate SANs and SPKI, the leaf-first chain check, the SAN set comparison
- * and the detail SAN reader. No environment.
+ * CSR, the issued subject as a CSR subject, certificate SANs and SPKI, the leaf-first chain check, the SAN set
+ * comparison and the detail SAN reader.
  */
 import { expect, test } from '@playwright/test';
 import * as forge from 'node-forge';
 import { certificateInfo, chainProblems, csrFromKey, csrInfo, csrWithSan, ecCsrWithSan, ecRefusalWording, parseCertificate, pemBlocks, sameSans, sansOfDetail, selfSignedPem, sha256Fingerprint, sha256FingerprintOfPem, csrFromKeyWithSubject, newKeyPair, subjectAttributesOf } from '../../utils/regression/pkiBuilders';
-
-// ------------------------------------------------------------------ pki
 
 test('csrWithSan: DNS and IP SANs, CN and the key are in the request; the private key is returned', () => {
     const csr = csrWithSan('qa-reg-x-ui.example.test', ['qa-reg-x-ui.example.test', 'alt.qa-reg-x-ui.example.test'], { ip: ['192.0.2.10'] });
@@ -44,7 +42,6 @@ test('ecCsrWithSan: an EC P-256 request with the SANs; its SPKI is the one retur
     expect(csr.privateKeyPem).toMatch(/^-----BEGIN PRIVATE KEY-----/);
 });
 
-/** One certificate (forge): subject / issuer common names, the key it certifies and the key that signs it. */
 function certOf(cn: string, issuerCn: string, pub: forge.pki.PublicKey, signer: forge.pki.rsa.PrivateKey, serial: string, ext: any[] = []): string {
     const c = forge.pki.createCertificate();
     c.publicKey = pub;
@@ -62,7 +59,6 @@ const caKeys = forge.pki.rsa.generateKeyPair(1024);
 const leafKeys = forge.pki.rsa.generateKeyPair(1024);
 const otherKeys = forge.pki.rsa.generateKeyPair(1024);
 
-/** A CA and a leaf it signs (forge), for the chain check. */
 function chain(): { ca: string; leaf: string; other: string } {
     const ca = certOf('qa test ca', 'qa test ca', caKeys.publicKey, caKeys.privateKey, '01');
     const leaf = certOf('qa-reg-x.example.test', 'qa test ca', leafKeys.publicKey, caKeys.privateKey, '02', [
@@ -135,8 +131,6 @@ test('sameSans is set equality (order and DNS case ignored, no extras); sansOfDe
     expect(sansOfDetail({ dNSName: [] })).toEqual({ dns: [], ip: [] });
 });
 
-// ------------------------------------------------------------ the issued subject as a CSR subject (moved from the lifecycle helper tests)
-
 test('subjectAttributesOf / csrFromKeyWithSubject: the issued subject DN (several RDNs, escaped characters) becomes the CSR subject, in order', () => {
     expect(subjectAttributesOf('CN=qa-reg-x.example.test,O=QA Org,C=CZ')).toEqual([
         { name: 'commonName', value: 'qa-reg-x.example.test' }, { name: 'organizationName', value: 'QA Org' }, { name: 'countryName', value: 'CZ' },
@@ -150,6 +144,5 @@ test('subjectAttributesOf / csrFromKeyWithSubject: the issued subject DN (severa
     expect(info.subject).toBe('CN=qa-reg-x.example.test, O=QA Org, C=CZ');
     expect(info.sans).toEqual({ dns: ['qa-reg-x.example.test'], ip: [] });
     expect(info.spkiBase64).toBe(csr.spkiBase64);
-    // Mutant: a CN-only CSR differs from the issued subject the CA completed.
     expect(csrInfo(csrFromKeyWithSubject(keys, 'CN=qa-reg-x.example.test').pem).subject).toBe('CN=qa-reg-x.example.test');
 });

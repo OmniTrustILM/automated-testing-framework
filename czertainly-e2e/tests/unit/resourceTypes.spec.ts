@@ -1,9 +1,5 @@
 /**
- * The resource-type registry against the guard's literal tables. The guard (`guard/routes.ts`, `guard/allowLists.ts`) stays
- * literal and deny-by-default: nothing is generated from the registry. This file proves the two agree: every ledger type the
- * guard names as a target, bulk route type, body reference or created object is a registry type, so it has a teardown step
- * and a proof of ownership (a live read or an id-named ledger line), and every allow-listed create names the registry type
- * it makes. Adding an allow-listed create without naming its type here fails the last test.
+ * The resource-type registry against the guard's literal tables.
  */
 import { expect, test } from '@playwright/test';
 import { POST_CREATE } from '../../utils/regression/guard/allowLists';
@@ -14,7 +10,6 @@ import { deleteStepOf } from '../../utils/regression/teardown/runTeardown';
 
 const REGISTERED = new Set<string>(RESOURCE_REGISTRY.map((e) => e.type));
 
-/** The ledger type each allow-listed create path makes (`null`: it creates nothing the suite owns). */
 const CREATED_TYPES: Record<string, string | readonly string[] | null> = {
     '/v1/roles': 'roles', '/v1/groups': 'groups', '/v1/users': 'users', '/v1/credentials': 'credentials', '/v1/authorities': 'authorities',
     '/v1/authorities/{id}/raProfiles': 'raProfiles', '/v1/acmeProfiles': 'acmeProfiles', '/v1/scepProfiles': 'scepProfiles', '/v1/cmpProfiles': 'cmpProfiles',

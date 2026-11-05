@@ -1,6 +1,6 @@
 /**
- * Unit tests of utils/regression/inventory/fieldLabels.ts: the field labels of the catalogue, the badge text of a
- * filter and the platform labels, on plain data and on the fake catalogue.
+ * Unit tests of utils/regression/inventory/fieldLabels.ts: the field labels of the catalogue, the badge text of a filter
+ * and the platform labels, on plain data and on the fake catalogue.
  */
 import { expect, test } from '@playwright/test';
 import { fieldLabelMap, PlatformLabels, badgeTextOf, expectedBadgeText, expectedFieldLabels, valueOptionLabel } from '../../utils/regression/inventory/fieldLabels';

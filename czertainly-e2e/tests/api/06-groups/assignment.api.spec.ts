@@ -1,9 +1,6 @@
 /**
- * API-GEN-20 — Group assignment on a certificate replaces the set (ilm#428).
- *
- * Rules: core#683, core#630; archived: core#1098, ilm#71. The unknown-group row is `test.fixme` and local stack only: the
- * assignment may delete the previous groups before the NotFoundException (core#2449, core#2512), so it has never run.
- * Every test builds an own self-signed certificate and own groups, ledgered before the first assertion.
+ * API-GEN-20 — Group assignment on a certificate replaces the set
+ * (ilm#428). Rules: core#683, core#630; archived: core#1098, ilm#71.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { refused422, refusedWith } from '../../../utils/regression/inventory/configProbes';
@@ -19,9 +16,6 @@ import { API_OWN_OBJECTS_TEST_MS } from '../../../utils/regression/timeouts';
 
 const ISSUE = 'ilm#428';
 
-// ================================================================== API-GEN-20
-
-/** An own certificate and `n` own groups: the data of the assignment rows. */
 async function assignmentSeed(api: GuardedApi, spec: string, n: number) {
     const certificate = await uploadOwnSelfSigned(api, spec);
     const groups = [];
@@ -29,7 +23,6 @@ async function assignmentSeed(api: GuardedApi, spec: string, n: number) {
     return { certificate, groups };
 }
 
-/** The group names of a group list, sorted, joined as core writes them into the history. */
 const joined = (names: string[]): string => [...names].sort().join(', ');
 
 test.describe('group assignment replaces the set', { tag: tags.api }, () => {
@@ -132,9 +125,8 @@ test.describe('group assignment replaces the set', { tag: tags.api }, () => {
         });
 });
 
-// Local stack only, and parked (`test.fixme`) until a local run settles it: the inferred transactional gap of the group assignment may
-// leave an own certificate without its previous groups; the request itself only names the own certificate and own groups (a probe uuid
-// is the unknown group).  The row has never been seen to run, so there is no observed answer to assert and no defect to report yet.
+// Local stack only, and parked (`test.fixme`) until a local run settles it:
+// the assignment may delete the previous groups before the NotFoundException.
 test.describe('group assignment of an unknown group (local stack)', { tag: tags.api }, () => {
     describeLocalOnly(test);
 

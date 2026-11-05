@@ -1,11 +1,8 @@
 /**
- * sharedNeeds — the needs that read the tier or the runner settings, each answered met / unmet / failed read.
- *
- * Covers `crypto-v2`, `platform-triggers-free`, `metadata-field`, `scep-https`, `registration-settings`,
- * `required-attributes-fillable`, `bearer-token`, `openapi-document` and the extended `ca`, resolved through `resolveNeed`
- * against a loopback fake core: met (undefined), unmet (the named reason), failed read (the resolver throws, so the test
- * fails and does not skip). No resolver sends anything but a GET. A skip decided from a read that failed hides a broken tier
- * behind a green run, and a skip after the first create leaves objects behind.
+ * sharedNeeds — the needs that read the tier or the runner settings, each answered met / unmet / failed read. Covers
+ * `crypto-v2`, `platform-triggers-free`, `metadata-field`, `scep-https`, `registration-settings`,
+ * `required-attributes-fillable`, `bearer-token`, `openapi-document` and the extended `ca`. A skip decided from a failed read
+ * would hide a broken tier behind a green run.
  */
 import * as fs from 'fs';
 import { expect, test } from '@playwright/test';
@@ -24,7 +21,6 @@ import type { Answer, Arrived, LoopbackServer } from './helpers/loopbackServer';
 const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const ENV_KEYS = ['REG_OPENAPI_FILE', 'REG_CRYPTO_CONNECTOR_V2', 'REG_CA_CONNECTORS', 'REG_ADCS_CONNECTOR', 'REG_RA_PROFILE_NAME'];
 
-/** A fake core whose GET answers the test sets by path; every other path is a 404. */
 class NeedsCore extends FakeCore {
     readonly routes = new Map<string, Answer>();
 
@@ -48,8 +44,6 @@ registerFakeCore(() => core, (rig: FakeCoreRig) => ({ server, api } = rig), { cl
 const env = (authMode: string = 'local'): TestEnv => ({ baseUrl: process.env.BASE_URL, authMode, username: 'admin', password: 'unused' }) as TestEnv;
 const need = (name: Needs, options?: NeedOptions, authMode?: string) => resolveNeed(name, { api, env: env(authMode), options });
 
-// ------------------------------------------------------------------ crypto-v2
-
 const CRYPTO = '/api/v1/connectors';
 function serveCryptoConnector(version: string): void {
     core.serve(CRYPTO, [{ uuid: U(1), name: 'Software-Cryptography-Provider-v2', status: 'connected' }]);
@@ -68,8 +62,6 @@ test('crypto-v2 is met by a connected v2 cryptography connector, unmet without o
     expect(server.mutations()).toEqual([]);
 });
 
-// ------------------------------------------------------------------ platform-triggers-free
-
 test('platform-triggers-free looks at the events of the call, names the occupied ones, and fails on an unreadable setting', async () => {
     core.serve('/api/v1/settings/events', { eventsMapping: {} });
     expect(await need('platform-triggers-free')).toBeUndefined();
@@ -81,8 +73,6 @@ test('platform-triggers-free looks at the events of the call, names the occupied
     await expect(need('platform-triggers-free', { events: [EVENT.registered] }), 'a read error is a failure, never a skip').rejects.toThrow(/→ 403.*could not be read/);
     expect(server.mutations()).toEqual([]);
 });
-
-// ------------------------------------------------------------------ metadata-field
 
 test('metadata-field is met by a metadata group in the certificate filter catalogue, unmet without one, and fails on an unreadable catalogue', async () => {
     const field = { fieldIdentifier: 'owner|string', fieldLabel: 'Owner', type: 'string', conditions: ['EQUALS'] };
@@ -96,8 +86,6 @@ test('metadata-field is met by a metadata group in the certificate filter catalo
     await expect(need('metadata-field')).rejects.toThrow(/answered 503/);
     expect(server.mutations()).toEqual([]);
 });
-
-// ------------------------------------------------------------------ scep-https
 
 const RA = { uuid: U(4), name: 'run-ra', kind: 'own' as const, authorityUuid: U(5) };
 const ACME_READ = `/api/v1/authorities/${RA.authorityUuid}/raProfiles/${RA.uuid}/protocols/acme`;
@@ -119,8 +107,6 @@ test('scep-https is decided from the protocol URL the server already reports, an
     expect(server.mutations()).toEqual([]);
 });
 
-// ------------------------------------------------------------------ registration-settings
-
 const PLATFORM = '/api/v1/settings/platform';
 const registration = (maxFailedAttempts: number, defaultIssuanceWindowDays: number): Json => ({ certificates: { registration: { maxFailedAttempts, defaultIssuanceWindowDays } } });
 
@@ -140,8 +126,6 @@ test('registration-settings needs a window and enough failed attempts for the ro
     expect(server.mutations()).toEqual([]);
 });
 
-// ------------------------------------------------------------------ required-attributes-fillable
-
 const ATTRIBUTES = (resource: string): string => `/api/v1/attributes/custom/resources/${resource}`;
 const required = (contentType: string): Json => ({ uuid: U(6), name: 'owner', contentType, properties: { required: true } });
 
@@ -158,15 +142,11 @@ test('required-attributes-fillable skips only for an attribute type the suite ca
     expect(server.mutations()).toEqual([]);
 });
 
-// ------------------------------------------------------------------ bearer-token
-
 test('bearer-token is unmet on a header-mode stack and met otherwise; it reads nothing', async () => {
     expect(await need('bearer-token', undefined, 'local')).toBeUndefined();
     expect(await need('bearer-token', undefined, 'header')).toMatch(/^no bearer token on AUTH_MODE=header/);
     expect(server.arrived).toEqual([]);
 });
-
-// ------------------------------------------------------------------ utils-service
 
 test('utils-service is met by a configured utils service URL, unmet without one, and fails on an unreadable setting', async () => {
     const SETTINGS = '/api/v1/settings/platform';
@@ -180,8 +160,6 @@ test('utils-service is met by a configured utils service URL, unmet without one,
     await expect(need('utils-service')).rejects.toThrow(/→ 500/);
     expect(server.mutations()).toEqual([]);
 });
-
-// ------------------------------------------------------------------ openapi-document
 
 test('openapi-document is met by a readable OpenAPI 3 file, unmet for no file or an unusable one, and fails when the file cannot be read', async ({}, testInfo) => {
     expect(await need('openapi-document'), 'REG_OPENAPI_FILE unset').toMatch(/^REG_OPENAPI_FILE is not set/);
@@ -198,8 +176,6 @@ test('openapi-document is met by a readable OpenAPI 3 file, unmet for no file or
     await expect(need('openapi-document')).rejects.toThrow(/EISDIR/);
     expect(server.arrived).toEqual([]);
 });
-
-// ------------------------------------------------------------------ ca: a healthy authority can be picked
 
 const RUN_AUTHORITY = `/api/v1/authorities/${U(8)}`;
 
@@ -233,8 +209,6 @@ test('ca without a run CA still skips with the picker reason, and the picker run
     expect(await need('ca')).toMatch(/^deploy gate: no healthy CA/);
     expect(server.arrived.filter((a) => a.url === '/api/v1/connectors' || a.url.endsWith('/api/v1/connectors')), 'one picker read, not two').toHaveLength(1);
 });
-
-// ------------------------------------------------------------------ the needs fixture and the key chain
 
 test('the needs fixture passes the options of the three parametrised needs and skips with the need\'s reason', async () => {
     const skipped: string[] = [];

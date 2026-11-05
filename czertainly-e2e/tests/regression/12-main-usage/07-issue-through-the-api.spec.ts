@@ -1,12 +1,6 @@
 /**
- * REG-USE-07 — A certificate issued through the v2 API (release checklist: Usage 7; ilm#429).
- *
- * Posts the v2 issue of an external CSR: 200 with a uuid, and the issued certificate matches the CSR. (.1) A CSR with DNS and
- * IP SANs also answers requestAttributeWarnings; a garbage CSR gives 400. A read without credentials gives 401 and no
- * certificate data (not on a local stack).
- *
- * The RA profile is the run's own. Every certificate is recorded in the ledger right after the issue call, before any
- * assertion, and deleted by the run-end teardown; a garbage CSR the platform accepted is recorded too.
+ * REG-USE-07 — A certificate issued through the v2 API (release checklist: Usage 7; ilm#429). Posts the v2 issue of an
+ * external CSR: 200 with a uuid, and the issued certificate matches the CSR.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { ACCEPT_JSON } from '../../../utils/regression/platform/connectorApi';
@@ -38,11 +32,8 @@ test.describe('Certificate issue through the API', { tag: tags.regression }, () 
                 expect(Array.isArray(attrs)).toBe(true);
             });
 
-            // The CSR carries the run-prefixed common name as its one DNS name and no IP address.
             const cert = await test.step('POST v2 issue → 200, uuid, empty certificateData', async () => {
                 const issued = await submitOwnCertificate(api, ra, own.spec, { suffix: 'api', sans: { ip: [] }, fillRequiredAttributes: true, note: 'issued via API' });
-                // Core links certKey_<CN> at REQUEST time (CertificateServiceImpl.uploadCertificateKey): recorded now, not only after
-                // 'issued'.
                 await recordDerivedKeyOrNamed(api, issued.uuid, issued.cn, issued.createdAfter, own.spec, 'issued via API');
                 expect(issued.answer.status, issued.answer.text.slice(0, 300)).toBe(200);
                 expect(issued.uuid).toMatch(/^[0-9a-f-]{36}$/);
@@ -92,13 +83,11 @@ test.describe('Certificate issue through the API', { tag: tags.regression }, () 
             ],
         }),
         async ({ api, own, ownRaProfile }, testInfo) => {
-            // Issue + poll (180 s) + the reads.
             test.setTimeout(ISSUE_MS);
             const ra = ownRaProfile;
             const base = `/api/v2/operations/authorities/${ra.authorityUuid}/raProfiles/${ra.uuid}`;
             const san = sanOracle(await authorityConnectorName(api, ra.authorityUuid));
             testInfo.annotations.push({ type: 'san-oracle', description: san.describe() });
-            // A time suffix keeps the name unique under --repeat-each.
             const cn = ownCommonName('api-san');
             // 192.0.2.0/24 is TEST-NET-1 (RFC 5737): a documentation address, never a real host.
             const sans = { dns: [cn, `alt.${cn}`], ip: ['192.0.2.11'] };
@@ -108,7 +97,6 @@ test.describe('Certificate issue through the API', { tag: tags.regression }, () 
                 const answer = await sendRaw(api, 'POST', `${base}/certificates`, { request: csr.derBase64, format: 'pkcs10', attributes: [], customAttributes: [] });
                 const body = answer.json as Record<string, unknown> | undefined;
                 const createdAfter = createdAfterOf(answer, 'v2 issue (REG-USE-07.1)');
-                // Ledger before assertion: whatever the platform made is this run's.
                 if (typeof body?.uuid === 'string') {
                     own.record('certificates', { status: answer.status, uuid: body.uuid, text: answer.text }, { name: cn, note: 'issued via API with DNS + IP SANs (REG-USE-07.1)', parents: { raProfile: ra.uuid, authority: ra.authorityUuid } });
                     await recordDerivedKeyOrNamed(api, body.uuid, cn, createdAfter, own.spec, 'issued via API (REG-USE-07.1)');
@@ -116,8 +104,7 @@ test.describe('Certificate issue through the API', { tag: tags.regression }, () 
                 expect(answer.status, answer.text.slice(0, 300)).toBe(200);
                 expect(Object.keys(body ?? {}).sort()).toEqual(['certificateData', 'requestAttributeWarnings', 'uuid']);
                 expect(body, 'the answer never carries the signed certificate').toMatchObject({ certificateData: '' });
-                // Warnings are not a violation (a lenient request-attribute policy answers them with 200);
-                // a strict violation would be a 422. The list is asserted to be a list and annotated when not empty.
+                // Warnings are not a violation (a lenient request-attribute policy answers them with 200)
                 expect(Array.isArray(body!.requestAttributeWarnings), 'requestAttributeWarnings is a list').toBe(true);
                 const warnings = body!.requestAttributeWarnings as unknown[];
                 if (warnings.length) testInfo.annotations.push({ type: 'request-attribute-warnings', description: JSON.stringify(warnings).slice(0, 500) });
@@ -150,7 +137,6 @@ test.describe('Certificate issue through the API', { tag: tags.regression }, () 
             const ra = ownRaProfile;
             const base = `/api/v2/operations/authorities/${ra.authorityUuid}/raProfiles/${ra.uuid}`;
             const answer = await sendRaw(api, 'POST', `${base}/certificates`, { request: 'bm90LWEtY3Ny', format: 'pkcs10', attributes: [], customAttributes: [] });
-            // Ledger before assertion: a garbage CSR the platform accepted made a certificate of this run.
             const accepted = (answer.json as { uuid?: unknown } | undefined)?.uuid;
             if (typeof accepted === 'string') {
                 own.record('certificates', { status: answer.status, uuid: accepted, text: answer.text }, { name: runCommonName('api-garbage'), note: 'garbage CSR accepted (REG-USE-07.1 negative)' });
@@ -164,7 +150,6 @@ test.describe('Certificate issue through the API', { tag: tags.regression }, () 
             rule: ['no credentials → 401 and a body that carries neither the common name nor the certificate content; not asserted on a local stack, where the dev proxy (AUTH_MODE=header) or the localhost identity may authenticate the call'],
         }),
         async ({ api, request, own, ownRaProfile }) => {
-            // No `needs` value describes this environment condition, so it stays a skip with its reason.
             test.skip(isLocalTier(), 'local stack: the dev proxy (AUTH_MODE=header) or the localhost identity may authenticate an anonymous call, so the 401 is not asserted there');
             test.setTimeout(ISSUE_MS);
             // The run's own issued certificate: a real object whose common name and content could leak into a refusal.

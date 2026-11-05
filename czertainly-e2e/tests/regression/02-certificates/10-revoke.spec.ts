@@ -1,10 +1,6 @@
 /**
- * REG-CERT-10 — Revoke from the certificate detail dialog (release checklist: Certificates 10; ilm#429).
- *
- * The dialog offers exactly the nine revocation reasons. Revoking with Key compromise gives 204 and the certificate becomes
- * Revoked. After a reload the Details show Revoked, Revoke, Renew and Rekey are disabled, and the History says why.
- *
- * The certificate is issued by this run (own RA profile); the live check runs before the dialog acts.
+ * REG-CERT-10 — Revoke from the certificate detail dialog (release checklist: Certificates 10; ilm#429). The dialog
+ * offers exactly the nine revocation reasons.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { CertificateDetailPage } from '../../../pages/CertificateDetailPage';
@@ -27,7 +23,6 @@ test.describe('Revoke in the web UI', { tag: tags.regression }, () => {
             ],
         }),
         async ({ signedIn: page, api, own, live, ownRaProfile }) => {
-            // One API issuance (180 s), the dialog, the revocation (120 s) and the tab checks.
             test.setTimeout(LIFECYCLE_MS);
             const ra = ownRaProfile;
             const cert = await test.step('Issue an own certificate through the API', async () => own.certificate.issue(ra, { suffix: 'ui10' }));

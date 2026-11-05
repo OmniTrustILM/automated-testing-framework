@@ -1,22 +1,18 @@
 /**
- * Offline checks of pages/ImportCertificatesDialog.ts against a static document shaped like the admin UI import
- * dialog: refused files, the alert, the disabled button, the password field and the listed entries. A browser
- * context answers every request itself; nothing leaves the machine.
+ * Offline checks of pages/ImportCertificatesDialog.ts against a static document shaped like the admin UI import dialog:
+ * refused files, the alert, the disabled button, the password field and the listed entries.
  */
 import { Browser, BrowserContext, expect, Page, Route, test } from '@playwright/test';
 import { CertificatePage } from '../../pages/CertificatePage';
 import { ImportCertificatesDialog } from '../../pages/ImportCertificatesDialog';
 import { randomBytes } from 'node:crypto';
 
-// Run-scoped generated test passwords: no password-like literal in the file.
 const GEN_PW_1 = `qa-${randomBytes(9).toString('base64url')}`;
 
 test.describe.configure({ timeout: 60_000 });
 
 const failsFast = async (call: Promise<unknown>): Promise<boolean> => call.then(() => false, () => true);
 const BASE = 'http://127.0.0.1:9/';
-
-// ------------------------------------------------------------------ a context that is the "server"
 
 interface Served {
     inspection: { status: number; body: unknown };
@@ -57,8 +53,6 @@ const newServed = (html: string, patch: Partial<Served> = {}): Served => ({
     extra: () => undefined,
     ...patch,
 });
-
-// ------------------------------------------------------------------ ImportCertificatesDialog
 
 const IMPORT_APP = `<!doctype html><html><body>
 <main><button data-testid="upload-button" id="open">upload</button></main>
@@ -153,11 +147,9 @@ test('ImportCertificatesDialog: a 200 lists the entries; a signing request leave
         await wizard.assertSubmitDisabled();
         expect(await Promise.all([failsFast(wizard.assertNoEntries()), failsFast(wizard.assertPasswordFieldShown())]), 'listed entries and a hidden password field fail').toEqual([true, true]);
 
-        // A certificate entry is no signing request: the button is enabled.
         served.inspection = { status: 200, body: { containerDigest: 'y', entries: [CERT_ENTRY] } };
         await wizard.chooseFile({ name: 'cert.pem', mimeType: 'application/x-pem-file', buffer: Buffer.from('cert') });
         expect(await failsFast(wizard.assertSubmitDisabled())).toBe(true);
-        // Import: one request, the results region lists the badges.
         await context.route('**/api/v1/certificates/import', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ results: [{ badge: 'Imported' }] }) }));
         const imported = await wizard.submitForResponse();
         expect(imported.status()).toBe(200);

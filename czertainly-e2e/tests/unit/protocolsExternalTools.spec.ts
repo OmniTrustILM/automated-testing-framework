@@ -1,7 +1,5 @@
 /**
- * protocolsExternalTools — the sscep and openssl cmp runners against fake binaries written under the test output: the
- * arguments that reach the client (one argv entry per value, no shell), the minimal child environment, the files read
- * back, the parsed status, a missing binary and a timeout.
+ * protocolsExternalTools — the sscep and openssl cmp runners against fake binaries written under the test output.
  */
 import { expect, test } from '@playwright/test';
 import * as fs from 'fs';
@@ -13,7 +11,6 @@ import { certificatesOfFile, sscepEnroll, sscepGetCa } from '../../utils/regress
 import { prepareWorkDir, runTool, writeWorkFile } from '../../utils/regression/protocols/externalToolRunner';
 import { uniqueSuffix } from '../../utils/regression/text';
 
-/** A fake tool: logs its arguments to `<dir>/args.json` and its environment to `<dir>/env.json`, runs `body`, exits `code`. */
 function fakeTool(dir: string, name: string, body: string, code = 0): string {
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, name);
@@ -39,7 +36,6 @@ test('sscep getca: the CA files the fake writes are listed in order and read bac
     expect(argsOf(dir)).toEqual(['getca', '-u', 'https://ilm.example/api/v1/protocols/scep/raProfile/r/pkiclient.exe', '-c', 'ca.crt']);
     expect(got.files.map((f) => path.basename(f))).toEqual(['ca.crt-0', 'ca.crt-1']);
     expect(certificatesOfFile(got.files[0])[0].commonName).toBe('qa-unit-getca-a');
-    // The second file is DER: the DER branch reads it to the same facts as the PEM.
     expect(certificatesOfFile(got.files[1])[0].fingerprint).toBe(certificateFacts(b).fingerprint);
     expect(certificatesOfFile(got.files[1])[0].commonName).toBe('qa-unit-getca-b');
 });

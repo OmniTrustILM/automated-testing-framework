@@ -1,12 +1,6 @@
 /**
  * REG-CFG-05 — The run's ACME profile activated on an own RA profile (release checklist: Configuration 5; ilm#430).
- *
  * Activation: the row is Enabled, the API says acmeAvailable and the RA-profile directory answers.
- * REG-CFG-05.2: an RA profile whose name holds a space is refused at activation with the backend text; the row stays inactive.
- * The create does not enforce the name rule, so the refusal comes late (core#743); the UI must show the backend text (fe#884).
- *
- * Both profiles pass the live check before the UI changes them. Activation always runs on a fresh copy of the run RA profile.
- * The tests need a CA, so without one they skip before anything exists.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { RaProfilePage } from '../../../pages/RaProfilePage';
@@ -61,10 +55,8 @@ test.describe('ACME on an RA profile', { tag: tags.regression }, () => {
             ],
         }),
         async ({ signedIn: page, api, own, live, ownRaProfile }) => {
-            // A time suffix keeps the name unique under --repeat-each; the space stays.
             const spaced = await test.step('Prerequisite: an own RA profile named "<run>-ra space-<stamp>" (attributes copied read-only from the run RA profile)', async () =>
                 createOwnRaProfileLike(api, own.spec, 'ra space', { source: ownRaProfile, note: 'RA profile with a space in its name', enable: false }));
-            // After the CA need: no ACME profile is made on a tier that cannot run the test.
             const acme = await test.step('Prerequisite: the run ACME profile (enabled)', async () => ensureAcmeProfile(api, own.spec));
 
             const [liveSpaced, liveAcme] = await test.step('Guard: the spaced RA profile and the ACME profile are this run\'s own objects (live check)', async () =>

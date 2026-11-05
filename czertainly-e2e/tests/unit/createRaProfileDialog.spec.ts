@@ -1,7 +1,5 @@
 /**
- * Offline checks of pages/CreateRaProfileDialog.ts against a static document shaped like the admin UI RA-profile
- * form: the list's "+" opens the dialog, the name and the authority are filled, and Create returns the create answer
- * without waiting for a redirect. A browser context answers every request itself; nothing leaves the machine.
+ * Offline checks of pages/CreateRaProfileDialog.ts against a static document shaped like the admin UI RA-profile form.
  */
 import { Browser, BrowserContext, expect, Page, test } from '@playwright/test';
 import { RaProfilePage } from '../../pages/RaProfilePage';
@@ -11,7 +9,6 @@ test.describe.configure({ timeout: 60_000 });
 const BASE = 'http://127.0.0.1:9/';
 const NEW_UUID = '11111111-1111-4111-8111-111111111111';
 
-/** A context that is the "server": it answers the RA-profile create with 201 and keeps the request bodies. */
 async function serve(browser: Browser, html: string): Promise<{ context: BrowserContext; page: Page; creates: unknown[] }> {
     const creates: unknown[] = [];
     const context = await browser.newContext({ baseURL: BASE });
@@ -27,7 +24,6 @@ async function serve(browser: Browser, html: string): Promise<{ context: Browser
     return { context, page: await context.newPage(), creates };
 }
 
-/** The RA profile list with its Create RA Profile dialog: the authority enables the Connector Attributes tab; Create POSTs and stays. */
 const RA_APP = `<!doctype html><html><body>
 <main><button data-testid="plus-button" id="plus">+</button></main>
 <div id="dlg" role="dialog" aria-label="Create RA Profile" hidden>
