@@ -1,10 +1,7 @@
 /**
- * notificationCatchers — the delivery receivers of the local-stack notification rows.
- *
- *   - `MailCatcher`: a client of a Mailpit-class SMTP catcher's HTTP read API (REG_SMTP_CATCHER_URL)
- *   - `WebhookReceiver`: an HTTP server on the runner that records method, path, headers and the raw body
- *
- * `@local` only: every client refuses unless `TIER_KIND=local`. A message is matched by a run-prefixed marker, never by position.
+ * notificationCatchers — the delivery receivers of the local-stack notification rows: `MailCatcher` (a Mailpit-class SMTP catcher's HTTP
+ * read API) and `WebhookReceiver` (a runner-hosted HTTP server); `@local`
+ * only, messages matched by a run-prefixed marker, never by position.
  */
 import * as http from 'http';
 import type { AddressInfo } from 'net';
@@ -18,14 +15,12 @@ function requireLocal(what: string): void {
     if (!isLocalTier()) throw new Error(`${what}: a delivery catcher exists on a local stack only (TIER_KIND=local)`);
 }
 
-/** Why the SMTP catcher cannot be used ("deploy gate"), or undefined. */
 export function smtpCatcherProblem(env: NodeJS.ProcessEnv = process.env): string | undefined {
     return settings(env).smtpCatcherUrl
         ? undefined
         : 'deploy gate: no SMTP catcher (REG_SMTP_CATCHER_URL unset): the local notification overlay is not up; @needs:smtp-catcher';
 }
 
-/** Why the webhook receiver cannot be hosted ("deploy gate"), or undefined. */
 export function webhookReceiverProblem(env: NodeJS.ProcessEnv = process.env): string | undefined {
     return settings(env).webhookHost
         ? undefined
@@ -55,14 +50,12 @@ function call(method: string, urlText: string, body?: string): Promise<Answer> {
     });
 }
 
-// ------------------------------------------------------------------ the SMTP catcher (Mailpit API)
 
 interface CaughtMessage {
     id: string;
     to: string[];
     from: string;
     subject: string;
-    /** The HTML part (the e-mail provider sends HTML only). */
     html: string;
     text: string;
 }
@@ -78,7 +71,6 @@ export class MailCatcher {
         return new MailCatcher(String(settings(env).smtpCatcherUrl).replace(/\/$/, ''));
     }
 
-    /** Every caught message (summaries), oldest first. */
     async list(): Promise<JsonObject[]> {
         const res = await call('GET', `${this.base}/api/v1/messages?limit=500`);
         if (res.status !== 200) throw new Error(`catcher list answered ${res.status}`);
@@ -99,13 +91,11 @@ export class MailCatcher {
         };
     }
 
-    /** Empties the catcher (the overlay's own, never a shared one). */
     async clear(): Promise<void> {
         const res = await call('DELETE', `${this.base}/api/v1/messages`);
         if (res.status >= 300) throw new Error(`catcher clear answered ${res.status}`);
     }
 
-    /** Messages whose subject contains `marker`, fully read, once at least `count` have arrived (polled; fails with what it saw). */
     async waitForMessages(marker: string, count: number, timeoutMs = 90_000): Promise<CaughtMessage[]> {
         const summaries = await pollUntil(
             async () => (await this.list()).filter((m) => String(m.Subject ?? '').includes(marker)),
@@ -117,14 +107,11 @@ export class MailCatcher {
     }
 }
 
-// ------------------------------------------------------------------ the webhook receiver (runner-hosted)
 
 interface ReceivedRequest {
     method: string;
     path: string;
-    /** Lower-cased header names. */
     headers: Record<string, string>;
-    /** The raw body exactly as received. */
     body: string;
     receivedAt: number;
 }
@@ -138,7 +125,6 @@ export class WebhookReceiver {
         private readonly mode: { status: number },
     ) {}
 
-    /** Starts a receiver on a random port, bound to REG_WEBHOOK_BIND (default 0.0.0.0); `url()` uses REG_WEBHOOK_HOST. */
     static async start(env: NodeJS.ProcessEnv = process.env): Promise<WebhookReceiver> {
         requireLocal('WebhookReceiver');
         const problem = webhookReceiverProblem(env);
@@ -163,7 +149,6 @@ export class WebhookReceiver {
         return new WebhookReceiver(server, (server.address() as AddressInfo).port, settings(env).webhookHost, requests, mode);
     }
 
-    /** The URL the webhook instance is configured with (`http://<alias>:<port>/hook`, the path carries the marker). */
     url(marker = 'hook'): string {
         return `http://${this.host}:${this.port}/${marker}`;
     }
@@ -172,7 +157,6 @@ export class WebhookReceiver {
         return [...this.requests];
     }
 
-    /** Answer every request with this status from now on (204 default; 500 for the fire-and-forget row). */
     answerWith(status: number): void {
         this.mode.status = status;
     }

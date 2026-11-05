@@ -1,11 +1,5 @@
-/**
- * eventVocabulary — the event and resource codes of the workflow API.
- *
- * The platform's own codes (interfaces `ResourceEvent`, `Resource`) and the event labels it prints in its messages.
- * Pure data, no I/O; every events helper and spec reads its codes from here.
- */
+/** eventVocabulary — the event and resource codes of the workflow API and the event labels the platform prints; pure data. */
 
-/** Event codes (`ResourceEvent.Codes`). */
 export const EVENT = {
     statusChanged: 'certificate_status_changed',
     actionPerformed: 'certificate_action_performed',
@@ -23,7 +17,6 @@ export const EVENT = {
 } as const;
 export type EventCode = (typeof EVENT)[keyof typeof EVENT];
 
-/** Event labels as the platform prints them in its messages (`ResourceEvent` label). */
 export const EVENT_LABEL: Record<EventCode, string> = {
     certificate_status_changed: 'Certificate validation status changed',
     certificate_action_performed: 'Certificate action performed',
@@ -40,5 +33,4 @@ export const EVENT_LABEL: Record<EventCode, string> = {
     scheduled_job_finished: 'Scheduled job finished',
 };
 
-/** The objects that can carry an object-level association (`ResourceEvent.overridingResources`). */
 export type AssociationScope = 'raProfiles' | 'groups' | 'discoveries';

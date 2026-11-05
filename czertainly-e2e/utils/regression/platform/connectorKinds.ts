@@ -1,49 +1,35 @@
 /**
- * connectorKinds — which connectors a tier has, found by what they offer, and the shape of their detail.
- *
- * A connector is found by what it offers (interface version, function groups and kinds), never by a hard-coded registration
- * name alone. Every call is a GET; nothing is created or changed. A read that does not answer 2xx is an error of the test,
- * not a missing connector: only an answer that lists no matching connector means "absent".
+ * connectorKinds — which connectors a tier has, found by what they offer (never by registration name alone), and the shape of their detail;
+ * GET only, a non-2xx read is a test error and only an empty match means "absent".
  */
 import type { APIRequestContext } from '@playwright/test';
 import { apiJson } from '../apiReads';
 import { isJsonObject, rowsOf, type JsonObject } from '../json';
 import { connectorVersion, type ConnectorRow, type ConnectorVersion } from './connectorApi';
 
-/** What a connector offers; every member that is set must match. */
 export interface ConnectorSpec {
-    /** The interface generation; undefined matches either. */
     version?: ConnectorVersion;
-    /** A name hint, to tell connectors of one interface apart (the match is on the registered name). */
     name?: RegExp;
-    /** Function group code → kinds that must all be offered (the group and kinds of the connector detail). */
     functionGroups?: Record<string, string[]>;
-    /** v2 interface codes that must all be present. */
     interfaces?: string[];
 }
 
-/** The v2 interfaces every v2 connector offers for the platform to talk to it. */
 export const V2_BASE_INTERFACES = ['info', 'health'] as const;
 
-/** Function group code → its kinds, sorted, from a connector detail. */
 export const groupsOf = (detail: JsonObject): Record<string, string[]> =>
     Object.fromEntries(rowsOf(detail.functionGroups).map((g) => [String(g.functionGroupCode ?? g.code), ((g.kinds ?? []) as string[]).slice().sort()]));
 
-/** The v2 interface codes of a connector detail, lower-cased. */
 export const interfaceCodes = (detail: JsonObject): string[] => rowsOf(detail.interfaces).map((i) => String(i.code ?? i.name ?? '').toLowerCase());
 
-/** Interface code → the feature flags it lists (empty when the interface lists none). */
 export function featuresByInterface(detail: JsonObject): Record<string, string[]> {
     return Object.fromEntries(rowsOf(detail.interfaces).map((i) => [String(i.code ?? i.name ?? '').toLowerCase(), Array.isArray(i.features) ? i.features.map(String) : []]));
 }
 
-/** True when the detail offers every group and kind of the spec. */
 function hasGroups(detail: JsonObject, wanted: Record<string, string[]>): boolean {
     const groups = groupsOf(detail);
     return Object.entries(wanted).every(([code, kinds]) => !!groups[code] && kinds.every((k) => groups[code].includes(k)));
 }
 
-/** True when a registered connector matches the spec (pure; `detail` is its v2 detail, `version` the version read from it). */
 export function matchesSpec(spec: ConnectorSpec, row: Pick<ConnectorRow, 'name'>, version: ConnectorVersion | undefined, detail: JsonObject): boolean {
     if (spec.name && !spec.name.test(row.name)) return false;
     if (spec.version && version !== spec.version) return false;
@@ -60,13 +46,11 @@ export interface RegisteredConnector {
     detail: JsonObject;
 }
 
-/** The registry as rows (`GET /v1/connectors`); a read that does not answer 2xx throws. */
 async function registry(api: APIRequestContext): Promise<ConnectorRow[]> {
     const rows = await apiJson<JsonObject[]>(api, 'GET', '/api/v1/connectors');
     return rowsOf(rows).map((r) => ({ uuid: String(r.uuid), name: String(r.name), status: typeof r.status === 'string' ? r.status : undefined }));
 }
 
-/** The first registered connector (any status) that matches the spec, with its v2 detail, or undefined. */
 export async function findRegisteredConnector(api: APIRequestContext, spec: ConnectorSpec): Promise<RegisteredConnector | undefined> {
     for (const row of await registry(api)) {
         if (spec.name && !spec.name.test(row.name)) continue;
@@ -77,7 +61,6 @@ export async function findRegisteredConnector(api: APIRequestContext, spec: Conn
     return undefined;
 }
 
-/** The connectors the platform ships, by what they offer. */
 export const CONNECTOR_SPECS: Record<'credential-v1' | 'ejbca' | 'adcs-v2' | 'network-discovery-v1' | 'network-discovery-v2' | 'software-cryptography-v1' | 'software-cryptography-v2', ConnectorSpec> = {
     'credential-v1': { version: 1, functionGroups: { credentialProvider: ['SoftKeyStore', 'Basic', 'ApiKey'] } },
     'ejbca': { name: /ejbca/i, functionGroups: { authorityProvider: ['EJBCA'] } },
@@ -88,7 +71,6 @@ export const CONNECTOR_SPECS: Record<'credential-v1' | 'ejbca' | 'adcs-v2' | 'ne
     'software-cryptography-v2': { version: 2, name: /software/i, interfaces: ['info', 'health', 'metrics', 'cryptography'] },
 };
 
-/** A connected HashiCorp Vault connector with a secret interface: where the secret rows can also run. */
 export async function findVaultConnector(api: APIRequestContext): Promise<{ uuid: string; name: string; interfaceUuid: string } | undefined> {
     for (const row of await registry(api)) {
         if (row.status !== 'connected' || !/vault/i.test(row.name)) continue;
@@ -100,9 +82,7 @@ export async function findVaultConnector(api: APIRequestContext): Promise<{ uuid
     return undefined;
 }
 
-// ------------------------------------------------------------------ the shape of a connector detail and of its info
 
-/** What is wrong with the detail of a connector of this version (empty: it has the shape the platform relies on). */
 export function detailShapeProblems(version: ConnectorVersion, detail: JsonObject): string[] {
     const problems: string[] = [];
     const groups = rowsOf(detail.functionGroups);
@@ -124,8 +104,8 @@ export function detailShapeProblems(version: ConnectorVersion, detail: JsonObjec
 }
 
 /**
- * What is wrong with the answer of `GET /v2/connectors/{uuid}/info` (empty: an object that names the connector and its version). The body is
- * the connector document itself or wraps it as `connector`; a list of interfaces, when present, is a list of `{ code, version }`.
+ * What is wrong with the answer of `GET /v2/connectors/{uuid}/info` (empty: an object naming the connector and its version, possibly
+ * wrapped as `connector`).
  */
 export function infoShapeProblems(body: unknown): string[] {
     if (!isJsonObject(body)) return ['the info answer is not a JSON object'];
@@ -140,7 +120,6 @@ export function infoShapeProblems(body: unknown): string[] {
     return problems;
 }
 
-/** One line that says what a connector offers: `v1 groups discoveryProvider[IP-Hostname]` or `v2 interfaces info, health, metrics(openMetrics)`. */
 export function inventoryLine(name: string, version: ConnectorVersion | undefined, detail: JsonObject): string {
     if (version === 1) {
         const groups = Object.entries(groupsOf(detail)).map(([code, kinds]) => `${code}[${kinds.join(',')}]`);

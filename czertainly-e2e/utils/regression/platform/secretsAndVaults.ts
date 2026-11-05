@@ -1,9 +1,6 @@
 /**
- * secretsAndVaults — the run's own vault instances, vault profiles and secrets (REG-SEC-01…03).
- *
- * Creates are recorded with the parents a later delete needs. Also here: the secret state wait, and the run's vault chain kept
- * in RunState. A pre-existing vault instance may only be the parent of an own vault profile; the content of a pre-existing
- * secret is never read.
+ * secretsAndVaults — the run's own vault instances, vault profiles and secrets, recorded with the parents a later delete needs; a
+ * pre-existing vault instance may only be the parent of an own profile and a pre-existing secret's content is never read.
  */
 import type { APIRequestContext, APIResponse } from '@playwright/test';
 import { Logger } from '../../Logger';
@@ -22,7 +19,6 @@ import type { JsonObject } from '../json';
 
 const logger = new Logger('SecretsAndVaults');
 
-/** `GET /v1/vaults/{connectorUuid}/attributes` — the vault-instance form of a secret-interface connector. */
 export const listVaultInstanceAttributes = (api: APIRequestContext, connectorUuid: string): Promise<AttributeDefinition[]> =>
     apiJson<AttributeDefinition[]>(api, 'GET', `/api/v1/vaults/${connectorUuid}/attributes`);
 
@@ -31,13 +27,11 @@ export interface VaultInstanceOptions {
     values?: Record<string, unknown>;
 }
 
-/** `POST /v1/vaults`: an own vault instance on the connector's secret interface (recorded as `vaultInstances`). */
 export async function createOwnVaultInstance(api: GuardedApi, spec: string, suffix: string, o: VaultInstanceOptions): Promise<OwnRef & { detail: JsonObject }> {
     const { connector, values = {} } = o;
     const defs = await listVaultInstanceAttributes(api, connector.uuid);
-    // Seen on a live tier: invented values (a fake URL, an unmatched credential type) are refused by the connector. Copy the data
-    // attributes of a PRE-EXISTING vault instance of the same connector, read-only (two GETs, nothing on it changes), like
-    // createOwnRaProfileLike; without one (or when `values` are given) the definitions are filled by `requestAttributesFrom`.
+    // The connector refuses invented values: copy the data attributes of a pre-existing vault instance of the connector, read-only; else
+    // fill the definitions.
     const copied = Object.keys(values).length ? undefined : await copiedVaultAttributes(api, connector.uuid);
     const { answer, ...ref } = await createOwn(api, spec, {
         type: 'vaultInstances',
@@ -55,9 +49,7 @@ export async function createOwnVaultInstance(api: GuardedApi, spec: string, suff
     return { ...ref, detail: answer.json };
 }
 
-/**
- * The data attributes of the first pre-existing (not run-named) vault instance of a connector, as request attributes; undefined when none.
- */
+/** The data attributes of the first pre-existing vault instance of a connector as request attributes; undefined when none. */
 async function copiedVaultAttributes(api: APIRequestContext, connectorUuid: string): Promise<JsonObject[] | undefined> {
     const rows = (await listVaultInstances(api)).filter((v) => !hasRunFamilyPrefix(String(v.name)));
     for (const row of rows.sort((a, b) => (String(a.name) < String(b.name) ? -1 : 1))) {
@@ -71,7 +63,6 @@ async function copiedVaultAttributes(api: APIRequestContext, connectorUuid: stri
 
 export const getVaultInstance = (api: APIRequestContext, uuid: string): Promise<JsonObject> => apiJson<JsonObject>(api, 'GET', `/api/v1/vaults/${uuid}`);
 
-/** The vault instances of the tier (`POST /v1/vaults/list`, a read POST): rows with uuid, name, connector fields. */
 async function listVaultInstances(api: APIRequestContext): Promise<JsonObject[]> {
     const body = await apiJson<JsonObject>(api, 'POST', '/api/v1/vaults/list', { itemsPerPage: 100, pageNumber: 1, filters: [] });
     return (body.vaults ?? body.items ?? body.vaultInstances ?? []) as JsonObject[];
@@ -81,12 +72,10 @@ const listVaultProfileAttributes = (api: APIRequestContext, vaultUuid: string): 
     apiJson<AttributeDefinition[]>(api, 'GET', `/api/v1/vaults/${vaultUuid}/vaultProfiles/attributes`);
 
 export interface VaultProfileOptions {
-    /** The vault the profile goes under: own or pre-existing (a create under a pre-existing parent; the parent is not changed). */
     vault: Pick<Ref, 'uuid' | 'name'>;
     values?: Record<string, unknown>;
 }
 
-/** `POST /v1/vaults/{vault}/vaultProfiles`: an own vault profile (recorded as `vaultProfiles` with parent `vault`). */
 export async function createOwnVaultProfile(api: GuardedApi, spec: string, suffix: string, o: VaultProfileOptions): Promise<OwnRef & { detail: JsonObject }> {
     const { vault, values = {} } = o;
     const defs = await listVaultProfileAttributes(api, vault.uuid);
@@ -119,14 +108,10 @@ export async function disableOwnVaultProfile(api: GuardedApi, vault: Pick<Ref, '
 
 export type SecretType = 'generic' | 'apiKey' | 'basicAuth' | 'jwtToken' | 'privateKey' | 'secretKey' | 'keyStore' | 'keyValue';
 
-/** `GET …/vaultProfiles/{p}/secrets/{type}/attributes` — the secret-type form (REG-SEC-02). */
 export const listSecretAttributes = (api: APIRequestContext, vault: Pick<Ref, 'uuid'>, profile: Pick<Ref, 'uuid'>, type: SecretType): Promise<AttributeDefinition[]> =>
     apiJson<AttributeDefinition[]>(api, 'GET', `${vaultProfileUrl(vault, profile)}/secrets/${type}/attributes`);
 
-/**
- * The secret attributes for a value (pure): every secret-typed data attribute gets `{secret: value}`; a basicAuth form
- * gets the username into its user-named string attribute; other required attributes are filled by type.
- */
+/** The secret attributes for a value (pure): secret-typed attributes get `{secret: value}`, basicAuth also the username, others by type. */
 export function secretAttributesFor(defs: AttributeDefinition[], type: SecretType, value: string, username = 'qa'): JsonObject[] {
     const values: Record<string, unknown> = {};
     for (const d of defs) {
@@ -136,10 +121,7 @@ export function secretAttributesFor(defs: AttributeDefinition[], type: SecretTyp
     return requestAttributesFrom(defs, values, value);
 }
 
-/**
- * The `secret` of core's SecretRequestDto: generic / apiKey / jwtToken / secretKey → `{ type, content }`; basicAuth → `{ type, username,
- * password }`.
- */
+/** The `secret` of core's SecretRequestDto: `{ type, content }`, or `{ type, username, password }` for basicAuth. */
 export function secretContentFor(type: SecretType, value: string, username = 'qa'): JsonObject {
     return type === 'basicAuth' ? { type, username, password: value } : { type, content: value };
 }
@@ -151,7 +133,6 @@ export interface SecretOptions {
     value: string;
 }
 
-/** `POST …/vaultProfiles/{p}/secrets`: an own secret of `type` holding `value` (recorded as `secrets`); the detail. */
 export async function createOwnSecret(api: GuardedApi, spec: string, suffix: string, o: SecretOptions): Promise<OwnRef & { detail: JsonObject }> {
     const { vault, profile, type, value } = o;
     const defs = await listSecretAttributes(api, vault, profile, type);
@@ -162,8 +143,7 @@ export async function createOwnSecret(api: GuardedApi, spec: string, suffix: str
         note: `own ${type} secret`,
         parents: { vaultProfile: profile.uuid },
         body: {
-            // Core's SecretRequestDto (SecretManagementController.createSecret), NOT the connector's DTO: `secret` is mandatory and
-            // polymorphic on `type`.
+            // Core's SecretRequestDto, not the connector's: `secret` is mandatory and polymorphic on `type`.
             description: `REG run ${runId()}`,
             secret: secretContentFor(type, value),
             attributes: secretAttributesFor(defs, type, value),
@@ -175,9 +155,8 @@ export async function createOwnSecret(api: GuardedApi, spec: string, suffix: str
 
 const getSecret = (api: APIRequestContext, uuid: string): Promise<JsonObject> => apiJson<JsonObject>(api, 'GET', `/api/v1/secrets/${uuid}`);
 /**
- * A secret is created INACTIVE and activated by an asynchronous action once the vault connector wrote it (core `createSecretAction`; FAILED
- * on an error): polls `GET /v1/secrets/{uuid}` until `state` is `want` (REG-SEC-03). Throws with the detail on `failed` or at the timeout.
- * `enabled` is a separate action and is not waited for.
+ * A secret is created INACTIVE and activated asynchronously once the vault connector wrote it: polls until `state` is `want`; throws on
+ * `failed` or timeout. `enabled` is a separate action.
  */
 export async function waitForSecretState(api: APIRequestContext, uuid: string, want: string, timeoutMs = 60_000, intervalMs = 1_000): Promise<JsonObject> {
     const stateOf = (d: JsonObject): string => String(d.state ?? '').toLowerCase();
@@ -196,10 +175,7 @@ export async function waitForSecretState(api: APIRequestContext, uuid: string, w
 
 export const getSecretVersions = (api: APIRequestContext, uuid: string): Promise<JsonObject[]> => apiJson<JsonObject[]>(api, 'GET', `/api/v1/secrets/${uuid}/versions`);
 
-/**
- * Enables an own secret (`PATCH /v1/secrets/{uuid}/enable`), as the product requires before its content is read, and waits until the
- * detail shows `enabled`. Own secrets only: the live own-object check runs first. Throws with the answer on a refusal or a timeout.
- */
+/** Enables an own secret (required before its content is read) and waits for `enabled`; throws with the answer on a refusal or timeout. */
 export async function enableOwnSecret(api: GuardedApi, secret: OwnRef, timeoutMs = 30_000, intervalMs = 500): Promise<JsonObject> {
     await assertOwnLive(api, 'secrets', secret, 'secretsAndVaults.enableOwnSecret');
     const answer = await api.patch(`/api/v1/secrets/${secret.uuid}/enable`);
@@ -209,13 +185,12 @@ export async function enableOwnSecret(api: GuardedApi, secret: OwnRef, timeoutMs
     return detail;
 }
 
-/** `GET /v1/secrets/{uuid}/content` (a side-effect GET: own secrets only; the guard refuses a pre-existing one). */
+/** `GET /v1/secrets/{uuid}/content` (a side-effect GET: own secrets only). */
 export async function readOwnSecretContent(api: GuardedApi, secret: OwnRef): Promise<JsonObject> {
     await assertOwnLive(api, 'secrets', secret, 'secretsAndVaults.readOwnSecretContent');
     return apiJson<JsonObject>(api, 'GET', `/api/v1/secrets/${secret.uuid}/content`);
 }
 
-/** Every string value in a JSON document (for "the value never appears in list / detail responses"). */
 export function stringValues(doc: unknown, out: string[] = []): string[] {
     if (typeof doc === 'string') out.push(doc);
     else if (Array.isArray(doc)) doc.forEach((v) => stringValues(v, out));
@@ -223,7 +198,6 @@ export function stringValues(doc: unknown, out: string[] = []): string[] {
     return out;
 }
 
-/** The run's vault instance (own when the tier has a secret-interface connector; recorded; idempotent per run). */
 async function ensureOwnVaultInstance(api: GuardedApi, spec: string, env: NodeJS.ProcessEnv = process.env): Promise<OwnRef | { skip: string }> {
     const state = readRunState();
     if (state.vaultInstance) return state.vaultInstance;
@@ -233,8 +207,7 @@ async function ensureOwnVaultInstance(api: GuardedApi, spec: string, env: NodeJS
     try {
         vault = await createOwnVaultInstance(api, spec, 'vault', { connector });
     } catch (e) {
-        // A refusal of the create (connector / core validation of the tier's vault settings) is an environment gate, never red:
-        // the caller falls back to a pre-existing vault instance or skips with this reason.
+        // A refused create is an environment gate, never red: the caller falls back to a pre-existing instance or skips.
         return { skip: `own vault instance refused on ${connector.name}: ${String(e instanceof Error ? e.message : e).slice(0, 200)}` };
     }
     const ref: OwnRef = { uuid: vault.uuid, name: vault.name, kind: 'own' };
@@ -242,7 +215,6 @@ async function ensureOwnVaultInstance(api: GuardedApi, spec: string, env: NodeJS
     return ref;
 }
 
-/** The run's vault profile under the run's vault (or under the first pre-existing vault when the run has none). */
 export async function ensureOwnVaultProfile(api: GuardedApi, spec: string): Promise<{ vault: Ref; profile: OwnRef } | { skip: string }> {
     const state = readRunState();
     let vault: Ref | undefined = state.vaultInstance;

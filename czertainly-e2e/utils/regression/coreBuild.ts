@@ -1,13 +1,7 @@
 /**
  * coreBuild — which core build a run talks to, for the one build-dependent oracle and the migration gate.
- *
- * Reads `GET /api/v1/info`; a successful read is cached for the run, a failed one never, so one 503 at the start cannot pin
- * "baseline" for the whole run. `isMigratedBuild()` is true when REG_BUILD=sb41, or when the build branch names the Spring
- * Boot 4.1 integration branch.
- *
- * An unreadable marker means baseline and adds a test annotation. The refused-method oracle (API-GEN-07 / API-PROT-37 /
- * API-CORE-08: 400 on main, `test.fail()` + `@bug:core#2502` on the migrated build) depends on it, so `isMigratedBuild`
- * requires the test's `testInfo`.
+ * A successful `GET /api/v1/info` is cached for the run, a failed one never; an unreadable marker means baseline and adds a test
+ * annotation, so `isMigratedBuild` requires the test's `testInfo`.
  */
 import { APIRequestContext } from '@playwright/test';
 import { Logger } from '../Logger';
@@ -16,10 +10,8 @@ import { settings } from './run/settings';
 
 const logger = new Logger('Build');
 
-/** The core branch of the Spring Boot 4.1 migration (integration/spring-boot-4.1). */
 const MIGRATED_BRANCH = /spring-boot-4\.1/;
 
-/** Parse the /v1/info body; a body without `build.branch` is an unreadable marker. */
 export function parseBuildInfo(body: unknown): BuildInfo {
     const b = (body ?? {}) as { app?: { version?: string }; build?: { branch?: string; commitId?: string } };
     return {
@@ -35,16 +27,12 @@ export interface BuildInfoStore {
     write(info: BuildInfo): void;
 }
 
-/** RunState.buildInfo (the default store; tests inject their own). */
 const runStateStore: BuildInfoStore = {
     read: () => readRunState().buildInfo,
     write: (info) => void updateRunState({ buildInfo: info }),
 };
 
-/**
- * GET /api/v1/info, cached in RunState.buildInfo once it was READ (a 2xx with a JSON body). A failure (non-2xx,
- * network error, unparsable body) returns an unreadable marker and caches nothing (a later call reads again).
- */
+/** GET /api/v1/info, cached once READ; a failure returns an unreadable marker and caches nothing. */
 export async function getBuildInfo(api: APIRequestContext, store: BuildInfoStore = runStateStore): Promise<BuildInfo> {
     const cached = store.read();
     if (cached) return cached;
@@ -68,7 +56,6 @@ interface Annotatable {
     annotations: Array<{ type: string; description?: string }>;
 }
 
-/** The decision itself, separate from the API read so it is unit-testable. */
 export function decideMigrated(info: BuildInfo, env: NodeJS.ProcessEnv = process.env): { migrated: boolean; why: string; guessed: boolean } {
     const flag = settings(env).build?.toLowerCase();
     if (flag === 'sb41') return { migrated: true, why: 'REG_BUILD=sb41', guessed: false };
@@ -80,7 +67,6 @@ export function decideMigrated(info: BuildInfo, env: NodeJS.ProcessEnv = process
     return { migrated: false, why: 'build marker unreadable: treated as baseline', guessed: true };
 }
 
-/** True on the Spring Boot 4.1 build; a guess (unreadable marker) is written into the test's annotations. */
 export async function isMigratedBuild(api: APIRequestContext, testInfo: Annotatable, store: BuildInfoStore = runStateStore): Promise<boolean> {
     const decision = decideMigrated(await getBuildInfo(api, store));
     if (decision.guessed) {

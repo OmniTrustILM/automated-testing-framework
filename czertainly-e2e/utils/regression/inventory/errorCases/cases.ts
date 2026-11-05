@@ -1,16 +1,12 @@
 /**
- * cases — the refusal cases of the error-contract API spec.
- *
- * Data, not scattered literals: the rows of the inventory API status matrix, the refusal texts, and the five listings
- * with one request per resource and case (the refusal text, or the reason the case does not apply to that resource).
+ * cases — the refusal cases of the error-contract API spec as data: status-matrix rows, refusal texts and one request per resource and case
+ * for the five listings.
  */
 import { CONDITION_SETS, sameSet } from '../searchApi';
 import { Expectation, Oracle, preview } from './checks';
 import { Req } from './requests';
 
-// ------------------------------------------------------------------ the status-matrix rows (naming only)
 
-/** The rows of the inventory API status matrix the battery exercises, plus the create / content-type / auth rows. */
 export const ERROR_STATUS_MATRIX = {
     paging: 'status matrix: search body: itemsPerPage 0 / negative or pageNumber 0 / negative → 422 with one message (core validates paging itself)',
     unreadableBody: 'status matrix: search body: int overflow, body not JSON, enum value in the wrong case → 400 {"message":"Unable to read HTTP message"}',
@@ -31,55 +27,37 @@ export const ERROR_STATUS_MATRIX = {
 } as const;
 export type MatrixRow = keyof typeof ERROR_STATUS_MATRIX;
 
-// ------------------------------------------------------------------ messages (verbatim from core)
 
-/** The paging refusal of core's RequestValidatorHelper.validatePaging: a 422 with one message (core PR #2527). */
+/** The paging refusal: a 422 with one message (core PR #2527). */
 export const pagingMessage = (what: 'Items per page' | 'Page number', value: number): string => `${what} must be at least 1, but was ${value}`;
 
 export const ERROR_MESSAGES = {
-    /** The generic 400 body of ExceptionHandlingAdvice.java (an IllegalArgumentException; not the paging answer any more). */
     paging: 'The request could not be processed.',
-    /** HttpMessageNotReadableException: ExceptionHandlingAdvice.java. */
     unreadable: 'Unable to read HTTP message',
-    /** Bean validation, `@NotBlank` / `@NotNull` of SearchSortRequestDto (field + " " + message). */
     blankSortIdentifier: 'sort.fieldIdentifier must not be blank',
     nullSortDirection: 'sort.direction must not be null',
     nullColumn: 'columns[0] must not be null',
-    /** GroupServiceImpl.java, CredentialServiceImpl.java. */
     nameEmpty: 'Name must not be empty',
-    /** UploadRequestDto.isFileWithinLimit (UploadRequestDto.java). */
     oversize: 'fileWithinLimit file must not exceed 5242880 bytes',
-    /** ContainerRefusal.java (start of the sentence). */
     notSupportedFormat: /^The file is not in a supported format: /,
     internal: 'Internal server error.',
 } as const;
 
-// ------------------------------------------------------------------ the five listings (API-GEN-02)
 
 export type ResourceKey = 'certificates' | 'keys' | 'discoveries' | 'auditLogs' | 'oids';
 
-/** One listing that uses the shared search engine, with the property fields its cases name (core `FilterField`). */
 export interface ListingSpec {
     key: ResourceKey;
-    /** The search POST (a POST_READ route of the guard). */
     url: string;
-    /** The resource label of "Sorting is not supported for the <label> listing." (`Resource.getLabel`), when it refuses every sort. */
     sortRefusedLabel?: string;
     fields: {
-        /** A STRING field: CONTAINS, MATCHES, … */
         string: string;
-        /** A LIST field with the plain list conditions (EQUALS, NOT_EQUALS, EMPTY, NOT_EMPTY). */
         list: string;
-        /** A NUMBER field, when the listing has one. */
         number?: string;
-        /** A DATETIME field, when the listing has one. */
         datetime?: string;
-        /** A field the sort refuses on a listing that sorts (PRIVATE_KEY, the bit-mask CKI_USAGE), when there is one. */
         nonSortable?: string;
-        /** Any sortable field, for the wrong-case direction row. */
         sortable: string;
     };
-    /** Why a case does not apply (`NOT_APPLICABLE`), per missing field. */
     why: { number?: string; datetime?: string; nonSortable?: string };
 }
 
@@ -134,12 +112,10 @@ type Built = { data: unknown; expect: Expectation } | { na: string };
 interface CaseDef {
     id: CaseId;
     matrix: MatrixRow;
-    /** The refusal as the rules state it. */
     rule: string;
     build(l: ListingSpec): Built;
 }
 
-/** A 422 that names the condition sets the field supports: the listed set must be the absolute set of its type. */
 function conditionSetCheck(field: string, kind: keyof typeof CONDITION_SETS) {
     const re = new RegExp(`^Field ${field} does not support the GREATER condition; it supports ([A-Z_]+(?:, [A-Z_]+)*)\\.$`);
     return (p: { status: number; text: string; json: unknown }): string[] => {
@@ -154,22 +130,21 @@ function conditionSetCheck(field: string, kind: keyof typeof CONDITION_SETS) {
 export const refuse = (messages: readonly Oracle[], status = 422): Expectation => ({ status, messages });
 
 export const LISTING_CASES: readonly CaseDef[] = [
-    // paging: core validates it itself (RequestValidatorHelper.validatePaging) and answers 422 with one message (core PR #2527).
+    // paging: core answers 422 with one message (core PR #2527).
     { id: 'paging.itemsPerPage0', matrix: 'paging', rule: 'itemsPerPage 0 → 422 ["Items per page must be at least 1, but was 0"]', build: () => ({ data: searchBody({ itemsPerPage: 0 }), expect: refuse([pagingMessage('Items per page', 0)]) }) },
     { id: 'paging.pageNumber0', matrix: 'paging', rule: 'pageNumber 0 → 422 ["Page number must be at least 1, but was 0"]', build: () => ({ data: searchBody({ pageNumber: 0 }), expect: refuse([pagingMessage('Page number', 0)]) }) },
     { id: 'paging.itemsPerPageNegative', matrix: 'paging', rule: 'itemsPerPage -1 → 422 ["Items per page must be at least 1, but was -1"]', build: () => ({ data: searchBody({ itemsPerPage: -1 }), expect: refuse([pagingMessage('Items per page', -1)]) }) },
     { id: 'paging.pageNumberNegative', matrix: 'paging', rule: 'pageNumber -1 → 422 ["Page number must be at least 1, but was -1"]', build: () => ({ data: searchBody({ pageNumber: -1 }), expect: refuse([pagingMessage('Page number', -1)]) }) },
-    // unreadableBody: Jackson (HttpMessageNotReadableException → ExceptionHandlingAdvice.java).
+    // unreadableBody: a Jackson read error.
     { id: 'json.itemsPerPageOverflow', matrix: 'unreadableBody', rule: 'itemsPerPage 2147483648 (int overflow) → 400 "Unable to read HTTP message"', build: () => ({ data: Buffer.from('{"filters":[],"itemsPerPage":2147483648,"pageNumber":1}'), expect: { status: 400, message: ERROR_MESSAGES.unreadable } }) },
     { id: 'json.notJson', matrix: 'unreadableBody', rule: 'body not JSON → 400 "Unable to read HTTP message"', build: () => ({ data: Buffer.from('this is not json'), expect: { status: 400, message: ERROR_MESSAGES.unreadable } }) },
     { id: 'json.conditionCase', matrix: 'unreadableBody', rule: 'condition in the wrong case ("contains") → 400 "Unable to read HTTP message"', build: (l) => ({ data: searchBody({ filters: [prop(l.fields.string, 'contains', 'x')] }), expect: { status: 400, message: ERROR_MESSAGES.unreadable } }) },
     { id: 'json.fieldSourceCase', matrix: 'unreadableBody', rule: 'fieldSource in the wrong case ("PROPERTY") → 400 "Unable to read HTTP message"', build: (l) => ({ data: searchBody({ filters: [{ fieldSource: 'PROPERTY', fieldIdentifier: l.fields.string, condition: 'EQUALS', value: 'x' }] }), expect: { status: 400, message: ERROR_MESSAGES.unreadable } }) },
     { id: 'json.directionCase', matrix: 'unreadableBody', rule: 'sort.direction in the wrong case ("ASC") → 400 "Unable to read HTTP message"', build: (l) => ({ data: searchBody({ sort: sortOn(l.fields.sortable, 'ASC') }), expect: { status: 400, message: ERROR_MESSAGES.unreadable } }) },
-    // beanValidation: bean validation runs before any service (SearchRequestDto is `@Valid @RequestBody` on every listing).
+    // beanValidation: runs before any service.
     { id: 'sort.blankIdentifier', matrix: 'beanValidation', rule: 'sort.fieldIdentifier blank → 422 ["sort.fieldIdentifier must not be blank"]', build: () => ({ data: searchBody({ sort: sortOn('', 'asc') }), expect: refuse([ERROR_MESSAGES.blankSortIdentifier]) }) },
     { id: 'sort.nullDirection', matrix: 'beanValidation', rule: 'sort.direction null → 422 ["sort.direction must not be null"]', build: (l) => ({ data: searchBody({ sort: sortOn(l.fields.sortable, null) }), expect: refuse([ERROR_MESSAGES.nullSortDirection]) }) },
-    // sorting: SortOrderBuilder.resolveField (unknown / not orderable) on the listings that sort; RequestValidatorHelper.java on the
-    // others.
+    // sorting: unknown or non-orderable field on listings that sort.
     {
         id: 'sort.unknownField', matrix: 'sorting', rule: 'sort on an unknown field → 422 ["Unknown sort field identifier X."]; a listing that does not sort refuses any sort',
         build: (l) => ({
@@ -183,7 +158,7 @@ export const LISTING_CASES: readonly CaseDef[] = [
             ? { data: searchBody({ sort: sortOn(l.fields.nonSortable, 'asc') }), expect: refuse([`Field ${l.fields.nonSortable} cannot be used to order this listing.`]) }
             : { na: l.why.nonSortable ?? 'no non-sortable field' }),
     },
-    // conditionNotOffered: FilterPredicatesBuilder.requireAdvertisedCondition, before any predicate is built.
+    // conditionNotOffered: refused before any predicate is built.
     {
         id: 'filter.conditionNotAdvertised.list', matrix: 'conditionNotOffered', rule: 'GREATER on a list field → 422 "Field X does not support the GREATER condition; it supports EQUALS, NOT_EQUALS, EMPTY, NOT_EMPTY."',
         build: (l) => ({
@@ -198,20 +173,15 @@ export const LISTING_CASES: readonly CaseDef[] = [
             expect: { status: 422, extra: conditionSetCheck(l.fields.string, 'string'), messages: [new RegExp(`^Field ${l.fields.string} does not support the GREATER condition; it supports `)] },
         }),
     },
-    // valueMissing: FilterPredicatesBuilder.getPropertyFilterPredicate.
     { id: 'filter.valueMissing', matrix: 'valueMissing', rule: 'CONTAINS without a value → 422 "Filter for field X with operator CONTAINS requires at least one value."', build: (l) => ({ data: searchBody({ filters: [prop(l.fields.string, 'CONTAINS')] }), expect: refuse([`Filter for field ${l.fields.string} with operator CONTAINS requires at least one value.`]) }) },
     { id: 'filter.valueEmptyList', matrix: 'valueMissing', rule: 'CONTAINS with value [] → 422 "Filter for field X with operator CONTAINS requires at least one value."', build: (l) => ({ data: searchBody({ filters: [prop(l.fields.string, 'CONTAINS', [])] }), expect: refuse([`Filter for field ${l.fields.string} with operator CONTAINS requires at least one value.`]) }) },
-    // regex: validateRegexForDbQuery.
     { id: 'filter.regexInvalid', matrix: 'regex', rule: 'MATCHES with "(" → 422 "Input is not a valid regex: …"', build: (l) => ({ data: searchBody({ filters: [prop(l.fields.string, 'MATCHES', '(')] }), expect: refuse([/^Input is not a valid regex: /]) }) },
     { id: 'filter.regexQuote', matrix: 'regex', rule: 'MATCHES with a \\Q literal → 422 "Literal quote sequences … are not supported in PostgreSQL POSIX regex"', build: (l) => ({ data: searchBody({ filters: [prop(l.fields.string, 'MATCHES', '\\Qabc')] }), expect: refuse(['Literal quote sequences \\Q, \\R, \\G, \\h, \\H, \\z, \\X, \\V are not supported in PostgreSQL POSIX regex']) }) },
-    // valueFormat: preparePropertyFilterValues.
     { id: 'filter.durationInvalid', matrix: 'valueFormat', rule: 'IN_NEXT "30 days" on a date-time field → 422 "Filter field value 30 days cannot be parsed to a Duration."', build: (l) => (l.fields.datetime ? { data: searchBody({ filters: [prop(l.fields.datetime, 'IN_NEXT', '30 days')] }), expect: refuse(['Filter field value 30 days cannot be parsed to a Duration.']) } : { na: l.why.datetime ?? 'no DATETIME field' }) },
     { id: 'filter.numberInvalid', matrix: 'valueFormat', rule: 'EQUALS "abc" on a number field → 422 "Filter field value abc cannot be parsed as a Number."', build: (l) => (l.fields.number ? { data: searchBody({ filters: [prop(l.fields.number, 'EQUALS', 'abc')] }), expect: refuse(['Filter field value abc cannot be parsed as a Number.']) } : { na: l.why.number ?? 'no NUMBER field' }) },
-    // attributeIdentifier: getAttributeFilterPredicate, shared by every listing.
     { id: 'filter.attributeNoSuffix', matrix: 'attributeIdentifier', rule: 'custom-attribute identifier without |CONTENT_TYPE → 422 "Filter field identifier X does not name an attribute."', build: () => ({ data: searchBody({ filters: [{ fieldSource: 'custom', fieldIdentifier: 'qa-no-suffix', condition: 'EQUALS', value: 'x' }] }), expect: refuse(['Filter field identifier qa-no-suffix does not name an attribute.']) }) },
 ];
 
-/** One request of the API-GEN-02 table: a resource and a case. */
 export interface ListingCase {
     id: string;
     resource: ResourceKey;
@@ -228,7 +198,6 @@ export interface NotApplicable {
     why: string;
 }
 
-/** Every (resource × case) request of API-GEN-02. */
 export function listingCases(): ListingCase[] {
     const out: ListingCase[] = [];
     for (const l of LISTING_ENDPOINTS) {
@@ -241,7 +210,6 @@ export function listingCases(): ListingCase[] {
     return out;
 }
 
-/** The (resource × case) pairs that have no request, each with its reason: the table is complete or it says why not. */
 export function notApplicable(): NotApplicable[] {
     const out: NotApplicable[] = [];
     for (const l of LISTING_ENDPOINTS) {

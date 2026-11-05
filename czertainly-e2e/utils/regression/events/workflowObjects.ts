@@ -1,12 +1,6 @@
 /**
- * workflowObjects — the five workflow kinds and the creators of own workflow objects.
- *
- * Provides the request items of conditions, rules, executions, actions and triggers, the creators of own objects and
- * own chains, the negative-probe create (`probeWorkflowObject`) and the reads.
- *
- * Every create is run-prefixed and recorded in the ledger right after the call, before any assertion. A probe the
- * platform accepted is an object the run must own and remove like any other; the run-end teardown removes them in
- * dependency order through events/workflowTeardown.ts.
+ * workflowObjects — the five workflow kinds and the creators of own workflow objects; every create is run-prefixed and recorded right after
+ * the call, and an accepted probe is removed by the run-end teardown in dependency order.
  */
 import { expect } from '@playwright/test';
 import { GuardedApi } from '../guard/types';
@@ -21,7 +15,6 @@ import type { JsonObject } from '../json';
 
 export type WorkflowKind = 'conditions' | 'rules' | 'executions' | 'actions' | 'triggers';
 
-/** Ledger type == API path segment for all five kinds. */
 export const WORKFLOW_KINDS: readonly WorkflowKind[] = ['conditions', 'rules', 'executions', 'actions', 'triggers'];
 
 export const kindPath = (kind: WorkflowKind): string => `/api/v1/workflows/${kind}`;
@@ -37,7 +30,6 @@ export interface ConditionItem {
 export const conditionItem = (fieldSource: ConditionItem['fieldSource'], fieldIdentifier: string, operator: string, value?: unknown): ConditionItem =>
     value === undefined ? { fieldSource, fieldIdentifier, operator } : { fieldSource, fieldIdentifier, operator, value };
 
-/** Certificate property identifiers of `FilterField` the workflow rows use. */
 export const CERT_FIELD = {
     commonName: 'COMMON_NAME',
     raProfile: 'RA_PROFILE_NAME',
@@ -56,14 +48,12 @@ export interface ExecutionItem {
     sourceFieldIdentifier?: string;
 }
 
-/** Set field Groups (REPLACES the set; `[]` removes all). */
 export const setGroupsAction = (groupUuids: string[]): ExecutionItem => ({ fieldSource: 'property', fieldIdentifier: CERT_FIELD.group, data: groupUuids });
 export const setOwnerAction = (userUuid: string | null): ExecutionItem => ({ fieldSource: 'property', fieldIdentifier: CERT_FIELD.owner, data: userUuid });
 export const setRaProfileAction = (raProfileUuid: string): ExecutionItem => ({ fieldSource: 'property', fieldIdentifier: CERT_FIELD.raProfile, data: raProfileUuid });
 /**
- * Set field of a custom attribute (core `ActionServiceImpl.createSetFieldExecutionItem`): the identifier is
- * `<attribute name>|<CONTENT_TYPE>` with the content type as the enum NAME (`STRING`, `INTEGER`, …), the data the value as a
- * string (or a list of strings); core stores it as the attribute's content items.
+ * Set field of a custom attribute: the identifier is `<attribute name>|<CONTENT_TYPE>`
+ * (enum NAME), the data the value as a string or list of strings.
  */
 export const setCustomAttributeAction = (name: string, contentType: string, value: unknown): ExecutionItem => ({
     fieldSource: 'custom',
@@ -77,7 +67,6 @@ export interface Created extends OwnRef {
 }
 
 async function createKind(api: GuardedApi, kind: WorkflowKind, spec: string, suffix: string, body: JsonObject, note: string): Promise<Created> {
-    // Ledger before assertion (createOwn): a created object is this run's, whatever the caller asserts next.
     const { answer, ...ref } = await createOwn(api, spec, { type: kind, path: kindPath(kind), name: ownName(suffix), body, note });
     return { ...ref, body: answer.json };
 }
@@ -125,7 +114,6 @@ export const createOwnAction = (api: GuardedApi, spec: string, suffix: string, o
 
 export interface TriggerOptions {
     resource?: string;
-    /** The event the trigger is bound to (type `event`); omit for a trigger without an event (type `manual`). */
     event?: EventCode;
     ignore?: boolean;
     rules?: Array<{ uuid: string }>;
@@ -133,7 +121,6 @@ export interface TriggerOptions {
     description?: string;
 }
 
-/** The request body of a trigger (pure): type `event` iff an event is given. */
 export function triggerBody(o: TriggerOptions): JsonObject {
     return {
         description: o.description ?? `REG run ${runId()}`,
@@ -158,19 +145,16 @@ export interface OwnChain {
 }
 
 export interface ChainOptions {
-    /** The event the trigger is bound to (default `certificate_action_performed`). */
     event?: EventCode;
-    /** Condition items of the rule (omit for a trigger without rules: it matches every object of its scope). */
     items?: ConditionItem[];
-    /** Execution items of the action (omit for an IGNORE trigger: it has no action). */
     executionItems?: ExecutionItem[];
     ignore?: boolean;
     resource?: string;
 }
 
 /**
- * The whole chain of one trigger — condition → rule, execution → action, then the trigger — all own, nothing associated.
- * An ignore trigger has no action; a trigger without `items` has no rule.
+ * The whole chain of one trigger (condition → rule, execution → action, trigger), all own, nothing associated; an ignore trigger has no
+ * action, a trigger without `items` no rule.
  */
 export async function createOwnChain(api: GuardedApi, spec: string, suffix: string, o: ChainOptions = {}): Promise<OwnChain> {
     const resource = o.resource ?? 'certificates';
@@ -193,21 +177,17 @@ export async function createOwnChain(api: GuardedApi, spec: string, suffix: stri
     return chain as OwnChain;
 }
 
-/** A negative probe: POST a body as is. A 2xx means the platform accepted what the caller expects it to refuse: it is recorded. */
+/** A negative probe: POST a body as is; a 2xx is recorded. */
 export async function probeWorkflowObject(api: GuardedApi, spec: string, kind: WorkflowKind, body: JsonObject, note: string): Promise<ApiAnswer> {
     return probeCollectionCreate(api, spec, { type: kind, path: kindPath(kind), body, note });
 }
 
-/** `PUT` of an own object (a rename, a changed resource): the guard checks the target is this run's. */
 async function putOwn(api: GuardedApi, kind: WorkflowKind, ref: OwnRef, body: JsonObject): Promise<ApiAnswer> {
     await assertOwnLive(api, kind, ref, `putOwn ${kind}`);
     return sendJson(api, 'PUT', `${kindPath(kind)}/${ref.uuid}`, body);
 }
 
-/**
- * `DELETE` of an own object through the one own-delete (`ownCrud.deleteOwn`): a 200 / 204 writes the `deleted` ledger line,
- * a refusal (422, naming the parent) is returned in the `ApiAnswer` shape the error readers take.
- */
+/** `DELETE` of an own object through `ownCrud.deleteOwn`; a refusal (422, naming the parent) is returned as an `ApiAnswer`. */
 export async function deleteOwnWorkflowObject(api: GuardedApi, kind: WorkflowKind, ref: OwnRef, spec: string): Promise<ApiAnswer> {
     return deleteOwn(api, kind, ref, spec);
 }

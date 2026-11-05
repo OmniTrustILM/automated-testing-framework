@@ -1,7 +1,6 @@
 /**
- * schedulerApi — the scheduler jobs API: the job list and detail, the six system jobs and their next fire time in UTC
- * (a Quartz subset implemented here, no cron library), and on a proven local stack only the cron update and delete of
- * a job, plus the teardown handler for `scheduledJobs`.
+ * schedulerApi — the scheduler jobs API: the job list and detail, the six system jobs with their next fire time in UTC (a Quartz subset
+ * implemented here), and on a proven local stack the cron update and delete of a job plus the `scheduledJobs` teardown handler.
  */
 import type { APIRequestContext, APIResponse } from '@playwright/test';
 import type { GuardedApi } from '../guard/types';
@@ -16,7 +15,6 @@ export interface SystemJob {
     cron: string;
 }
 
-/** The six system jobs core registers at boot, with their Quartz crons in UTC. */
 export const SYSTEM_JOBS: readonly SystemJob[] = [
     { jobName: 'updateCertificateStatusJob', task: 'UpdateCertificateStatusTask', cron: '0 0 * ? * *' },
     { jobName: 'updateIntuneRevocationRequestsJob', task: 'UpdateIntuneRevocationRequestsTask', cron: '0 30 * ? * *' },
@@ -28,11 +26,9 @@ export const SYSTEM_JOBS: readonly SystemJob[] = [
 
 export const SYSTEM_JOB_NAMES: readonly string[] = SYSTEM_JOBS.map((j) => j.jobName);
 
-// ------------------------------------------------------------------ reads
 
 export const JOBS_URL = '/api/v1/scheduler/jobs';
 
-/** `GET /v1/scheduler/jobs` (paged envelope or a bare list: both shapes are read). */
 export async function listJobs(api: APIRequestContext): Promise<JsonObject[]> {
     const body = await apiJson<JsonObject>(api, 'GET', `${JOBS_URL}?itemsPerPage=100&pageNumber=1`);
     return Array.isArray(body) ? body : ((body.scheduledJobs ?? body.items ?? []) as JsonObject[]);
@@ -40,25 +36,19 @@ export async function listJobs(api: APIRequestContext): Promise<JsonObject[]> {
 
 export const getJob = (api: APIRequestContext, uuid: string): Promise<JsonObject> => apiJson<JsonObject>(api, 'GET', `${JOBS_URL}/${uuid}`);
 
-/** The system jobs of a list (`system === true`). */
 export const systemJobsOf = (jobs: JsonObject[]): JsonObject[] => jobs.filter((j) => j.system === true);
 
-// ------------------------------------------------------------------ writes (@local)
 
-/** `PUT /v1/scheduler/jobs/{uuid} { cronExpression }` — the raw response (422 `["Cannot updated system job."]` on a system job). */
 export const updateJobCron = (api: GuardedApi, uuid: string, cronExpression: string): Promise<APIResponse> => api.put(`${JOBS_URL}/${uuid}`, { data: { cronExpression } });
 
-/** `DELETE /v1/scheduler/jobs/{uuid}` — the raw response (422 `["Unable to delete system job."]` on a system job). */
 export const deleteJob = (api: GuardedApi, uuid: string): Promise<APIResponse> => api.delete(`${JOBS_URL}/${uuid}`);
 
-/** The fields of a job detail that must stay unchanged around a refused mutation. */
 export const jobFingerprint = (job: JsonObject): JsonObject => ({
     cronExpression: job.cronExpression, enabled: job.enabled, scheduleState: job.scheduleState, nextFireTime: job.nextFireTime, system: job.system, oneTime: job.oneTime,
 });
 
-// ------------------------------------------------------------------ Quartz cron subset, UTC
 
-// Quartz numbers the weekdays 1-7 from Sunday (SUN = 1); getUTCDay counts 0-6 from Sunday.
+// Quartz numbers weekdays 1-7 from Sunday; getUTCDay counts 0-6.
 const DOW: Record<string, number> = { SUN: 1, MON: 2, TUE: 3, WED: 4, THU: 5, FRI: 6, SAT: 7 };
 
 interface Field {
@@ -83,7 +73,6 @@ function parseField(raw: string, min: number, max: number, names: Record<string,
     return { any: false, values };
 }
 
-/** The day-of-week field in Quartz numbering, stored as getUTCDay values. */
 function dayOfWeekField(raw: string): Field {
     const f = parseField(raw, 1, 7, DOW);
     return { any: f.any, values: new Set([...f.values].map((v) => v - 1)) };
@@ -98,7 +87,6 @@ export interface ParsedCron {
     dayOfWeek: Field;
 }
 
-/** Parses a Quartz cron (6 or 7 fields; the year field must be `*` when present). */
 export function parseQuartzCron(cron: string): ParsedCron {
     const f = cron.trim().split(/\s+/);
     if (f.length < 6 || f.length > 7) throw new Error(`a Quartz cron has 6 or 7 fields: "${cron}"`);
@@ -115,11 +103,7 @@ export function parseQuartzCron(cron: string): ParsedCron {
 
 const matches = (field: Field, v: number): boolean => field.any || field.values.has(v);
 
-/**
- * The next fire time of a Quartz cron strictly after `from`, in UTC (the scheduler sets no explicit zone and the
- * containers run on UTC; a scheduler on another zone fails the system-job test). Minute precision: scans forward
- * minute by minute (the six system crons fire at whole minutes), at most 400 days.
- */
+/** The next fire time of a Quartz cron strictly after `from`, in UTC (containers run on UTC), minute by minute, at most 400 days. */
 export function nextFireUtc(cron: string, from: Date): Date {
     const c = parseQuartzCron(cron);
     const second = c.second.any ? 0 : Math.min(...c.second.values);
@@ -138,14 +122,12 @@ export function nextFireUtc(cron: string, from: Date): Date {
     throw new Error(`no fire time within 400 days for "${cron}"`);
 }
 
-/** True when `instant` is a fire time of the cron (minute precision, UTC). */
 export function isFireTime(cron: string, instant: Date): boolean {
     const c = parseQuartzCron(cron);
     return matches(c.second, instant.getUTCSeconds()) && matches(c.minute, instant.getUTCMinutes()) && matches(c.hour, instant.getUTCHours())
         && matches(c.dayOfMonth, instant.getUTCDate()) && matches(c.month, instant.getUTCMonth() + 1) && matches(c.dayOfWeek, instant.getUTCDay());
 }
 
-/** Problems of a system-job list against `SYSTEM_JOBS`: missing / extra system jobs, cron or flag mismatches. */
 export function systemJobProblems(jobs: JsonObject[]): string[] {
     const problems: string[] = [];
     const system = systemJobsOf(jobs);
@@ -164,14 +146,10 @@ export function systemJobProblems(jobs: JsonObject[]): string[] {
     return problems;
 }
 
-// ------------------------------------------------------------------ teardown handler (registry module `schedulerApi`)
 
 /**
- * `scheduledJobs`: the registry's `scheduledJobs` entry loads this module. Only a
- * `@local` row with `localStack` can create a job (`POST /v1/discoveries/schedule`); the spec deletes its own job in `finally`
- * and writes the `deleted` line, so this handler is the safety net for a spec that aborted. An id-named ledger type has no live
- * name read in the guard, so the handler reads the job itself (200 → marked seen), refuses a system job or a job whose name is
- * not the ledger line's, deletes it and proves absence by the same GET. A job that is executing answers 422: reported, never forced.
+ * `scheduledJobs` safety net for a spec that aborted before deleting its own job: reads the job, refuses a system job or a foreign name,
+ * deletes it and proves absence; an executing job answers 422 and is reported, never forced.
  */
 export const teardownHandlers: Record<string, TeardownHandler> = {
     scheduledJobs: {

@@ -1,23 +1,20 @@
 import { JsonObject } from '../json';
 import { objectOf } from '../json';
 /**
- * The RA-profile attribute schema of an authority, read as data: the required, writable attributes it declares, the
- * order authorities are tried in (the run's own first, then connected ones), and the lazy choice of the first authority
- * whose schema has a required attribute. Pure apart from the schema reader the caller passes.
+ * raProfileSchema — the RA-profile attribute schema of an authority read as data: required writable attributes, the order authorities are
+ * tried in, and the lazy choice of the first with a required attribute.
  */
 
-/** A required, writable data attribute of an authority's RA-profile schema (`GET /v1/authorities/{uuid}/attributes/raProfile`). */
 export interface RequiredAttribute {
     name: string;
     label: string;
     contentType: string;
-    /** The attribute offers a list / callback: the form renders a Select. */
     select: boolean;
 }
 
 /**
- * The required attributes a RA-profile schema declares (pure): data attributes with `properties.required`, not read-only,
- * visible. v2 / v3 attributes alike (`properties` carries the flags in both). The label falls back to the name.
+ * The required attributes of a RA-profile schema (pure): data attributes
+ * with `properties.required`, not read-only, visible; v2 and v3 alike.
  */
 export function requiredRaProfileAttributes(schema: JsonObject[] | undefined): RequiredAttribute[] {
     return (schema ?? [])
@@ -36,18 +33,14 @@ export interface AuthorityChoice {
     required: RequiredAttribute[];
 }
 
-/**
- * The order authorities are tried in (pure): the run's own authority first when it is given, then every CONNECTED one in
- * list order. A disconnected authority is never chosen (its connector cannot answer the schema).
- */
+/** The order authorities are tried in (pure): the run's own first, then every CONNECTED one; a disconnected one is never chosen. */
 export function authorityCandidates(authorities: Array<{ uuid: string; name: string; status?: string }>, ownAuthorityUuid?: string): Array<{ uuid: string; name: string }> {
     return [...authorities.filter((a) => a.uuid === ownAuthorityUuid), ...authorities.filter((a) => a.uuid !== ownAuthorityUuid && a.status === 'connected')].map((a) => ({ uuid: a.uuid, name: a.name }));
 }
 
 /**
- * Which authority to open the form with: the first candidate whose RA-profile schema (read through `schemaOf`, read-only; a
- * schema that cannot be read is `undefined`) declares a required attribute. Undefined when none qualifies. Schemas are read
- * lazily, one authority at a time, so a long list costs nothing once an authority qualifies.
+ * The first candidate whose schema (read lazily through `schemaOf`, read-only;
+ * unreadable = undefined) declares a required attribute, or undefined.
  */
 export async function chooseAuthorityWithRequiredAttribute(
     authorities: Array<{ uuid: string; name: string; status?: string }>,

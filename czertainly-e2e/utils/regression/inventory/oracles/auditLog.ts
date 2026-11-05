@@ -1,10 +1,6 @@
 /**
- * auditLog — the audit-log listing oracles.
- *
- * Provides:
- *   - the logging-settings gate: an audit row runs only when the platform logs the activity
- *   - the closed time window around an own activity, and the activity filters
- *   - a read-only wait for the asynchronous entry to appear
+ * auditLog — the audit-log listing oracles: the logging-settings gate (a row runs only when the platform logs the activity), the closed
+ * time window around an own activity, the activity filters and a read-only wait for the asynchronous entry.
  */
 import { expect } from '@playwright/test';
 import { propertyFilter } from '../searchApi';
@@ -13,20 +9,13 @@ import type { ListRow } from '../listInvariants';
 import { datetimeLiteral, elementsOf, instantMs, nested } from './values';
 import { ListingSpec, Transport, fetchRows, listingPage } from './listing';
 
-// ====================================================================================================================
-// 10. Audit log: logging gate, closed window, own activity
-// ====================================================================================================================
 
 export interface AuditGate {
     enabled: boolean;
     why?: string;
 }
 
-/**
- * Is a record of (module, resource) written to the DATABASE under these `GET /v1/settings/logging` settings? The gate
- * mirrors AuditLogAspect.java (output NONE writes nothing), LoggingHelper.isLogFilteredBasedOnModuleAndResource
- * and AuditLogServiceImpl.handleAuditLogging (database / all only). Unknown settings (undefined): not decidable, enabled.
- */
+/** Is a record of (module, resource) written to the database under these logging settings? Undefined settings: not decidable, enabled. */
 export function auditGate(settings: unknown, module: string, resource: string): AuditGate {
     const a = (settings as { auditLogs?: Record<string, unknown> } | undefined)?.auditLogs;
     if (!a) return { enabled: true, why: 'logging settings not readable: not decidable' };
@@ -43,7 +32,6 @@ export async function readLoggingSettings(t: Transport): Promise<unknown | undef
     return p.status === 200 ? p.json : undefined;
 }
 
-/** The names of the custom attributes the platform lists as disabled (core#2507: their filters answer inconsistently). */
 export async function disabledCustomAttributeNames(t: Transport): Promise<Set<string>> {
     const p = await t.get('/api/v1/attributes/custom');
     const rows = Array.isArray(p.json) ? (p.json as Array<Record<string, unknown>>) : [];
@@ -56,15 +44,12 @@ export interface AuditWindow {
     filters: Filter[];
     lower: string;
     upper: string;
-    /** Rows in the window (a fixed set once both bounds are in the past). */
     total: number;
 }
 
 /**
- * A CLOSED window of the audit log that no new entry can enter: bounded below by the timestamp of the oldest of up to 300
- * entries older than two minutes and above by the newest of them, both literals copied from the DTO text. Returns the reason
- * instead when the log is too small or too busy to hold one. The audit log is append-only and every request of the suite
- * (this one included) is itself logged, so an unbounded relation on it would chase its own tail.
+ * A CLOSED window of the audit log no new entry can enter (bounded by the oldest and newest of up to 300 entries older than two minutes);
+ * returns the reason when the log is too small or busy. An unbounded relation would chase its own tail, as every request is logged.
  */
 export async function closedAuditWindow(t: Transport, spec: ListingSpec, wanted = 300): Promise<AuditWindow | { skip: string }> {
     const first = await listingPage(t, spec, { size: 100 });
@@ -96,16 +81,12 @@ export async function closedAuditWindow(t: Transport, spec: ListingSpec, wanted 
 }
 
 export interface ActivityQuery {
-    /** Resource code (`dashboard`, `groups`, `certificates`). */
     resource: string;
-    /** Operation code (`statistics`, `create`, `inspect`). */
     operation: string;
     module?: string;
-    /** The own object the entry names (AUDIT_LOG_RESOURCE_UUID). */
     objectUuid?: string;
 }
 
-/** The filters that locate an activity in the audit log: resource, operation, module, object, and the last 15 minutes. */
 export function activityFilters(q: ActivityQuery): Filter[] {
     return [
         propertyFilter('AUDIT_LOG_RESOURCE', 'EQUALS', q.resource),
@@ -116,9 +97,7 @@ export function activityFilters(q: ActivityQuery): Filter[] {
     ];
 }
 
-/**
- * The entries of `rows` that are this activity and are not older than `t0` (a server-clock instant): resource, operation, module, object.
- */
+/** The entries of `rows` that are this activity and not older than `t0` (a server-clock instant). */
 export function activityMatches(rows: ListRow[], q: ActivityQuery, t0: Date): ListRow[] {
     return rows.filter((r) => {
         const at = instantMs(r.timestamp);
@@ -130,10 +109,7 @@ export function activityMatches(rows: ListRow[], q: ActivityQuery, t0: Date): Li
     });
 }
 
-/**
- * Polls (<= timeoutMs, default 10 s) until the activity is in the audit log; the entries are published asynchronously
- * (AuditLogAspect.java).
- */
+/** Polls (default 10 s) until the activity is in the audit log; entries are published asynchronously. */
 export async function waitForActivity(t: Transport, spec: ListingSpec, q: ActivityQuery, t0: Date, timeoutMs = 10_000): Promise<ListRow[]> {
     let found: ListRow[] = [];
     await expect

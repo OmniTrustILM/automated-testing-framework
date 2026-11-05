@@ -1,14 +1,7 @@
 /**
- * authorities — the MS ADCS chain of the configuration checklist (REG-CFG-02 / -03), and the own authority and credential
- * creators.
- *
- * Provides the pre-existing MS ADCS source authority (read only; its CA host and name are read at run time, never stored),
- * the run's own authority on the same CA, the template lookup, and the health blocker that skips the chain on a tier without
- * a healthy MS ADCS connector. Also an own Basic credential, and an own authority that copies a pre-existing one's data
- * attributes (REG-CONN-14).
- *
- * Own objects get run-prefixed names and are recorded. REG_RA_PROFILE_NAME (local stack only) names an existing RA profile
- * used as an issue-only parent: it and its authority have no ledger line and are never changed.
+ * authorities — the MS ADCS chain of the configuration checklist (REG-CFG-02 / -03) and the own authority and credential creators.
+ * REG_RA_PROFILE_NAME (local stack only) is an issue-only parent: no ledger
+ * line, never changed. CA host and name are read at run time, never stored.
  */
 import { APIRequestContext, expect } from '@playwright/test';
 import { Logger } from '../../Logger';
@@ -40,7 +33,6 @@ export interface AdcsSource {
     attributes: JsonObject[];
 }
 
-/** The existing MS ADCS NG authority whose CA the suite reuses. Read-only. */
 export async function findAdcsSource(api: APIRequestContext): Promise<AdcsSource> {
     const { adcsSourceAuthority: wantedName, adcsConnector: connectorName } = settings();
     const all = await apiJson<JsonObject[]>(api, 'GET', '/api/v1/authorities');
@@ -54,7 +46,6 @@ export async function findAdcsSource(api: APIRequestContext): Promise<AdcsSource
     const ca = valueOf('data_ca')?.data as JsonObject | undefined;
     const caHost = (ca?.caHost ?? valueOf('data_caHost')?.data) as string | undefined;
     const caName = (ca?.caName ?? valueOf('data_caName')?.data) as string | undefined;
-    // Messages name foreign objects by uuid only: reports may be shared.
     expect(caHost && caName, `source authority ${detail.uuid} exposes no CA host / name`).toBeTruthy();
     return {
         uuid: String(detail.uuid),
@@ -68,7 +59,6 @@ export async function findAdcsSource(api: APIRequestContext): Promise<AdcsSource
     };
 }
 
-/** Certificate template to use: REG_ADCS_TEMPLATE (template id, e.g. WebServer), else the one of an enabled RA profile on the source. */
 export async function findAdcsTemplate(api: APIRequestContext, source: AdcsSource): Promise<{ reference: string; data: string }> {
     const ras = await apiJson<JsonObject[]>(api, 'GET', '/api/v1/raProfiles');
     const onSource = ras.filter((r) => r.authorityInstanceUuid === source.uuid && r.enabled);
@@ -84,7 +74,6 @@ export async function findAdcsTemplate(api: APIRequestContext, source: AdcsSourc
 
 const v3 = (a: JsonObject): JsonObject => ({ version: 'v3', uuid: a.uuid, name: a.name, contentType: a.contentType, content: a.content });
 
-/** New own authority on the source's connector, pointing at the same CA (manual host + name); recorded before any assertion. */
 async function createOwnAdcsAuthority(api: GuardedApi, spec: string, suffix: string, o: { source: AdcsSource; name?: string }): Promise<OwnRef> {
     const { source } = o;
     const schema = await apiJson<JsonObject[]>(api, 'GET', `/api/v1/authorities/${source.connectorUuid}/attributes`).catch(() => [] as JsonObject[]);
@@ -116,10 +105,8 @@ async function createOwnAdcsAuthority(api: GuardedApi, spec: string, suffix: str
 }
 
 /**
- * Why the MS ADCS chain cannot run on this tier, or undefined when it can: a connected MS ADCS NG authority exists
- * (REG_ADCS_CONNECTOR) AND its connector answers its live health (the stored `connected`
- * status alone gave a false pass while the connector answered 503). The ADCS checklist specs (REG-CFG-02 / -03) skip
- * with this reason — an environment blocker, never a pass.
+ * Why the MS ADCS chain cannot run on this tier, or undefined: needs a connected MS ADCS NG authority AND a connector answering live health
+ * (the stored `connected` alone gave a false pass).
  */
 export async function adcsBlocker(api: APIRequestContext): Promise<string | undefined> {
     const connectorName = settings().adcsConnector;
@@ -132,16 +119,14 @@ export async function adcsBlocker(api: APIRequestContext): Promise<string | unde
     return health.healthy ? undefined : `${describeHealth(health)} — environment blocker (deploy gate)`;
 }
 
-/** The connector registration name of an authority (read-only), e.g. to decide the SAN oracle of a CA. */
 export async function authorityConnectorName(api: APIRequestContext, authorityUuid: string): Promise<string> {
     const a = await apiJson<JsonObject>(api, 'GET', `/api/v1/authorities/${authorityUuid}`);
     return String(a.connectorName ?? '');
 }
 
 /**
- * REG_RA_PROFILE_NAME: an existing, enabled RA profile of a LOCAL stack (e.g. the seeded EJBCA one) used instead of
- * creating the run's own. It is an issue-only parent: it has no ledger line, so assertOwn refuses every change to it.
- * On a shared tier the variable is ignored (the run makes its own RA profile).
+ * REG_RA_PROFILE_NAME: an existing enabled RA profile of a LOCAL stack, used as an issue-only parent (assertOwn refuses changes to it);
+ * ignored on a shared tier.
  */
 export async function existingRaProfile(api: APIRequestContext): Promise<(CreateOnlyRef & { authorityUuid: string }) | undefined> {
     const wanted = settings().raProfileName;
@@ -157,13 +142,12 @@ export async function existingRaProfile(api: APIRequestContext): Promise<(Create
     return { ...issueOnly({ uuid: String(ra!.uuid), name: String(ra!.name) }), authorityUuid: String(ra!.authorityInstanceUuid) };
 }
 
-/** The run's MS ADCS authority (REG-CFG-02 / -03 chain; ADCS-specific by design: the checklist item is MS ADCS). */
 export async function ensureAuthority(api: GuardedApi, spec: string): Promise<OwnRef | CreateOnlyRef> {
     const state = readRunState();
     if (state.authority) return state.authority;
     const existing = await existingRaProfile(api);
     if (existing) {
-        // The authority of an issue-only RA profile is issue-only too: nothing on it is changed.
+        // The authority of an issue-only RA profile is issue-only too.
         const ref = issueOnly({ uuid: existing.authorityUuid, name: `authority of ${existing.name}` });
         updateRunState({ authority: ref });
         return ref;
@@ -174,24 +158,18 @@ export async function ensureAuthority(api: GuardedApi, spec: string): Promise<Ow
     return ref;
 }
 
-// ---------------------------------------------------------------- own credential and an authority like an existing one (REG-CONN-14)
 
-/** The credential-provider attribute definitions of a kind (`GET /v1/connectors/{uuid}/attributes/credentialProvider/{kind}`). */
 export const listCredentialAttributes = (api: APIRequestContext, connectorUuid: string, kind = 'Basic'): Promise<AttributeDefinition[]> =>
     apiJson<AttributeDefinition[]>(api, 'GET', `/api/v1/connectors/${connectorUuid}/attributes/credentialProvider/${kind}`);
 
-/** A connected pre-existing authority on a connector whose name matches (never a run object). */
 export async function findAuthoritySource(api: APIRequestContext, connectorName: RegExp): Promise<JsonObject | undefined> {
     const all = await apiJson<JsonObject[]>(api, 'GET', '/api/v1/authorities');
     return all.find((a) => connectorName.test(String(a.connectorName)) && a.status === 'connected' && !/^qa-(reg|api)-/.test(String(a.name)));
 }
 
 /**
- * An own authority on the SAME connector as `source`, with the source's DATA attributes copied read-only (one GET of
- * its detail) and every credential-typed attribute replaced by the own credential: the own Basic credential is used
- * on an authority (REG-CONN-14) without any CA host written into the suite. The raw response is returned (a refused
- * creation is the connector's verdict: the caller proves nothing was left behind). It is a probe, not a plain creator,
- * for that reason: it returns `{ name, answer, ref? }` and records the object only when the connector accepted it.
+ * An own authority on the same connector as `source`, data attributes copied read-only and credential attributes replaced by the own
+ * credential; a probe: recorded only when the connector accepted it.
  */
 export async function probeOwnAuthorityLike(api: GuardedApi, spec: string, suffix: string, o: { source: JsonObject; credential: OwnRef }): Promise<{ name: string; answer: ApiAnswer; ref?: OwnRef }> {
     const { source, credential } = o;
@@ -211,10 +189,7 @@ export async function probeOwnAuthorityLike(api: GuardedApi, spec: string, suffi
     return { name, answer, ref: recordIfAccepted('authorities', answer, name, spec, `own authority like ${source.connectorName} with the own credential`) };
 }
 
-/**
- * True when a refused authority create names a logon or credential refusal by the connector (the CA behind it rejects the own
- * credential): the one refusal an own test credential can never avoid. Any other refusal is not matched.
- */
+/** True when a refused authority create names a logon or credential refusal by the connector. */
 export function isCredentialLogonRefusal(text: string): boolean {
     return /STATUS_LOGON_FAILURE|0xc000006d|logon failure|login failed|invalid credentials|bad credentials/i.test(text);
 }

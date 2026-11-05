@@ -1,9 +1,6 @@
 /**
- * notificationAttributes — request attributes for e-mail and webhook notification instances.
- *
- * Builds the attributes from the connector's live definitions, plus the code-block and template attributes and the fixed
- * templates. Every sender address and webhook URL is a reserved `.test` name, so nothing is ever delivered from a shared
- * tier.
+ * notificationAttributes — request attributes for e-mail and webhook notification instances, built from the connector's live definitions;
+ * every sender address and webhook URL is a reserved `.test` name, so nothing is delivered from a shared tier.
  */
 
 import { checkedDnsName, ownName } from '../ledger/runState';
@@ -13,7 +10,6 @@ import { objectOf, rowsOf } from '../json';
 export type WebhookContentType = 'RAW_JSON' | 'JSON' | 'XML';
 
 
-/** Base64 of a template: the content of a CODEBLOCK attribute is `{ language, code: <base64> }`. */
 export const codeBlock = (language: string, template: string): JsonObject => ({ language, code: Buffer.from(template, 'utf8').toString('base64') });
 
 const byName = (defs: JsonObject[], name: string): JsonObject => {
@@ -22,17 +18,14 @@ const byName = (defs: JsonObject[], name: string): JsonObject => {
     return d;
 };
 
-/** `{ uuid, name, contentType, content }` of a definition with the given content items (the v2 request attribute). */
 export const requestAttribute = (def: JsonObject, content: JsonObject[]): JsonObject => ({ uuid: def.uuid, name: def.name, contentType: def.contentType, content });
 
 export interface EmailAttributeValues {
     sender: string;
     subject: string;
-    /** HTML template; omit to send none (a negative case). */
     template?: string;
 }
 
-/** The request attributes of an EMAIL instance; a missing value leaves its attribute out (negative cases). */
 export function emailAttributes(defs: JsonObject[], v: Partial<EmailAttributeValues>): JsonObject[] {
     const out: JsonObject[] = [];
     if (v.sender !== undefined) out.push(requestAttribute(byName(defs, 'data_senderEmailAddress'), [{ data: v.sender }]));
@@ -48,9 +41,8 @@ const WEBHOOK_CODE: Record<WebhookContentType, { code: string; language: string 
 };
 
 /**
- * The template attribute's uuid per content type, as the webhook connector derives it (`Attributes.java`):
- * `UUID.nameUUIDFromBytes(("1b247b77-e9c0-45b9-8114-06377cbeedc7" + code).getBytes())`, a version-3 (MD5) uuid. Kept as
- * fixed values, so the suite computes no MD5.
+ * The template attribute's uuid per content type, as the webhook connector derives it (a version-3 uuid); fixed values, so the suite
+ * computes no MD5.
  */
 const WEBHOOK_TEMPLATE_ATTRIBUTE_UUID: Record<WebhookContentType, string> = {
     RAW_JSON: '07ea053b-3515-3ce8-a8a5-acfca3d4ed15',
@@ -58,7 +50,6 @@ const WEBHOOK_TEMPLATE_ATTRIBUTE_UUID: Record<WebhookContentType, string> = {
     XML: '610ed4fa-0b1f-33a9-9a31-0be332673a58',
 };
 
-/** The derived template attribute of a webhook content type (uuid and name per content type, webhook `Attributes.java`). */
 export function webhookTemplateAttribute(contentType: WebhookContentType, template: string): JsonObject {
     const { code, language } = WEBHOOK_CODE[contentType];
     return {
@@ -72,11 +63,9 @@ export function webhookTemplateAttribute(contentType: WebhookContentType, templa
 export interface WebhookAttributeValues {
     url: string;
     contentType: WebhookContentType;
-    /** The template of a JSON / XML webhook; none for RAW_JSON. */
     template?: string;
 }
 
-/** The request attributes of a WEBHOOK instance; `url` / `contentType` left undefined are left out (negative cases). */
 export function webhookAttributes(defs: JsonObject[], v: Partial<WebhookAttributeValues>): JsonObject[] {
     const out: JsonObject[] = [];
     if (v.url !== undefined) out.push(requestAttribute(byName(defs, 'data_webhookUrl'), [{ data: v.url }]));
@@ -89,7 +78,6 @@ export function webhookAttributes(defs: JsonObject[], v: Partial<WebhookAttribut
     return out;
 }
 
-/** Reserved test names (RFC 6761 `.test`): nothing resolves, nothing is delivered. */
 export const reservedSender = (suffix = 'sender'): string => `${ownName(suffix)}@example.test`;
 export const reservedWebhookUrl = (suffix = 'hook'): string => `https://${checkedDnsName(`${ownName(suffix)}.example.test`)}/hook`;
 
@@ -97,5 +85,4 @@ export const EMAIL_TEMPLATE = '<html><body><p>QA ${event}</p></body></html>';
 export const WEBHOOK_JSON_TEMPLATE = '{"event":"${event}"}';
 export const WEBHOOK_XML_TEMPLATE = '<notification><event>${event}</event></notification>';
 
-/** The label of an attribute definition (`properties.label`), the text core puts in its validation messages; the name when absent. */
 export const attributeLabel = (defs: JsonObject[], name: string): string => String(objectOf(defs.find((d) => d.name === name)?.properties).label ?? name);
