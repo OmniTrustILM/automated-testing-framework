@@ -1,51 +1,37 @@
 /**
- * resourceTypes — the registry of every ledger resource type the regression and API suites can create.
- *
- * One entry per type: the teardown step and handler that deletes it, how its ownership is proven, how the non-interference
- * snapshot sees it, and the path an own delete is allowed on. A type is added here once; the other tables are derived from it
- * and `tests/unit/resourceTypes.spec.ts` checks every entry. The guard's own tables stay literal and deny-by-default.
- * The ARRAY ORDER is the delete order: dependants before what they depend on.
+ * resourceTypes — the registry of every ledger resource type the suites can create: teardown step and handler, how ownership
+ * is proven, how the non-interference snapshot sees it, the allowed
+ * own-delete path. The ARRAY ORDER is the delete order (dependants first).
  */
 import { TIMESTAMPING_REGISTRY_ENTRIES } from '../timestamping/resourceTypes';
 import {
     certMarker, discoveryMarker, enabledMarker, foreignKeyRows, keyItemsDelta, keyMarksFromDetail, keyWindowCuts, keyWrapperOf, ResourceDef,
 } from './teardown/snapshotModel';
 
-/** The module that exports the `teardownHandlers` of a type (runTeardown maps each key to its import). */
 export type HandlerModule = 'core' | 'lifecycle' | 'workflow' | 'notification' | 'protocols' | 'platform' | 'inventory' | 'scheduler' | 'timestamping';
 
 /**
- * How the live object of a named type is read before anything is done to it. `{uuid}` and `{parent}` stand for the object's
- * uuid and its parent's uuid. The live name that must carry the run prefix is `nameField` (default `name`).
+ * How the live object of a named type is read before anything is done to
+ * it (`{uuid}` / `{parent}` stand for the object's and its parent's uuid).
  */
 export type LiveReadSpec =
-    /** `GET <url>`. */
     | { kind: 'detail'; url: string; nameField?: string }
-    /** `GET <url>` under the parent named by the ledger line (`parents.<parent>`); no parent on the line: not readable. */
     | { kind: 'parent'; parent: string; url: string; nameField?: string }
-    /** As `parent`, but a line without the parent finds it by reading `listUrl` (`listParentField` of the row with this uuid). */
     | { kind: 'parent-or-list'; parent: string; listUrl: string; listParentField: string; url: string };
 
-/** Ownership of a type: a live read of the object's name, or the ledger line alone (the platform names the object by an id). */
 export type Ownership = LiveReadSpec | { kind: 'id-named' };
 
-/**
- * How the non-interference snapshot sees a type: `def` (how to read and mark it; the ledger type is the entry's `type`),
- * `gap` (not snapshotted, and why) or `coveredBy` (not snapshotted because another resource's snapshot covers it).
- */
+/** How the non-interference snapshot sees a type: `def`, `gap` (not snapshotted, and why) or `coveredBy`. */
 export type SnapshotEntry = { def: Omit<ResourceDef, 'type'> } | { gap: string } | { coveredBy: string };
 
 export interface ResourceTypeEntry {
-    /** The ledger type: one spelling everywhere. */
     type: string;
     teardown: { step: number; handler: HandlerModule };
     ownership: Ownership;
     snapshot: SnapshotEntry;
-    /** The collection path `deleteOwn` may delete on (a delete that is itself the behaviour under test). */
     ownDeletePath?: string;
 }
 
-/** The label of each teardown step (what the step removes and why it sits where it does). */
 export const TEARDOWN_STEPS: ReadonlyArray<{ step: number; label: string }> = [
     { step: 1, label: 'pending approvals of own certificates (reject through the override path)' },
     { step: 2, label: 'object-level event associations on own objects' },
@@ -67,7 +53,6 @@ export const TEARDOWN_STEPS: ReadonlyArray<{ step: number; label: string }> = [
     { step: 14, label: 'scheduled jobs (@local only)' },
 ];
 
-/** Keeps the entry literal types (so `ownDeletePath` yields the union of deletable types) and checks the shape. */
 function defineResourceTypes<const T extends readonly ResourceTypeEntry[]>(entries: T): T {
     return entries;
 }
@@ -76,7 +61,6 @@ const detail = (url: string, nameField?: string): LiveReadSpec => ({ kind: 'deta
 const idNamed: Ownership = { kind: 'id-named' };
 
 export const RESOURCE_REGISTRY = defineResourceTypes([
-    // ---- step 1-2: approvals and event associations (the ledger line alone proves them own)
     {
         type: 'approvals', teardown: { step: 1, handler: 'lifecycle' }, ownership: idNamed,
         snapshot: { gap: 'requests of certificates; their decisions are covered by the certificate state marker' },
@@ -85,7 +69,6 @@ export const RESOURCE_REGISTRY = defineResourceTypes([
         type: 'eventAssociations', teardown: { step: 2, handler: 'workflow' }, ownership: idNamed,
         snapshot: { coveredBy: 'platformEvents: the platform-level association map is compared as one canonical JSON; an object-level association goes with its object' },
     },
-    // ---- step 3-6: discoveries, certificates, keys, key items
     {
         type: 'discoveries', teardown: { step: 3, handler: 'core' }, ownership: detail('/api/v1/discoveries/{uuid}'),
         snapshot: {
@@ -95,8 +78,7 @@ export const RESOURCE_REGISTRY = defineResourceTypes([
             },
         },
     },
-    // The timestamping block's four types, in delete order after `discoveries` (utils/timestamping/resourceTypes.ts); the
-    // handlers are in utils/timestamping/teardown.ts; the block runs on a shared tier too (tests/timestamping/SHARED-TIER.md).
+    // The timestamping block's types, in delete order after `discoveries`.
     ...TIMESTAMPING_REGISTRY_ENTRIES,
     {
         type: 'certificates', teardown: { step: 4, handler: 'core' }, ownership: detail('/api/v1/certificates/{uuid}', 'commonName'),
@@ -108,8 +90,7 @@ export const RESOURCE_REGISTRY = defineResourceTypes([
         },
     },
     {
-        // One row per key ITEM (its name is the item's); grouped by wrapper, marked by keyMarksFromRows / keyMarksFromDetail.
-        // KeyDetailDto.creationTime (interfaces model/core/cryptography/key/KeyDetailDto) proves a key new.
+        // One row per key ITEM (its name is the item's); grouped by wrapper.
         type: 'keys', ownDeletePath: '/api/v1/keys', teardown: { step: 5, handler: 'core' }, ownership: detail('/api/v1/keys/{uuid}'),
         snapshot: {
             def: {
@@ -120,13 +101,10 @@ export const RESOURCE_REGISTRY = defineResourceTypes([
         },
     },
     {
-        // A key item under its parent key (ledger `parents.key`; no parent → not readable → missing).
-        // `GET /v1/keys/{uuid}/items/{keyItemUuid}` (interfaces CryptographicKeyController) only reads
-        // (core CryptographicKeyServiceImpl); KeyItemDetailDto extends NameAndUuidDto: `name` is the key's name.
+        // A key item under its parent key (`parents.key`; no parent: not readable).
         type: 'keyItems', teardown: { step: 6, handler: 'core' }, ownership: { kind: 'parent', parent: 'key', url: '/api/v1/keys/{parent}/items/{uuid}' },
         snapshot: { coveredBy: 'keys: a key search lists one row per key item, so the keys total counts them' },
     },
-    // ---- step 7: protocol profiles
     {
         type: 'acmeProfiles', teardown: { step: 7, handler: 'core' }, ownership: detail('/api/v1/acmeProfiles/{uuid}'),
         snapshot: { def: { read: 'list', path: '/api/v1/acmeProfiles', name: (i) => i.name, marker: enabledMarker } },
@@ -143,7 +121,6 @@ export const RESOURCE_REGISTRY = defineResourceTypes([
         type: 'cmpProfiles', teardown: { step: 7, handler: 'protocols' }, ownership: detail('/api/v1/cmpProfiles/{uuid}'),
         snapshot: { def: { read: 'list', path: '/api/v1/cmpProfiles', name: (i) => i.name, marker: enabledMarker } },
     },
-    // ---- step 8: workflows (triggers → rules → conditions → actions → executions)
     {
         type: 'triggers', teardown: { step: 8, handler: 'workflow' }, ownership: detail('/api/v1/workflows/triggers/{uuid}'),
         ownDeletePath: '/api/v1/workflows/triggers',
@@ -169,7 +146,6 @@ export const RESOURCE_REGISTRY = defineResourceTypes([
         ownDeletePath: '/api/v1/workflows/executions',
         snapshot: { def: { read: 'list', path: '/api/v1/workflows/executions', name: (i) => i.name } },
     },
-    // ---- step 9: notifications
     {
         type: 'notificationProfiles', teardown: { step: 9, handler: 'notification' }, ownership: detail('/api/v1/notificationProfiles/{uuid}'),
         ownDeletePath: '/api/v1/notificationProfiles',
@@ -180,7 +156,6 @@ export const RESOURCE_REGISTRY = defineResourceTypes([
         ownDeletePath: '/api/v1/notificationInstances',
         snapshot: { def: { read: 'list', path: '/api/v1/notificationInstances', name: (i) => i.name } },
     },
-    // ---- step 10: compliance profiles, RA profiles, authorities, credentials, connectors
     {
         type: 'complianceProfiles', teardown: { step: 10, handler: 'platform' }, ownership: detail('/api/v1/complianceProfiles/{uuid}'),
         snapshot: { def: { read: 'list', path: '/api/v1/complianceProfiles', name: (i) => i.name } },
@@ -201,7 +176,6 @@ export const RESOURCE_REGISTRY = defineResourceTypes([
         type: 'connectors', teardown: { step: 10, handler: 'core' }, ownership: detail('/api/v1/connectors/{uuid}'),
         snapshot: { def: { read: 'list', path: '/api/v1/connectors', name: (i) => i.name } },
     },
-    // ---- step 11: token profiles, tokens
     {
         type: 'tokenProfiles', teardown: { step: 11, handler: 'core' },
         ownership: { kind: 'parent-or-list', parent: 'token', listUrl: '/api/v1/tokenProfiles', listParentField: 'tokenInstanceUuid', url: '/api/v1/tokens/{parent}/tokenProfiles/{uuid}' },
@@ -211,7 +185,6 @@ export const RESOURCE_REGISTRY = defineResourceTypes([
         type: 'tokens', teardown: { step: 11, handler: 'core' }, ownership: detail('/api/v1/tokens/{uuid}'),
         snapshot: { def: { read: 'list', path: '/api/v1/tokens', name: (i) => i.name } },
     },
-    // ---- step 12: users, roles, groups, custom attributes, OID entries
     {
         type: 'users', ownDeletePath: '/api/v1/users', teardown: { step: 12, handler: 'core' }, ownership: detail('/api/v1/users/{uuid}', 'username'),
         snapshot: { def: { read: 'list', path: '/api/v1/users', name: (i) => i.username, marker: enabledMarker } },
@@ -232,7 +205,6 @@ export const RESOURCE_REGISTRY = defineResourceTypes([
         type: 'oidEntries', teardown: { step: 12, handler: 'inventory' }, ownership: idNamed,
         snapshot: { gap: 'list endpoint is a search keyed by OID (platform settings rows are @local)' },
     },
-    // ---- step 13: entities, locations, secrets, vault profiles, vault instances, approval profiles
     {
         type: 'entities', teardown: { step: 13, handler: 'platform' }, ownership: detail('/api/v1/entities/{uuid}'),
         snapshot: { def: { read: 'searchAll', path: '/api/v1/entities/list', itemsKey: 'entities', name: (i) => i.name } },
@@ -257,74 +229,57 @@ export const RESOURCE_REGISTRY = defineResourceTypes([
         type: 'approvalProfiles', teardown: { step: 13, handler: 'lifecycle' }, ownership: detail('/api/v1/approvalProfiles/{uuid}'),
         snapshot: { def: { read: 'paged', path: '/api/v1/approvalProfiles', itemsKey: 'approvalProfiles', name: (i) => i.name, marker: enabledMarker } },
     },
-    // ---- step 14: scheduled jobs (@local only)
     {
         type: 'scheduledJobs', teardown: { step: 14, handler: 'scheduler' }, ownership: idNamed,
         snapshot: { def: { read: 'paged', path: '/api/v1/scheduler/jobs', itemsKey: 'scheduledJobs', name: (i) => i.jobName, marker: enabledMarker } },
     },
 ]);
 
-/** The ledger types of the registry. */
 export type RegisteredType = (typeof RESOURCE_REGISTRY)[number]['type'];
 
-/** The types `deleteOwn` may delete (those with an `ownDeletePath`). */
 export type OwnDeletableType = Extract<(typeof RESOURCE_REGISTRY)[number], { ownDeletePath: string }>['type'];
 
-/** Gaps of the snapshot that belong to no ledger type (platform-level state and a part of a resource). */
 export const EXTRA_SNAPSHOT_GAPS: Readonly<Record<string, string>> = {
     platformSettings: 'settings other than event associations are changed only by @local rows',
     scheduledJobsUser: 'user jobs are covered by the scheduledJobs total and enabled marker; only system jobs are compared field by field',
 };
 
-// ------------------------------------------------------------------ the tables derived from the registry (pure)
-
-/** The delete order: steps ascending, each with the types of the step in registry order. */
 export function deleteOrderOf(registry: readonly ResourceTypeEntry[] = RESOURCE_REGISTRY): Array<{ step: number; label: string; types: string[] }> {
     return TEARDOWN_STEPS.map(({ step, label }) => ({ step, label, types: registry.filter((e) => e.teardown.step === step).map((e) => e.type) }));
 }
 
-/** The handler module of every type. */
 export function handlerModulesOf(registry: readonly ResourceTypeEntry[] = RESOURCE_REGISTRY): Record<string, HandlerModule> {
     return Object.fromEntries(registry.map((e) => [e.type, e.teardown.handler]));
 }
 
-/** The types whose ownership rests on the ledger line alone. */
 export function idNamedTypesOf(registry: readonly ResourceTypeEntry[] = RESOURCE_REGISTRY): Set<string> {
     return new Set(registry.filter((e) => e.ownership.kind === 'id-named').map((e) => e.type));
 }
 
-/** The live-read specification of every named type. */
 export function liveReadSpecsOf(registry: readonly ResourceTypeEntry[] = RESOURCE_REGISTRY): Record<string, LiveReadSpec> {
     const out: Record<string, LiveReadSpec> = {};
     for (const e of registry) if (e.ownership.kind !== 'id-named') out[e.type] = e.ownership;
     return out;
 }
 
-/** The snapshot resource definitions, in registry order. */
 export function snapshotDefinitionsOf(registry: readonly ResourceTypeEntry[] = RESOURCE_REGISTRY): ResourceDef[] {
     const out: ResourceDef[] = [];
     for (const e of registry) if ('def' in e.snapshot) out.push({ type: e.type, ...e.snapshot.def });
     return out;
 }
 
-/** What the snapshot does not cover, and why. */
 export function snapshotGapsOf(registry: readonly ResourceTypeEntry[] = RESOURCE_REGISTRY): Record<string, string> {
     const out: Record<string, string> = {};
     for (const e of registry) if ('gap' in e.snapshot) out[e.type] = e.snapshot.gap;
     return { ...out, ...EXTRA_SNAPSHOT_GAPS };
 }
 
-/** The collection path `deleteOwn` may delete on, per deletable type. */
 export function ownDeletePathsOf(registry: readonly ResourceTypeEntry[] = RESOURCE_REGISTRY): Record<string, string> {
     const out: Record<string, string> = {};
     for (const e of registry) if (e.ownDeletePath) out[e.type] = e.ownDeletePath;
     return out;
 }
 
-// ------------------------------------------------------------------ the derived tables the safety layers read
-
-/** The snapshot resource definitions (registry order). */
 export const SNAPSHOT_RESOURCES: ResourceDef[] = snapshotDefinitionsOf();
 
-/** What the snapshot does not cover, and why (an explicit gap list instead of a silent one). */
 export const SNAPSHOT_GAPS: Readonly<Record<string, string>> = snapshotGapsOf();

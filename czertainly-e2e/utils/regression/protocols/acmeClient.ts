@@ -1,8 +1,7 @@
 /**
- * acmeClient — a minimal RFC 8555 client (ES256, node:crypto): directory, nonce, account, order, finalize, poll and
- * download, with the response headers of every answer. Challenges are not answered (the test ACME profile
- * pre-authorizes its identifier); revocation is left to the run-end teardown. Signed POSTs go through
- * `allowedRawPost`, which accepts protocol paths only, and the client sends no credentials.
+ * acmeClient — a minimal RFC 8555 client (ES256): directory, nonce, account, order, finalize, poll and download, with the response headers
+ * of every answer.
+ * Challenges are not answered (the test profile pre-authorizes); signed POSTs go through `allowedRawPost` and carry no credentials.
  */
 import * as crypto from 'crypto';
 import { Logger } from '../../Logger';
@@ -16,19 +15,13 @@ export interface AcmeResponse<T = any> {
     status: number;
     location?: string;
     body: T;
-    /** Every response header, lower-case names. */
     headers: Record<string, string>;
-    /** `Retry-After` as sent (RFC 8555 §7.4: on new-account, new-order, finalize, order reads). */
     retryAfter?: string;
-    /** `Replay-Nonce` as sent. */
     replayNonce?: string;
-    /** `Content-Type` as sent. */
     contentType?: string;
-    /** The server's clock (`Date` header), for oracles relative to the server's "now". */
     date?: Date;
 }
 
-/** The headers of a fetch Response as a plain object (lower-case names) plus the read-outs of AcmeResponse. */
 export function acmeHeaders(res: { headers: { forEach(cb: (value: string, name: string) => void): void } }): Pick<AcmeResponse, 'headers' | 'retryAfter' | 'replayNonce' | 'contentType' | 'date' | 'location'> {
     const headers: Record<string, string> = {};
     res.headers.forEach((value, name) => {
@@ -72,7 +65,6 @@ export class AcmeClient {
         return nonce;
     }
 
-    /** Signed POST (payload `''` = POST-as-GET) to an ILM protocol URL. Retries once on badNonce. */
     async signedPost<T = any>(url: string, payload: object | '', accept?: string, retried = false): Promise<AcmeResponse<T>> {
         const nonce = this.nonce ?? (await this.freshNonce());
         this.nonce = undefined;
@@ -118,15 +110,13 @@ export class AcmeClient {
     }
 
     /**
-     * REG-PROT-01 (RFC 8555 §7.6): `POST revoke-cert` signed with the ACCOUNT key (`kid`), the
-     * certificate as base64url DER; `reason` omitted = the server's default (unspecified). No client-side guard: a
-     * second revoke of the same certificate is the test (400 `alreadyRevoked`).
+     * `POST revoke-cert` signed with the account key; `reason` omitted = the
+     * server's default. No client-side guard: a second revoke is the test.
      */
     async revokeCert(certificateDerBase64Url: string, reason?: number): Promise<AcmeResponse> {
         return this.signedPost(this.directory.revokeCert, { certificate: certificateDerBase64Url, ...(reason !== undefined ? { reason } : {}) });
     }
 
-    /** Poll an order until it leaves pending/ready/processing. */
     async waitForOrder(orderUrl: string, timeoutMs = 180_000): Promise<Record<string, any>> {
         const order = await pollUntil(
             async () => (await this.get(orderUrl)).body as Record<string, any>,
@@ -142,7 +132,6 @@ export class AcmeClient {
         return String(res.body);
     }
 
-    /** The download as an AcmeResponse (status, `Content-Type`, the PEM chain as `body`): REG-USE-05.1 checks the headers. */
     async downloadCertificateResponse(certificateUrl: string): Promise<AcmeResponse<string>> {
         const res = await this.get<string>(certificateUrl, 'application/pem-certificate-chain');
         return { ...res, body: typeof res.body === 'string' ? res.body : JSON.stringify(res.body) };

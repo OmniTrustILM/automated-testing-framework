@@ -1,11 +1,6 @@
 /**
- * runId — the identity of one regression run, shared by the REG-* and the API-* configs.
- *
- * Provides the run id (`qa-reg-<yyyymmdd>-<hhmmss>-<4 random base36>`, UTC), the state directory outside the clone, the
- * per-run defaults and the run lock. Every object is named `<run id>-<suffix>`; the teardown deletes only what that run recorded.
- * The adhoc ids (`qa-reg-adhoc`, `qa-api-adhoc`) are refused by a config, and the teardown refuses to delete under them.
- * A hand-set REG_RUN_ID must match RUN_ID_FORMAT unless REG_RUN_ID_REUSE=1. A hand-set id does NOT default API_DELETE_OWN to 1.
- * The lock `<state dir>/<run id>.lock` refuses a second live run with the same id.
+ * runId — the identity of one regression run, shared by the REG-* and API-* configs: the run id (`qa-reg-<yyyymmdd>-<hhmmss>-<4 base36>`),
+ * the state directory outside the clone, the per-run defaults and the run lock. The adhoc ids are refused by a config and the teardown.
  */
 import * as crypto from 'crypto';
 import * as fs from 'fs';
@@ -15,21 +10,17 @@ import { parseFlag } from './flags';
 import { settings } from './settings';
 
 export const DEFAULT_RUN_ID = 'qa-reg-adhoc';
-/** The API test template's default (`API_RUN_ID ?? 'qa-api-adhoc'`). */
 export const API_DEFAULT_RUN_ID = 'qa-api-adhoc';
 export const DEFAULT_RUN_IDS: readonly string[] = [DEFAULT_RUN_ID, API_DEFAULT_RUN_ID];
 
-/** Name prefixes of every object a regression or API run creates (the API template's `qa-api-` included). */
 export const RUN_PREFIX_FAMILY = ['qa-reg-', 'qa-api-'] as const;
 
-/** Format of a generated run id; a hand-set REG_RUN_ID must match it unless REG_RUN_ID_REUSE=1. */
 export const RUN_ID_FORMAT = /^qa-reg-\d{8}-\d{6}-[0-9a-z]{4}$/;
 
-/** What REG_RUN_ID_REUSE=1 admits besides RUN_ID_FORMAT: an earlier run's id (e.g. the minute-granular ones). */
 const REUSABLE_RUN_ID = /^qa-reg-[0-9a-z][0-9a-z-]*$/;
 
 export function newRunId(now: Date = new Date(), randomInt: (max: number) => number = crypto.randomInt): string {
-    const iso = now.toISOString(); // 2026-10-13T19:20:31.123Z
+    const iso = now.toISOString();
     const date = iso.slice(0, 10).replace(/-/g, '');
     const time = iso.slice(11, 19).replace(/:/g, '');
     let suffix = '';
@@ -37,32 +28,26 @@ export function newRunId(now: Date = new Date(), randomInt: (max: number) => num
     return `qa-reg-${date}-${time}-${suffix}`;
 }
 
-/** The run id now in `env` (REG_RUN_ID, else the adhoc default): only where an injected `env` is honoured; elsewhere `runId()`. */
 export function currentRunId(env: NodeJS.ProcessEnv = process.env): string {
     return settings(env).runId ?? DEFAULT_RUN_ID;
 }
 
-/** True for either adhoc default. */
 export function isDefaultRunId(runId: string = currentRunId()): boolean {
     return DEFAULT_RUN_IDS.includes(runId);
 }
 
-/** True when the name carries the prefix of any regression or API run (not only this one). */
 export function hasRunFamilyPrefix(name: string | undefined): boolean {
     return !!name && RUN_PREFIX_FAMILY.some((p) => name.startsWith(p));
 }
 
-/** Run state, ledger, snapshots and the cleanup ledger: REG_STATE_DIR, else ~/.ilm-qa/regression-state (never the clone). */
 export function regressionStateDir(env: NodeJS.ProcessEnv = process.env): string {
     return path.resolve(settings(env).stateDir ?? path.join(os.homedir(), '.ilm-qa', 'regression-state'));
 }
 
-/** The "before" snapshot the `snapshot` project stores and the run-end teardown compares against. */
 export function beforeSnapshotFile(runId: string = currentRunId(), env: NodeJS.ProcessEnv = process.env): string {
     return path.join(regressionStateDir(env), `${runId}.snapshot-before.json`);
 }
 
-/** Throws unless a hand-set run id is usable (RUN_ID_FORMAT, or REUSABLE_RUN_ID with REG_RUN_ID_REUSE=1; never adhoc). */
 export function assertValidRunId(id: string, env: NodeJS.ProcessEnv = process.env): void {
     if (isDefaultRunId(id)) {
         throw new Error(`REG_RUN_ID=${id} is an adhoc default: a run under it could not tell its objects from anyone else's. Unset REG_RUN_ID.`);
@@ -77,13 +62,8 @@ export function assertValidRunId(id: string, env: NodeJS.ProcessEnv = process.en
 }
 
 /**
- * Sets, when unset:
- * - REG_RUN_ID: a new run id (one prefix and one ledger for both suites); a hand-set id is validated;
- * - API_RUN_ID: ALWAYS the same id (helpers generated from the API test template name objects with it, and
- *   ownership needs the ledger lines under REG_RUN_ID); a different hand-set value is overwritten;
- * - API_DELETE_OWN: `1` for a generated id (the run deletes its own objects at the end), `0` for a hand-set
- *   id (a reused id keeps its objects unless API_DELETE_OWN=1 is given); the value must parse as a switch;
- * - CLEANUP_LEDGER_FILE: the run's cleanup ledger in the state directory, outside the clone.
+ * Sets when unset: REG_RUN_ID (a hand-set id is validated), API_RUN_ID (always the same id), API_DELETE_OWN (1 for a generated id, 0 for a
+ * hand-set one), CLEANUP_LEDGER_FILE.
  */
 export function setRunEnvDefaults(env: NodeJS.ProcessEnv = process.env): string {
     const handSet = !!settings(env).runId;
@@ -97,13 +77,10 @@ export function setRunEnvDefaults(env: NodeJS.ProcessEnv = process.env): string 
     return id;
 }
 
-// ------------------------------------------------------------------ run lock
-
 export function runLockFile(runId: string, env: NodeJS.ProcessEnv = process.env): string {
     return path.join(regressionStateDir(env), `${runId}.lock`);
 }
 
-/** Whether a process with this pid exists (EPERM: it exists but belongs to someone else). */
 function pidAlive(pid: number): boolean {
     try {
         process.kill(pid, 0);
@@ -113,10 +90,7 @@ function pidAlive(pid: number): boolean {
     }
 }
 
-/**
- * Takes `<state dir>/<run id>.lock` for `pid` (the Playwright runner). Re-entrant for the same pid; a lock whose pid
- * is gone is stale and taken over; a lock of a live process throws (a second live run with the same id).
- */
+/** Takes `<state dir>/<run id>.lock` for `pid`; re-entrant for the same pid, a stale lock (pid gone) is taken over, a live one throws. */
 export function acquireRunLock(runId: string, env: NodeJS.ProcessEnv = process.env, pid: number = process.pid, alive: (pid: number) => boolean = pidAlive): string {
     const file = runLockFile(runId, env);
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -133,12 +107,11 @@ export function acquireRunLock(runId: string, env: NodeJS.ProcessEnv = process.e
             throw new Error(`run ${runId} is already in use by a live process (pid ${holder}, ${file}); ` +
                 'two runs with one id would delete each other\'s objects. Wait for it, or use another REG_RUN_ID.');
         }
-        fs.rmSync(file, { force: true }); // stale: its runner is gone
+        fs.rmSync(file, { force: true });
     }
     throw new Error(`could not take the run lock ${file}`);
 }
 
-/** Removes the lock when `pid` holds it (the runner at exit / at the end of the teardown). */
 export function releaseRunLock(runId: string, env: NodeJS.ProcessEnv = process.env, pid: number = process.pid): void {
     const file = runLockFile(runId, env);
     try {

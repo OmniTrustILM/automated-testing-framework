@@ -1,10 +1,7 @@
 /**
- * protocolCa — the protocol CA fixture.
- *
- * An own software token, token profile and RSA-2048 key pair, plus a certificate for that key issued through the run RA
- * profile. SCEP profiles take it as their CA certificate. A v2 software provider is preferred, a v1 provider is the fallback;
- * when neither yields a readable certificate the fixture throws `ProtocolCaBlocked` with the reason and the test skips.
- * Every object is recorded right after its create.
+ * protocolCa — the protocol CA fixture: an own software token, token profile, RSA-2048 key pair and a certificate for it issued through the
+ * run RA profile.
+ * When no software provider yields a readable certificate it throws `ProtocolCaBlocked` and the test skips.
  */
 import { waitForCertificateState } from '../wait/certificateState';
 import { Logger } from '../../Logger';
@@ -24,7 +21,6 @@ import { settings } from '../run/settings';
 
 const logger = new Logger('ProtocolCa');
 
-/** The fixture cannot be built on this tier (named reason: the spec skips with it). */
 export class ProtocolCaBlocked extends Error {
     constructor(readonly reason: string) {
         super(reason);
@@ -32,7 +28,6 @@ export class ProtocolCaBlocked extends Error {
     }
 }
 
-/** core#2508: the certificate detail answered 500 for a certificate whose key lives on a v2 token. */
 class CertificateDetail500 extends Error {
     constructor(readonly certificateUuid: string) {
         super(`certificate ${certificateUuid}: detail answered 500 (core#2508)`);
@@ -49,7 +44,6 @@ export interface ProtocolCa {
     providerVersion?: 1 | 2;
 }
 
-/** Software Cryptography Provider attribute names / uuids (qa-integrations/software-cryptography-provider sources). */
 const SOFT_PROVIDER = {
     tokenOptions: 'data_options',
     tokenAction: { name: 'data_createTokenAction', uuid: 'cc781ba3-d90b-4fe9-915a-e8d44e1cff86' },
@@ -62,25 +56,20 @@ const SOFT_PROVIDER = {
 
 const KEY_USAGES = ['sign', 'verify', 'encrypt', 'decrypt'];
 
-/** The provider's token name rule: `^[a-zA-Z](?:_?[a-zA-Z0-9]+)*$` (the ILM token name stays run-prefixed). */
 export const providerTokenName = (): string => `qareg_${uniqueSuffix()}`;
 
 export interface SoftProvider {
     uuid: string;
     name: string;
-    /** The token kind, as the connector declares it on its cryptographyProvider function group (sent on the token requests). */
     kind: string;
     version?: 1 | 2;
 }
 
-/** The function group and the kind the Software Cryptography Provider declares (its token kind; the connector defines it). */
 export const SOFT_PROVIDER_GROUP = { functionGroup: 'cryptographyProvider', kind: 'SOFT' } as const;
 
 /**
- * Pure: the rows of `GET /v1/connectors` that are not reported as other than `connected` and whose `functionGroup` group
- * declares `kind`, with the kind read back from that group. This is the filter core applies to
- * `?functionGroup=&kind=` (ConnectorServiceImpl.java), done on the list because core binds the `kind` query
- * through OptionalEnumConverter and answers 422 "Unknown enum value" for every kind.
+ * Pure: the `GET /v1/connectors` rows that are `connected` and whose function group declares `kind` (core answers 422 for the `kind` query,
+ * so the filter runs here).
  */
 export function connectorsOfKind(rows: readonly JsonObject[], functionGroup: string, kind: string): Array<{ uuid: string; name: string; kind: string }> {
     const out: Array<{ uuid: string; name: string; kind: string }> = [];
@@ -96,7 +85,6 @@ export function connectorsOfKind(rows: readonly JsonObject[], functionGroup: str
     return out;
 }
 
-/** Registered software cryptography providers, v2 first (REG_SOFT_PROVIDER pins one by name). */
 async function softwareProviders(api: GuardedApi, env: NodeJS.ProcessEnv = process.env): Promise<SoftProvider[]> {
     const rows = await apiJson<JsonObject[]>(api, 'GET', '/api/v1/connectors');
     const out: SoftProvider[] = [];
@@ -109,13 +97,11 @@ async function softwareProviders(api: GuardedApi, env: NodeJS.ProcessEnv = proce
     return [...list].sort((a, b) => (b.version ?? 0) - (a.version ?? 0));
 }
 
-/** An attribute of a schema by name (its uuid may differ per provider version; the name is the contract). */
 const schemaAttr = (schema: JsonObject[], name: string): JsonObject | undefined => schema.find((a) => a?.name === name);
 
 /**
- * Pure: a request attribute for a definition of a provider schema. The version is the definition's (core refuses another one:
- * AttributeEngine `validateVersionsMatch`), v2 when the schema does not say; a v3 item carries its own `contentType`
- * (BaseAttributeContentV3 has no default subtype), a v2 item does not. `fallback` names the attribute when the schema lacks it.
+ * Pure: a request attribute for a provider schema definition; the version is the definition's (core refuses another one), v2 when unsaid; a
+ * v3 item carries its own `contentType`.
  */
 export function schemaRequestAttribute(def: JsonObject | undefined, fallback: { name: string; uuid: string }, contentType: string, items: JsonObject[]): JsonObject {
     const version = requestVersion(def, 'v2');
@@ -125,17 +111,13 @@ export function schemaRequestAttribute(def: JsonObject | undefined, fallback: { 
 
 const item = (data: unknown, reference?: string): JsonObject => ({ data, ...(reference ? { reference } : {}) });
 
-/**
- * Picks the content of a provider's choice attribute: the option whose reference or data matches `prefer`, else the
- * first option. Returns undefined when the attribute has no options (then nothing is sent for it).
- */
+/** The content of a provider's choice attribute: the option matching `prefer`, else the first; undefined when there are no options. */
 export function pickOption(attr: JsonObject, prefer: RegExp): JsonObject | undefined {
     const options: JsonObject[] = Array.isArray(attr?.content) ? attr.content : [];
     if (!options.length) return undefined;
     return options.find((o) => prefer.test(String(o.reference ?? '')) || prefer.test(String(o.data ?? ''))) ?? options[0];
 }
 
-/** Signature attributes for an RSA key from the connector's `sign/attributes` schema: PKCS#1 v1.5 and SHA-256 preferred. */
 export function signatureAttributesFrom(schema: JsonObject[]): JsonObject[] {
     const out: JsonObject[] = [];
     for (const a of schema) {
@@ -151,7 +133,6 @@ export function signatureAttributesFrom(schema: JsonObject[]): JsonObject[] {
     return out;
 }
 
-/** The RSA key items of a key detail: `{ public, private }` or the reason they are not acceptable. */
 export function keyItemProblems(key: JsonObject): { privateUuid?: string; publicUuid?: string; problems: string[] } {
     const items: JsonObject[] = Array.isArray(key?.items) ? key.items : [];
     const problems: string[] = [];
@@ -171,7 +152,6 @@ const ACCEPTABLE_VALIDATION = new Set(['valid', 'expiring']);
 
 async function buildOn(api: GuardedApi, spec: string, provider: SoftProvider, raProfile: RunRaProfile): Promise<ProtocolCa> {
     const stamp = uniqueSuffix();
-    // 1. Token (ILM name run-prefixed; the provider's own token name follows its alphabet).
     const tokenSchema = await apiJson<JsonObject[]>(api, 'GET', `/api/v1/tokens/${provider.uuid}/attributes?kind=${encodeURIComponent(provider.kind)}`);
     const optionsAttr = schemaAttr(tokenSchema, SOFT_PROVIDER.tokenOptions);
     const tattr = (def: { name: string; uuid: string }, contentType: string, items: JsonObject[]): JsonObject => schemaRequestAttribute(schemaAttr(tokenSchema, def.name), def, contentType, items);
@@ -190,7 +170,6 @@ async function buildOn(api: GuardedApi, spec: string, provider: SoftProvider, ra
     });
     const token = recordCreated('tokens', { uuid: String(tokenCreated.uuid), name: tokenName }, { spec, note: `protocol CA token on ${provider.name} (v${provider.version ?? '?'})` });
 
-    // 2. Token profile with every usage the SCEP CA key needs.
     const tpName = runName(`fca-tp-${stamp}`);
     const tpCreated = await apiJson<JsonObject>(api, 'POST', `/api/v1/tokens/${token.uuid}/tokenProfiles`, {
         name: tpName,
@@ -202,7 +181,6 @@ async function buildOn(api: GuardedApi, spec: string, provider: SoftProvider, ra
     });
     const tokenProfile = recordCreated('tokenProfiles', { uuid: String(tpCreated.uuid), name: tpName }, { spec, note: 'protocol CA token profile', parents: { token: token.uuid } });
 
-    // 3. RSA-2048 key pair (enabled: ACTIVE items).
     const keySchema = await apiJson<JsonObject[]>(api, 'GET', `/api/v1/tokens/${token.uuid}/tokenProfiles/${tokenProfile.uuid}/keys/keyPair/attributes`);
     const kattr = (def: { name: string; uuid: string }, contentType: string, items: JsonObject[]): JsonObject => schemaRequestAttribute(schemaAttr(keySchema, def.name), def, contentType, items);
     const keyName = runName(`fca-key-${stamp}`);
@@ -222,7 +200,6 @@ async function buildOn(api: GuardedApi, spec: string, provider: SoftProvider, ra
     let keyDetail = await apiJson<JsonObject>(api, 'GET', `/api/v1/keys/${keyRef.uuid}`);
     let items = keyItemProblems(keyDetail);
     if (items.problems.some((p) => /usages/.test(p))) {
-        // The items did not inherit the profile usages: set them on the own key (UpdateKeyUsageRequestDto).
         await apiJson(api, 'PUT', `/api/v1/keys/${keyRef.uuid}/usages`, { usage: KEY_USAGES });
         keyDetail = await apiJson<JsonObject>(api, 'GET', `/api/v1/keys/${keyRef.uuid}`);
         items = keyItemProblems(keyDetail);
@@ -230,14 +207,12 @@ async function buildOn(api: GuardedApi, spec: string, provider: SoftProvider, ra
     if (items.problems.length) throw new ProtocolCaBlocked(`protocol CA key on ${provider.name} is not a SCEP CA key: ${items.problems.join('; ')}`);
     const key: KeyRef = { ...keyRef, keyItems: { privateUuid: items.privateUuid, publicUuid: items.publicUuid } };
 
-    // 4. Certificate for the key through the run RA profile (core builds the CSR; the signature attributes come from the provider).
     const signSchema = await apiJson<JsonObject[]>(api, 'GET', `/api/v1/operations/tokens/${token.uuid}/tokenProfiles/${tokenProfile.uuid}/keys/${key.uuid}/items/${items.privateUuid}/sign/attributes`);
     const commonName = runName(`fca-${stamp}`);
     const issued = await apiJson<JsonObject>(api, 'POST', `/api/v2/operations/authorities/${raProfile.authorityUuid}/raProfiles/${raProfile.uuid}/certificates`, {
         format: 'pkcs10',
         tokenProfileUuid: tokenProfile.uuid,
         keyUuid: key.uuid,
-        // the CN definition of the RA profile's CSR attribute set (v3 on core 2.20), built like the pre-registration one
         csrAttributes: [await commonNameRequestAttribute(api, raProfile, commonName)],
         signatureAttributes: signatureAttributesFrom(signSchema ?? []),
         attributes: [],
@@ -247,14 +222,12 @@ async function buildOn(api: GuardedApi, spec: string, provider: SoftProvider, ra
     try {
         await waitForCertificateState(api, certRef.uuid, 'issued', 180_000);
     } catch (e) {
-        // core#2508 shows up in the wait itself (the detail answers 500 three times in a row): read it once to tell it apart.
         if (/consecutive 500/.test(String(e))) await certificateDetailOrBlocked(api, certRef.uuid);
         throw e;
     }
     const detail = await certificateDetailOrBlocked(api, certRef.uuid);
     let validation = String(detail.validationStatus ?? '');
     if (!ACCEPTABLE_VALIDATION.has(validation)) {
-        // A fresh certificate may wait for its first validation: ask for one (side-effect GET on an OWN certificate) and poll.
         await api.get(`/api/v1/certificates/${certRef.uuid}/validate`);
         validation = await pollUntil(
             async () => String((await certificateDetailOrBlocked(api, certRef.uuid)).validationStatus ?? ''),
@@ -271,7 +244,6 @@ async function buildOn(api: GuardedApi, spec: string, provider: SoftProvider, ra
     return ca;
 }
 
-/** The certificate detail, or CertificateDetail500 when it answers 500 (core#2508 on v2 tokens). */
 async function certificateDetailOrBlocked(api: GuardedApi, uuid: string): Promise<JsonObject> {
     const res = await api.get(`/api/v1/certificates/${uuid}`);
     if (res.status() === 500) throw new CertificateDetail500(uuid);
@@ -280,9 +252,8 @@ async function certificateDetailOrBlocked(api: GuardedApi, uuid: string): Promis
 }
 
 /**
- * The protocol CA of this run: the run state's when its certificate is still ISSUED and readable, else built on the first
- * usable software provider. Throws `RaProfileSourceMissing` (no CA) or `ProtocolCaBlocked` (named reason) — the spec
- * skips with the reason, never a pass.
+ * The protocol CA of this run: the run state's when still ISSUED and readable, else built on the first usable software provider; throws
+ * `RaProfileSourceMissing` or `ProtocolCaBlocked`.
  */
 export async function ensureProtocolCaCertificate(api: GuardedApi, spec: string): Promise<ProtocolCa> {
     const raProfile = await ensureRunRaProfile(api, spec);
@@ -312,9 +283,7 @@ export async function ensureProtocolCaCertificate(api: GuardedApi, spec: string)
     throw new ProtocolCaBlocked(`[blocked: core#2508] certificate detail answers 500 for a certificate on ${tried.join(', ')} and no other software provider is registered`);
 }
 
-/**
- * A spec's skip helper: runs `work`, turning the fixture's named refusals into a skip (RaProfileSourceMissing is left to orSkipWithoutCa).
- */
+/** A spec's skip helper: turns the fixture's named refusals into a skip (RaProfileSourceMissing is left to orSkipWithoutCa). */
 export async function orSkipWithoutProtocolCa<T>(work: Promise<T>, skip: (reason: string) => void): Promise<T> {
     try {
         return await work;

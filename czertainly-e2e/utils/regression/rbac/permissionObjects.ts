@@ -1,10 +1,6 @@
 /**
- * permissionObjects — the own objects the permission table acts on, and the dedicated second identity.
- *
- * Creates once per run (create-only, recorded before any assertion) the RA profiles, groups and certificates the fixture
- * documents name, creates the dedicated restricted ILM user, and applies a fixture role to it through a role switch. The
- * restricted user is the only user the suite changes. Objects are found again through the ledger, so a repeat creates nothing;
- * a restricted user that exists but is not this run's makes the caller skip with a named reason.
+ * permissionObjects — the own objects the permission table acts on and the dedicated second identity: RA profiles, groups,
+ * certificates and the restricted user, created once per run (recorded before any assertion) and found again through the ledger.
  */
 
 import { APIRequestContext, expect } from '@playwright/test';
@@ -26,7 +22,6 @@ import { rowsOf } from '../json';
 import { Fixture, RbacRefs, fixtureDocument, CertKey, CERT_KEYS, expectedResourceActions, CERT_PLAN } from './permissionMatrix';
 
 
-/** The newest `created` line of this run for a type and name that no later `deleted` line closed, as an OwnRef (or undefined). */
 function ledgerRef(type: string, name: string): OwnRef | undefined {
     let found: OwnRef | undefined;
     for (const l of readLedger()) {
@@ -38,7 +33,6 @@ function ledgerRef(type: string, name: string): OwnRef | undefined {
 
 export interface RbacObjects extends RbacRefs {
     authorityUuid: string;
-    /** The enabled RA profile of the authority whose connector attributes the fixture RA profiles copied (read-only). */
     source: { uuid: string; authorityUuid: string };
     p1: OwnRef;
     p2: OwnRef;
@@ -48,8 +42,8 @@ export interface RbacObjects extends RbacRefs {
 }
 
 /**
- * The run's RBAC objects (made once, found again through the ledger). Throws `RaProfileSourceMissing` when no healthy CA
- * has an enabled RA profile to copy: the caller skips with the named deploy gate, never a pass.
+ * The run's RBAC objects (made once, found again through the ledger); throws `RaProfileSourceMissing` when no healthy CA has an enabled RA
+ * profile to copy.
  */
 export async function ensureRbacObjects(api: GuardedApi, spec: string): Promise<RbacObjects> {
     const pick = await pickHealthyAuthority(api);
@@ -84,8 +78,7 @@ export async function ensureRbacObjects(api: GuardedApi, spec: string): Promise<
         if (!plan.ra && !plan.groups.length) continue;
         const ra = plan.ra ? refs[plan.ra].uuid : undefined;
         const groups = plan.groups.map((g) => refs[g].uuid);
-        // A certificate found again in the ledger keeps its plan only if the PATCH of an earlier call landed: when that
-        // PATCH failed, the permission rows after it must not run on a certificate without its RA profile or groups.
+        // A certificate found again keeps its plan only if the earlier PATCH landed; otherwise the permission rows must not run.
         if (known) {
             const live = await apiJson<JsonObject>(api, 'GET', `/api/v1/certificates/${cert.uuid}`);
             const liveRa = (live.raProfile as JsonObject | undefined)?.uuid;
@@ -96,7 +89,6 @@ export async function ensureRbacObjects(api: GuardedApi, spec: string): Promise<
     return { authorityUuid: pick.authorityUuid, source: { uuid: pick.uuid, authorityUuid: pick.authorityUuid }, ...refs, certs };
 }
 
-/** The `auditor` system role's permission document, read live and rewritten as a plain document (the source of fixture F6). */
 export async function auditorDocument(api: APIRequestContext): Promise<PermissionDocument> {
     const roles = await apiJson<JsonObject[]>(api, 'GET', '/api/v1/roles');
     const auditor = roles.find((r) => r.name === 'auditor');
@@ -108,7 +100,6 @@ export async function auditorDocument(api: APIRequestContext): Promise<Permissio
     };
 }
 
-/** The own fixture role of a fixture (made once per run) with its permission document saved. */
 async function ensureFixtureRole(api: GuardedApi, f: Fixture, refs: Partial<RbacRefs>, spec: string, auditor?: PermissionDocument): Promise<{ role: OwnRef; doc: PermissionDocument }> {
     const name = runName(`rbac-${f.toLowerCase()}`);
     let role = ledgerRef('roles', name);
@@ -122,10 +113,8 @@ async function ensureFixtureRole(api: GuardedApi, f: Fixture, refs: Partial<Rbac
 }
 
 
-/** The skip reason of every second-identity row when an earlier (aborted or kept) run left the dedicated ILM user behind. */
 export const RESTRICTED_USER_NOT_OWN_REASON = 'dedicated test user exists but is not this run\'s — delete it or wait for the next clean run';
 
-/** Thrown when the dedicated user exists but this run did not create it (the guard only lets a run act on its own). */
 export class RestrictedUserNotOwn extends Error {
     constructor() {
         super(RESTRICTED_USER_NOT_OWN_REASON);
@@ -134,20 +123,17 @@ export class RestrictedUserNotOwn extends Error {
 }
 
 /**
- * The ILM user of the dedicated identity-provider account, created by this run (enabled, no role) and ledgered, or the one
- * an earlier call of this run created. A user of that name that this run did not create is NOT adopted (guard request
- * GR-3 decides adoption): the helper stops with the reason.
+ * The ILM user of the dedicated account, created by this run (enabled, no role) or found again; a user of that name this run did not create
+ * is never adopted.
  */
 export async function ensureRestrictedUser(api: GuardedApi, spec: string, dedicatedUser: Credentials): Promise<OwnRef> {
     const known = ledgerRef('users', dedicatedUser.username);
     if (known) return known;
     const rows = (await apiJson<JsonObject[]>(api, 'GET', '/api/v1/users')).filter((u) => String(u.username).toLowerCase() === dedicatedUser.username.toLowerCase());
     if (rows.length) {
-        // Never adopted by name (guard request GR-3 decides adoption, later and only under a safe condition): the row skips.
         throw new RestrictedUserNotOwn();
     }
-    // Ledger before assertion, but ONLY after a 2xx answer that names the uuid (createOwn): a `users` line for the DED
-    // name makes the guard treat that user as own, so it is never written for a failed or speculative create.
+    // Ledgered only after a 2xx answer that names the uuid: a `users` line for that name makes the guard treat the user as own.
     const created = await createOwn(api, spec, {
         type: 'users',
         path: '/api/v1/users',
@@ -163,16 +149,12 @@ export async function ensureRestrictedUser(api: GuardedApi, spec: string, dedica
     return ref;
 }
 
-/** Enable / disable the dedicated ILM user as the admin (never the admin's own account: `setOwnUserEnabled` checks). */
 export async function setRestrictedEnabled(api: GuardedApi, user: OwnRef, enabled: boolean): Promise<{ status: number; text: string }> {
     const r = await setOwnUserEnabled(api, user, enabled);
     return { status: r.status, text: r.text };
 }
 
-/**
- * `ensureRestrictedUser`, with a left-behind user as a named SKIP: `skip(reason)` is called with
- * RESTRICTED_USER_NOT_OWN_REASON (pass `(reason) => test.skip(true, reason)`); every other error propagates.
- */
+/** `ensureRestrictedUser`, with a left-behind user as a named skip: `skip(reason)` gets RESTRICTED_USER_NOT_OWN_REASON. */
 export async function ensureRestrictedUserOrSkip(api: GuardedApi, spec: string, dedicatedUser: Credentials, skip: (reason: string) => void): Promise<OwnRef> {
     try {
         return await ensureRestrictedUser(api, spec, dedicatedUser);
@@ -182,7 +164,6 @@ export async function ensureRestrictedUserOrSkip(api: GuardedApi, spec: string, 
     }
 }
 
-/** The profile of the identity that owns `token`, `undefined` while it is refused. */
 async function profileAs(api: GuardedApi, token: string): Promise<Profile | undefined> {
     const res = await callAs(api, token, 'GET', '/api/v1/auth/profile');
     return res.status === 200 ? parseProfile(res.json) : undefined;
@@ -191,15 +172,13 @@ async function profileAs(api: GuardedApi, token: string): Promise<Profile | unde
 export interface RoleSwitch {
     setRoles(roles: OwnRef[]): Promise<void>;
     setEnabled(enabled: boolean): Promise<{ status: number; text: string }>;
-    /** Poll DED's profile until it reflects the document (at most 30 s, 1 s steps): the role switch barrier. */
     barrier(doc: PermissionDocument): Promise<Profile>;
     profile(): Promise<Profile | undefined>;
 }
 
 /**
- * The changes the admin makes to DED between matrix rows. After `PATCH /v1/users/{DED}/roles` the per-user authentication
- * cache is evicted (`UMS:287`), so on ONE core instance the next request is decided with the new role; the barrier
- * only waits for that, asserts nothing else, and fails with a cache-window message rather than retrying a status.
+ * The changes the admin makes to the restricted user between matrix rows; the barrier waits for the new role to apply on one core instance
+ * and asserts nothing else.
  */
 export function restrictedRoleSwitch(api: GuardedApi, user: OwnRef, token: string): RoleSwitch {
     return {
@@ -217,7 +196,6 @@ export function restrictedRoleSwitch(api: GuardedApi, user: OwnRef, token: strin
                         last = await profileAs(api, token);
                         if (!last) return 'profile refused';
                         const got = Object.fromEntries(last.allowedActions.map((a) => [a.resource, [...a.actions].sort()]));
-                        // An allow-all document reports every resource: compare only a resource the fixture always names.
                         if (!want) return got.certificates?.includes('list') ? 'in force' : 'allow-all not yet in force';
                         const norm = (o: Record<string, string[]>): string => JSON.stringify(Object.keys(o).sort().map((k) => [k, o[k]]));
                         return norm(got) === norm(want) ? 'in force' : 'role not yet in force';
@@ -231,7 +209,6 @@ export function restrictedRoleSwitch(api: GuardedApi, user: OwnRef, token: strin
     };
 }
 
-/** Make a fixture role (document saved), give it to DED as the ONLY role and wait until it is in force; returns the role too. */
 export async function applyFixtureWithRole(api: GuardedApi, sw: RoleSwitch, f: Fixture, refs: Partial<RbacRefs>, spec: string, auditor?: PermissionDocument): Promise<{ role: OwnRef; doc: PermissionDocument }> {
     const made = await ensureFixtureRole(api, f, refs, spec, auditor);
     await sw.setRoles([made.role]);
@@ -239,16 +216,14 @@ export async function applyFixtureWithRole(api: GuardedApi, sw: RoleSwitch, f: F
     return made;
 }
 
-/** `applyFixtureWithRole`, returning only the document. */
 export async function applyFixture(api: GuardedApi, sw: RoleSwitch, f: Fixture, refs: Partial<RbacRefs>, spec: string, auditor?: PermissionDocument): Promise<PermissionDocument> {
     return (await applyFixtureWithRole(api, sw, f, refs, spec, auditor)).doc;
 }
 
 
 /**
- * The body `POST /v1/authorities/{A}/raProfiles` takes for a new RA profile whose connector attributes are copied (read-only)
- * from an enabled RA profile of the authority — what `createOwnRaProfileLike` posts, without posting: the matrix sends it AS
- * DED (a 403 for every fixture but F5; F5's 200 is a create under a pre-existing authority, recorded by the caller).
+ * The body `POST /v1/authorities/{A}/raProfiles` takes for an RA profile whose connector attributes are copied from an enabled one, without
+ * posting it: the matrix sends it as the restricted user.
  */
 export async function raProfileCreateBody(api: APIRequestContext, source: { uuid: string; authorityUuid: string }, name: string): Promise<JsonObject> {
     return raProfileBodyLike(api, source, name, `REG run ${runId()}: RBAC create probe`);

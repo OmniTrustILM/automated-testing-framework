@@ -1,12 +1,6 @@
 /**
- * createGuard — wraps an APIRequestContext so that nothing the run did not create can be changed.
- *
- * Every request (`get`, `post`, `put`, `patch`, `delete`, `fetch`) is judged before it is sent. Shared tiers are create-only
- * and the guard denies by default: a request goes out only when a rule lets it through. A refusal is an OwnObjectViolation
- * (kind `ownership`, `derived`, `request` or `not-guarded`).
- *
- * The guard sends exactly what it judged: the input is read once into a snapshot and Playwright gets only the snapshot.
- * `probeUuid()` gives a random uuid the guard accepts as a target, for negative cases that must answer 404.
+ * createGuard — wraps an APIRequestContext so nothing the run did not create can be changed.
+ * Every request is judged once into a snapshot and only the snapshot is sent; a refusal is an OwnObjectViolation.
  */
 import { getAuthenticatedApiContext } from '../../auth/apiContext';
 import { GuardState, STATES } from './guardState';
@@ -22,14 +16,12 @@ type FetchOptions = { method?: string; data?: unknown } & Record<string, unknown
 
 function createGuard(api: APIRequestContext, options: GuardOptions, seams: GuardTestSeams): GuardedApi {
     const state = new GuardState(api, options, seams);
-    // async: a refusal while reading is a rejected promise, like every other refusal.
     const guardedRequest = async (entry: Entry, url: unknown, requestOptions?: FetchOptions): Promise<APIResponse> =>
         checkAndSend(state, readRequest(state.env, entry, url, requestOptions));
     const wrapper = (method: Method | 'HEAD') => (url: string, requestOptions?: FetchOptions): Promise<APIResponse> => guardedRequest({ kind: 'wrapper', method }, url, requestOptions);
     const guarded = {
         get: wrapper('GET'),
-        // A refuser: GuardedApi extends APIRequestContext, which has `head`, but the guard sends no HEAD, so calling it
-        // is refused as an unknown method (the same refusal as `fetch(url, { method: 'HEAD' })`).
+        // The guard sends no HEAD: calling it is refused as an unknown method.
         head: wrapper('HEAD'),
         post: wrapper('POST'),
         put: wrapper('PUT'),
@@ -49,24 +41,17 @@ function createGuard(api: APIRequestContext, options: GuardOptions, seams: Guard
     return guarded as unknown as GuardedApi;
 }
 
-/**
- * Wrap an authenticated context; dispose the guarded one (it disposes the wrapped context). Only `localStack` is read
- * from `opts`: the ledger, run id, tier and environment are always the process's own.
- */
+/** Wrap an authenticated context; disposing the guarded one disposes the wrapped one. Only `localStack` is read from `opts`. */
 export function guardApi(api: APIRequestContext, opts: GuardOptions = {}): GuardedApi {
     return createGuard(api, { localStack: opts.localStack }, {});
 }
 
-/** Unit tests only: the guard judging against injected ledger lines, run id, tier and environment. */
 export function guardApiWithSeams(api: APIRequestContext, opts: GuardOptions & GuardTestSeams = {}): GuardedApi {
     const { localStack, ...seams } = opts;
     return createGuard(api, { localStack }, seams);
 }
 
-/**
- * Unit tests only: the guard's verdict on one request, without sending it. It reads and checks the request exactly as a guarded `fetch(url,
- * { method, data, ...options })` does and resolves when the guard would send it, or throws the refusal.
- */
+/** Unit tests only: the guard's verdict on one request, without sending it. */
 export async function judgeWithSeams(
     api: APIRequestContext, opts: GuardOptions & GuardTestSeams, method: string, url: string, data?: unknown, options: Record<string, unknown> = {},
 ): Promise<void> {
@@ -75,10 +60,7 @@ export async function judgeWithSeams(
     await checkRequest(state, readRequest(state.env, { kind: 'fetch' }, url, { ...options, method, ...(data !== undefined ? { data } : {}) }));
 }
 
-/**
- * `getAuthenticatedApiContext` wrapped in the guard: the API context of REG-* / API-* specs that do not use the `api`
- * fixture. Signature stable: `getGuardedApiContext(request, env, opts?)`. Dispose it in finally.
- */
+/** `getAuthenticatedApiContext` wrapped in the guard, for specs that do not use the `api` fixture. Dispose it in finally. */
 export async function getGuardedApiContext(request: APIRequestContext, env: import('../../env').TestEnv, opts: GuardOptions = {}): Promise<GuardedApi> {
     return guardApi(await getAuthenticatedApiContext(request, env), opts);
 }

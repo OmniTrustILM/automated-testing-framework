@@ -1,19 +1,15 @@
 /**
- * protocolHttp — anonymous HTTP to the protocol endpoints (ACME, SCEP, CMP) for request-level tests.
- *
- * Sends no credentials and follows no redirects. GETs go to the URL as given; POSTs only through `allowedRawPost`, on protocol
- * paths only. Bodies are kept as bytes (SCEP and CMP answer DER).
+ * protocolHttp — anonymous HTTP to the protocol endpoints (ACME, SCEP, CMP): no credentials, no redirects, POSTs only through
+ * `allowedRawPost`, bodies kept as bytes.
  */
 import * as crypto from 'crypto';
 import { allowedRawPost } from '../guard/rawPost';
 
 export interface ProtocolResponse {
     status: number;
-    /** Lower-case header names. */
     headers: Record<string, string>;
     contentType?: string;
     body: Buffer;
-    /** The body as UTF-8 text (for JSON / problem+json / text answers). */
     text: string;
 }
 
@@ -26,31 +22,26 @@ async function readResponse(res: Response): Promise<ProtocolResponse> {
     return { status: res.status, headers, contentType: headers['content-type'], body, text: body.toString('utf8') };
 }
 
-/** A plain GET of a protocol URL (no credentials, no redirect follow). */
 export async function protocolGet(url: string, opts: { accept?: string } = {}): Promise<ProtocolResponse> {
     const res = await fetch(url, { method: 'GET', redirect: 'manual', headers: opts.accept ? { accept: opts.accept } : {} });
     return readResponse(res);
 }
 
 export interface ProtocolPostOptions {
-    /** Sent as written (the content type IS the parameter of several pins). */
     contentType?: string;
     body: Buffer | string;
     accept?: string;
 }
 
-/** A POST to a protocol URL (`allowedRawPost`), the body sent byte for byte under the given content type. */
 export async function protocolPost(url: string, opts: ProtocolPostOptions): Promise<ProtocolResponse> {
     const headers: Record<string, string> = {};
     if (opts.contentType !== undefined) headers['content-type'] = opts.contentType;
     if (opts.accept) headers.accept = opts.accept;
     const body = typeof opts.body === 'string' ? Buffer.from(opts.body, 'utf8') : opts.body;
-    // The allow-list check is the URL argument itself (the lint reads it there: a raw POST only through allowedRawPost).
     const res = await fetch(allowedRawPost(url, { unauthenticated: true }), { method: 'POST', redirect: 'manual', headers, body: new Uint8Array(body) });
     return readResponse(res);
 }
 
-/** `type` and `detail` of an ACME problem document (RFC 8555 §6.7), or undefined when the body is not one. */
 export function acmeProblem(res: ProtocolResponse): { type: string; detail: string; status?: number } | undefined {
     try {
         const body = JSON.parse(res.text) as Record<string, unknown>;
@@ -61,25 +52,17 @@ export function acmeProblem(res: ProtocolResponse): { type: string; detail: stri
     }
 }
 
-/** The ACME error type URN of a code (RFC 8555 §6.7). */
 export const acmeErrorType = (code: string): string => `urn:ietf:params:acme:error:${code}`;
 
-/** Is the content type `application/problem+json` (parameters ignored)? */
 export const isProblemJson = (contentType: string | undefined): boolean => /^application\/problem\+json\b/i.test(contentType ?? '');
 
-/**
- * A fragment of a stack trace or a Java class name in a response body (what a client must never see), or undefined:
- * `at com.example.Foo.bar(Foo.java)`, `java.lang.NullPointerException`, `com.otilm.core.…Exception`.
- */
+/** A fragment of a stack trace or Java class name in a response body (what a client must never see), or undefined. */
 export function stackTextIn(text: string): string | undefined {
     const m = /(\bat [a-z][\w$]*(\.[\w$]+)+\([^)]*\)|\b(java|jakarta|org|com)\.[a-z][\w.$]*(Exception|Error)\b)/.exec(text);
     return m ? m[0] : undefined;
 }
 
-/**
- * FIXED pseudo-random bytes for the malformed-body pins (a sha256 chain over `seed`): the same bytes on every run, so a
- * failure replays byte for byte (never `randomBytes` in a pin).
- */
+/** Fixed pseudo-random bytes for the malformed-body pins: the same on every run, so a failure replays byte for byte. */
 export function fixedGarbage(seed: string, length: number): Buffer {
     const chunks: Buffer[] = [];
     let block = crypto.createHash('sha256').update(`qa-reg garbage ${seed}`).digest();

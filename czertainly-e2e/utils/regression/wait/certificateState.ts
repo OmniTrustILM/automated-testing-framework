@@ -1,10 +1,6 @@
 /**
- * certificateState — waits until a certificate reaches a state, failing fast on anything polling cannot fix.
- *
- * `waitForCertificateState` polls the certificate until its `state` is the expected one. It ends at once on a state in
- * `failOn` (default failed and rejected), a 404 after the read-after-write grace (default 10 s), any other 4xx, or a
- * third transient answer in a row (5xx, 408, 425, 429). The error names the last state, the newest history entries and
- * the elapsed time.
+ * certificateState — waits until a certificate reaches a state, failing fast on a `failOn` state, a 404 after the grace, another 4xx, or a
+ * third transient answer in a row; the error names the last state and history.
  */
 import type { APIRequestContext } from '@playwright/test';
 import { Logger } from '../../Logger';
@@ -12,21 +8,17 @@ import { Logger } from '../../Logger';
 const logger = new Logger('CertificateState');
 
 export interface WaitForStateOptions {
-    /** States that end the wait at once with an error. Default ['failed', 'rejected'], minus the expected state. */
     failOn?: string[];
-    /** Poll intervals in ms; the last one repeats. Default [1000, 2000, 3000]. */
     intervals?: number[];
     /**
-     * A 404 within this many ms of the start is read-after-write lag right after a UI submit: polled again,
-     * not fatal. After it, a 404 ends the wait at once. Default NOT_FOUND_GRACE_MS (10 s); 0 = fail on the first 404.
+     * A 404 within this many ms of the start is read-after-write lag (polled
+     * again); after it a 404 ends the wait. 0 = fail on the first 404.
      */
     notFoundGraceMs?: number;
 }
 
-/** Default read-after-write grace of the waits for a 404. */
 export const NOT_FOUND_GRACE_MS = 10_000;
 
-/** What a wait reports when it gives up: state, the newest history entries and the elapsed time. */
 async function certificateContext(request: APIRequestContext, certUuid: string, state: string | undefined, startedAt: number): Promise<string> {
     let history = 'history unavailable';
     try {
@@ -39,27 +31,17 @@ async function certificateContext(request: APIRequestContext, certUuid: string, 
                 .join(' | ') || 'no history entries';
         }
     } catch {
-        // the history is context only; the wait's own error is what matters
     }
     return `state "${state ?? 'unknown'}" after ${Math.round((Date.now() - startedAt) / 1000)} s; latest history: ${history}`;
 }
 
-/** Answers a poll retries like a 5xx (counted in the same streak): timeout, too early, rate limited. */
 export const RETRYABLE_4XX: readonly number[] = [408, 425, 429];
 
-/** A transient answer of a poll: any 5xx, or 408 / 425 / 429. */
 export const isTransientStatus = (status: number): boolean => status >= 500 || RETRYABLE_4XX.includes(status);
 
 /**
- * Polls GET /api/v1/certificates/{uuid} until `state` equals `expectedState`.
- *
- * Fails fast instead of waiting out the timeout: at once on a state in `failOn` (default `failed` and `rejected`, unless
- * one of them is the expected state), on a 404 once the read-after-write grace (`notFoundGraceMs`, default 10 s) is
- * over (inside it the poll goes on: a smoke test polls right after a UI submit), at once on any other 4xx
- * (400, 401, 403: polling cannot change them), and on the third transient answer in a row (5xx, 408, 425, 429). A
- * transient answer is tolerated twice and never retried into a pass.
- * The error names the last state, the newest history entries and the elapsed time. Existing callers keep the old
- * signature; `opts` is optional.
+ * Polls GET /api/v1/certificates/{uuid} until `state` equals `expectedState`, failing fast instead of waiting out the timeout; a transient
+ * answer is tolerated twice and never retried into a pass.
  */
 export async function waitForCertificateState(
     request: APIRequestContext,
@@ -106,7 +88,6 @@ export async function waitForCertificateState(
             throw new Error(`Certificate ${certUuid} did not reach state "${expectedState}" within ${timeout}ms: ` +
                 `${await certificateContext(request, certUuid, lastState, startedAt)}`);
         }
-        // The last sleep is cut to the deadline, so the final poll happens at the timeout, not before it.
         await new Promise((resolve) => setTimeout(resolve, Math.min(intervals[Math.min(attempt, intervals.length - 1)], remaining)));
     }
 

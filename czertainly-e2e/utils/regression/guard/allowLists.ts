@@ -1,8 +1,6 @@
 import { isCanonicalUuid, UUID } from './uuids';
 import { SEG } from './urls';
 
-// ------------------------------------------------------------------ POST allow-list
-
 /** POST paths (after /api) that CREATE an object. `{id}` = any canonical uuid (a scope parent, never checked). Body checked. */
 export const POST_CREATE: readonly string[] = [
     '/v1/roles', '/v1/groups', '/v1/users', '/v1/credentials', '/v1/authorities', '/v1/authorities/{id}/raProfiles',
@@ -13,67 +11,30 @@ export const POST_CREATE: readonly string[] = [
     '/v1/vaults', '/v1/vaults/{id}/vaultProfiles', '/v1/vaults/{id}/vaultProfiles/{id}/secrets', '/v1/complianceProfiles',
     '/v1/approvalProfiles', '/v1/connectors', '/v1/certificates/upload', '/v1/certificates/upload/async',
     '/v2/operations/authorities/{id}/raProfiles/{id}/certificates',
-    // An event-trigger association of an object (`eventAssociations` ledger type): its body names the
-    // object (`objectUuid`, own) and the triggers (own); without a canonical objectUuid it is platform-level (PLATFORM_DENY).
+    // Without a canonical objectUuid an event-trigger association is platform-level.
     '/v1/workflows/events',
-    // Body-judged creates of four areas (inventory, certificate lifecycle, platform):
-    // `POST /v1/inspections` — class "body-judged, creates nothing". NOT a read: with a
-    // `tokenProfileUuid` core resolves the profile and records the connector's import-capability answer on that profile
-    // row (KeyTransferCapabilityService → KeyTransferCapabilityWriter), so the field is judged
-    // as a typed body field (guard/routes.ts BODY_FIELD_TYPES → tokenProfiles: own or a probe); without it, or with a plain
-    // non-uuid string, nothing is persisted but the audit record (FileInspectionServiceImpl;
-    // ContainerReader; InspectionControllerImpl). A raw context may still not POST it.
+    // With a `tokenProfileUuid` core records an answer on that profile, so the field is judged as a typed body field.
     '/v1/inspections',
-    // `POST /v1/certificates/import`, certificate-only entries (CREATE_BODY_SHAPES): a
-    // certificate entry goes through the same upload as `/v1/certificates/upload` and one already in the inventory is
-    // left as it is (`EXISTING`, no write: CertificateImportServiceImpl); a `keyDestination` (the key
-    // import, which writes into a token profile) is refused by the shape rule before anything is sent.
+    // A `keyDestination` is refused by its CREATE_BODY_SHAPES rule.
     '/v1/certificates/import',
-    // Certificate lifecycle: a platform-level pre-registration CREATES a certificate placeholder (core
-    // ClientOperationServiceImpl.registerCertificate, service/v2/impl/ClientOperationServiceImpl: a new
-    // REQUESTED → PENDING_REGISTRATION → REGISTERED row under the path RA profile; with a secret, a new
-    // CertificateRegistrationAuthorization row; nothing on a pre-existing object). Body judged like every
-    // create: `sourceCertificateUuid` → certificates, `ownerUuid` → users, `groupUuids` → groups must be own.
     '/v2/operations/authorities/{id}/raProfiles/{id}/certificates/register',
-    // Platform: the v2 ADMIN create of a connector (interfaces v2/ConnectorController; core
-    // v2/ConnectorServiceImpl `createNewConnector(request, CONNECTED)`): the same DTO family as
-    // `/v1/connectors` (name, url, authType, attributes; `proxyUuid` stays probes-only). Approve / reconnect / connect
-    // and `connector/register` stay on PLATFORM_DENY.
+    // The v2 admin create of a connector; approve / reconnect / connect / register stay on PLATFORM_DENY.
     '/v2/connectors',
-    // Platform: the v2 create of a compliance profile (interfaces v2/ComplianceProfileController;
-    // core service/v2/impl/ComplianceProfileServiceImpl createComplianceProfile: a new profile row with its own
-    // rule / group association rows; the referenced provider rules are read, never written). `internalRules` / `groups`
-    // stay probes-only typed fields, `connectorUuid` a reference; the v1 create was allow-listed already.
+    // `internalRules` / `groups` stay probes-only.
     '/v2/complianceProfiles',
-    // Timestamping (utils/timestamping, tests/timestamping/SHARED-TIER.md): three creates of the block, each a new row of its
-    // own and nothing else (core @ integration/spring-boot-4.1):
-    // - `POST /v1/timeQualityConfigurations` (TimeQualityConfigurationServiceImpl.createTimeQualityConfiguration): a new
-    //   configuration row with its own uuid and a unique name; the register, the cache and the monitor's check cycle are all
-    //   keyed per configuration uuid, so it is a per-object resource, not a platform setting (removed from PLATFORM_DENY). Update
-    //   and delete are judged like every own object (ledger type `timeQualityConfigurations`).
-    // - `POST /v1/tspProfiles` (TspProfileServiceImpl): a new TSP profile row; `vaultProfileUuid` must be an own vault profile
-    //   (BODY_FIELD_TYPES), `defaultSigningProfileUuid` an own signing profile.
-    // - `POST /v1/signingProfiles` (SigningProfileServiceImpl.createSigningProfile): a new profile (+ first version) row; the
-    //   certificate and time-quality configuration it names must be own (typed fields); the formatting connector it names is
-    //   only referenced (ROUTE_PATH_WAIVERS).
     '/v1/timeQualityConfigurations', '/v1/tspProfiles', '/v1/signingProfiles',
 ];
 
 /**
- * POST paths that only READ: lists, searches, and attribute validations (`…/attributes/validate`,
- * `…/attributes/<kind>/validate`, a connector's `/{functionGroup}/{kind}/validate`; a certificate's own
- * `/certificates/{uuid}/validate` re-runs its validation and is a mutation). `{seg}` = one unreserved segment, never
- * `.` / `..`.
+ * POST paths that only READ: lists, searches and attribute validations. `{seg}` = one unreserved segment, never `.` / `..`. A certificate's
+ * own `/validate` is a mutation.
  */
 export const POST_READ: readonly string[] = [
     '/v1/certificates', '/v1/keys', '/v1/discoveries/list', '/v1/entities/list', '/v1/locations', '/v1/secrets',
     '/v1/vaults/list', '/v1/vaultProfiles/list', '/v1/auditLogs', '/v1/oids/list', '/v1/users/identify',
     '/v1/certificates/content', '/v1/workflows/events/{seg}/history', '/v1/workflows/events/{seg}/{seg}/{id}/history',
     '/v1/({seg}/)*attributes(/{seg})?/validate', '/v1/connectors/{id}/{seg}/{seg}/validate',
-    // Lists of the timestamping block (interfaces ConnectorController v2 `POST /v2/connectors/list`, SigningProfileController /
-    // TspProfileController `POST …/list`, SigningRecordController `POST /v1/signingRecords`, SigningProfileController
-    // `POST /v1/signingProfiles/{uuid}/signingRecords`: paginated searches, `@PostMapping` with a SearchRequestDto body).
-    // Deleting signing records stays a bulk route with no ledger type (refused here, done by the teardown handler per own profile).
+    // Deleting signing records stays a bulk route with no ledger type.
     '/v2/connectors/list', '/v1/signingProfiles/list', '/v1/tspProfiles/list', '/v1/timeQualityConfigurations/list', '/v1/signingRecords',
     '/v1/signingProfiles/{id}/signingRecords',
 ];
@@ -83,21 +44,8 @@ export const POST_PROTOCOL: readonly string[] = ['/v[12]/protocols(/{seg})+'];
 
 
 /**
- * Attribute callbacks of the forms the timestamping setup fills (interfaces CallbackController): the authority's RA-profile options
- * (`/v1/raProfiles/{authority}/callback`), a token profile's key-spec group (`/v1/keys/{OWN token profile}/callback`: the id of the `keys` resource
- * callback is a TOKEN PROFILE, CallbackServiceImpl.resourceCallback CRYPTOGRAPHIC_KEY) and a v2 connector's token form
- * (`/v2/connectors/{connector}/callback`). They are NOT plain reads, so they have a kind of their own (`callback`):
- * - core authorises `/v2/connectors/{id}/callback` as CONNECTOR **ANY** and the resource callbacks as CONNECTOR LIST;
- * - every callback writes an audit-log row, and a GROUP answer is upserted into the attribute DEFINITIONS of the (pre-existing) connector
- *   (CallbackServiceImpl.getCallbackObject → processGroupAttributes → AttributeEngine): the same cache write the UI's forms cause,
- *   accepted and documented in tests/timestamping/SHARED-TIER.md; nothing of an inventory object or of the connector's settings is changed;
- * - core expands credentials / secrets named in the body or in its `attributes` (loadFullCredentialData, AttributeReferenceExpander) and sends
- *   them to the connector, so the body is judged like a create's, `attributes` included: every canonical uuid in it must be an own object
- *   or the callback's registered parent, except the attribute DEFINITION uuids (`uuid`, `attributes[].uuid`; core resolves them only among the
- *   path connector's own definitions);
- * - the path id must be exactly what the preflight discovered for this run (`registerCallbackTarget`, guard/callbackTargets.ts: the authority instance, the connector) or an
- *   own token profile; a RAW context may not send any of them (not a read, `isRawPostRouteAllowed`).
- * The v1 `/v1/connectors/{id}/{functionGroup}/{kind}/callback` names its kind (rule 6a) and stays refused, as does every other resource.
+ * Attribute callbacks of the timestamping setup forms. Not plain reads: each writes an audit row; the body is judged like a create's
+ * (core expands credentials named in it) and the path id must be a preflight-discovered target or an own token profile.
  */
 export const POST_CALLBACK: readonly string[] = ['/v1/raProfiles/{id}/callback', '/v1/keys/{id}/callback', '/v2/connectors/{id}/callback'];
 
@@ -139,37 +87,11 @@ export function isRawPostRouteAllowed(apiPath: string): boolean {
     return kind === 'read' || kind === 'protocol';
 }
 
-// ------------------------------------------------------------------ reference fields
-
 /**
- * TOP-LEVEL body fields that may name a PRE-EXISTING object on an own create / update (never on a DELETE), decided per
- * field from the request DTOs in `interfaces` (com.otilm.api.model.*). Default deny: every other uuid must be own. The
- * value must be a canonical uuid STRING (a non-canonical form is refused, never waived; a list or an object under the
- * field is no reference and is scanned like any other value).
- * - connectorUuid: the provider an own authority / credential / token / entity / vault / discovery / notification
- *   instance uses (AuthorityInstanceRequestDto, CredentialRequestDto, TokenInstanceRequestDto, EntityInstanceRequestDto,
- *   VaultInstanceRequestDto, DiscoveryDto, NotificationInstanceRequestDto); the connector is only referenced, and
- *   connector registration / approval is on the platform deny-list.
- * - interfaceUuid: the connector's function-group interface (AuthorityInstanceRequestDto, DiscoveryDto,
- *   VaultInstanceRequestDto): a capability id of the connector, not an inventory object.
- * - raProfileUuid: the RA profile an own ACME / SCEP / CMP profile issues through, or an own certificate / location
- *   issue is assigned to (AcmeProfileRequestDto, AcmeProfileEditRequestDto, BaseScepProfileRequestDto,
- *   BaseCmpProfileRequestDto, CertificateUpdateObjectsDto, MultipleCertificateObjectUpdateDto, IssueToLocationRequestDto,
- *   ClientCertificateRequestDto): stored on the own object, the RA profile is not changed (issuing under any RA profile
- *   is already on the create allow-list). Side effect, accepted: while the own object exists the RA profile has a
- *   dependant (the run-end teardown removes it).
- * Not allowed until a key teardown handler exists: tokenProfileUuid /
- * altTokenProfileUuid — the platform generates the own certificate's key IN the foreign token profile, i.e. it leaves
- * a key in a foreign token that no teardown handler removes yet.
- * Deliberately NOT allowed (must be own or a probe): authorityUuid — no request DTO carries it in a body (the authority
- * is a path scope parent); keyUuid / altKeyUuid — issuing with a pre-existing key attaches it to a new certificate (its
- * associations and usage change); groupUuids / groupUuid — group membership feeds approvals (ApprovalStepRequestDto) and
- * notifications to the group's members (the suite creates its own groups, REG-CFG-06); ownerUuid / userUuid / roleUuid /
- * recipientUuids / notificationInstanceUuid / mappedUserUuid — point real people or delivery channels at run objects;
- * certificateUuid / signingCertificateUuid / caCertificateUuid / sourceCertificateUuid — bind or sign with a
- * pre-existing certificate; proxyUuid — connector routing (platform-level); rulesUuids / actionsUuids / conditionsUuids
- * / executionsUuids / triggerUuids / objectUuid — workflow wiring would make a foreign part fire on run events or keep it
- * from being deleted; uuid (ObjectPermissionsRequestDto) — a role permission on a pre-existing object.
+ * Top-level body fields that may name a pre-existing object on an own create / update (never on a DELETE); the value
+ * must be a canonical uuid string. Default deny: every other uuid must be own.
+ * `tokenProfileUuid` / `altTokenProfileUuid` stay out: the key would be generated inside a foreign token.
+ * `keyUuid`, group, owner, certificate, workflow and similar fields stay out: they bind, sign with, notify or rewire a pre-existing object.
  */
 export const REFERENCE_FIELDS: Readonly<Record<string, string>> = {
     connectorUuid: 'the connector (provider) of an own object; referenced, never changed',
@@ -177,22 +99,16 @@ export const REFERENCE_FIELDS: Readonly<Record<string, string>> = {
     raProfileUuid: 'the RA profile an own protocol profile / certificate issues through; the RA profile is not changed',
 };
 
-// ------------------------------------------------------------------ platform deny-list
-
-/** `objectUuid` of a workflow event association: a canonical uuid string, else the association is platform-level. */
 const objectLevel = (body: unknown): boolean =>
     !!body && typeof body === 'object' && !Array.isArray(body) && isCanonicalUuid((body as { objectUuid?: unknown }).objectUuid);
 
-/** The end of a deny pattern for a SUBTREE: the next segment or a `.suffix` (Spring's suffix spellings), or the end. */
 const END = '(?:[/.]|$)';
 const deny = (body: string): RegExp => new RegExp(`^/v[12]/${body}${END}`, 'i');
-/** One endpoint (not its subtree): itself or a `.suffix` spelling of it (`purge.json`, `purge.`). */
 const denyExact = (body: string): RegExp => new RegExp(`^/v[12]/${body}(?:\\.|$)`, 'i');
 
 /**
- * Platform-level endpoints, v1 and v2, case-insensitive, anchored `([/.]|$)` (`purge.json`,
- * `settings.` are the same endpoint): refused for every mutating method unless `localStack` on a proven local stack.
- * Read POSTs (`/v1/oids/list`, `/v1/auditLogs`) are allow-listed before this.
+ * Platform-level endpoints, v1 and v2, case-insensitive (`purge.json` is
+ * the same endpoint): refused unless `localStack` on a proven local stack.
  */
 export const PLATFORM_DENY: ReadonlyArray<{ path: RegExp; why: string; when?: (body: unknown) => boolean }> = [
     { path: deny('settings'), why: 'platform settings' },
@@ -214,14 +130,10 @@ export const PLATFORM_DENY: ReadonlyArray<{ path: RegExp; why: string; when?: (b
     { path: denyExact('auditLogs/purge'), why: 'the platform audit log (purge)' },
     { path: deny('oids'), why: 'the platform OID registry' },
     { path: denyExact('discoveries/schedule'), why: 'a scheduled (platform-level) discovery job' },
-    // The legacy client API names RA profiles and end entities by NAME (`/v1/operations/{raProfileName}/
-    // certificate/revoke`, `…/endentity/{username}`); the uuid-keyed `/v1/operations/tokens/{uuid}/…` and
-    // `/v2/operations/authorities/{uuid}/…` stay (an RA profile NAMED `tokens` / `authorities` gets no further: its
-    // path-less legacy routes are no create and no bulk route).
+    // The legacy client API names RA profiles by NAME; the uuid-keyed `tokens` / `authorities` routes stay.
     { path: new RegExp(`^/v[12]/operations/(?!(?:tokens|authorities)/)[^/]+${END}`, 'i'), why: 'the legacy name-keyed client API (/v1/operations/{raProfileName}/…)' },
 ];
 
-/** Why a mutation of `apiPath` is a platform-level change, or undefined. */
 export function platformDenied(apiPath: string, body?: unknown): string | undefined {
     return PLATFORM_DENY.find((d) => d.path.test(apiPath) && (!d.when || d.when(body)))?.why;
 }
