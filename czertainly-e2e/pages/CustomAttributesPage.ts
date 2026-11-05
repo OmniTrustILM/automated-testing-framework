@@ -1,14 +1,5 @@
 /**
- * CustomAttributesPage — Page Object for Settings → Custom Attributes.
- *
- * WHAT: encapsulates the Custom Attributes list page, the Create Custom Attribute
- *       modal, and the delete-by-search flow.
- * WHY: SMK-008 tests the full lifecycle (create → assign → unassign → delete);
- *      this POM keeps locators out of the spec file.
- * HOW: locators declared in constructor. Methods: goToList, openCreateModal,
- *      fillAndSubmitCreate, deleteByName.
- *
- * The smoke suite calls these methods by name; the regression suite does not use this class.
+ * CustomAttributesPage — Settings → Custom Attributes: list, Create modal and delete by search (SMK-008).
  */
 
 import { Page, Locator, expect } from '@playwright/test';
@@ -42,12 +33,11 @@ export class CustomAttributesPage {
         this.page = page;
         this.main = page.locator('main');
 
-        // List page
         this.plusButton = this.main.getByTestId('plus-button');
         this.searchInput = this.main.locator('#search');
         this.trashButton = this.main.getByTestId('trash-button');
 
-        // Create modal — dialog scoped by its heading
+        // Create modal, scoped by its heading
         this.createModal = page.getByRole('dialog').filter({ hasText: 'Create Custom Attribute' });
         this.nameInput = this.createModal.getByTestId('text-input-name');
         this.labelInput = this.createModal.getByTestId('text-input-label');
@@ -55,7 +45,7 @@ export class CustomAttributesPage {
         this.contentTypeTrigger = this.createModal.getByTestId('select-contentType-trigger');
         this.submitButton = this.createModal.getByTestId('progress-button');
 
-        // Delete confirm dialog scoped by its heading
+        // Delete confirm dialog, scoped by its heading
         this.deleteConfirmDialog = page.getByRole('dialog').filter({ hasText: 'Delete a Custom Attribute' });
         this.deleteConfirmButton = this.deleteConfirmDialog.getByRole('button', { name: 'Delete', exact: true });
     }
@@ -94,7 +84,6 @@ export class CustomAttributesPage {
     async deleteByName(name: string): Promise<void> {
         logger.info(`Deleting custom attribute by name: ${name}`);
         await this.searchInput.fill(name);
-        // Find the data row containing our attribute name (excludes header row)
         const row = this.main.locator('tr').filter({ hasText: name });
         await expect(row).toBeVisible();
         await row.getByTestId('checkbox').click();

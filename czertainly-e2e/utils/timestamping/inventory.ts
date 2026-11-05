@@ -1,10 +1,7 @@
 /**
  * inventory — a read-only before / after check of what the timestamping block must never touch on a shared tier.
- *
- * `takeBaseline` (setup, before anything is created) stores, per resource, the count and a SHA-256 of the signing profiles, TSP
- * profiles and time-quality configurations the run did not create. `compareBaseline` (teardown) reads them again and says
- * `same`, `differs` (resource, counts and hash prefixes, never a name) or `skipped` with the reason.
- * A tier whose endpoint is missing is `skipped`, never a failure; a refused identity (401 / 403) still fails.
+ * `compareBaseline` says `same`, `differs` (resource, counts and hash prefixes, never a name) or `skipped` with the reason; a refused
+ * identity (401 / 403) still fails.
  */
 import * as crypto from 'crypto';
 import * as fs from 'fs';
@@ -13,7 +10,6 @@ import { readLedger } from '../regression/ledger/ledger';
 import { currentRunId, regressionStateDir } from '../regression/run/runId';
 import { Admin, TierError } from './provision/transport';
 
-/** The resources, by the name a message uses, and their list endpoints. */
 export const INVENTORY_RESOURCES: ReadonlyArray<{ name: string; path: string }> = [
     { name: 'signing profiles', path: '/v1/signingProfiles/list' },
     { name: 'TSP profiles', path: '/v1/tspProfiles/list' },
@@ -38,7 +34,6 @@ export type InventoryOutcome =
 
 export const inventoryFile = (env: NodeJS.ProcessEnv = process.env): string => path.join(regressionStateDir(env), `${currentRunId(env)}.timestamping.inventory.json`);
 
-/** JSON with sorted keys at every depth. */
 function canonical(v: unknown): string {
     if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
     if (v && typeof v === 'object') {
@@ -47,19 +42,16 @@ function canonical(v: unknown): string {
     return JSON.stringify(v) ?? 'null';
 }
 
-/** Count and hash of the rows (this run's own rows left out), in uuid order. */
 export function digestOf(rows: Array<Record<string, unknown>>, own: ReadonlySet<string>): ResourceDigest {
     const kept = rows.filter((r) => !own.has(String(r.uuid ?? '').toLowerCase())).sort((a, b) => String(a.uuid).localeCompare(String(b.uuid)));
     return { count: kept.length, hash: crypto.createHash('sha256').update(kept.map(canonical).join('\n')).digest('hex') };
 }
 
-/** The uuids of every object this run recorded as created (they are the block's, not the tier's). */
 function ownUuids(env: NodeJS.ProcessEnv): Set<string> {
     const runId = currentRunId(env);
     return new Set(readLedger().filter((l) => l.runId === runId && l.event === 'created').map((l) => l.uuid.toLowerCase()));
 }
 
-/** Every page of one list; a TierError (missing endpoint, an error answer) is the caller's `skipped`. */
 async function allRows(admin: Admin, listPath: string): Promise<Array<Record<string, unknown>>> {
     const rows: Array<Record<string, unknown>> = [];
     for (let page = 1; page <= 10_000; page++) {
@@ -70,7 +62,6 @@ async function allRows(admin: Admin, listPath: string): Promise<Array<Record<str
     throw new TierError(`${listPath} did not end after 10000 pages`);
 }
 
-/** The digests of every resource, or the reason one of them cannot be read. */
 export async function readInventory(admin: Admin, env: NodeJS.ProcessEnv = process.env): Promise<{ resources: Record<string, ResourceDigest> } | { skip: string }> {
     const own = ownUuids(env);
     const resources: Record<string, ResourceDigest> = {};
@@ -83,12 +74,10 @@ export async function readInventory(admin: Admin, env: NodeJS.ProcessEnv = proce
     return { resources };
 }
 
-/** Removes the baseline of an earlier attempt of this run (a retried setup must never be compared with its predecessor's). */
 export function clearBaseline(env: NodeJS.ProcessEnv = process.env): void {
     fs.rmSync(inventoryFile(env), { force: true });
 }
 
-/** Reads the three lists and writes the baseline (counts and hashes only, no name); a tier that cannot be read gets a `skipped` baseline. */
 export async function takeBaseline(admin: Admin, env: NodeJS.ProcessEnv = process.env): Promise<Baseline> {
     const read = await readInventory(admin, env);
     const meta = { runId: currentRunId(env), at: new Date().toISOString() };
@@ -98,7 +87,6 @@ export async function takeBaseline(admin: Admin, env: NodeJS.ProcessEnv = proces
     return baseline;
 }
 
-/** The baseline of this run, or undefined when the setup took none (it ended `unavailable`, or never ran). */
 export function readBaseline(env: NodeJS.ProcessEnv = process.env): Baseline | undefined {
     try {
         const b = JSON.parse(fs.readFileSync(inventoryFile(env), 'utf8')) as Baseline;
@@ -110,7 +98,6 @@ export function readBaseline(env: NodeJS.ProcessEnv = process.env): Baseline | u
 
 const short = (d: ResourceDigest): string => `${d.count} rows, ${d.hash.slice(0, 12)}`;
 
-/** The block's teardown: the same reads again, compared with the baseline. */
 export async function compareBaseline(admin: Admin, env: NodeJS.ProcessEnv = process.env): Promise<InventoryOutcome> {
     const before = readBaseline(env);
     if (!before) return { status: 'skipped', reason: 'no baseline: the setup took none (the tier was unavailable, or the setup did not run)' };

@@ -1,13 +1,7 @@
 /**
- * plant — the key pairs of the run on the SoftHSM token, planted and removed the way a tool outside the platform would.
- *
- * `plantKeys` runs plant-keys.sh and `unplantRunKeys` runs unplant-keys.sh in a throwaway container. Labels are
- * `<run id>-ko-<role>-<stamp>`. `unplantRunKeys` is the `after` step of the block teardown, so it runs only once every ILM key
- * of the block is gone.
- *
- * Token objects have no ledger line; their removal is keyed by the run prefix alone and refuses a prefix that could match
- * other runs' labels. The PIN goes through the environment, never on the command line. A failing plant script is a TierError
- * (the setup becomes `unavailable`); a failing removal throws and names the command to finish it by hand.
+ * plant — plants and removes the run's key pairs on the SoftHSM token, the way a tool outside the platform would (a throwaway container).
+ * Token objects have no ledger line: removal is keyed by the run prefix and refuses a prefix that could match other runs' labels.
+ * A failing plant script is a TierError; a failing removal throws and names the command to finish it by hand.
  */
 import { randomBytes } from 'crypto';
 import * as path from 'path';
@@ -26,13 +20,11 @@ const logger = new Logger('KeyOnboardingSetup');
 export const PLANT_SCRIPT = path.join(__dirname, '..', 'plant-keys.sh');
 export const UNPLANT_SCRIPT = path.join(__dirname, '..', 'unplant-keys.sh');
 
-/** A SHA-1 sized ID, as tools outside the platform commonly derive one from the public key. */
 const SHA1_SIZED_ID_BYTES = 20;
 const SHORT_ID_BYTES = 8;
 
 const randomId = (bytes: number): string => randomBytes(bytes).toString('hex');
 
-/** The labels of one setup attempt: `<run id>-ko-<role>-<stamp>`. */
 export function plannedLabels(stamp: string): PlantedKeys {
     const label = (role: string) => runName(`ko-${role}-${stamp}`);
     return {
@@ -48,7 +40,6 @@ export function plannedLabels(stamp: string): PlantedKeys {
     };
 }
 
-/** The environment of plant-keys.sh for these labels (the source suite's variables and random IDs). */
 export function plantEnvironment(planted: PlantedKeys, tokenLabel: string, pin: string): Record<string, string> {
     return {
         TOKEN_LABEL: tokenLabel,
@@ -86,11 +77,9 @@ export interface PlantInput {
 
 export interface Planting {
     planted: PlantedKeys;
-    /** The certificate carrying the certified pair's public key, base64-encoded DER. */
     certifiedCertificate: string;
 }
 
-/** Plants this attempt's key pairs on the sidecar's token (see the file header). */
 export async function plantKeys(input: PlantInput): Promise<Planting> {
     const planted = plannedLabels(input.stamp);
     const facts = await sidecarFacts(input.docker, input.sidecarContainer);
@@ -109,10 +98,8 @@ export async function plantKeys(input: PlantInput): Promise<Planting> {
 }
 
 /**
- * The label prefix of a run's token objects, or why the run id cannot key a removal. Only a generated run id
- * (`qa-reg-<yyyymmdd>-<hhmmss>-<4 base36>`, RUN_ID_FORMAT) is accepted: a shorter or hand-set id such as
- * `qa-reg-<yyyymmdd>` would be the prefix of every run of that day. (An API run shares the regression run's id:
- * runTeardown refuses an API_RUN_ID that differs from REG_RUN_ID.) unplant-keys.sh checks the same shape again.
+ * The label prefix of a run's token objects, or why the run id cannot key a removal: only a generated run id is accepted, a shorter one
+ * would match every run of that day.
  */
 export function runLabelPrefix(runId: string): string | { refused: string } {
     if (!runId) return { refused: 'no run id: an empty prefix would match every label on the token' };
@@ -121,9 +108,8 @@ export function runLabelPrefix(runId: string): string | { refused: string } {
     return `${runId}-`;
 }
 
-/** What a person runs to finish a removal the teardown could not: the same container, the same variables. */
 function manualUnplant(container: string, image: string, prefix: string, environment: Record<string, string>): string {
-    // The PIN is never written into a message: the person exports it from KO_TOKEN_PIN.
+    // The PIN is never written into a message.
     const shown = Object.keys(environment).filter((k) => k !== 'TOKEN_PIN').map((k) => `${k}='${environment[k]}'`).join(' ');
     return `to finish it by hand, export TOKEN_PIN with the value of KO_TOKEN_PIN and run: ${shown} docker run --rm --user 0 --volumes-from ${container} --entrypoint sh ` +
         `-v ${UNPLANT_SCRIPT}:/unplant-keys.sh:ro ${Object.keys(environment).map((k) => `-e ${k}`).join(' ')} ${image} /unplant-keys.sh ` +
@@ -135,9 +121,8 @@ export interface UnplantDeps {
 }
 
 /**
- * Removes the run's token objects (unplant-keys.sh with LABEL_PREFIX `<run id>-`); returns a short report. On a tier or
- * runner where nothing can have been planted (not a local stack, no PIN, no docker, no sidecar) it removes nothing and
- * says why; a refused prefix or a failing script throws.
+ * Removes the run's token objects and returns a short report; where nothing can have been planted it removes nothing and says why. A
+ * refused prefix or a failing script throws.
  */
 export async function unplantRunKeys(env: NodeJS.ProcessEnv, runId: string, deps: UnplantDeps = {}): Promise<string> {
     const prefix = runLabelPrefix(runId);

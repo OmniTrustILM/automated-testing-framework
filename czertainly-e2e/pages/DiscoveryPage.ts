@@ -1,7 +1,5 @@
 /**
  * DiscoveryPage — the discovery list and its Create Discovery dialog (SMK-003).
- *
- * SMK-003 calls `goToPage`, `createDiscovery` and the result checks by name.
  */
 import { Page, Locator, expect } from '@playwright/test';
 import { Logger } from '../utils/Logger';
@@ -96,7 +94,6 @@ export class DiscoveryPage {
         await expect(statusBadge).toHaveText('Completed');
     }
 
-    // Discovered certificates live on the Results tab, not on Details.
     async openResultsTab(): Promise<void> {
         logger.info('Opening Results tab');
         await this.resultsTab.click();

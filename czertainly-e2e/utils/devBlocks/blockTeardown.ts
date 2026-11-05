@@ -1,13 +1,8 @@
 /**
  * blockTeardown — teardown of a developers' test block (`@dev-tests`), right after the block.
- *
- * Takes the ledger lines of THIS run that the block wrote (spec `<block>/…`) and hands exactly those to the run-end delete
- * engine, which checks each object is own and proves its absence by a read.
- * An optional `after` step removes what the block made outside the platform (key pairs on a token); it runs only when every
- * ledger object of the block is gone.
- * It follows the run-end teardown's switches: API_TEARDOWN_DRY_RUN only reports the plan, API_DELETE_OWN off keeps everything,
- * and on a local tier it re-checks the local-backend proof first.
- * It throws when an object could not be deleted (type and uuid only). The run-end teardown stays the safety net.
+ * It hands this run's ledger lines of the block to the run-end delete engine and follows its switches (API_TEARDOWN_DRY_RUN,
+ * API_DELETE_OWN).
+ * It throws when an object could not be deleted (type and uuid only); the run-end teardown stays the safety net.
  */
 import { Logger } from '../Logger';
 import { readLedger, recordDeleted, type LedgerLine } from '../regression/ledger/ledger';
@@ -20,23 +15,16 @@ import { authenticatedApi, executeTeardown, formatPlan, handlerOf, planTeardown,
 
 const logger = new Logger('DevBlockTeardown');
 
-/** A block: its ledger `spec` prefix (`timestamping/`), the spec of its `deleted` lines, and an optional `after` step. */
 export interface DevBlock {
     prefix: string;
     teardownSpec: string;
-    /**
-     * Removes what the block made outside the platform; runs after the ledger objects are gone, and also when the block
-     * has no ledger line left. Returns a short report for the annotation.
-     */
+    /** Removes what the block made outside the platform; runs after the ledger objects are gone. Returns a short report for the annotation. */
     after?: (env: NodeJS.ProcessEnv, runId: string) => Promise<string>;
 }
 
 /**
- * Every ledger line about an object the block created in this run: its `created` line (spec `<prefix>…`) and whatever
- * was written about the same uuid later (a `deleted` line, whoever wrote it), so the engine sees an object as deleted
- * already when it is. Objects the platform made for a block object belong to the block too: a `derived` line whose
- * `parents` name a block object (the certKey_ key of a block certificate, which the certificate handler's safety net
- * records under spec `runTeardown` while the block's teardown runs).
+ * Every ledger line about an object the block created in this run, including later lines about the same uuid and
+ * `derived` lines whose `parents` name a block object (such as the key of a block certificate).
  */
 export function blockLines(lines: LedgerLine[], runId: string, prefix: string): LedgerLine[] {
     const ofRun = lines.filter((l) => l.runId === runId);
@@ -55,7 +43,7 @@ export interface BlockTeardownDeps {
     readLines?: () => LedgerLine[];
     authenticate?: typeof authenticatedApi;
     env?: NodeJS.ProcessEnv;
-    /** Unit-test seams of the delete engine (default: the run-end teardown's handlers, retry delay and poll interval). */
+    /** Unit-test seams of the delete engine. */
     handler?: ExecuteOptions['handler'];
     retryDelayMs?: number;
     pollMs?: number;
@@ -91,7 +79,7 @@ export async function teardownBlock(block: DevBlock, deps: BlockTeardownDeps = {
     };
     let result: ExecuteResult;
     try {
-        // On a local stack prove the backend before the first delete, as the run-end teardown does (a shared tier has no such proof).
+        // On a local stack prove the backend before the first delete.
         if (isLocalTier(env)) await assertLocalBackend(await newApi(), env);
         logger.info(`deleting the ${block.prefix} block's ${plan.length} object(s) of run ${runId}`);
         result = await executeTeardown({
@@ -113,8 +101,8 @@ export async function teardownBlock(block: DevBlock, deps: BlockTeardownDeps = {
             `them${block.after ? '; what the block made outside the platform stays until then' : ''}): ${result.failed.map((f) => `${f.type} ${f.uuid}`).join(', ')}`);
     }
     if (block.after && result.kept.length) {
-        // A kept object is still in the platform (e.g. a derived key that holds a token's key pair): removing what the block
-        // made outside the platform now would leave the platform with a key whose token objects are gone.
+        // A kept object is still in the platform (for example a derived key that holds a token's key pair): do not remove what the block
+        // made outside it.
         const skipped = `skipped: ${result.kept.length} object(s) kept (${result.kept.map((k) => `${k.type} ${k.uuid}`).join(', ')}); ` +
             'what the block made outside the platform stays until they are gone';
         logger.warn(`${block.prefix} block: ${skipped}`);

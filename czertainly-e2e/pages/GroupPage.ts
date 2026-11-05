@@ -1,12 +1,6 @@
 /**
- * GroupPage — Page Object Model for certificate groups (REG-CFG-06).
- *
- * Encapsulates:
- *   - the Groups list and the Create Group dialog
- *   - the group detail with its Users, Events and Event History tabs
- *
- * The create answer goes back to the spec before the dialog closes, so the group is on the ledger first. A tab that
- * failed to load shows the platform's error text, which `assertNoErrorShown` looks for.
+ * GroupPage — the groups list, Create Group dialog and group detail tabs (REG-CFG-06).
+ * A tab that failed to load shows the platform's error text, which `assertNoErrorShown` looks for.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import type { CreateAnswer } from './ui/createAnswer';
@@ -22,7 +16,6 @@ export interface GroupFields {
     email: string;
 }
 
-/** The text a tab shows when the page failed to load it. */
 const ERROR_TEXT = /unexpected error|internal server error/i;
 
 export class GroupPage {
@@ -47,10 +40,8 @@ export class GroupPage {
         this.page = page;
         this.main = page.locator('main');
 
-        // Groups list
         this.addGroupButton = this.main.getByTestId('plus-button').first();
 
-        // Create Group dialog
         this.createGroupDialog = page.getByRole('dialog', { name: 'Create Group' });
         this.nameInput = this.createGroupDialog.getByTestId('text-input-name');
         this.descriptionInput = this.createGroupDialog.getByTestId('text-input-description');
@@ -58,11 +49,9 @@ export class GroupPage {
         this.createButton = this.createGroupDialog.getByTestId('progress-button').last();
         this.cancelButton = this.createGroupDialog.getByRole('button', { name: 'Cancel', exact: true });
 
-        // Toasts
         this.nameExistsToast = toast(page, /already exist/i);
     }
 
-    /** A tab of the group detail. */
     tab(name: GroupTab): Locator {
         return this.main.getByRole('tab', { name, exact: true });
     }
@@ -82,7 +71,6 @@ export class GroupPage {
         await expect(this.createGroupDialog).toBeVisible();
     }
 
-    /** Fills the open dialog (and any required custom attribute) without submitting. */
     async fillCreateForm(fields: GroupFields): Promise<void> {
         await fillText(this.nameInput, fields.name);
         await fillText(this.descriptionInput, fields.description);
@@ -90,7 +78,7 @@ export class GroupPage {
         await fillRequiredCustomAttributes(this.page, this.createGroupDialog, 'qa-reg', await customAttributesDefined(this.page, 'groups'));
     }
 
-    /** Clicks Create and returns the answer of `POST /api/v1/groups` (status, new uuid, request body); the dialog is not waited for. */
+    /** Clicks Create and returns the create answer; the dialog is not waited for. */
     async submitCreateForm(): Promise<CreateAnswer> {
         return submitCreate(this.page, this.createButton, { endpoint: '/api/v1/groups' });
     }
@@ -103,7 +91,7 @@ export class GroupPage {
         await this.tab(name).click();
     }
 
-    /** The page shows no error text (a tab that failed to load shows the platform's error); it never clicks a tab. */
+    /** The page shows no error text; it never clicks a tab. */
     async assertNoErrorShown(tab: GroupTab): Promise<void> {
         await expect(this.main, `the ${tab} tab shows no error`).not.toContainText(ERROR_TEXT);
     }
@@ -112,7 +100,6 @@ export class GroupPage {
         await expect(this.nameExistsToast).toBeVisible();
     }
 
-    /** Clears the toasts and closes the dialog when a refused create left it open. */
     async closeCreateDialog(): Promise<void> {
         await dismissToasts(this.page);
         await cancelIfOpen(this.createGroupDialog, this.cancelButton);

@@ -1,13 +1,9 @@
 /**
- * docker — the docker CLI wrapper of the timestamping block (container state, queues, stop / start, polling).
- *
- * The environment spec reads the stack and the outage specs stop containers, so both need the local stack. Container
- * names come from timestampingConfig().containers; `dockerAvailable()` lets a test skip without a daemon.
+ * docker — the docker CLI wrapper of the timestamping block; `dockerAvailable()` lets a test skip without a daemon.
  */
 import { execFileSync } from 'child_process';
 import { timestampingConfig } from './config';
 
-/** Tags a test that drives the local Docker stack, which a Core reached remotely runs without. */
 export const DOCKER = '@docker';
 
 export interface CommandResult {
@@ -26,7 +22,6 @@ export function docker(args: string[]): CommandResult {
   }
 }
 
-/** Health status when the container declares a healthcheck, otherwise its running state. */
 export function containerState(name: string): string {
   const result = docker([
     'inspect',
@@ -42,12 +37,10 @@ export function containerImageId(name: string): string {
   return result.exitCode === 0 ? result.stdout.trim() : '';
 }
 
-/** The container serving the cryptography provider (TSA_CONTAINER_CRYPTOGRAPHY_PROVIDER; one provider serves every family). */
 export function cryptographyProviderContainer(_cryptoProvider?: string): string {
   return timestampingConfig().containers.cryptographyProvider;
 }
 
-/** True when a docker daemon answers: the tests that read or stop containers skip without one. */
 export function dockerAvailable(): boolean {
   return docker(['version', '--format', '{{.Server.Version}}']).exitCode === 0;
 }
@@ -66,8 +59,7 @@ export interface QueueInfo {
   consumers: number;
 }
 
-/** Queue depth and consumer count straight from RabbitMQ, the only reliable signal that
- *  Core actually subscribed to the time-quality exchange. */
+/** Queue depth and consumer count from RabbitMQ: the signal that Core subscribed to the time-quality exchange. */
 export function listQueues(filter?: RegExp): QueueInfo[] {
   const result = docker(['exec', timestampingConfig().containers.rabbitmq, 'rabbitmqctl', 'list_queues', 'name', 'messages', 'consumers']);
   if (result.exitCode !== 0) return [];

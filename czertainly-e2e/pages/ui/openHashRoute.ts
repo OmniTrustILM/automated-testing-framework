@@ -1,9 +1,6 @@
 /**
- * openHashRoute — open a hash route of the admin UI, loading it again when the page is already on it.
- *
- * Opens `/administrator/#/<route>`; when the page is already on exactly that hash, it reloads instead. A navigation to
- * the hash the page is on is no document load and sends no request, so a wait for the API answer of the load would
- * wait for ever.
+ * openHashRoute — opens a hash route of the admin UI, reloading when the
+ * page is already on it (no document load, so no API answer to wait for).
  */
 import type { Page } from '@playwright/test';
 

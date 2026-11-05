@@ -1,13 +1,6 @@
 /**
- * preflight — does this tier have what the key onboarding block builds on? Read-only.
- *
- *   - `offlineBlocker`: decides without a request (a shared tier, no local-backend proof, no KO_TOKEN_PIN)
- *   - `runnerBlocker`: asks docker only (a daemon answers, the sidecar is running)
- *   - `preflight`: reads the platform for the connected PKCS#11 connector with the `keyList` feature, the connected
- *     credential-provider connector with a `secret` interface, and the configured token among the profile's tokens
- *
- * The block never registers or approves a connector (create-only); a missing one is a precise reason and the specs skip with
- * it. A reason names the variable a value came from, never the value.
+ * preflight — does this tier have what the key onboarding block builds on? Read-only; the block never registers or approves a connector.
+ * A reason names the variable a value came from, never the value.
  */
 import { Logger } from '../../Logger';
 import { isLocalTier } from '../../regression/tier/kind';
@@ -25,20 +18,17 @@ const logger = new Logger('KeyOnboardingSetup');
 export type RequestAttribute = ReturnType<typeof requestAttribute>;
 
 export interface ConnectorRef extends NamedUuid {
-    /** The uuid of the interface the block uses (`cryptography` on the PKCS#11 connector, `secret` on the vault one). */
     interfaceUuid: string;
 }
 
 export interface Prerequisites {
     pkcs11: ConnectorRef;
     vault: ConnectorRef;
-    /** The token form of the PKCS#11 connector: the profile and token items, and the PIN definition the secret fills. */
     tokenForm: { profile: RequestAttribute; token: RequestAttribute; pin: AttributeDefinition };
 }
 
 export type PreflightResult = { status: 'ok'; prerequisites: Prerequisites } | { status: 'unavailable'; reason: string };
 
-/** Why the block cannot run here, decided without a request and without docker; undefined when the checks may go on. */
 export function offlineBlocker(cfg: KeyOnboardingConfig, env: NodeJS.ProcessEnv = process.env): string | undefined {
     if (!isLocalTier(env)) {
         return 'not a local stack (TIER_KIND is not local): no shared tier has the PKCS#11 connector with a SoftHSM token, and planting key pairs needs docker next to the stack';
@@ -50,7 +40,6 @@ export function offlineBlocker(cfg: KeyOnboardingConfig, env: NodeJS.ProcessEnv 
     return undefined;
 }
 
-/** Why the runner cannot plant key pairs (docker only, no platform request); undefined when it can. */
 export async function runnerBlocker(cfg: KeyOnboardingConfig, docker: DockerRunner): Promise<string | undefined> {
     if (!(await dockerAvailable(docker))) return 'docker is not available on the runner (planting key pairs on the token needs a docker daemon)';
     if (!(await sidecarRunning(docker, cfg.sidecarContainer))) return 'the SoftHSM sidecar container KO_SIDECAR_CONTAINER names is not running';
@@ -59,7 +48,6 @@ export async function runnerBlocker(cfg: KeyOnboardingConfig, docker: DockerRunn
 
 const interfaceOf = (row: Json, code: string): Json | undefined => ((row.interfaces ?? []) as Json[]).find((i) => i.code === code);
 
-/** The connected v2 connector at `url`; a registered one that is not connected, or none, is the reason. */
 function connectorAt(rows: Json[], url: string, what: string, variable: string): Json | string {
     const candidates = rows.filter((c) => c.url === url && c.version === 'v2');
     const connected = candidates.find((c) => c.status === 'connected');
@@ -76,7 +64,6 @@ function connectorAt(rows: Json[], url: string, what: string, variable: string):
     return `the ${what} connector at ${variable} is ${first.status ?? 'in an unknown state'}, not connected`;
 }
 
-/** A definition of the connector's form by name, or a TierError naming it (what was offered goes to the log). */
 function definitionNamed(defs: AttributeDefinition[], name: string, form: string): AttributeDefinition {
     const def = defs.find((d) => d.name === name);
     if (!def?.uuid) {
@@ -86,7 +73,6 @@ function definitionNamed(defs: AttributeDefinition[], name: string, form: string
     return def;
 }
 
-/** True when a PKCS#11 URI's path names the token `label` (`pkcs11:…;token=<label>;…`, percent-decoded). */
 export function uriNamesToken(uri: string, label: string): boolean {
     const pathAttributes = uri.replace(/^pkcs11:/, '').split('?')[0].split(';');
     return pathAttributes.some((attribute) => {
@@ -99,10 +85,7 @@ export function uriNamesToken(uri: string, label: string): boolean {
     });
 }
 
-/**
- * The token form (`GET /v1/tokens/{connector}/attributes`): the profile item with KO_PKCS11_PROFILE, and the token item
- * the `token` callback offers for that profile, which must name exactly one token labelled KO_PKCS11_TOKEN.
- */
+/** The token form: the profile item, and the token item the `token` callback offers, which must name exactly one token. */
 async function tokenForm(admin: Admin, cfg: KeyOnboardingConfig, pkcs11: ConnectorRef): Promise<Prerequisites['tokenForm'] | string> {
     const form = 'token form of the PKCS#11 connector';
     const defs = await admin.get<AttributeDefinition[]>(`/v1/tokens/${pkcs11.uuid}/attributes`);
@@ -124,7 +107,6 @@ async function tokenForm(admin: Admin, cfg: KeyOnboardingConfig, pkcs11: Connect
     return { profile, token, pin };
 }
 
-/** The read-only preflight; see the file header. */
 export async function preflight(admin: Admin, cfg: KeyOnboardingConfig, docker: DockerRunner, env: NodeJS.ProcessEnv = process.env): Promise<PreflightResult> {
     const unavailable = (reason: string): PreflightResult => ({ status: 'unavailable', reason });
     const blocked = offlineBlocker(cfg, env) ?? (await runnerBlocker(cfg, docker));

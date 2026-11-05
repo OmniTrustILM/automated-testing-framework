@@ -1,7 +1,5 @@
 /**
  * signatureOptions — what a signing profile's signature options are expected to be, per key algorithm.
- *
- * The signature-options spec compares the offer of a certificate and the signature of a token with the same table.
  */
 import { AttributeDefinition, AttributeValue } from './adminApi';
 import { ECDSA, RSA } from './provisioning';
@@ -9,13 +7,11 @@ import { RSASSA_PSS, TokenSignature } from './openssl';
 
 const V2_DIGESTS = ['SHA-256', 'SHA-384', 'SHA-512'];
 
-/** What a v2 provider offers per key algorithm. */
 export const V2_OFFER: Record<string, Record<string, string[]>> = {
   [RSA]: { data_rsaSigScheme: ['PKCS1-v1_5', 'PSS'], data_sigDigest: V2_DIGESTS },
   [ECDSA]: { data_sigDigest: V2_DIGESTS },
 };
 
-/** A post-quantum key offers the one signature algorithm its parameter set fixes, such as ML-DSA-65. */
 export function postQuantumOffer(keyAlgorithm: string): RegExp {
   return new RegExp(`^${keyAlgorithm}-\\d+$`);
 }
@@ -36,7 +32,6 @@ const ECDSA_OIDS: Record<string, string> = {
   'SHA-512': '1.2.840.10045.4.3.4',
 };
 
-/** The signature of a token from a profile with these options, on a key of this algorithm and OID. */
 export function expectedSignature(
   keyAlgorithm: string,
   options: Record<string, string[]>,
@@ -51,12 +46,10 @@ export function expectedSignature(
     case ECDSA:
       return { algorithm: ECDSA_OIDS[digest] };
     default:
-      // A post-quantum signature carries the OID of its key.
       return { algorithm: keyOid };
   }
 }
 
-/** A signing operation attribute for VALUE, built on the first definition of NAME. */
 export function signatureField(definitions: AttributeDefinition[], name: string, value: string): AttributeValue {
   const definition = definitions.find((candidate) => candidate.name === name);
   if (!definition) throw new Error(`no certificate here offers ${name}`);

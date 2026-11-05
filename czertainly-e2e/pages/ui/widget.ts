@@ -1,19 +1,12 @@
 /**
- * widget — the widget a title names.
- *
- * A widget is a section with a title heading. Icon buttons repeat on one page and have no accessible name, so a page
- * object looks a button up inside its widget, never page-wide. The widget is the heading's closest enclosing section (the
- * one structural lookup of the suite; a widget test id would remove it, FE test-id request).
+ * widget — the widget (a section with a title heading) a title names; icon buttons repeat on a page, so look them up inside their widget.
  */
 import { Locator, Page } from '@playwright/test';
 import { escapeRegExp } from '../../utils/regression/text';
 
-/**
- * The widget (a `<section>`) whose title heading matches: the scope for icon-only buttons that repeat on one page. A
- * RegExp for titles that vary (`/^(Certificate|CSR) Properties$/`); a string matches the whole title.
- */
+/** A RegExp for titles that vary; a string matches the whole title. */
 export function widgetTitled(scope: Locator | Page, title: string | RegExp): Locator {
     const name = typeof title === 'string' ? new RegExp(`^${escapeRegExp(title)}$`) : title;
-    // The closest <section> around the title heading (widgets nest: an outer section holds every inner heading too).
+    // Widgets nest: the closest section around the heading.
     return scope.getByRole('heading', { name }).locator('xpath=ancestor::section[1]');
 }

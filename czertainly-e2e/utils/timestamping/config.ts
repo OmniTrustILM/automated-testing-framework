@@ -1,41 +1,33 @@
 /**
- * config — the environment contract of the timestamping block.
- *
- * The TSA_* settings the block reads, with the defaults of development-environment `scripts/timestamping-setup.sh`, the plan
- * of families (which sets the setup creates), and where the setup leaves its summary (under REG_STATE_DIR, never in the clone).
- * Playwright lists tests BEFORE the setup runs, so data-driven titles come from the plan, not from the summary. A test skips
- * when the setup could not provision its set.
+ * config — the TSA_* settings of the timestamping block, the plan of families and where the setup leaves its summary (under REG_STATE_DIR).
+ * Playwright lists tests BEFORE the setup runs, so data-driven titles come from the plan, not from the summary.
  */
 import * as path from 'path';
 import { currentRunId, regressionStateDir } from '../regression/run/runId';
 
 export type CryptoProvider = 'software-v1' | 'software-v2' | 'pkcs11';
 
-/** A family the setup provisions: one non-qualified and one qualified set on one key algorithm. */
 export interface PlannedFamily {
-    /** The set name in the summary (`Provisioning.sets` key) and in object names. */
     name: string;
-    /** The family's name in test titles; the primary RSA family's titles carry no prefix. */
     label: string;
-    /** KeyAlgorithm code as the cryptography provider names it. */
     keyAlgorithm: 'RSA' | 'ML-DSA';
-    /** The EJBCA CA that issues the family's TSA certificates. */
     ejbcaCa: string;
 }
 
 export interface TimestampingConfig {
-    /** Base URL of the TSP requests. Unset: BASE_URL. On AUTH_MODE=header behind the dev proxy, point it at core itself
-     * (the proxy would add the admin certificate to every request and the authentication negatives would prove nothing). */
+    /**
+     * Unset: BASE_URL. Behind the dev proxy (AUTH_MODE=header) point it at core itself, or the proxy adds the admin certificate and the
+     * authentication negatives prove nothing.
+     */
     tspBaseUrl?: string;
     cryptoProvider: CryptoProvider;
-    /** Existing EJBCA authority instance the run creates its RA profiles under (a parent only, never changed). */
+    /** Existing; the run creates its RA profiles under it (a parent only, never changed). */
     authorityName: string;
     ejbcaEndEntityProfile: string;
     ejbcaCertificateProfile: string;
     ejbcaCertificateProfileQualified: string;
-    /** Existing vault instance the run creates its vault profile under (a parent only). */
+    /** Existing; the run creates its vault profile under it (a parent only). */
     vaultInstanceName: string;
-    /** Time-quality configuration of the qualified sets (created per run). */
     ntpServers: string[];
     accuracy: string;
     maxClockDrift: string;
@@ -44,9 +36,8 @@ export interface TimestampingConfig {
     signatureScheme: string;
     signatureDigest: string;
     families: PlannedFamily[];
-    /** Opt-in for the specs that stop containers (NTP, monitor, connectors): TSA_ALLOW_DISRUPTION=true. */
+    /** Opt-in for the specs that stop containers: TSA_ALLOW_DISRUPTION=true. */
     allowDisruption: boolean;
-    /** Container names the environment and outage specs inspect or stop. */
     containers: {
         core: string;
         ntp: string;
@@ -60,7 +51,6 @@ export interface TimestampingConfig {
 const list = (v: string | undefined, fallback: string[]): string[] =>
     v === undefined || v.trim() === '' ? fallback : v.split(',').map((s) => s.trim()).filter(Boolean);
 
-/** The families TSA_FAMILIES names (default `rsa,mldsa65`): `rsa` and `mldsa65` are known; anything else is an error. */
 export function plannedFamilies(env: NodeJS.ProcessEnv = process.env): PlannedFamily[] {
     const known: Record<string, PlannedFamily> = {
         rsa: { name: 'rsa', label: 'RSA', keyAlgorithm: 'RSA', ejbcaCa: env.TSA_EJBCA_CA ?? 'DemoRootCA_2307RSA' },
@@ -106,7 +96,6 @@ export function timestampingConfig(env: NodeJS.ProcessEnv = process.env): Timest
     };
 }
 
-/** The run's summary: `<REG_STATE_DIR>/<run id>.timestamping.json`. */
 export function summaryFile(env: NodeJS.ProcessEnv = process.env): string {
     return path.join(regressionStateDir(env), `${currentRunId(env)}.timestamping.json`);
 }

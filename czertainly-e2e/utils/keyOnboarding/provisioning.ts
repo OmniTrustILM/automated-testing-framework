@@ -1,12 +1,7 @@
 /**
  * provisioning — the specs' view of the run's provisioning summary.
- *
- * Reads the summary the `key-onboarding-setup` project wrote (`summaryFile()`) and hands the ready provisioning to the
- * specs; names the ledger `spec` of the objects a spec creates. `readSummary()` reads and caches a ready summary;
- * `provisioningOrSkip()` skips the running test with the setup's reason.
- *
- * Playwright lists tests BEFORE the setup project runs, so the summary is read lazily INSIDE tests and hooks.
- * Module-scope reads are forbidden (tests/unit/keyOnboardingSpecs.spec.ts).
+ * Playwright lists tests BEFORE the setup project runs, so the summary is read inside tests and hooks only
+ * (tests/unit/keyOnboardingSpecs.spec.ts).
  */
 import { test } from '@playwright/test';
 import * as fs from 'fs';
@@ -20,7 +15,6 @@ export type { NamedUuid, PlantedKeys, Provisioning };
 
 let cached: Extract<KeyOnboardingSummary, { status: 'ready' }> | undefined;
 
-/** The run's summary. A missing file is `unavailable` (the setup project did not run), never an exception. */
 export function readSummary(): KeyOnboardingSummary {
     if (cached) return cached;
     const file = summaryFile();
@@ -32,7 +26,6 @@ export function readSummary(): KeyOnboardingSummary {
     return summary;
 }
 
-/** The ready provisioning; skips the running test or hook with the setup's reason when the block is unavailable. */
 export function provisioningOrSkip(): Provisioning {
     const summary = readSummary();
     if (summary.status !== 'ready') {
@@ -42,12 +35,10 @@ export function provisioningOrSkip(): Provisioning {
     return summary.provisioning;
 }
 
-/** The ledger `spec` of the objects a key onboarding spec creates: `key-onboarding/<file stem>` (the block teardown selects by the prefix). */
 export function ledgerSpec(testInfo: { file: string }): string {
     return `key-onboarding/${path.basename(testInfo.file).replace(/\.spec\.ts$/, '')}`;
 }
 
-/** The key an onboarding result names, for the ledger: fails when an onboarded result lacks its uuid or its live name. */
 export function onboardedKey(result: OnboardingResult): { uuid: string; name: string } {
     if (!result.keyUuid || !result.keyName) {
         throw new Error(`The onboarding of ${result.keyHandle} reports onboarded without ${result.keyUuid ? 'a key name' : 'a key uuid'}; it cannot be recorded`);

@@ -1,9 +1,5 @@
 /**
- * tsp — one TSP request, captured on disk and parsed.
- *
- * `requestTimestamp` builds a query (or takes raw bytes), sends it with Basic auth and parses the reply. Artifacts live
- * under the test's own output dir, so two tests never overwrite each other's bytes; artifacts and credentials come from
- * provisioning.ts (lazily, inside the test).
+ * tsp — one TSP request, captured on disk under the test's own output dir and parsed.
  */
 import { APIRequestContext } from '@playwright/test';
 import * as fs from 'fs';
@@ -14,7 +10,6 @@ import { buildTimestampQuery, Digest, parseTimestampReply, ReplyInfo } from './o
 export type TspRoute = 'signing' | 'tsp';
 
 export interface TimestampRequestOptions {
-  /** Artifact folder name; keeps the request and response bytes of every case on disk. */
   label: string;
   profileName: string;
   route?: TspRoute;
@@ -23,14 +18,11 @@ export interface TimestampRequestOptions {
   certReq?: boolean;
   policyOid?: string | null;
   content?: string;
-  /** Basic credentials; null username sends no Authorization header at all. */
   username?: string | null;
   password?: string;
-  /** Raw request body, bypassing query generation (malformed-request cases). */
   body?: Buffer;
   contentType?: string;
   accept?: string;
-  /** GET sends no body. */
   method?: 'POST' | 'GET' | 'PUT';
 }
 
@@ -42,7 +34,6 @@ export interface TimestampOutcome {
   dataPath?: string;
   responsePath?: string;
   responseLength: number;
-  /** Response headers, names lower-cased. */
   headers: Record<string, string>;
   reply?: ReplyInfo;
 }
@@ -54,9 +45,8 @@ export function tspUrl(route: TspRoute, profileName: string): string {
 }
 
 /**
- * Issues one TSP request and captures everything about it. The TSP endpoints answer HTTP 200
- * with an in-band PKIStatus for both success and rejection, so callers assert on `reply`,
- * not on the status code — except for authentication failures, which are plain HTTP.
+ * The TSP endpoints answer HTTP 200 with an in-band PKIStatus for success and rejection, so callers assert on `reply`, except for
+ * authentication failures, which are plain HTTP.
  */
 export async function requestTimestamp(
   request: APIRequestContext,
@@ -129,7 +119,6 @@ export async function requestTimestamp(
   return outcome;
 }
 
-/** Compact one-line description used in assertion messages. */
 export function describeOutcome(outcome: TimestampOutcome): string {
   const reply = outcome.reply;
   return [

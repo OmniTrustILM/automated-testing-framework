@@ -1,14 +1,6 @@
 /**
- * globalTeardown of a developers' block run (playwright.devblock.config.ts) — the retry net, not the run-end teardown.
- *
- * A block run has no run-end teardown, and the block's teardown project can have failed or been skipped. So this runs
- * the
- * block's own teardown once more (this run's live ledger lines of the block only) and always removes this run's local-
- * backend proof.
- *
- * On a shared tier with no ledger line of the block, nothing is read and nothing is sent. A teardown error is rethrown
- * after
- * the proof is gone.
+ * globalTeardown of a developers' block run — the retry net: runs the block's own teardown once more (this run's live ledger lines only)
+ * and always removes this run's local-backend proof. A teardown error is rethrown after the proof is gone.
  */
 import { readLedger } from '../regression/ledger/ledger';
 import { currentRunId } from '../regression/run/runId';
@@ -20,7 +12,6 @@ import { DEV_BLOCKS, selectedDevBlock, type DevBlockName } from './registry';
 
 const logger = new Logger('DevBlockGlobalTeardown');
 
-/** The block's own tear-down function, loaded when needed (the key onboarding one pulls in the token tools). */
 function teardownOf(name: DevBlockName): () => Promise<unknown> {
     if (name === 'timestamping') return () => (require('../timestamping/blockTeardown') as typeof import('../timestamping/blockTeardown')).teardownBlock();
     return () => (require('../keyOnboarding/blockTeardown') as typeof import('../keyOnboarding/blockTeardown')).teardownBlock();
