@@ -1,9 +1,6 @@
 /**
- * API-CERT-36 — Two simultaneous operations on one own certificate (ilm#429).
- *
- * Renew takes no predecessor lock, so two renews are two successors (ilm#429 closing comment). A parallel path must never
- * become a 5xx (ilm#424). Duplicate delivery is another race (core#2435), not asserted.
- * Successors and derived keys are ledgered before the assertions.
+ * API-CERT-36 — Two simultaneous operations on one own certificate (ilm#429). Renew takes no predecessor lock, so two
+ * renews are two successors (ilm#429 closing comment).
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { EVENT_CODES, historyOf, relationsOf } from '../../../utils/regression/lifecycle/certificateHistory';
@@ -26,7 +23,6 @@ test.describe('Concurrent certificate operations', { tag: tags.api }, () => {
             ],
         }),
         async ({ api, own, ownRaProfile }) => {
-            // One issuance plus two parallel successor issuances (180 s each, awaited together) and the reads.
             test.setTimeout(SLOW_LIFECYCLE_MS);
             const ra = ownRaProfile;
             const a = await test.step('Fixture: an own issued certificate A', async () => own.certificate.issue(ra, { suffix: 'c36' }));
@@ -79,7 +75,6 @@ test.describe('Concurrent certificate operations', { tag: tags.api }, () => {
             await test.step('Two identical completions via Promise.all: one 200, the other 200 or the 422 state guard', async () => {
                 const complete = () => issueExisting(api, reg.cert!, ra, { request: csr.derBase64, authorizationSecret: reg.secret });
                 const [c1, c2] = await Promise.all([complete(), complete()]);
-                // Exact oracle: one 200 and the other 200 or the 422 state guard (a 5xx fails here too).
                 const statuses = [c1.status, c2.status].sort();
                 expect(statuses[0], 'one completion is accepted').toBe(200);
                 expect([200, 422], 'the other is accepted or refused by the state guard').toContain(statuses[1]);

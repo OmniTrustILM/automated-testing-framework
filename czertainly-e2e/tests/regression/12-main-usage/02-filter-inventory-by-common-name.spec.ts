@@ -1,11 +1,7 @@
 /**
- * REG-USE-02 — The certificate inventory filtered by Common Name (release checklist: Usage 2; ilm#428).
- *
- * Filters the inventory by Common Name containing the run id: the badge shows, every row matches and the row count equals the
- * API search. The certificate's Validation, History and Event History tabs load; removing the badge removes the filter.
- *
- * The certificate is own, uploaded through the API and recorded from the upload answer before anything is asserted. The
- * filter value is the run id, so only objects of this run match. Nothing else is changed.
+ * REG-USE-02 — The certificate inventory filtered by Common Name (release checklist: Usage 2; ilm#428). Filters the
+ * inventory by Common Name containing the run id: the badge shows,
+ * every row matches and the row count equals the API search.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { CertificateListPage } from '../../../pages/CertificateListPage';
@@ -65,9 +61,8 @@ test.describe('Certificate inventory filter', { tag: tags.regression }, () => {
             await test.step('Back to the list, remove the badge → the filter is gone', async () => {
                 await certPage.goToList();
                 const badge = `Property 'Common Name' contains '${runId()}'`;
-                // The filter may or may not survive the navigation, and the persisted badge can render a moment after the list: each poll
-                // round removes the badge when it is shown, then reads again; the step ends only once a read finds it gone after the list
-                // settled.
+                // The filter may or may not survive the navigation, and
+                // the persisted badge can render a moment after the list.
                 await waitForListRows(page);
                 await expect.poll(async () => {
                     if ((await filterBadges(page)).includes(badge)) await list.removeFilterBadge(badge);

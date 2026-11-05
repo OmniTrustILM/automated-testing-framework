@@ -1,5 +1,4 @@
-// The fixture spec of tests/unit/tokenFixtures.spec.ts: three tests take the
-// restricted token; with a 401 identity provider the grant is sent once and all three skip. Not a suite spec.
+// The fixture spec of tests/unit/tokenFixtures.spec.ts: three tests take the restricted token.
 import { test, expect } from '../../../../fixtures/testFixtures';
 
 for (const n of [1, 2, 3]) {

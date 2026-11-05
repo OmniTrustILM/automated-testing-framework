@@ -1,8 +1,6 @@
 /**
- * API-CERT-11 — Revoke of an own issued certificate through the v2 API (ilm#429).
- *
- * The validation row is judged only where validation is enabled and the issuer certificate is in the inventory;
- * otherwise it skips with the named reason. The certificate is own and ledgered before any assertion.
+ * API-CERT-11 — Revoke of an own issued certificate through the v2 API (ilm#429). The validation row is judged only
+ * where validation is enabled and the issuer certificate is in the inventory; otherwise it skips with the named reason.
  */
 import { ISSUE_AND_REVOKE_TEST_MS, STATE_CHANGE_WAIT_MS } from '../../../utils/regression/timeouts';
 import { expect, test } from '../../../fixtures/regressionFixtures';
@@ -15,10 +13,6 @@ import { waitRevoked } from '../../../utils/regression/ownCertificates';
 import { getCertificate } from '../../../utils/regression/apiReads';
 import { testMeta, tags } from '../../../utils/regression/tags';
 
-/**
- * The chain check of a validation result (`GET …/validate`: `validationChecks` keyed by the check code) when it is not valid, as a
- * named reason; undefined when the chain is valid or the result carries no chain check (then nothing is known against it).
- */
 function chainNotValid(result: Record<string, any>): string | undefined {
     const checks = (result?.validationChecks ?? {}) as Record<string, { status?: string; message?: string }>;
     const chain = checks.certificate_chain ?? checks.CERTIFICATE_CHAIN;
@@ -37,7 +31,6 @@ test.describe('Certificate revoke through the v2 API', { tag: tags.api }, () => 
             ],
         }),
         async ({ api, own, ownRaProfile }) => {
-            // Issuance (180 s) + revocation (120 s).
             test.setTimeout(ISSUE_AND_REVOKE_TEST_MS);
             const ra = ownRaProfile;
             const cert = await test.step('Issue an own certificate', async () => own.certificate.issue(ra, { suffix: 'c11' }));
@@ -68,14 +61,11 @@ test.describe('Certificate revoke through the v2 API', { tag: tags.api }, () => 
         async ({ api, own, ownRaProfile }) => {
             test.setTimeout(ISSUE_AND_REVOKE_TEST_MS);
             const ra = ownRaProfile;
-            // The validation status is produced by certificate validation; when the tier / RA
-            // profile has it switched off the row cannot be judged — a named skip, never a silent annotation.
             const enabled = await validationEnabledFor(api, ra);
             test.skip(enabled !== true, enabled === false ? 'certificate validation is disabled for the run RA profile / platform (settings read): no validation status to judge' : 'certificate validation settings not readable: the validation status cannot be judged');
             const cert = await test.step('Fixture: an own certificate, revoked', async () => {
                 const c = await own.certificate.issue(ra, { suffix: 'c11v' });
-                // The validator answers invalid on an incomplete chain before it looks at CRL / OCSP: read the chain check first. It can
-                // only be read on an issued certificate, so this skip runs after the issue (the certificate is already on the ledger).
+                // An incomplete chain reads invalid before CRL / OCSP is looked at, so the chain check is read first.
                 const problem = chainNotValid(await revalidate(api, c));
                 test.skip(problem !== undefined, problem);
                 const a = await revokeOwnCertificate(api, c, ra, { reason: 'keyCompromise', destroyKey: false });

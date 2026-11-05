@@ -1,11 +1,7 @@
 /**
- * REG-CFG-01 — A Basic credential created on the Credentials page (release checklist: Configuration 1; ilm#436).
- *
- * Creates the credential, checks it exists with kind Basic, and that the password appears nowhere, neither on the page nor in
- * the API detail. The same name again is refused, and exactly one credential has that name.
- *
- * Create-only: the password is random per run and nothing is deleted. The create answer is put in the ledger before the
- * dialog or the list is waited for; a duplicate the platform accepted is recorded too, so the test then fails on it.
+ * REG-CFG-01 — A Basic credential created on the Credentials page (release checklist: Configuration 1; ilm#436). Creates
+ * the credential, checks it exists with kind Basic, and that the password appears nowhere, neither on the page nor in
+ * the API detail.
  */
 import { randomBytes } from 'node:crypto';
 import { expect, test } from '../../../fixtures/regressionFixtures';
@@ -41,7 +37,6 @@ test.describe('Credential configuration', { tag: tags.regression }, () => {
 
             const uuid = await test.step('Create → the credential exists', async () => {
                 const answer = await submitRecordingByNameOnFailure({ type: 'credentials', name, spec: own.spec, lookup }, () => credentials.submitCreateForm());
-                // Ledger before assertion: from the create answer, before the dialog or the list is waited for.
                 const created = own.record('credentials', answer, { name });
                 await expect(credentials.createCredentialDialog).toBeHidden();
                 await expect.poll(async () => (await findByName(api, '/api/v1/credentials', name))?.uuid ?? '').not.toBe('');
@@ -64,8 +59,6 @@ test.describe('Credential configuration', { tag: tags.regression }, () => {
                 await credentials.openCreateDialog();
                 await credentials.fillBasicForm(form);
                 const again = await submitRecordingByNameOnFailure({ type: 'credentials', name, spec: own.spec, note, lookup }, () => credentials.submitCreateForm());
-                // A duplicate the platform accepted is this run's object too; the assertions below then fail. The answer may carry no id:
-                // the rows of the name are adopted from the list as well.
                 own.probe('credentials', again, { name, note });
                 await own.adoptNamed('credentials', name, { note });
                 await credentials.assertDuplicateNameRefused();

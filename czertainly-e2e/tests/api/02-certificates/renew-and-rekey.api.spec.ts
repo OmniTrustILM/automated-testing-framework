@@ -1,8 +1,6 @@
 /**
- * API-CERT-04, API-CERT-05 — Renew and rekey of an own issued certificate through the v2 API (ilm#429).
- *
- * Renew keeps the key, rekey replaces it, both only from the issued state. MS ADCS NG cannot renew without a PKCS#10, so
- * a CSR is always sent. The successor is ledgered right after the call (with its derived key).
+ * API-CERT-04, API-CERT-05 — Renew and rekey of an own issued certificate through the v2 API (ilm#429). Renew keeps the
+ * key, rekey replaces it, both only from the issued state.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { historyMessages, historyOf, relationsOf } from '../../../utils/regression/lifecycle/certificateHistory';
@@ -24,14 +22,12 @@ test.describe('Certificate renew and rekey through the v2 API', { tag: tags.api 
             ],
         }),
         async ({ api, own, ownRaProfile }) => {
-            // Two issuances (180 s each) plus the reads.
             test.setTimeout(LIFECYCLE_MS);
             const ra = ownRaProfile;
             const a = await test.step('Issue certificate A (own, external CSR)', async () => own.certificate.issue(ra, { suffix: 'c04' }));
             const aDetail = await getCertificate(api, a.uuid);
 
             const renew = await test.step('POST …/{A}/renew with a CSR on the SAME key → 200 {uuid B}', async () => {
-                // The CSR carries the ISSUED subject (the CA may have completed it) and the same key.
                 const csr = csrFromKeyWithSubject(a.keys, String(aDetail.subjectDn), sansOfDetail(aDetail.subjectAlternativeNames));
                 const r = await renewOwnCertificate(api, a, ra, own.spec, { csrDerBase64: csr.derBase64, note: 'API-CERT-04 renew successor' });
                 expect(r.status, r.text.slice(0, 300)).toBe(200);
@@ -85,7 +81,6 @@ test.describe('Certificate renew and rekey through the v2 API', { tag: tags.api 
             const aDetail = await getCertificate(api, a.uuid);
 
             const rekey = await test.step('POST …/{A}/rekey with a NEW key, same CN and SAN → 200 {uuid B}', async () => {
-                // A new key, the ISSUED subject DN and SAN set (core compares the normalized X500 names).
                 const csr = csrFromKeyWithSubject(newKeyPair(), String(aDetail.subjectDn), sansOfDetail(aDetail.subjectAlternativeNames));
                 const r = await rekeyOwnCertificate(api, a, ra, own.spec, { csrDerBase64: csr.derBase64, note: 'API-CERT-05 rekey successor' });
                 expect(r.status, r.text.slice(0, 300)).toBe(200);

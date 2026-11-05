@@ -1,6 +1,6 @@
 /**
- * ownCertificates — pure checks of utils/regression/ownCertificates.ts without an environment: the SAN oracle each CA gets
- * and the special-character common name of the distinguished-name row.
+ * ownCertificates — pure checks of utils/regression/ownCertificates.ts without an environment: the SAN oracle each CA
+ * gets and the special-character common name of the distinguished-name row.
  */
 import { expect, test } from '@playwright/test';
 import { carriesRunPrefix } from '../../utils/regression/ledger/ownership';

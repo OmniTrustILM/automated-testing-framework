@@ -1,9 +1,6 @@
 /**
- * API-PROT-17 — ACME answers to malformed requests on the run ACME profile's new-account URL (ilm#430).
- *
- * `{}` and empty bodies answer serverInternal today; RFC 8555 §6.7 would prefer malformed. A missing signature member is
- * not probed: it hits an uncaught NPE in AcmeJwsRequest. The ACME directory is created once on an own RA profile (ledger
- * line first); skips without a CA. Nothing else is created.
+ * API-PROT-17 — ACME answers to malformed requests on the run ACME profile's new-account URL (ilm#430). `{}` and empty
+ * bodies answer serverInternal today; RFC 8555 §6.7 would prefer malformed.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { AcmeClient } from '../../../utils/regression/protocols/acmeClient';
@@ -14,9 +11,7 @@ import { runName } from '../../../utils/regression/ledger/runState';
 import { testMeta, tags } from '../../../utils/regression/tags';
 
 interface AcmeTarget {
-    /** The RA-profile directory's `newAccount` URL. */
     newAccountUrl: string;
-    /** `<origin>/api/v1/protocols/acme`: the profile-based URL root for the unknown-profile parameter. */
     acmeRoot: string;
 }
 
@@ -32,7 +27,6 @@ test.describe('ACME protocol answers to malformed requests', { tag: tags.api }, 
         return shared;
     }
 
-    /** The common assertions of every parameter: 400, problem+json, the expected type, a detail, no stack or class text. */
     function expectProblem(res: ProtocolResponse, code: string): void {
         expect(res.status, res.text.slice(0, 300)).toBe(400);
         expect(isProblemJson(res.contentType), `content type ${res.contentType}`).toBe(true);
@@ -45,8 +39,7 @@ test.describe('ACME protocol answers to malformed requests', { tag: tags.api }, 
 
     const PARAMS: Array<{ name: string; body: string; code: string; rule: string }> = [
         { name: 'garbage non-JWS body', body: 'this is not a JWS at all', code: 'malformed', rule: 'the body must be a flattened JWS, else 400 malformed; ilm#430 table "ACME bad JWS → 400 problem+json malformed"' },
-        // A JWS whose protected header is not base64url: AcmeJwsRequest.readRequest → ParseException → malformed (a MISSING
-        // signature member is not used: it hits an uncaught NPE at AcmeJwsRequest — unexpected behaviour).
+        // A JWS whose protected header is not base64url (a missing signature member is not used: it hits an uncaught NPE).
         { name: 'malformed JWS structure', body: JSON.stringify({ protected: '!!', payload: 'e30', signature: 'AA' }), code: 'malformed', rule: 'a body that is not a flattened JWS is malformed (AcmeJwsRequest.readRequest, RFC 8555 §6.2); ilm#430 table "ACME bad JWS"' },
         { name: '{} body', body: '{}', code: 'serverInternal', rule: 'ilm#430 table "ACME {} body → 400 problem+json serverInternal" (the behaviour today: a non-ACME exception becomes serverInternal; RFC 8555 would prefer malformed)' },
         { name: 'empty body', body: '', code: 'serverInternal', rule: 'Spring refuses the missing required @RequestBody String before the service (HttpMessageNotReadableException) → AcmeExceptionHandlingAdvice.handleOtherException → 400 serverInternal; same class as the {} arm (RFC 8555 §6.7 would prefer malformed — deviation noted; the malformed branch is unreachable for an empty body)' },

@@ -1,10 +1,6 @@
 /**
- * API-GEN-41, API-GEN-42 — Credentials of the kinds ApiKey and SoftKeyStore (ilm#428).
- *
- * A missing required attribute is refused by the connector and relayed as 422 (interfaces#898). Create-only on shared
- * tiers with run-prefixed names; generated secrets and keystores are logged nowhere. Every create is ledgered before any
- * assertion. A row skips when no connected credential connector offers the kind. REG_CREDENTIAL_CONNECTOR picks the
- * connector to prefer.
+ * API-GEN-41, API-GEN-42 — Credentials of the kinds ApiKey and SoftKeyStore (ilm#428). A missing required attribute is
+ * refused by the connector and relayed as 422 (interfaces#898).
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { deleteOwnAndProveGone, refused422 } from '../../../utils/regression/inventory/configProbes';
@@ -21,10 +17,6 @@ import type { JsonObject } from '../../../utils/regression/json';
 
 const ISSUE = 'ilm#428';
 
-/**
- * The connector of the kind and the attributes of a valid credential, or the row skips with the named reason (reads only). A SoftKeyStore
- * keystore is encrypted with the very password the credential sends.
- */
 async function setupOf(kind: CredentialKind, api: GuardedApi): Promise<{ connector: KindConnector; built: BuiltAttributes }> {
     const found = await kindConnector(api, kind);
     test.skip(!found.ok, found.skip ?? `no ${kind} credential connector`);
@@ -86,7 +78,6 @@ test.describe('credential kinds', { tag: tags.api }, () => {
                     await test.step(`without ${attribute}`, async () => {
                         const name = ownName(`${suffix}-no-${attribute}`.slice(0, 40));
                         const probe = await probeCredential(api, own.spec, await kindBody(api, connector, kind, name, withoutAttribute(built.attributes, attribute)), `${kind} create without ${attribute}`);
-                        // An orphan row of the refused create is the run's own: the ledger gets it before the first assertion.
                         await adoptByName(api, '/api/v1/credentials', 'credentials', name, own.spec, `orphan of a refused ${kind} create without ${attribute}`);
                         const messages = refused422(probe);
                         const def = connector.defs.find((d) => d.name === attribute) ?? {};

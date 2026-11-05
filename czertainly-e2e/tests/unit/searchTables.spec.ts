@@ -1,6 +1,6 @@
 /**
- * Unit tests of utils/regression/inventory/searchTables.ts: every expected row set equals the seed predicate
- * (double entry), row ids are unique, and the sort comparators order empty values last. No environment.
+ * Unit tests of utils/regression/inventory/searchTables.ts: every expected row set equals the seed predicate (double
+ * entry), row ids are unique, and the sort comparators order empty values last.
  */
 import { expect, test } from '@playwright/test';
 import { planCertificateSeed } from '../../utils/regression/inventory/seedFull';
@@ -47,26 +47,21 @@ test('row ids are unique, filters build, and the bug / pin markers are where the
 test('sort comparators: nulls last in both directions, min asc / max desc for multi-valued fields, ties as groups', () => {
     const m = planCertificateSeed(CLOCK, planName, 'x1');
     const flat = (g: string[][]) => g.map((x) => x.join('+'));
-    // num: -5, 0, 10, 20 … 100, 1000 then the 14 without a value.
     const asc = expectedOrderGroups(m, 'num', 'asc');
     expect(asc.slice(0, 10).map((g) => g[0])).toEqual(['C07', 'C08', 'C01', 'C02', 'C03', 'C04', 'C05', 'C06', 'C09', 'C10']);
     expect(asc[10]).toHaveLength(14);
     const desc = expectedOrderGroups(m, 'num', 'desc');
     expect(desc.slice(0, 3).map((g) => g[0])).toEqual(['C10', 'C09', 'C06']);
     expect(desc[10], 'nulls last in descending order too').toHaveLength(14);
-    // NOT_AFTER: C21 and C22 form one group; everything else is its own group.
     const na = expectedOrderGroups(m, 'NOT_AFTER', 'asc');
     expect(flat(na)).toContain('C21+C22');
     expect(na).toHaveLength(23);
-    // GROUP_NAME: asc by the smallest name (a-members, then b-only), desc by the largest (b-members first), 16 nulls last.
     const ga = expectedOrderGroups(m, 'GROUP_NAME', 'asc');
     expect(ga.map((g) => g.length)).toEqual([6, 2, 16]);
     const gd = expectedOrderGroups(m, 'GROUP_NAME', 'desc');
     expect(gd.map((g) => g.length)).toEqual([4, 4, 16]);
     expect([...gd[0]].sort()).toEqual(['C03', 'C04', 'C07', 'C08']);
-    // OWNER: the two owned seeds tie on the owner's name, 22 without.
     expect(expectedOrderGroups(m, 'OWNER', 'asc').map((g) => g.length)).toEqual([2, 22]);
-    // pick: min asc / max desc.
     expect(sortKey(m, certById0(m, 'C02'), 'pick', 'asc')).toBe('a');
     expect(sortKey(m, certById0(m, 'C02'), 'pick', 'desc')).toBe('b');
     expect(orderProblem(['C07', 'C08', 'C01'], [['C07'], ['C08'], ['C01']])).toBeUndefined();

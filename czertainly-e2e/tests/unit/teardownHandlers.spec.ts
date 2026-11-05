@@ -1,11 +1,7 @@
 /**
  * teardownHandlers — every teardown handler of utils/regression/teardown/teardownHandlers.ts, as runTeardown loads it.
- *
  * Each handler runs behind the guard against a fake core: live read first, foreign objects refused, a delete counts only
- * when a read afterwards answers 404, derived objects kept when adopted. Also the certificate-key safety net, the
- * compliance-profile removal, and the role / user detail-500 workaround (core#2511, decided by the full list). Without a
- * server time, discovery-onboarded objects and an own certificate's certKey_ key are kept with the keeping bound; with one they
- * are deleted. A foreign object is never recorded, kept or deleted. The teardown is the only code that deletes.
+ * when a read afterwards answers 404, derived objects kept when adopted.
  */
 import { randomUUID } from 'node:crypto';
 import { APIRequestContext, test, expect } from '@playwright/test';
@@ -21,7 +17,6 @@ import { partialOf, useEnv } from './helpers/guardRig';
 const RUN = 'qa-reg-20261013-120000-ab12';
 type Json = Record<string, any>;
 
-/** An in-memory core: detail URLs in `store`, extra routes per method + path pattern, every call recorded. */
 class FakeCore {
     store = new Map<string, Json>();
     calls: string[] = [];
@@ -66,7 +61,6 @@ class FakeCore {
         });
     }
 
-    /** Calls other than GET: what the handler changed. */
     mutations(): string[] {
         return this.calls.filter((c) => !c.startsWith('GET '));
     }
@@ -80,7 +74,6 @@ const line = (type: string, over: Partial<LedgerLine> = {}): LedgerLine => {
 
 useEnv(['REG_STATE_DIR', 'REG_RUN_ID', 'API_TEARDOWN_DRY_RUN'], (testInfo) => ({ REG_STATE_DIR: testInfo.outputPath('state') }));
 
-/** Runs a handler the way executeTeardown does for one object; returns the result, the warnings and the error. */
 async function run(core: FakeCore, l: LedgerLine, ledger: LedgerLine[] = [l]): Promise<{ result?: string | void; warnings: string[]; error?: unknown }> {
     const h = handlerOf(l.type) as TeardownHandler;
     expect(h, `handler for ${l.type}`).toBeTruthy();
@@ -92,8 +85,6 @@ async function run(core: FakeCore, l: LedgerLine, ledger: LedgerLine[] = [l]): P
         return { warnings, error };
     }
 }
-
-// ------------------------------------------------------------------ delete proof and live-object basics (a byUrl type)
 
 test('a role is read live, deleted, and its absence proven by GET', async () => {
     const role = line('roles');
@@ -112,7 +103,6 @@ test('404 without a prior 200 in the step is "route or object missing", never "d
     expect(core.mutations(), 'no DELETE was sent').toEqual([]);
 });
 
-// a DELETE answering 404 after a 200 read counts (the object went away in between); the GET still proves it
 test('a DELETE answering 404 after a 200 read counts as gone in between; the GET still proves it', async () => {
     const role = line('roles');
     const core = new FakeCore()
@@ -178,8 +168,6 @@ test('the dry run stops a handler at its entry, before any request', async () =>
     expect(core.calls).toEqual([]);
 });
 
-// ------------------------------------------------------------------ certificates (revoke fallback, discovered certificates)
-
 test('an issued certificate without parents is revoked through its own RA profile, then deleted', async () => {
     const cert = line('certificates', { name: `${RUN}-api.example.test` });
     const detail = `/api/v1/certificates/${cert.uuid}`;
@@ -192,7 +180,7 @@ test('an issued certificate without parents is revoked through its own RA profil
     const { error } = await run(core, cert);
     expect(error).toBeUndefined();
     expect(core.mutations()).toEqual([
-        'POST /api/v1/keys', // the safety net's read (key list by name, CKI_NAME); this fake answers 404, which only warns; it records, never deletes
+        'POST /api/v1/keys', // the safety net's read (key list by name, CKI_NAME)
         `POST /api/v2/operations/authorities/auth-x/raProfiles/ra-x/certificates/${cert.uuid}/revoke`,
         `DELETE ${detail}`,
     ]);
@@ -257,9 +245,6 @@ test('a derived key without a creation time fails instead of being kept', async 
     expect(core.mutations()).toEqual([]);
 });
 
-// ------------------------------------------------------------------ keys
-
-// a derived key in a token, made before createdAfter or still used is kept; an orphan made after it is deleted
 test('a derived key in a token, made before createdAfter or still used is kept; an orphan is deleted', async () => {
     const mk = (body: Json) => {
         const l = line('keys', { name: 'certKey_x', derived: true, createdAfter: '2026-10-13T12:00:00.000Z' });
@@ -283,8 +268,6 @@ test('a derived key in a token, made before createdAfter or still used is kept; 
     expect(core.mutations()).toEqual(['DELETE /api/v1/keys']);
 });
 
-// the shape of `associations`: a list is read element by element; an absent or null value is none; any other value cannot be read,
-// so it counts as use (fail closed)
 test('keyAssociationsOf: a list as it is, nothing for absent or null, one unreadable element for any other value', () => {
     expect(keyAssociationsOf({ associations: [{ uuid: 'a' }, 'b'] })).toEqual([{ uuid: 'a' }, 'b']);
     expect(keyAssociationsOf({ associations: [] })).toEqual([]);
@@ -314,9 +297,6 @@ test('a derived key whose associations are not a list is kept as used; an absent
     }
 });
 
-// ------------------------------------------------------------------ own token keys (created by the protocol specs)
-
-/** A core holding one token key with items; `DELETE /v1/keys [uuid]` removes it (after `refuseFirst` refusals). */
 function keyCore(l: LedgerLine, opts: { refuseFirst?: number; name?: string } = {}): FakeCore {
     const detail = `/api/v1/keys/${l.uuid}`;
     let refusals = opts.refuseFirst ?? 0;
@@ -338,8 +318,6 @@ function keyCore(l: LedgerLine, opts: { refuseFirst?: number; name?: string } = 
     return core;
 }
 
-// an own token key with active items is deleted by the one keys handler (bulk DELETE /v1/keys), absence proven by GET; the
-// derived rule is untouched
 test('an own token key with active items is deleted by the one keys handler, absence proven by GET', async () => {
     const l = line('keys');
     const core = keyCore(l);
@@ -350,7 +328,6 @@ test('an own token key with active items is deleted by the one keys handler, abs
     expect(core.store.has(`/api/v1/keys/${l.uuid}`)).toBe(false);
 });
 
-// a refused key delete deactivates and destroys the items first, then deletes again; a second refusal is red
 test('a refused key delete deactivates and destroys the items first, then retries; a second refusal is red', async () => {
     const l = line('keys');
     const core = keyCore(l, { refuseFirst: 1 });
@@ -377,10 +354,7 @@ test('a foreign key behind a keys line is refused by the live check, nothing sen
     expect(String((await run(coreStuck, stuck)).error)).toMatch(/not deleted \(absence not proven\)/);
 });
 
-// ------------------------------------------------------------------ key items (typed keyItems): gone with their key
-
-// a key item whose key has a `deleted` line of this run is done when its live read answers 404; a remaining item is reported,
-// blocked by its key
+// a key item whose key has a `deleted` line of this run is done when its live read answers 404.
 test('a key item whose key has a deleted line of this run is done on a 404; a remaining item is blocked', async () => {
     const key = line('keys');
     const item = line('keyItems', { name: key.name, parents: { key: key.uuid } });
@@ -398,15 +372,10 @@ test('a key item whose key has a deleted line of this run is done on a 404; a re
     expect(String(r.error)).toMatch(/still present: its key was not removed/);
     expect((r.error as { blockedBy?: string }).blockedBy).toBe(`keys ${key.uuid}`);
     expect(present.mutations()).toEqual([]);
-    // Without a parent key the item cannot be read: missing.
     const orphan = line('keyItems', { name: key.name });
     expect((await run(new FakeCore(), orphan, [orphan])).error).toBeInstanceOf(LiveObjectMissing);
 });
 
-// ------------------------------------------------------------------ own-trigger adoption of discovered certificates
-
-// a derived certificate attached only to OWN groups / owner / RA profile is deleted; any foreign attachment, a location or a
-// request keeps it
 test('a derived certificate attached only to own groups, owner and RA profile is deleted, else kept', async () => {
     const group = line('groups');
     const user = line('users');
@@ -445,15 +414,10 @@ test('a derived certificate attached only to own groups, owner and RA profile is
     const early = derivedCert();
     const coreEarly = certCore(early, { state: 'revoked', groups: [{ uuid: group.uuid }] }, '2026-10-13T11:00:00.000Z');
     expect((await run(coreEarly, early, [...own, early])).result).toBe('kept');
-    // adoptionOf without sets keeps the old answer.
     expect(adoptionOf({ groups: [{ uuid: group.uuid }] })).toEqual(['groups']);
     expect(adoptionOf({ groups: [{ uuid: group.uuid }] }, { groups: new Set([group.uuid]), users: new Set(), raProfiles: new Set() })).toEqual([]);
 });
 
-// -------------------------------------------------------------- certificate lifecycle: ungate own RA profiles before the certificate step
-
-// ungateOwnRaProfiles dissociates every own approval profile from every own RA profile (both read live), proven by re-reading;
-// foreign RA profiles are left and reported
 test('ungateOwnRaProfiles dissociates own approval profiles from own RA profiles; foreign ones reported', async () => {
     const ap = line('approvalProfiles');
     const ra = line('raProfiles');
@@ -481,15 +445,11 @@ test('ungateOwnRaProfiles dissociates own approval profiles from own RA profiles
         .route('GET', new RegExp(`^${assoc}$`), () => ({ status: 200, body: [{ resource: 'raProfiles', objectUuid: ra.uuid }] }))
         .route('DELETE', /associations/, () => ({ status: 204 }));
     await expect(ungateOwnRaProfiles({ ...ctx, api: stuck.api() })).rejects.toThrow(/still associated/);
-    // The hook has nothing to do without own approval profiles AND own RA profiles.
     expect(hasLiveOwn([ap, ra], RUN, 'approvalProfiles') && hasLiveOwn([ap, ra], RUN, 'raProfiles')).toBe(true);
     expect(hasLiveOwn([ap], RUN, 'raProfiles')).toBe(false);
     expect(hasLiveOwn([ap, { ...ap, event: 'deleted' }], RUN, 'approvalProfiles')).toBe(false);
 });
 
-// ------------------------------------------------------------------ discoveries
-
-// a discovery records its newly onboarded certificates as derived (server-clock createdAfter), then is deleted
 test('a discovery records its newly onboarded certificates as derived, then is deleted', async () => {
     process.env.REG_RUN_ID = RUN;
     // recordDerived refuses an id / parent that is not a canonical uuid, so the fake core answers real ones.
@@ -507,8 +467,6 @@ test('a discovery records its newly onboarded certificates as derived, then is d
     expect(core.mutations()).toEqual([`DELETE /api/v1/discoveries/${d.uuid}`]);
 });
 
-// without a server timestamp (no startTime, no Date header on the create answer) the onboarded certificates are still recorded,
-// with the keeping bound, so they are kept and reported instead of becoming untracked
 test('a discovery without a server timestamp records its certificates with the keeping bound and warns, then is deleted', async () => {
     process.env.REG_RUN_ID = RUN;
     const d = line('discoveries', { uuid: '00000000-0000-4000-8000-0000000000e1' });
@@ -526,7 +484,6 @@ test('a discovery without a server timestamp records its certificates with the k
     expect(core.mutations()).toEqual([`DELETE /api/v1/discoveries/${d.uuid}`]);
 });
 
-/** One discovery that onboarded one new certificate and sits beside a certificate nobody in this run made. */
 function discoveryRig(withServerTime: boolean) {
     const discovery = line('discoveries', { uuid: randomUUID() });
     const onboarded = randomUUID();
@@ -542,7 +499,6 @@ function discoveryRig(withServerTime: boolean) {
     return { discovery, onboarded, foreign, core };
 }
 
-/** The whole teardown over the ledger file the handlers write to, as the run does. */
 const teardownOver = (core: FakeCore, first: LedgerLine[]) =>
     executeTeardown({ tier: null, retryDelayMs: 1, pollMs: 1, runId: RUN, newApi: async () => core.api(), readLines: () => [...first, ...readLedger().filter((l) => l.runId === RUN)], preSteps: [] });
 
@@ -568,7 +524,6 @@ test('with the discovery start time the same onboarded certificate is deleted, n
     expect(result.deleted.map((x) => `${x.type} ${x.uuid}`)).toEqual([`discoveries ${discovery.uuid}`, `certificates ${onboarded}`]);
 });
 
-/** One own certificate with its linked `certKey_` key (and, optionally, a second key of the same name that another object uses). */
 function keyRig(opts: { history: boolean; foreignKey?: boolean }) {
     const cert = line('certificates', { uuid: randomUUID(), name: `${RUN}-keynet.example.test` });
     const key = randomUUID();
@@ -629,9 +584,6 @@ test('a key of the same name that another object uses is neither recorded, kept 
     }
 });
 
-// ------------------------------------------------------------------ ACME profiles and accounts
-
-// ACME deactivation loop: deactivated on every own RA profile it is active on, then disabled and deleted
 test('ACME deactivation loop: deactivated on each own RA profile, then disabled and deleted', async () => {
     const ra1 = line('raProfiles', { parents: { authority: 'auth-1' } });
     const ra2 = line('raProfiles', { parents: { authority: 'auth-1' } });
@@ -676,7 +628,6 @@ test('ACME is never deactivated on a foreign RA profile, even when the line name
     expect(core.mutations(), 'no deactivate, no disable, no delete').toEqual([]);
 });
 
-// an ACME account goes with its profile: absent from the list and 404 on its detail; still listed → reported
 test('an ACME account goes with its profile: absent from list, 404 on detail; still listed is reported', async () => {
     const acc = line('acmeAccounts', { name: `${RUN}-acme-account-xyz`, parents: { acmeProfile: 'acme-1' } });
     const gone = new FakeCore().set('/api/v1/acmeAccounts', []);
@@ -689,8 +640,6 @@ test('an ACME account goes with its profile: absent from list, 404 on detail; st
     const noRoute = new FakeCore();
     expect(String((await run(noRoute, acc)).error)).toMatch(/route or object missing/);
 });
-
-// ------------------------------------------------------------------ RA profiles, token profiles, users
 
 test('an RA profile is deleted under its authority; absence proven through /raProfiles/{uuid}', async () => {
     const ra = line('raProfiles');
@@ -733,12 +682,7 @@ test('a user is removed from its roles first, then deleted', async () => {
     expect(core.mutations()).toEqual([`PATCH ${rolesUrl}`, `DELETE /api/v1/users/${user.uuid}`]);
 });
 
-// ------------------------------------------------------------------ known bug core#2511 (first live guard proof)
-
-/**
- * A core with the core#2511 behaviour for one type: the detail of a deleted (or unknown) uuid answers 500 instead of
- * 404; the full list (`GET /api/v1/<type>`) answers what is left. `stuck`: the DELETE answers 204 but nothing goes.
- */
+/** A core with the core#2511 behaviour for one type. */
 function bug2511Core(type: 'roles' | 'users', l: LedgerLine, opts: { stuck?: boolean; alwaysFiveHundred?: boolean; rows?: Json[]; listStatus?: number } = {}): FakeCore {
     const detail = `/api/v1/${type}/${l.uuid}`;
     const nameKey = type === 'users' ? 'username' : 'name';
@@ -760,8 +704,6 @@ function bug2511Core(type: 'roles' | 'users', l: LedgerLine, opts: { stuck?: boo
         });
 }
 
-// known core defect with role / user detail answering 500: DELETE 204, detail 500, the full list no longer names the role ⇒
-// gone; the known bug is reported
 test('role / user detail-500 workaround: DELETE 204, detail 500, role absent from the full list means gone', async () => {
     const role = line('roles');
     const core = bug2511Core('roles', role);
@@ -790,8 +732,7 @@ test('role / user detail-500 workaround: a list at its 1000-row cap or an unread
     expect(String(unreadable.error)).toMatch(/the authoritative list \/api\/v1\/roles answered 503/);
 });
 
-// the role / user detail-500 workaround is a roles / users exception only: a group whose detail answers 500 after the delete is
-// NOT gone, no list is read
+// the role / user detail-500 workaround is a roles / users exception only.
 test('the detail-500 workaround is for roles and users only: a group with detail 500 is not gone', async () => {
     const group = line('groups');
     const detail = `/api/v1/groups/${group.uuid}`;
@@ -808,7 +749,7 @@ test('the detail-500 workaround is for roles and users only: a group with detail
     expect(core.calls.filter((c) => c === 'GET /api/v1/groups'), 'no list read for a type without an authoritative list').toEqual([]);
 });
 
-// core#2511 for users: removed from the roles, deleted, detail 500, absent from GET /api/v1/users ⇒ gone
+// core#2511 for users: removed from the roles, deleted, detail 500, absent from GET /api/v1/users ⇒ gone.
 test('detail-500 workaround for users: removed from roles, deleted, detail 500, absent from list is gone', async () => {
     const user = line('users');
     const core = bug2511Core('users', user);
@@ -818,8 +759,7 @@ test('detail-500 workaround for users: removed from roles, deleted, detail 500, 
     expect(warnings.join('\n')).toMatch(/known bug core#2511: users/);
 });
 
-// the role / user detail-500 workaround in the live check: a retry after the first attempt deleted the role is "done"; a detail
-// 500 for a listed own role reads the list row
+// the role / user detail-500 workaround in the live check: a retry after the first attempt deleted the role is "done"
 test('detail-500 workaround in the live check: a retry after delete is done; a listed role reads the row', async () => {
     const role = line('roles');
     const core = bug2511Core('roles', role);
@@ -833,7 +773,6 @@ test('detail-500 workaround in the live check: a retry after delete is done; a l
         expect.stringMatching(/^core#2511 detail answered 500; absent from \/api\/v1\/roles/),
     ]);
 
-    // The detail answers 500 for a role that still exists: the list row is the live object (its name is checked), the delete proceeds.
     const listed = line('roles');
     const always = bug2511Core('roles', listed, { alwaysFiveHundred: true });
     expect((await run(always, listed)).error).toBeUndefined();
@@ -855,7 +794,6 @@ test('the own-key handler refuses a blind delete — without a 200 read in this 
     expect(core.calls).toEqual([]);
 });
 
-// a key item is "gone with its key" only through a `deleted` keys line of THIS run; another run's line does not explain the 404
 test('a key item is gone with its key only through a deleted keys line of this run', async () => {
     const key = line('keys');
     const item = line('keyItems', { name: key.name, parents: { key: key.uuid } });
@@ -866,10 +804,7 @@ test('a key item is gone with its key only through a deleted keys line of this r
     expect((await run(new FakeCore(), item, [key, item, thisRun])).error).toBeUndefined();
 });
 
-// ------------------------------------- the certificate-key safety net and the compliance-profile removal (own fake API, so a block scope)
-
 {
-    // The fake API of these rows (calls recorded; get / post / delete only).
     interface Call { method: string; url: string; data?: unknown }
     function fakeApi(handler: (c: Call) => { status: number; body?: unknown }) {
         const calls: Call[] = [];
@@ -897,8 +832,8 @@ test('a key item is gone with its key only through a deleted keys line of this r
     const PROFILE = 'bbbbbbbb-0000-4000-8000-000000000001';
     const FOREIGN_RA = '12121212-0000-4000-8000-000000000001';
 
-    // safety net: the certKey_ key of an own certificate is recorded as a derived line by its WRAPPER uuid (search rows carry item
-    // uuids: keyWrapperUuid); an item uuid is never recorded
+    // safety net: the certKey_ key of an own certificate is recorded as a derived line by its WRAPPER uuid (search rows
+    // carry item uuids: keyWrapperUuid); an item uuid is never recorded.
     test('safety net: the certKey_ key of an own certificate is recorded as derived by its wrapper uuid', async () => {
         const cn = runName('net-1');
         const wanted = `certKey_${cn}`;
@@ -921,7 +856,8 @@ test('a key item is gone with its key only through a deleted keys line of this r
         expect(calls.some((c) => c.method === 'DELETE'), 'the net only records; the keys step deletes').toBe(false);
     });
 
-    // safety net: a key in a token, a key used by another object, a foreign name and a certificate without a run-prefixed CN record nothing
+    // safety net: a key in a token, a key used by another object, a foreign name and a certificate without a
+    // run-prefixed CN record nothing.
     test('safety net: keys in a token, used elsewhere, foreign names or non-run CN certificates record nothing', async () => {
         const cn = runName('net-2');
         const created = new Date().toISOString();
@@ -948,7 +884,7 @@ test('a key item is gone with its key only through a deleted keys line of this r
         expect(readLedger().filter((l) => l.uuid === WRAPPER_2 && l.type === 'keys')).toEqual([]);
     });
 
-    // safety net: an association may be a bare uuid string; the certificate's own bare uuid is its own association, any other counts as use
+    // safety net: an association may be a bare uuid string.
     test('safety net: a bare-string association of the certificate itself does not count as use, one of another object does', async () => {
         const cn = runName('net-3');
         const wrapper = randomUUID();
@@ -963,7 +899,7 @@ test('a key item is gone with its key only through a deleted keys line of this r
         expect(await recordCertKeySafetyNet(ctxOf(api, readLedger()), line, { commonName: cn, key: { uuid: wrapper } })).toEqual([wrapper]);
     });
 
-    // removeComplianceProfile: own RA associations are removed (a foreign one is not touched), then DELETE /v1; absence by GET
+    // removeComplianceProfile: own RA associations are removed (a foreign one is not touched), then DELETE /v1.
     test('removeComplianceProfile removes own RA associations, then DELETE /v1; absence proven by GET', async () => {
         const ra = recordCreated('raProfiles', { uuid: 'abcabcab-0000-4000-8000-000000000001', name: runName('ra-comp') }, { spec: 'T' });
         let gone = false;
@@ -981,8 +917,6 @@ test('a key item is gone with its key only through a deleted keys line of this r
         expect(deletes).toEqual([`/api/v2/complianceProfiles/${PROFILE}/associations/raProfiles/${ra.uuid}`, `/api/v1/complianceProfiles/${PROFILE}`]);
     });
 
-    // removeComplianceProfile: a refused v1 delete falls back to DELETE /v2/complianceProfiles/force [uuid]; a non-empty
-    // BulkActionMessageDto list is a failure with its messages
     test('removeComplianceProfile: a refused v1 delete falls back to the v2 force delete; bulk messages fail', async () => {
         const run = async (forceBody: unknown) => {
             let gone = false;
@@ -1004,8 +938,7 @@ test('a key item is gone with its key only through a deleted keys line of this r
         await expect(refused.promise).rejects.toThrow(/v1 refused.*Object is associated with other items/);
     });
 
-    // the v2 force delete is NOT sent while a foreign association remains (force removes every association); the failure is
-    // blocked, names it, and nothing foreign is touched
+    // the v2 force delete is NOT sent while a foreign association remains (force removes every association)
     test('the v2 force delete is not sent while a foreign association remains; the failure is blocked', async () => {
         const ra = recordCreated('raProfiles', { uuid: randomUUID(), name: runName('ra-comp-f1') }, { spec: 'T' });
         const foreign = '34343434-0000-4000-8000-000000000001';
@@ -1049,7 +982,8 @@ test('a key item is gone with its key only through a deleted keys line of this r
         expect(warns.some((w) => /key search by name answered 400/.test(w))).toBe(true);
     });
 
-    // the CN must carry THIS run's prefix (a key named certKey_<unprefixed CN> is never recorded; another run family is not this run)
+    // the CN must carry THIS run's prefix (a key named certKey_<unprefixed CN> is never recorded; another run family is
+    // not this run)
     test('the CN must carry this run prefix: an unprefixed certKey_ key is never recorded', async () => {
         const created = new Date().toISOString();
         const keyFor = (cn: string): Json => ({ name: `certKey_${cn}`, creationTime: created, associations: [{ uuid: CERT }] });
@@ -1074,8 +1008,6 @@ test('a key item is gone with its key only through a deleted keys line of this r
         expect(readLedger().find((l) => l.uuid === w && l.type === 'keys')?.createdAfter).toBe(new Date(Date.parse(lineServerDate) - 60_000).toISOString());
     });
 
-    // the clock rule: without a server time (no history, no server date on the line) the age cannot be judged; the key is recorded
-    // with the keeping bound, so it is kept and reported; the runner's clock (the line's own `at`) is never the basis
     test('safety net: with no server time for the certificate the key is recorded with the keeping bound, whatever the runner clock says', async () => {
         const cn = runName('net-f5');
         const w = randomUUID();
@@ -1091,8 +1023,7 @@ test('a key item is gone with its key only through a deleted keys line of this r
         expect(Date.parse(recorded[0].createdAfter!), 'a bound no key can reach').toBeGreaterThan(before + KEEPING_BOUND_AHEAD_MS - 60_000);
     });
 
-    // no server time does not loosen the other conditions: a key in a token, used by another object or named otherwise is still not
-    // recorded
+    // no server time does not loosen the other conditions.
     test('safety net: with no server time a key that fails the other conditions is still not recorded', async () => {
         const cn = runName('net-f6');
         const run = async (key: Json): Promise<string[]> => {
@@ -1107,8 +1038,7 @@ test('a key item is gone with its key only through a deleted keys line of this r
         expect(await run(base), 'the control: all conditions met').toHaveLength(1);
     });
 
-    // dangling association: a 404 on the compliance profile DELETE is NOT "gone" when the profile is still found: blocked, named,
-    // and no force is sent; a 404 confirmed by the re-read is done
+    // dangling association: a 404 on the compliance profile DELETE is NOT "gone" when the profile is still found.
     test('dangling association: a 404 on the profile DELETE is not gone while the profile is still found', async () => {
         const run = async (stillThere: boolean) => {
             const { api, calls } = fakeApi((c) => {

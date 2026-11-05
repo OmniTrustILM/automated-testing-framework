@@ -1,7 +1,7 @@
 /**
- * The requests of the import, inspection and upload specs on the wire: sent through a real request context to a
- * loopback fake core (127.0.0.1), each test asserts what arrived, and `judge.check(...)` shows without sending what the
- * guard decides (uploads and body-judged creates pass, a key destination entry is refused).
+ * The requests of the import, inspection and upload specs on the wire: sent through a real request context to a loopback
+ * fake core (127.0.0.1), each test asserts what arrived, and `judge.check(...)` shows without sending what the guard
+ * decides (uploads and body-judged creates pass, a key destination entry is refused).
  */
 import { APIRequestContext, expect, test } from '@playwright/test';
 import { GuardedApi } from '../../utils/regression/guard/types';
@@ -15,7 +15,6 @@ import { UPLOAD_ROUTES, uploadBody as uploadBody2 } from '../../utils/regression
 import { Arrived, LoopbackServer } from './helpers/loopbackServer';
 import { registerFakeCore } from './helpers/guardRig';
 import { randomBytes } from 'node:crypto';
-// Run-scoped generated test passwords: no password-like literal in the file.
 const GEN_PW_1 = `qa-${randomBytes(9).toString('base64url')}`;
 
 test.describe.configure({ timeout: 60_000 });
@@ -69,7 +68,6 @@ test('every upload body the specs build passes the guard and arrives as one JSON
         expect(a.headers['content-type'], 'JSON body').toMatch(/application\/json/);
         expect(JSON.parse(a.body)).toEqual({ certificate: files[Object.keys(files)[i]].toString('base64'), customAttributes: expect.any(Array) });
     });
-    // The asynchronous route too.
     server.reset();
     const async = await send(api, 'POST', ROUTES.uploadAsync, { data: uploadBody(files.pem, []) });
     expect(async.status).toBe(202);
@@ -87,18 +85,15 @@ test('the guard judges POST /v1/inspections and POST /v1/certificates/import by 
     const id = certificate(importCn('wire-refused'));
     const inspect = inspectionBody(Buffer.from(id.pem));
     const imp = importBody(Buffer.from(id.pem), [id.fingerprint]);
-    // Before the guard change both routes were refused outright (the old pin of this test); the change made them creates.
     expect(await kindOf(judge.check('POST', ROUTES.inspect, inspect))).toBe('sent');
     expect(await kindOf(judge.check('POST', ROUTES.import, imp))).toBe('sent');
     expect(await kindOf(send(api, 'POST', ROUTES.inspect, { data: inspect }))).toBe('sent');
     expect(await kindOf(send(api, 'POST', ROUTES.import, { data: imp }))).toBe('sent');
-    // The other API-CERT-65 inspection shapes (garbage, missing, empty file, a plain-string token profile) are sent too: only the
-    // tokenProfileUuid is typed (own / probe / absent / plain string), the file content is never judged.
     for (const body of [inspectionBody({ raw: '***' }), inspectionBody(undefined), inspectionBody(Buffer.alloc(0)), inspectionBody(Buffer.from(id.pem), { tokenProfileUuid: 'not-a-uuid' })]) {
         expect(await kindOf(judge.check('POST', ROUTES.inspect, body))).toBe('sent');
     }
     expect(server.arrived.map((a) => `${a.method} ${a.url}`)).toEqual([`POST ${ROUTES.inspect}`, `POST ${ROUTES.import}`]);
-    // Shape rule: an entry naming a key destination (any case, anywhere) would write into a pre-existing token: refused.
+    // Shape rule: an entry naming a key destination (any case, anywhere) would write into a pre-existing token.
     const withDestination = { ...imp, entries: [{ entryReference: id.fingerprint, keyDestination: { tokenProfileUuid: U(77) } }] };
     expect(await kindOf(judge.check('POST', ROUTES.import, withDestination))).toBe('request');
     expect(await kindOf(judge.check('POST', ROUTES.import, { ...imp, KeyDestination: null }))).toBe('request');

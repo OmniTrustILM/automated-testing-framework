@@ -1,13 +1,7 @@
 /**
- * REG-DEP-02 — An upgrade of a local stack keeps the seeded objects and the connectors (release checklist: Deployment
- * 2; ilm#425).
- *
- * Seeds an own role, a group and a token chain on the old core image, starts the target core on the same database, and
- * diffs the snapshots: objects kept, counts equal, audit log not reset, schema history kept, every connected connector
- * still healthy. The upgrade is one way (a downgrade is refused).
- *
- * Local stack only (@local, @needs:docker). Skips with a named reason unless the stack runs the old image. Seeded
- * objects are own and recorded in the ledger.
+ * REG-DEP-02 — An upgrade of a local stack keeps the seeded objects and the connectors (release checklist: Deployment 2;
+ * ilm#425). Seeds an own role, a group and a token chain on the old core image, starts the target core on the same
+ * database, and diffs the snapshots.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { ACCEPT_JSON, expectHealthGroupUp, healthByVersion, isHealthGroupUp, listConnectors, PROBE_PATHS } from '../../../utils/regression/platform/connectorApi';

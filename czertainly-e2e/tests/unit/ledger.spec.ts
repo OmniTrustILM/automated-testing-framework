@@ -1,7 +1,6 @@
 /**
- * ledger — the ledger: a line is recorded or read only with a canonical uuid (or <namespace>/<name> for a
- * Kubernetes object) and canonical parents; skipped lines are reported in one warning per read; runId() is the one id
- * of this run.
+ * ledger — the ledger: a line is recorded or read only with a canonical uuid (or <namespace>/<name> for a Kubernetes
+ * object) and canonical parents; skipped lines are reported in one warning per read.
  */
 import { expect, test } from '@playwright/test';
 import * as fs from 'fs';
@@ -20,7 +19,6 @@ import { currentRunId } from '../../utils/regression/run/runId';
 
 const U1 = '00000000-0000-4000-8000-0000000000e1';
 
-// ledger shapes: a canonical uuid (or <namespace>/<name> for k8s) and canonical parents, or nothing is recorded / read
 test('ledger shapes: a canonical uuid or k8s namespace/name with canonical parents, else nothing', ({}, testInfo) => {
     const saved = process.env.REG_STATE_DIR;
     process.env.REG_STATE_DIR = testInfo.outputPath('state');
@@ -37,7 +35,6 @@ test('ledger shapes: a canonical uuid or k8s namespace/name with canonical paren
         expect(() => recordCreated('k8s:Issuer', { uuid: U1, name: 'qa-reg-x' }, { spec: 'T' })).toThrow(/namespace/);
         expect(() => recordCreated('k8s:Issuer', { uuid: 'ns/Bad_Name', name: 'qa-reg-x' }, { spec: 'T' })).toThrow(/namespace/);
         expect(fs.existsSync(ledgerFile()), 'nothing was written').toBe(false);
-        // Valid shapes are written (either case of a canonical uuid; a k8s namespaced name).
         recordCreated('roles', { uuid: U1.toUpperCase(), name: 'qa-reg-x' }, { spec: 'T', parents: { authority: U1 } });
         recordCreated('k8s:Issuer', { uuid: 'ns-1/qa-reg-x-issuer', name: 'qa-reg-x-issuer' }, { spec: 'T' });
         expect(readLedger().map((l) => l.uuid)).toEqual([U1.toUpperCase(), 'ns-1/qa-reg-x-issuer']);
@@ -48,7 +45,6 @@ test('ledger shapes: a canonical uuid or k8s namespace/name with canonical paren
         if (saved === undefined) delete process.env.REG_STATE_DIR;
         else process.env.REG_STATE_DIR = saved;
     }
-    // parseLedger: a hand-edited line with a forged id or parent proves nothing.
     const line = (o: Record<string, unknown>) => JSON.stringify({ at: 'a', runId: 'r', type: 'roles', name: 'r-x', spec: 'T', event: 'created', ...o });
     const parsed = parseLedger([
         line({ uuid: U1 }), line({ uuid: ` ${U1}` }), line({ uuid: `${U1}/x` }), line({ uuid: U1, parents: { authority: 'a/../b' } }),
@@ -57,7 +53,7 @@ test('ledger shapes: a canonical uuid or k8s namespace/name with canonical paren
     expect(parsed.map((l) => `${l.type} ${l.uuid}`)).toEqual([`roles ${U1}`, 'k8s:Issuer ns/name']);
 });
 
-// skipped ledger lines are reported in ONE warning per read — a count and the run-id prefixes, never an id
+// skipped ledger lines are reported in ONE warning per read — a count and the run-id prefixes, never an id.
 test('skipped ledger lines are reported in one warning per read: a count and run-id prefixes, no id', () => {
     const warnings: string[] = [];
     const saved = console.warn;
@@ -86,7 +82,6 @@ test('skipped ledger lines are reported in one warning per read: a count and run
         expect(warnings).toHaveLength(1);
         expect(warnings[0]).toContain('(run-id prefixes: (other), qa-run3)');
         for (const leak of ['11111111', 'abcdefgh', 'ijklmnop', 'odd-']) expect(warnings[0]).not.toContain(leak);
-        // A clean ledger: no warning at all.
         warnings.length = 0;
         parseLedger(good.join('\n'));
         expect(warnings).toEqual([]);
@@ -95,7 +90,6 @@ test('skipped ledger lines are reported in one warning per read: a count and run
     }
 });
 
-// runId() is the one id of this run: the value RUN_ID froze at import, whatever the environment says later
 test('runId() is the one id of this run: the value frozen at import', () => {
     expect(runId()).toBe(runId());
     const saved = process.env.REG_RUN_ID;

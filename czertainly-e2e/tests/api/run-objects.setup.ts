@@ -1,9 +1,6 @@
 /**
- * REG-RUN-01 — Run setup: makes the objects the later specs build on once, before the first spec (ilm#428).
- *
- * Creates the run's MS ADCS authority, RA profile, ACME profile, role, and token with token profile and key. Runs in the
- * `run-setup` project, after `snapshot` and before `regression`; all go through the guarded API, ledger line first.
- * A tier that cannot offer an object skips the row and never fails: Playwright would not start `regression`.
+ * REG-RUN-01 — Run setup: makes the objects the later specs build on once, before the first spec (ilm#428). Creates the
+ * run's MS ADCS authority, RA profile, ACME profile, role, and token with token profile and key.
  */
 import { test } from '../../fixtures/testFixtures';
 import { prepareRunObject, RUN_OBJECTS, RUN_SETUP_TEST_TIMEOUT_MS } from '../../utils/regression/run/runObjects';

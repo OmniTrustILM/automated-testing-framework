@@ -1,6 +1,6 @@
 /**
- * Unit tests of utils/regression/inventory/raProfileValidation.ts: the attribute label core prints, the missing
- * and empty attribute arms, and the texts core answers for them. No environment, no network.
+ * Unit tests of utils/regression/inventory/raProfileValidation.ts: the attribute label core prints, the missing and
+ * empty attribute arms, and the texts core answers for them.
  */
 import { expect, test } from '@playwright/test';
 import { authorityInterfaceOf, emptyAttributeCase, labelOf, missingAttributeCase, requestVersion, requiredAttributeNotFoundText, requiredAttributeNotSetText, requiredAttributeOracle } from '../../utils/regression/inventory/raProfileValidation';
@@ -14,8 +14,6 @@ test('labelOf: the label core prints in "Required attribute <label> not found." 
     expect(labelOf({ name: 'x', label: 'Top label' })).toBe('Top label');
     expect(labelOf({ name: 'only-name' })).toBe('only-name');
 });
-
-// ------------------------------------------------------------------ RA profile arms
 
 test('requestVersion / missingArm / emptyArm: the required attribute is left out, or listed without content; the other attributes stay', () => {
     expect(requestVersion({ version: 3 })).toBe('v3');

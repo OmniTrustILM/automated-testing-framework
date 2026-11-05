@@ -1,12 +1,7 @@
 /**
- * REG-DEP-01.e, REG-DEP-01.f — Read-only probe of every required connector, and the inventory of the connected ones (ilm#425).
- *
- * (.e, one test per required connector) The connector answers its live health with the body of its version, and its detail
- * has the shape the platform relies on. (.f) Every connected connector is recorded as an annotation; one the suite does not
- * know is recorded, never a failure.
- *
- * Read-only: every call is a GET through the guarded context and nothing is created. A blocked connector skips with its
- * reason (the REG_* connector settings, see .env.example).
+ * REG-DEP-01.e, REG-DEP-01.f — Read-only probe of every required connector, and the inventory of the connected ones
+ * (ilm#425). (.e, one test per required connector) The connector answers its live health with the body of its version,
+ * and its detail has the shape the platform relies on.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { blockedConnectors, connectorVersion, describeHealth, findConnector, healthByVersion, listConnectors, requiredConnectors } from '../../../utils/regression/platform/connectorApi';

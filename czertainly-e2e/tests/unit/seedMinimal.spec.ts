@@ -1,7 +1,5 @@
 /**
- * seedMinimal — pure checks of the minimal inventory seed (utils/regression/inventorySeed.ts, later
- * inventory/seedMinimal.ts): the three certificates of the subset, the null rows and sort values of its manifest, and the
- * manifest rules that refuse another run, a foreign prefix or duplicates. No environment.
+ * seedMinimal — pure checks of the minimal inventory seed (inventory/seedMinimal.ts).
  */
 import { expect, test } from '@playwright/test';
 import {
@@ -12,8 +10,6 @@ import {
     SeedSubsetManifest,
     seedFilter,
 } from '../../utils/regression/inventory/seedMinimal';
-
-// ------------------------------------------------------------------ inventorySeed (pure)
 
 const RUN = 'qa-reg-20261014-080000-ab12';
 

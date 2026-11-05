@@ -1,7 +1,5 @@
 /**
- * Unit tests of utils/regression/inventory/openapiValidator.ts on a small inline document: missing members, wrong
- * types, enums, date-times, nullable types, nested references, arrays, extra members, formats, the paging checks and the
- * time zone scan. No file outside the sandbox.
+ * Unit tests of utils/regression/inventory/openapiValidator.ts on a small inline document.
  */
 import { expect, test } from '@playwright/test';
 import * as fs from 'fs';

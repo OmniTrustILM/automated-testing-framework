@@ -1,14 +1,12 @@
 /**
- * Unit tests of utils/regression/inventory/seedFull.ts without a server: the plan of the full certificate seed, its upload
- * and default order, and the manifest checks.
+ * Unit tests of utils/regression/inventory/seedFull.ts without a server: the plan of the full certificate seed, its
+ * upload and default order, and the manifest checks.
  */
 import { expect, test } from '@playwright/test';
 import { certById, dayValues, PICK_OPTIONS, planCertificateSeed, SEED_A_DEFAULT_ORDER, CERTIFICATE_SEED_ROWS, CERTIFICATE_SEED_UPLOAD_ORDER, certificateSeedProblems, SeedAManifest } from '../../utils/regression/inventory/seedFull';
 
 const CLOCK = new Date('2026-10-14T10:00:00.000Z');
 const planName = (suffix: string) => `qa-reg-20261014-100000-abcd-${suffix}`;
-
-// ------------------------------------------------------------------ pure: the certificate seed definition and the tables
 
 test('certificate seed plan: 24 certificates, the derived counts of the seed plan, upload order and default order', () => {
     const m = planCertificateSeed(CLOCK, planName, 'x1');
@@ -33,7 +31,6 @@ test('certificate seed plan: 24 certificates, the derived counts of the seed pla
     expect(CERTIFICATE_SEED_UPLOAD_ORDER.slice(1)).toEqual(CERTIFICATE_SEED_ROWS.slice(0, 23).map((r) => r.id));
     expect(SEED_A_DEFAULT_ORDER.slice(0, 2)).toEqual(['C23', 'C22']);
     expect(SEED_A_DEFAULT_ORDER.slice(-2)).toEqual(['C01', 'C24']);
-    // notAfter: C21 and C22 tie to the second, all other pairs differ; notBefore: only C21 / C22 tie.
     const na = m.certificates.map((c) => c.notAfter);
     expect(na.filter((x, i) => na.indexOf(x) !== i)).toEqual([certById({ ...m, certificates: m.certificates.map((c) => ({ ...c, uuid: c.id, fingerprint: '', serialHex: '' })) } as SeedAManifest, 'C22').notAfter]);
     const nb = m.certificates.map((c) => c.notBefore);
@@ -43,7 +40,6 @@ test('certificate seed plan: 24 certificates, the derived counts of the seed pla
     expect(new Date(certById0(m, 'C20').notBefore).getTime()).toBe(CLOCK.getTime() + 10 * 24 * 3600 * 1000);
     expect(dayValues(CLOCK)).toEqual(['2030-01-10', '2030-02-20', '2030-03-30', '2030-03-30', '2031-01-01']);
     expect(PICK_OPTIONS).toEqual(['a', 'b', 'c']);
-    // Attribute identifiers as the catalogue publishes them.
     expect(m.attributes.txt.identifier).toBe(`${m.prefix}txt|STRING`);
     expect(m.attributes.pick.identifier).toBe(`${m.prefix}pick|STRING`);
     expect(m.attributes.flag.identifier).toBe(`${m.prefix}flag|BOOLEAN`);
@@ -67,17 +63,14 @@ test('certificateSeedProblems: a good manifest is clean; a foreign run id, 23 ce
     expect(good().certificates).toHaveLength(24);
     expect(certificateSeedProblems(good(), runId), 'the good manifest').toEqual([]);
 
-    // a manifest of another run (the state file survived a different run id)
     expect(certificateSeedProblems(good(), 'qa-reg-20261014-100000-zzzz')).toEqual(['the manifest belongs to another run', 'the prefix does not carry the run prefix']);
     const foreign = { ...good(), runId: 'qa-reg-20200101-000000-aaaa' };
     expect(certificateSeedProblems(foreign, runId)).toEqual(['the manifest belongs to another run']);
 
-    // 23 certificates (one upload missing)
     const short = good();
     short.certificates = short.certificates.slice(0, 23);
     expect(certificateSeedProblems(short, runId)).toEqual(['23 certificates (24 expected)']);
 
-    // a duplicate certificate uuid
     const dup = good();
     dup.certificates[5] = { ...dup.certificates[5], uuid: dup.certificates[4].uuid };
     expect(certificateSeedProblems(dup, runId)).toEqual(['duplicate certificate uuids']);
@@ -89,6 +82,5 @@ test('certificateSeedProblems: a good manifest is clean; a foreign run id, 23 ce
     outside.certificates[3] = { ...outside.certificates[3], commonName: 'someone-elses-certificate' };
     expect(certificateSeedProblems(outside, runId)).toEqual(['a certificate outside the prefix']);
 
-    // a manifest of another kind
     expect(certificateSeedProblems({ ...good(), kind: 'archive-seed' } as unknown as SeedAManifest, runId)).toEqual(['kind archive-seed']);
 });

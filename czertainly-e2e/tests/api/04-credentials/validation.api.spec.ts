@@ -1,11 +1,6 @@
 /**
- * API-GEN-17, API-GEN-18 — Credential create validation, one test per row (ilm#428).
- *
- * core#2512: a name-only attribute leaves an orphan credential today (test.fail); the row is saved before the attribute
- * content (core#2449, core#2451). core#2585: a create without connectorUuid answers 500 today (test.fail on the no-5xx
- * row). The connector's 422 is relayed as 422 (interfaces#898). An empty-string password is
- * accepted today (P3). Create-only on shared tiers; every create is ledgered before any assertion. The wrong-function-group
- * row needs a pre-existing connector that lacks the credential group.
+ * API-GEN-17, API-GEN-18 — Credential create validation, one test per row (ilm#428). core#2512: a name-only attribute
+ * leaves an orphan credential today (test.fail).
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { expect422Messages, expectMessageObject } from '../../../utils/regression/errorContract';
@@ -21,8 +16,6 @@ import { createdUuid } from '../../../utils/regression/ownCrud';
 
 const ISSUE = 'ilm#428';
 const UUID_FORMAT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-// ================================================================== API-GEN-18
 
 const NAME_ROWS: ReadonlyArray<readonly [row: string, value: string | null, what: string]> = [
     ['name-blank', '', 'a blank'],
@@ -139,7 +132,6 @@ test.describe('credential validation', { tag: tags.api }, () => {
             const name = ownName('cred-byname');
             const body = await basicBody(api, c, name, {}, undefined, { withUuid: false });
             const probe = await probeCredential(api, own.spec, body, 'by-name attribute probe (core#2512)');
-            // Ledger first: a refused create may have left a credential behind. Its unique name is the only handle (no uuid is answered).
             const rows = await adoptByName(api, '/api/v1/credentials', 'credentials', name, own.spec, 'orphan left by a refused create (core#2512)');
             testInfo.annotations.push({ type: 'observed', description: `status ${probe.status}; ${rows.length} credential(s) with the name afterwards` });
             expect(probe.status, 'a refused request is a 4xx, never a 5xx').toBeLessThan(500);

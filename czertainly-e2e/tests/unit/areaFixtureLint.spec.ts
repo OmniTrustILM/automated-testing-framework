@@ -1,9 +1,5 @@
 /**
  * areaFixtureLint — the shape rule of an area fixture (utils/regression/specLint/areaFixtures.ts).
- *
- * Checks inline fixture sources: the accepted shape (one extend that adds new names), and every way found to hand a spec
- * something under a trusted name (a redefined fixture, a spread or computed key, a second extend, an extend without an object
- * literal, a `.use(...)` call). The spec lint trusts `api`, `own`, `signedIn` by name; a case that stops failing is a hole.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -37,7 +33,6 @@ test('redefining a guarded, spec-facing or Playwright fixture is refused', () =>
     }
     expect(rules("export const test = base.extend({ async api({ request }, use) { await use(request); } });")).toEqual(['raw-source', 'reserved-name']);
     expect(rules("const api = async ({ request }, use) => use(request);\nexport const test = base.extend({ api });")).toEqual(['raw-source', 'extend-shape', 'reserved-name']);
-    // a fixture written elsewhere cannot be read here: inline only
     expect(rules("const raw = async ({ request }, use) => use(request);\nexport const test = base.extend({ raw });")).toEqual(['raw-source', 'extend-shape']);
     expect(rules("const raw = async ({ request }, use) => use(request);\nexport const test = base.extend({ other: raw });")).toEqual(['raw-source', 'extend-shape']);
     expect(rules("export const test = base.extend({ get other() { return 1; } });")).toEqual(['extend-shape']);
@@ -53,7 +48,7 @@ test('the shape is exactly one `export const test = base.extend({…})`', () => 
     expect(rules("export let test = base.extend({ a: async ({}, use) => use(1) });")).toContain('extend-shape');
     expect(rules("const fx = { a: async ({}, use) => use(1) };\nexport const test = base.extend(fx);")).toContain('extend-shape');
     expect(rules("const t = base.extend({ a: async ({}, use) => use(1) });\nexport const test = t;")).toEqual(expect.arrayContaining(['extend-shape']));
-    // a comment or a string that only mentions the word in passing does not count; a string that IS the word does
+    // a comment or a string that only mentions the word in passing does not count; a string that IS the word does.
     expect(rules("// base.extend({ api })\nconst s = 'x.extend(';\n" + ONE)).toEqual([]);
 });
 
@@ -100,11 +95,9 @@ test('no fixture takes a raw source or reads its inputs undestructured, and the 
     expect(rules("export const test = base.extend<{ raw: unknown }>({ raw: async ({ ...all }, use) => use(all) });")).toEqual(['raw-source']);
     expect(rules("export const test = base.extend<{ raw: unknown }>({ raw: async ({ ['req' + 'uest']: r }, use) => use(r) });")).toEqual(['raw-source']);
     expect(rules("import { request } from '@playwright/test';\nconst make = () => request.newContext();\n" + ONE)).toEqual(['raw-source']);
-    // a page is no input (a page reaches a raw context), nor a token
     for (const input of ['signedIn', 'adminToken', 'restrictedToken', 'browserName', 'baseURL', 'env', 'regressionEnv']) {
         expect(rules(`export const test = base.extend<{ raw: unknown }>({ raw: async ({ ${input} }, use) => use(${input}) });`), input).toEqual(['raw-source']);
     }
-    // a raw member reached on any object, by access, destructuring or reflection
     for (const body of ['await use(own.request);', 'await use(own.context().request);', 'const c = own.context(); await use(c.request);',
         'await use(own.context().browser());', "await use(own['request']);", "const k = 'request'; await use(own[k]);",
         'const { request } = own; await use(request);', 'const { context: c } = own; await use(c);', "const { 'request': r } = own; await use(r);",
@@ -113,19 +106,15 @@ test('no fixture takes a raw source or reads its inputs undestructured, and the 
         expect(found.length, body).toBeGreaterThan(0);
         expect(found.every((r) => r === 'raw-source'), `${body} → ${found}`).toBe(true);
     }
-    // no credential member is read from any object, by access or destructuring (the inputs are checked above)
     for (const body of ['await use({ p: own.userPassword });', 'await use(own.restrictedPassword);', 'await use(own.kubeconfig);',
         'await use(own.cmAuthSecret);', 'const { userPassword } = own; await use(userPassword);', "const { 'restrictedUsername': u } = own; await use(u);",
         'await use(own.credentialConnector);', 'await use(own.accessToken);', 'await use(own.adminToken);', 'await use(own.bearer);', 'await use(own.privateKey);']) {
         expect(rules(`export const test = base.extend<{ creds: unknown }>({ creds: async ({ own }, use) => { ${body} } });`), body).toEqual(['secret-read']);
     }
-    // a cryptographic token object (the platform's key store) and its profile are no credential
     expect(rules("export const test = base.extend<{ chain: unknown }>({ chain: async ({ own }, use) => { const c = await own.chain(); await use({ token: c.token, profile: c.tokenProfile }); } });")).toEqual([]);
-    // nor the cookies or headers of a guarded context
     for (const body of ['await use(await api.storageState());', "await use((await api.get('/x')).headers());", "await use(await (await api.get('/x')).allHeaders());"]) {
         expect(rules(`export const test = base.extend<{ raw: unknown }>({ raw: async ({ api }, use) => { ${body} } });`), body).toEqual(['raw-source']);
     }
-    // the guarded fixtures, the fixtures of the file and those of the extended area are fine inputs
     expect(rules("export const test = base.extend<{ a: number; b: number }>({ a: async ({ api, own, live, needs, localApi, ownRaProfile }, use) => use(1), b: async ({ a }, use) => use(a) });")).toEqual([]);
     expect(areaFixtureProblems(HEAD + "export const test = base.extend<{ b: number }>({ b: async ({ seed }, use) => use(seed) });", FILE, RESERVED, new Set(['seed'])).map((p) => p.rule)).toEqual([]);
 });

@@ -1,10 +1,6 @@
 /**
  * keyOnboardingProvision — the key onboarding setup (utils/keyOnboarding/provision) against an in-process fake core,
- * through the REAL guard (`guardApiWithSeams`, `localStack` on a proven local stack), and a fake docker runner: what
- * the preflight refuses and why, the creation order of the source suite, one ledger line per created object right
- * after its create (run-prefixed name, spec `key-onboarding/setup`, the parents the teardown handlers read), the
- * planted labels and the docker command lines (the PIN in no argv), the summary's shape and mode, and the removal of
- * the run's token objects. No network, no tier, no docker: the fakes record what they were sent and answer canned data.
+ * through the REAL guard.
  */
 import { APIRequestContext, expect, test } from '@playwright/test';
 import { spawnSync } from 'child_process';
@@ -43,9 +39,7 @@ const STAMP = 'ab12';
 const SIDECAR = 'pkcs11-sidecar-softhsm';
 const SIDECAR_IMAGE = 'harbor.example/pkcs11-sidecar:1.0.0';
 const CERTIFICATE = 'MIIBszCCAVmgAwIBAgIUQ2VydGlmaWVk';
-/** A PIN made per test run: no literal PIN in this file either. */
 const PIN = `pin-${randomBytes(9).toString('hex')}`;
-/** A run id of the generated shape (the unit tests themselves run under the adhoc default, which the removal refuses). */
 const RUN = 'qa-reg-20261023-101010-ab12';
 /** The text a refused answer carries: it must stay in the log. */
 const ECHO = 'ECHO-OF-THE-REQUEST-BODY';
@@ -53,14 +47,12 @@ const ECHO = 'ECHO-OF-THE-REQUEST-BODY';
 const defaultConnectors = (): Json[] => [
     { uuid: U(9), name: 'software-cryptography-provider-v2', url: 'http://localhost:8230', version: 'v2', status: 'connected', interfaces: [{ uuid: U(10), code: 'cryptography' }] },
     { uuid: C_PKCS11, name: 'pkcs11-cryptography-provider', url: PKCS11_URL, version: 'v2', status: 'connected', interfaces: [{ uuid: I_CRYPTO, code: 'cryptography', features: ['keyList'] }] },
-    // The same URL registered as v1 too: only the v2 registration counts.
     { uuid: U(11), name: 'common-credential-provider', url: VAULT_URL, version: 'v1', status: 'connected', interfaces: [] },
     { uuid: C_VAULT, name: 'common-credential-provider-v2', url: VAULT_URL, version: 'v2', status: 'connected', interfaces: [{ uuid: I_SECRET, code: 'secret' }] },
 ];
 
 interface FakeOptions {
     connectors?: Json[];
-    /** The token URIs the connector's profile offers. */
     tokenUris?: string[];
     /** `METHOD /path/{id}` → a status answered instead of the route's (with a body that must never reach a reason). */
     statusFor?: Record<string, number>;
@@ -73,9 +65,7 @@ interface Sent {
     method: string;
     path: string;
     body: unknown;
-    /** Ledger lines in the file when the request was sent. */
     ledgerLines: number;
-    /** The uuid the answer created, when it was a create. */
     created?: string;
     date: string;
 }
@@ -99,7 +89,6 @@ let stateDir = '';
 const ledgerPath = () => path.join(stateDir, 'created-objects.jsonl');
 const ledgerCount = () => (fs.existsSync(ledgerPath()) ? fs.readFileSync(ledgerPath(), 'utf8').split('\n').filter(Boolean).length : 0);
 
-/** A fake core: canned answers for every route the setup uses; creates answer fresh uuids; every request is recorded. */
 function fakeCore(opts: FakeOptions = {}) {
     const sent: Sent[] = [];
     let n = 1000;
@@ -126,7 +115,6 @@ function fakeCore(opts: FakeOptions = {}) {
         ['GET', new RegExp(`^/v1/secrets/(${UUID})$`), (m) => {
             const s = secrets.get(m[1])!;
             s.reads += 1;
-            // The first read still sees the vault write in flight.
             const state = s.reads === 1 || opts.secretStuck ? 'inactive' : 'active';
             return [200, { uuid: m[1], state, enabled: s.enabled }];
         }],
@@ -171,7 +159,6 @@ function fakeCore(opts: FakeOptions = {}) {
     return { api, sent };
 }
 
-/** A fake docker CLI: answers the inspects and the two script runs; records argv and the added environment. */
 function fakeDocker(opts: DockerOptions = {}) {
     const calls: DockerCall[] = [];
     const ok = (stdout: string): DockerResult => ({ code: 0, stdout, stderr: '' });
@@ -194,7 +181,6 @@ function fakeDocker(opts: DockerOptions = {}) {
     return { runner, calls };
 }
 
-/** A local env with this run's local-backend proof written (the guard's localStack needs it, and so does the preflight). */
 function provenLocalEnv(dir: string, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
     const env: NodeJS.ProcessEnv = { TIER_KIND: 'local', BASE_URL: 'http://localhost:3080', REG_STATE_DIR: dir, REG_RUN_ID: runId(), KO_TOKEN_PIN: PIN, ...extra };
     fs.mkdirSync(dir, { recursive: true });
@@ -232,8 +218,6 @@ const ready = (s: KeyOnboardingSummary) => {
 };
 const scriptRuns = (calls: DockerCall[]) => calls.filter((c) => c.args[0] === 'run');
 
-// ------------------------------------------------------------------ the blockers before any request: no request, no docker
-
 test('a shared tier, a missing local proof and a missing PIN are unavailable without a request and without docker', async ({}, testInfo) => {
     const shared = await runSetup(testInfo, {}, {}, (d) => ({ TIER_KIND: 'shared', BASE_URL: 'https://tier.example', REG_STATE_DIR: d, REG_RUN_ID: runId(), KO_TOKEN_PIN: PIN }));
     expect(reasonOf(shared.summary)).toMatch(/^not a local stack/);
@@ -265,8 +249,6 @@ test('no docker daemon and a stopped sidecar are unavailable after docker alone 
     expect(JSON.stringify(stopped.summary), 'a reason names the variable, not the container').not.toContain(SIDECAR);
 });
 
-// The control: the same run through the same guard WITHOUT localStack is refused at its first request that needs it, so the full-run
-// tests below prove the guard lets every request of the setup through on a proven local stack.
 test('control: without localStack the guard refuses the setup (it is the real guard judging every request)', async ({}, testInfo) => {
     stateDir = testInfo.outputPath('state');
     const env = provenLocalEnv(stateDir);
@@ -276,13 +258,9 @@ test('control: without localStack the guard refuses the setup (it is the real gu
         const api = guardApiWithSeams(core.api, { env, lines: [], runId: runId(), tier: null });
         await expect(provisionKeyOnboarding(api, { cfg: keyOnboardingConfig(env), env, poll: NO_POLL_PAUSE, docker: docker.runner, stamp: STAMP })).rejects.toThrow(OwnObjectViolation);
     });
-    // The lists, the form callbacks and the creates of an own vault are allowed for the guard now (the timestamping block needs them on a
-    // shared tier), so the setup goes on until its first request that needs localStack; that one never reached the core.
     expect(core.sent.some((s) => s.method === 'PATCH' && /\/certificates\//.test(s.path)), 'the request localStack lifts was not sent').toBe(false);
     expect(scriptRuns(docker.calls), 'nothing planted').toEqual([]);
 });
-
-// ------------------------------------------------------------------ the preflight's reasons: read-only
 
 test('preflight: a missing, a waiting, a v1-only connector, no keyList, no secret interface and no single token are named reasons; nothing is written', async ({}, testInfo) => {
     const cases: Array<[string, FakeOptions, string | RegExp]> = [
@@ -321,8 +299,6 @@ test('uriNamesToken reads the token label of a PKCS#11 URI path, percent-decoded
     expect(uriNamesToken('pkcs11:token=%ZZ', 'x'), 'a malformed escape is no match, not an error').toBe(false);
 });
 
-// ------------------------------------------------------------------ the full run
-
 test('provisioning follows the source suite\'s order and records every object once, right after its create, with its parents', async ({}, testInfo) => {
     const run = await runSetup(testInfo);
     ready(run.summary);
@@ -357,12 +333,10 @@ test('provisioning follows the source suite\'s order and records every object on
     expect(byType('tokens').parents).toBeUndefined();
     expect(byType('tokenProfiles').parents).toEqual({ token: byType('tokens').uuid });
 
-    // Every write after a create targets an own object; the creates go under own parents or the read-only connectors.
     const own = new Set(run.ledger.map((l) => l.uuid));
     for (const m of mutations(run.sent)) {
         for (const id of m.path.match(new RegExp(UUID, 'g')) ?? []) expect(own.has(id), `${m.method} ${template(m.path)} names own objects only`).toBe(true);
     }
-    // The planting comes after the last platform request.
     const lastRequest = Math.max(...run.sent.map((s) => s.seq));
     expect(scriptRuns(run.docker)).toHaveLength(1);
     expect(scriptRuns(run.docker)[0].seq).toBeGreaterThan(lastRequest);
@@ -455,8 +429,6 @@ test('the provisioner holds no literal PIN or password, and no secret-like value
     }
 });
 
-// ------------------------------------------------------------------ failures: the tier's answer, or the setup's own error
-
 test('a failing plant script or one that prints no certificate is unavailable with the step; the created objects stay recorded', async ({}, testInfo) => {
     const failed = await runSetup(testInfo, {}, { plantExit: 1 });
     expect(reasonOf(failed.summary)).toBe('provisioning stopped at planting: plant-keys.sh exited 1 (its output is in the setup log) '
@@ -491,8 +463,6 @@ test('a step failing at the tier is unavailable with the step and status; a secr
     expect(mutations(stuck.sent).some((s) => s.path === '/v1/tokens'), 'no token without an active PIN').toBe(false);
     expect(scriptRuns(stuck.docker)).toEqual([]);
 });
-
-// ------------------------------------------------------------------ the removal of the run's token objects
 
 test('unplantRunKeys passes the run prefix through the environment, mounts the removal script, and reports the count', async ({}, testInfo) => {
     const env = provenLocalEnv(testInfo.outputPath('state'));
@@ -541,7 +511,6 @@ test('unplantRunKeys refuses an empty or shared prefix before docker, and remove
     expect(scriptRuns(stopped.calls)).toEqual([]);
 });
 
-/** Runs the removal script with no tool on PATH: only its shell-only prefix gate can run, so nothing reaches a token. */
 function gate(prefix: string): { status: number | null; stderr: string } {
     const empty = path.join(stateDir || path.join(__dirname, '..', '..', 'test-results'), 'empty-path');
     fs.mkdirSync(empty, { recursive: true });
@@ -614,7 +583,8 @@ test('unplant-keys.sh selects exactly the run\'s private keys, public keys and c
         `pubkey\t${own}ko-with\ttab-ab12`,
         `cert\t${own}ko-certified-ab12`,
     ]);
-    // A backslash or a pattern character in the prefix stays literal (awk -v would have read the backslash as an escape).
+    // A backslash or a pattern character in the prefix stays
+    // literal (awk -v would have read the backslash as an escape).
     const odd = 'qa-reg-a.b\\n*-';
     fs.writeFileSync(file, `Private Key Object; EC\n  label:      ${odd}x\nPrivate Key Object; EC\n  label:      qa-reg-aXb\\n*-x\n`);
     const lit = spawnSync('awk', [program!, file], { env: { PATH: process.env.PATH ?? '/usr/bin:/bin', LABEL_PREFIX: odd }, encoding: 'utf8' });

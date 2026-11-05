@@ -1,7 +1,7 @@
 /**
- * requireTool — the OpenSSL version parser refuses LibreSSL, requireTool names the variable that overrides a missing tool,
- * and under REG_UNIT_NO_DOCKER only an absolute fake inside the test output runs as docker (a logging fake first on
- * PATH must stay unused). No real tool is needed.
+ * requireTool — the OpenSSL version parser refuses LibreSSL, requireTool names the variable that overrides a missing
+ * tool, and under REG_UNIT_NO_DOCKER only an absolute fake inside the test output runs as docker (a logging fake first
+ * on PATH must stay unused).
  */
 import { test, expect } from '@playwright/test';
 import { parseOpenSslVersion, requireTool, unitDockerBinProblem } from '../../utils/regression/requireTool';
@@ -26,9 +26,6 @@ test('a binary that is not OpenSSL 3 is refused for the cmp rows', () => {
     expect(requireTool('openssl', process.execPath)).toMatch(/OpenSSL 3\.x required/);
 });
 
-// ------------------------------------------------------------------ docker gates: only an absolute fake inside the test output runs
-
-// docker gates: under REG_UNIT_NO_DOCKER only an absolute fake inside the test output runs; requireTool too
 test('docker gates: under REG_UNIT_NO_DOCKER only an absolute fake in the test output runs', ({}, testInfo) => {
     expect(process.env.REG_UNIT_NO_DOCKER, 'set by playwright.unit.config.ts').toBe('1');
     // A logging fake named `docker`, FIRST on PATH: if anything ran "docker" by name, its log would say so.
@@ -44,7 +41,6 @@ test('docker gates: under REG_UNIT_NO_DOCKER only an absolute fake in the test o
     delete process.env.REG_DOCKER_BIN;
     try {
         const calls = () => fs.readFileSync(log, 'utf8').trim();
-        // Refused without running anything: a bare name, a system path, a symlink that leaves the test output.
         expect(unitDockerBinProblem('docker')).toMatch(/absolute path/);
         expect(unitDockerBinProblem('/usr/local/bin/docker')).toMatch(/inside the test output/);
         const link = path.join(bin, 'docker-link');
@@ -56,7 +52,6 @@ test('docker gates: under REG_UNIT_NO_DOCKER only an absolute fake in the test o
         expect(dockerContainerProof(8280, undefined, { REG_DOCKER_BIN: link })).toEqual({ ok: false, error: expect.stringMatching(/inside the test output/) });
         expect(dockerContainerProof(8280, undefined, {})).toEqual({ ok: false, error: expect.stringMatching(/disabled under the unit tests/) });
         expect(calls(), 'nothing named docker ran').toBe('');
-        // The fake itself, named by its absolute path inside the test output, does run.
         expect(unitDockerBinProblem(fake)).toBeUndefined();
         expect(requireTool('docker', fake)).toBeUndefined();
         dockerContainerProof(8280, undefined, { REG_DOCKER_BIN: fake });

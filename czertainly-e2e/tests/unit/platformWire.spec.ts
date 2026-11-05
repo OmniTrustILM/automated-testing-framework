@@ -1,7 +1,6 @@
 /**
- * platformWire — the key, vault, compliance and connector helpers through the real guard against a stateful loopback
- * fake core: each test asserts the requests that arrived (routes, bodies), the ledger types and parents the teardown
- * relies on, and the response readers on fixtures shaped like the interface DTOs.
+ * platformWire — the key, vault, compliance and connector helpers
+ * through the real guard against a stateful loopback fake core.
  */
 import { APIRequestContext, expect, test } from '@playwright/test';
 import { GuardedApi } from '../../utils/regression/guard/types';
@@ -32,7 +31,6 @@ const RULE = U(60);
 const PROFILE = U(61);
 const SPEC = 'platform-wire';
 
-/** A fake core that remembers what the run created (GET answers it; a deleted uuid answers 404). */
 class PlatformCore extends BaseCore {
     protected seq = 100;
     readonly deleted = new Set<string>();
@@ -213,7 +211,6 @@ test('own vault profile under a pre-existing vault: POST /vaults/{vault}/vaultPr
     const ctx: TeardownContext = { api: raw, runId: runId(), ledger: readLedger(), seen: new Set([profile.uuid]), tier: null, warn: () => {}, live: { uuid: profile.uuid, name: profile.name } };
     await platformHandlers.vaultProfiles.remove(ctx, line);
     expect(server.mutations().map((a) => `${a.method} ${arrivedPath(a)}`)).toEqual([`DELETE /api/v1/vaults/${VAULT}/vaultProfiles/${profile.uuid}`]);
-    // The vault parent of the LINE decides the URL: a line without it (and a detail without the vault) is refused, not guessed.
     await expect(platformHandlers.vaultProfiles.remove({ ...ctx, live: {} }, { ...line, parents: undefined })).rejects.toThrow(/no vault known/);
 });
 

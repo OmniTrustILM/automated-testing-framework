@@ -1,13 +1,11 @@
 /**
  * errorContract — the error shapes core answers with (a 422 is a JSON array of non-empty strings, any other error is
  * exactly `{message}`) and `checkRefusedMethod`, which tells core's answer to a refused method from an ingress answer
- * and never copies the response body into its verdict. Pure, no environment.
+ * and never copies the response body into its verdict.
  */
 import { expect, test } from '@playwright/test';
 import { errorShape, expect422Messages, expectMessageObject, INGRESS_SKIP_MESSAGE, checkRefusedMethod } from '../../utils/regression/errorContract';
 
-// checkRefusedMethod for the refused-method case: an ingress answer skips; core 400 + empty body passes on main; core 401 is
-// the known bug on a migrated build
 test('checkRefusedMethod: ingress answer skips, core 400 with empty body passes, core 401 is the known bug', () => {
     const answer = (status: number, bodyText = '', headers: Record<string, string> = {}) => ({ status, headers, bodyText });
     // Not core's answer: skip (the test reports INGRESS_SKIP_MESSAGE, never a pass, never a red gate).
@@ -20,12 +18,13 @@ test('checkRefusedMethod: ingress answer skips, core 400 with empty body passes,
     // Core's own answers (Tomcat sends no proxy Server header; "Apache-Coyote" is core, not a proxy).
     expect(checkRefusedMethod(answer(400))).toEqual({ outcome: 'core', problems: [] });
     expect(checkRefusedMethod(answer(400, '\n', { server: 'Apache-Coyote/1.1' }))).toEqual({ outcome: 'core', problems: [] });
-    // On a migrated build core answers 401 (core#2502): problems, so the spec's `expect(problems).toEqual([])` fails — expected there.
+    // On a migrated build core answers 401 (core#2502): problems, so the spec's `expect(problems).toEqual([])` fails.
     expect(checkRefusedMethod(answer(401))).toEqual({ outcome: 'core', problems: ['status 401, expected 400'] });
     expect(checkRefusedMethod(answer(400, '{"message":"x"}'))).toEqual({ outcome: 'core', problems: ['body is not empty (15 bytes), expected an empty body'] });
 });
 
-// checkRefusedMethod never puts the response body into a verdict (a proxy or an error forward could echo the bearer token)
+// checkRefusedMethod never puts the response body into a verdict
+// (a proxy or an error forward could echo the bearer token)
 test('checkRefusedMethod never puts the response body into a verdict, since a proxy could echo the token', () => {
     const echo = 'Bearer SECRET-TOKEN-ECHOED';
     for (const verdict of [
@@ -53,10 +52,6 @@ test('errorShape: 422 = array of non-empty strings, others = exactly {message}',
     expect(() => expectMessageObject('["a"]')).toThrow(/\{"message"/);
 });
 
-// ------------------------------------------------------------------ the auth caller's cases, moved from authPure.spec.ts
-
-// checkRefusedMethod (the regression cases re-run for the auth caller): an ingress answer skips with the named reason; core 400
-// + empty body is the baseline; no body text in any message
 test('checkRefusedMethod for the auth caller: ingress skips, 400 + empty body is baseline, no body text', () => {
     const answer = (status: number, bodyText = '', headers: Record<string, string> = {}) => ({ status, headers, bodyText });
     expect(INGRESS_SKIP_MESSAGE).toBe('refused by the ingress before core (its firewall allow list)');

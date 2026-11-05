@@ -1,11 +1,5 @@
 /**
  * timestampingSpecs — static checks over tests/timestamping/*.spec.ts (the `@dev-tests` block).
- *
- * Checks the two disruptive specs call describeLocalOnly (the others run on a shared tier and must not); every test and
- * describe carries devTests(...); a test that reads docker or stops a container is tagged local and skips itself off a
- * proven local stack; a spec stops containers only in tests tagged disruptive and gated by TSA_ALLOW_DISRUPTION; no
- * provisioning reader runs at module scope
- * (Playwright lists tests before the setup writes the summary); no password-like literal.
  */
 import { expect, test } from '@playwright/test';
 import * as fs from 'fs';
@@ -14,10 +8,8 @@ import * as path from 'path';
 const DIR = path.join(__dirname, '..', 'timestamping');
 const specs = fs.readdirSync(DIR).filter((f) => f.endsWith('.spec.ts')).sort();
 
-/** Readers of the summary (provisioning.ts) and of the plan-less data: forbidden outside a test, hook or helper body. */
 const READERS = ['provisionedFamilies', 'provisionedSets', 'primaryFamily', 'basicCredentialFor', 'cryptographyConnectors', 'runStartedAt', 'readSummary', 'readySummaryOrSkip', 'provisioningOrSkip', 'familyOrSkip', 'setOrSkip', 'summaryFile'];
 
-/** Index of the closer matching the opener at `open`, skipping strings, templates, comments and escapes. */
 function closerOf(src: string, open: number): number {
     const pairs: Record<string, string> = { '(': ')', '[': ']', '{': '}' };
     const stack: string[] = [pairs[src[open]]];
@@ -62,7 +54,6 @@ const TEST_CALLS = /(?<![.\w])(test(?:\.describe)?)\(/g;
 const BODY_CALLS = /(?<![.\w])(test(?:\.(?:beforeAll|afterAll|beforeEach|afterEach))?)\(/g;
 const HEADER = (call: Call): string => call.args.slice(0, call.args.indexOf('=>'));
 
-/** Spans where a reader may run: bodies of tests / hooks and of function declarations. */
 function bodySpans(src: string): Array<[number, number]> {
     const spans: Array<[number, number]> = calls(src, BODY_CALLS).map((c) => [c.start, c.end]);
     for (const m of src.matchAll(/\bfunction\s+\w+\s*\([^)]*\)[^{]*\{/g)) {
@@ -76,9 +67,7 @@ test('the block has its ten specs, in file order', () => {
     expect(specs.map((s) => s.slice(0, 2))).toEqual(['00', '10', '20', '30', '40', '45', '50', '55', '60', '70']);
 });
 
-/** The specs whose every row stops a container: the whole file is local-only. */
 const LOCAL_ONLY_SPECS = ['50-time-quality.spec.ts', '55-connector-outage.spec.ts'];
-/** What reads or drives the local docker stack (utils/timestamping/docker.ts). */
 const DOCKER_USES = /\b(dockerAvailable|containerState|listQueues|stopContainer|startContainer|waitForContainerState)\(/;
 
 for (const spec of specs) {

@@ -14,7 +14,6 @@ const failsFast = async (call: Promise<unknown>): Promise<boolean> => call.then(
 
 test('UserPage.assertNotListed after reloadList: absent once rows show; from another list page the users list is judged', async ({ browser }) => {
     await withServedPage(browser, listPage('List of Roles', 'roles', ['Administrators', 'Auditors']), async (page, serve) => {
-        // The page starts on the roles list (another hash route of the same document): the users list must still be read.
         await new RolePage(page).goToList();
         serve(listPage('List of Users', 'users', ['admin', 'operator']));
         const userPage = new UserPage(page);
@@ -37,7 +36,6 @@ test('UserPage.assertRoles reads the detail\'s Roles row as a set', async ({ pag
     expect(await failsFast(user.assertRoles(['qa-reg-x-role-a']))).toBe(true);
 });
 
-/** A loopback server that answers the custom attribute definitions of users with `body` (status `status`). */
 async function withDefinitions(status: number, body: unknown, run: (baseURL: string) => Promise<void>): Promise<void> {
     const server: Server = createServer((_req, res) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));

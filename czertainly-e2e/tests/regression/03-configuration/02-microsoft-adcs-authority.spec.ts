@@ -1,12 +1,7 @@
 /**
- * REG-CFG-02 — An MS ADCS authority created through the UI (release checklist: Configuration 2; ilm#436).
- *
- * Creates the authority on the MS-ADCS-NG-Connector, waits for the connectivity check (up to 90 s), and checks that the API
- * shows it connected.
- *
- * Create-only. The CA host and name are read at run time from an existing NG authority (only read), never stored in the
- * repository. Needs a connected MS ADCS authority whose connector answers its live health; otherwise it skips with the named
- * blocker, never a pass. The create answer is put in the ledger before the redirect is waited for.
+ * REG-CFG-02 — An MS ADCS authority created through the UI (release checklist: Configuration 2; ilm#436). Creates the
+ * authority on the MS-ADCS-NG-Connector, waits for the connectivity
+ * check (up to 90 s), and checks that the API shows it connected.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { AuthorityPage } from '../../../pages/AuthorityPage';
@@ -23,8 +18,7 @@ test.describe('MS ADCS authority configuration', { tag: tags.regression }, () =>
             rule: ['an MS ADCS authority on the MS-ADCS-NG-Connector, CA host and name entered manually; the connector checks connectivity on create'],
         }),
         async ({ signedIn: page, api, own }) => {
-            // Needs a connected MS ADCS authority whose connector answers its LIVE health (adcsBlocker); else the named
-            // environment blocker (deploy gate, never a pass) and the CA-agnostic run RA profile takes over. Reads only, before any create.
+            // Needs a connected MS ADCS authority whose connector answers its LIVE health (adcsBlocker)
             const blocker = await adcsBlocker(api);
             test.skip(!!blocker, blocker ?? '');
             const source = await test.step('Read the CA of an existing MS ADCS NG authority (read-only)', async () => findAdcsSource(api));
@@ -41,11 +35,9 @@ test.describe('MS ADCS authority configuration', { tag: tags.regression }, () =>
             });
 
             const uuid = await test.step('Create → connectivity check passes → detail page', async () => {
-                // The create answer comes after the connector's connectivity check (up to 90 s).
                 const answer = await submitRecordingByNameOnFailure(
                     { type: 'authorities', name, spec: own.spec, note: `CA copied from ${source.name}`, lookup: lookupInList(api, '/api/v1/authorities') },
                     () => authorities.submitCreateForm());
-                // Ledger before assertion: from the create answer, before the redirect is waited for.
                 const created = own.record('authorities', answer, { name, note: `CA copied from ${source.name}` });
                 await authorities.waitForDetail();
                 await authorities.assertDetailShows(name);

@@ -1,10 +1,6 @@
 /**
- * timestampingInventory — the read-only before / after check of the signing profiles, TSP profiles and time-quality
- * configurations (utils/timestamping/inventory.ts).
- *
- * Checks the same tier twice is `same`; a pre-existing row changed, added or gone is `differs`, naming the resource and the
- * counts, never a name; the run's own rows (a `created` ledger line) are left out; every page is read; a tier without the
- * endpoints (404) is a skipped check, a refused identity still fails; no baseline is a skip; the check only reads.
+ * timestampingInventory — the read-only before / after check of the signing profiles,
+ * TSP profiles and time-quality configurations (utils/timestamping/inventory.ts).
  */
 import { APIRequestContext, expect, test } from '@playwright/test';
 import * as fs from 'fs';
@@ -106,7 +102,6 @@ test('the run\'s own rows are on neither side: created and deleted rows of this 
     const tier = fresh();
     const a = admin(tier);
     await takeBaseline(a.admin, env());
-    // The block creates a TSP profile (ledger line) and its teardown deletes it again: in between the list holds it.
     recordCreated('tspProfiles', { uuid: U(40), name: `${runId()}-tsp` }, { spec: 'timestamping/setup' });
     tier['TSP profiles'].push({ uuid: U(40), name: `${runId()}-tsp`, enabled: true });
     expect((await compareBaseline(a.admin, env())).status, 'while it exists').toBe('same');
@@ -133,13 +128,11 @@ test('a tier without the endpoints skips with the reason, never fails; a refused
     expect(baseline).toMatchObject({ status: 'skipped', reason: expect.stringMatching(/cannot list the TSP profiles: POST \/v1\/tspProfiles\/list answered HTTP 404/) });
     const outcome = await compareBaseline(admin(fresh()).admin, env());
     expect(outcome).toEqual({ status: 'skipped', reason: expect.stringMatching(/^no baseline: the tier cannot list the TSP profiles/) });
-    // The endpoint disappears between the two reads: skipped too.
     const tier = fresh();
     await takeBaseline(admin(tier).admin, env());
     expect(await compareBaseline(admin({ ...tier, status: { 'POST /v1/timeQualityConfigurations/list': 500 } }).admin, env())).toMatchObject({ status: 'skipped', reason: expect.stringMatching(/time-quality configurations/) });
     // A refused identity is the run's failure, not a tier verdict.
     await expect(takeBaseline(admin({ ...fresh(), status: { 'POST /v1/signingProfiles/list': 401 } }).admin, env())).rejects.toThrow(SetupError);
-    // No baseline file (the setup ended unavailable), or one of an earlier attempt that a retry cleared.
     clearBaseline(env());
     expect(readBaseline(env())).toBeUndefined();
     expect(await compareBaseline(admin(fresh()).admin, env())).toEqual({ status: 'skipped', reason: expect.stringMatching(/^no baseline: the setup took none/) });

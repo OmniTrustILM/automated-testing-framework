@@ -1,10 +1,5 @@
 /**
  * publicText — the public-text lint (utils/regression/publicText.ts) over comments, titles, messages, rules and docs.
- *
- * Checks that private shorthand, tool or model names and local paths are caught, each pattern class included, while
- * ordinary words and the allow-listed public ids are not; and that no file name under the scanned folders carries a round
- * or batch marker. The repository is public, so a private id or path in a comment or a title must fail before it is
- * pushed. Hand-made source strings go through `publicTextHitsIn`; the allow-list entries are checked against their exact files.
  */
 import { test, expect } from '@playwright/test';
 import * as path from 'path';
@@ -12,13 +7,8 @@ import { PUBLIC_TEXT_ALLOWED, publicTextFiles, publicTextHits, publicTextHitsIn 
 
 const ROOT = path.resolve(__dirname, '..', '..');
 
-// ------------------------------------------------------------------ public text: no private working notes
-// The repository is public. Comments, titles, messages and the README explain the suite in plain words; the lint and its
-// allow-list live in utils/regression/publicText.ts. The samples below are assembled from pieces so this file stays clean.
-
 const join = (...parts: string[]) => parts.join('');
 
-// public text: no private shorthand, tool or model names or local paths in comments, titles, messages or docs
 test('public text: no private shorthand, tool or model names or local paths in comments, titles or docs', () => {
     const files = publicTextFiles(ROOT);
     expect(files).toEqual(expect.arrayContaining(['tests/regression/README.md', 'playwright.regression.config.ts', 'utils/regression/guard/createGuard.ts', 'pages/LoginPage.ts', 'fixtures/testFixtures.ts']));
@@ -102,7 +92,6 @@ test('public text: ordinary public words are not reported, in a comment, a title
             expect(publicTextHitsIn('tests/regression/x.spec.ts', src), src).toEqual([]);
         }
     }
-    // The private forms of the same shapes are still reported.
     for (const [text, cls] of [[join('(', 'R', '5)'), 'finding-id'], [join('R', '11'), 'finding-id'], [join('G', '1-2'), 'finding-id'],
         [join('the ', 're', 'view'), 'process-wording'], [join('round ', '3'), 'round-id'], [join('N', '-07'), 'plan-id']] as const) {
         expect(publicTextHitsIn('tests/regression/x.spec.ts', `// ${text}\n`).map((h) => h.cls), text).toContain(cls);
@@ -118,7 +107,7 @@ test('public text: a sub-id of a test id or a testMeta() row in the same file is
     expect(publicTextHitsIn('tests/regression/x.spec.ts', viaMeta), 'a testMeta() row is a public sub-id too').toEqual([]);
 });
 
-// public text: each allow-list entry names its exact files; a defining file is allowed, any other file is not
+// public text: each allow-list entry names its exact files; a defining file is allowed, any other file is not.
 test('public text: each allow-list entry names its exact files; a defining file is allowed, no other', () => {
     for (const a of PUBLIC_TEXT_ALLOWED) if (a.files) expect(a.files.source, a.why).toMatch(/^\^\(\?:.*\)\$$/);
     const seed = join('C', '03');
@@ -142,7 +131,6 @@ test('public text: code, data keys and the allow-listed public ids are not repor
         `const runPrefix = 'qa-api-adhoc';`,
     ].join('\n');
     expect(publicTextHitsIn('tests/api/x.api.spec.ts', src)).toEqual([]);
-    // A seed id is allowed only where the seed is defined and used; elsewhere it is a private id.
     expect(publicTextHitsIn('utils/regression/inventory/searchTables.ts', `// the ${join('C', '03')} date`)).toEqual([]);
     expect(publicTextHitsIn('utils/regression/tier/kind.ts', `// the ${join('C', '03')} date`).map((h) => h.cls)).toEqual(['candidate-id']);
 });

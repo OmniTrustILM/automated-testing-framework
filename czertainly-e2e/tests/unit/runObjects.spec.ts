@@ -1,9 +1,6 @@
 /**
- * runObjects — the objects of the `run-setup` project (utils/regression/run/runObjects.ts) against a loopback fake core: the five objects
- * and their order; what a tier without a CA, an MS ADCS authority or a cryptography connector gets (a named reason, nothing created for
- * the object it cannot offer, no throw); that the objects it can make are created through the guard, recorded in the ledger under the
- * setup's id and written to the run state; that a second pass (a reused run id) sends no mutation; and that an unexpected error becomes a
- * named skip, never a failure (a failed dependency would stop the whole regression project).
+ * runObjects — the objects of the `run-setup` project (utils/regression/run/runObjects.ts) against a loopback fake core:
+ * the five objects and their order.
  */
 import { APIRequestContext, expect, request, test } from '@playwright/test';
 import { readFileSync } from 'fs';
@@ -24,11 +21,9 @@ let raw: APIRequestContext;
 let api: GuardedApi;
 let seq = 7000;
 const store = new Map<string, Record<string, unknown>>();
-/** When set, `POST /api/v1/roles` answers this status (the unexpected-error case). */
 let roleCreateStatus = 200;
 const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
-/** A tier with no connector, no authority and no RA profile; custom attributes none; roles and ACME profiles can be created. */
 function answer(a: Arrived): Answer {
     const path = a.url.split('?')[0];
     const body = a.body ? (JSON.parse(a.body) as Record<string, unknown>) : undefined;
@@ -97,7 +92,6 @@ test('a tier without a CA, an MS ADCS authority or a cryptography connector gets
     expect(reasons.get('tokenChain')).toMatch(/no connected software cryptography connector of interface v2/);
     expect(reasons.get('acmeProfile'), 'the ACME profile needs no CA').toBeUndefined();
     expect(reasons.get('role'), 'the role needs no CA').toBeUndefined();
-    // Only the two objects the tier can offer were created, through the guard, enabled where the helper enables.
     expect(wire()).toEqual(['POST /api/v1/acmeProfiles', 'PATCH /api/v1/acmeProfiles/<uuid>/enable', 'POST /api/v1/roles']);
     expect(readLedger().map((l) => [l.type, l.event, l.spec])).toEqual([['acmeProfiles', 'created', SPEC], ['roles', 'created', SPEC]]);
     const state = readRunState();
@@ -128,7 +122,6 @@ test('an unexpected error is a named skip with the start of the error, never a t
     // The message is cut: a long body does not fill a report.
     const long = { ...byRow('role'), async make(): Promise<string | undefined> { throw new Error('x'.repeat(5000)); } };
     expect((await prepareRunObject(long, api, SPEC))!.length).toBeLessThan(400);
-    // And an object that is simply ready answers undefined.
     expect(await prepareRunObject({ ...byRow('role'), async make() { return undefined; } }, api, SPEC)).toBeUndefined();
 });
 
@@ -147,11 +140,9 @@ test('an object that does not answer in time is a named skip at the deadline, ne
     expect(Date.now() - started, 'returned at the deadline, not when the object finished').toBeLessThan(2_000);
     expect(reason).toMatch(/^run setup gave up on the run role after 80 ms \(a connector or the platform did not answer\); the specs that need it make it themselves$/);
     finish?.();
-    // A late error of the abandoned attempt is dropped (no unhandled rejection), and a late success changes nothing.
     const lateError: RunObject = { ...byRow('role'), async make(): Promise<string | undefined> { await new Promise((r) => setTimeout(r, 150)); throw new Error('late'); } };
     expect(await prepareRunObject(lateError, api, SPEC, 30, 50)).toMatch(/gave up/);
     await new Promise((r) => setTimeout(r, 250));
-    // An object that finishes inside the deadline keeps its own answer, and a synchronous throw is a named skip too.
     expect(await prepareRunObject({ ...byRow('role'), async make() { return 'deploy gate: x'; } }, api, SPEC, 1_000)).toBe('deploy gate: x');
     expect(await prepareRunObject({ ...byRow('role'), make: () => { throw new Error('sync'); } }, api, SPEC, 1_000)).toMatch(/could not make the run role \(sync\)/);
 });

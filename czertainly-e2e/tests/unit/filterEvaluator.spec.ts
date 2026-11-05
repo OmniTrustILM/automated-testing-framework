@@ -1,10 +1,5 @@
 /**
  * filterEvaluator — unit tests of the one filter evaluator and of the decisions its callers take from it.
- *
- * Checks `satisfiesFilter` refuses a one-value condition given several values and a non-numeric value for an ordering, and
- * orders numerically ("999" before "1000"). The callers (`expectedRows`, `expectRowsSatisfy`, `matchesCondition`,
- * `findAndPairs`) decide what they decided before, and the certificate list stand-in models only its old conditions. Four
- * modules share this function; a change must not move their answers unnoticed.
  */
 import { expect, test } from '@playwright/test';
 import { expectedRows, satisfiesFilter, toValues, type FieldMap } from '../../utils/regression/inventory/oracles/values';

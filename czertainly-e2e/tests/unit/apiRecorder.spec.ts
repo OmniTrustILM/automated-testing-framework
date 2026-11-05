@@ -1,11 +1,10 @@
 /**
- * ApiRecorder on a page whose requests are all fulfilled by a route (nothing leaves the browser): it records only between
- * start() and stop(), only `/api/` paths, and nonReadsSince() keeps writes and POST searches.
+ * ApiRecorder on a page whose requests are all fulfilled by a route (nothing leaves the browser): it records only between start() and
+ * stop(), and only `/api/` paths.
  */
 import { expect, test } from '@playwright/test';
 import { ApiRecorder } from '../../utils/network/apiRecorder';
 
-// records /api/ requests between start() and stop() only; mark / since / nonReadsSince bracket a window
 test('records only /api/ requests between start() and stop(); mark, since and nonReadsSince bracket', async ({ page }) => {
     await page.route('**/*', (route) => route.fulfill({ status: 200, contentType: 'text/html', body: '<p>ok</p>' }));
     await page.goto('http://127.0.0.1:9/administrator/');

@@ -1,9 +1,6 @@
 /**
- * API-CERT-08 — The state and operation refusal matrix of an own certificate (ilm#429).
- *
- * A ValidationException is a 422, never a 400 or 5xx. Each test builds and ledgers its own certificate before any
- * assertion. Gated states use an own RA profile clone with the approval profile, released in `finally`.
- * The failed state needs EJBCA NG; it skips elsewhere.
+ * API-CERT-08 — The state and operation refusal matrix of an own certificate (ilm#429). A ValidationException is a 422,
+ * never a 400 or 5xx.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { ApprovalGate, decideApproval, findApproval, openApprovalGate } from '../../../utils/regression/lifecycle/approvals';
@@ -23,17 +20,13 @@ import { testMeta, tags } from '../../../utils/regression/tags';
 import { ISSUED_WAIT_MS, ISSUE_MS, LEFTOVER_APPROVAL_LOOKUP_MS, LIFECYCLE_MS, MANY_STEPS_TEST_MS, QUICK_STATE_WAIT_MS, STATE_CHANGE_WAIT_MS } from '../../../utils/regression/timeouts';
 import { waitForCertificateState } from '../../../utils/regression/wait/certificateState';
 
-/**
- * The matrix on one fixture: every operation refused with its text, body a one-element string array, never 5xx; the
- * state, the history messages and the successor count are the same before and after.
- */
+/** The matrix on one fixture: every operation refused with its text, body a one-element string array, never 5xx. */
 async function assertMatrix(api: GuardedApi, spec: string, cert: OwnRef & { name: string }, ra: RaLike, state: string): Promise<void> {
     const label = STATE_LABELS[state];
     const before = await getCertificate(api, cert.uuid);
     expect(before.state, 'fixture state').toBe(state);
     const history = historyMessages(await historyOf(api, cert.uuid));
     const successors = (await relationsOf(api, cert.uuid)).successors.length;
-    // The state check precedes every CSR check, so any key serves.
     const csr = csrFromKey(newKeyPair(), cert.name);
 
     // Every refusal is a 422 with exactly one message that STARTS with the text (the rest names the certificate).
@@ -41,7 +34,6 @@ async function assertMatrix(api: GuardedApi, spec: string, cert: OwnRef & { name
     await test.step(`renew / rekey / revoke on ${label} → 422 "Cannot perform operation <op> on certificate in state ${label}."`, async () => {
         expectRefused(await renewOwnCertificate(api, cert, ra, spec, { csrDerBase64: csr.derBase64 }), { status: 422, text: stateGuardText('renew', state), prefix: true, what: 'renew' });
         expectRefused(await rekeyOwnCertificate(api, cert, ra, spec, { csrDerBase64: csr.derBase64 }), { status: 422, text: stateGuardText('rekey', state), prefix: true, what: 'rekey' });
-        // An already revoked certificate is refused with its own text before the generic state check.
         expectRefused(await revokeOwnCertificate(api, cert, ra, { reason: 'unspecified' }), { status: 422, text: state === 'revoked' ? 'Certificate is already revoked. Certificate: ' : stateGuardText('revoke', state), prefix: true, what: 'revoke' });
     });
 
@@ -87,7 +79,6 @@ test.describe('Certificate state and operation refusal matrix', { tag: tags.api 
                 });
                 await assertMatrix(api, own.spec, cert, gate.ra, 'pending_approval');
             } finally {
-                // Decide the leftover (the own approval is rejected through the override path), then ungate the clone.
                 if (cert) {
                     const approval = await findApproval(api, cert, own.spec, { timeoutMs: LEFTOVER_APPROVAL_LOOKUP_MS }).catch(() => undefined);
                     if (approval) await decideApproval(api, approval, 'reject').catch(() => undefined);
@@ -148,8 +139,8 @@ test.describe('Certificate state and operation refusal matrix', { tag: tags.api 
                     await waitForCertificateState(api, c.uuid, 'failed', ISSUED_WAIT_MS, { failOn: ['issued', 'rejected'] });
                 } catch (e) {
                     const state = (await getCertificate(api, c.uuid)).state;
-                    // Not decidable before the issue: only the CA's answer to the e-mail SAN says whether the fixture ends `failed` or
-                    // `issued`.
+                    // Not decidable before the issue: only the CA's answer to the e-mail SAN says whether the fixture
+                    // ends `failed` or `issued`.
                     test.skip(state === 'issued', 'the CA accepted the e-mail SAN: no failed fixture on this tier (end-entity profile configuration)');
                     throw e;
                 }

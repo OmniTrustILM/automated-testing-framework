@@ -1,9 +1,6 @@
 /**
- * API-GEN-28 — An RA profile with a required attribute left empty, API leg (ilm#428).
- *
- * A connector 422 reaches the client as a core 422 (interfaces#898); a 400 or 502 is the defect under test. The authority
- * is a pre-existing connected one and is only read; rows skip when there is none. Create-only on shared tiers. A 503 from
- * the connector is an environment blocker: a named skip, never a pass.
+ * API-GEN-28 — An RA profile with a required attribute left empty, API leg (ilm#428). A connector 422 reaches the client
+ * as a core 422 (interfaces#898); a 400 or 502 is the defect under test.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { refused422 } from '../../../utils/regression/inventory/configProbes';
@@ -17,12 +14,6 @@ import { ApiAnswer } from '../../../utils/regression/apiReads';
 
 const ISSUE = 'ilm#428';
 
-// ================================================================== API-GEN-28
-
-/**
- * The first connected pre-existing authority with a required RA-profile attribute, its valid base attributes and the label; else the rows
- * skip.
- */
 async function raSetupOrSkip(api: GuardedApi) {
     const pick = await authorityWithRequiredAttribute(api);
     test.skip(!pick.ok, pick.skip ?? 'no authority');
@@ -31,7 +22,6 @@ async function raSetupOrSkip(api: GuardedApi) {
     return { authority, def, base: (await validRaAttributes(api, authority.uuid)) ?? [] };
 }
 
-/** The refusal is a 422 whose messages carry the oracle of the authority's interface and name the attribute. */
 function expectRequiredRefusal(p: ApiAnswer, authority: { connectorInterface: 'v2' | 'v3' }, def: JsonObject, arm: 'missing' | 'empty'): void {
     const { text, names } = requiredAttributeOracle(authority.connectorInterface, def, arm);
     const messages = refused422(p);
@@ -39,10 +29,6 @@ function expectRequiredRefusal(p: ApiAnswer, authority: { connectorInterface: 'v
     expect(messages.some((m) => m.includes(names)), `a message names the attribute ${names}: ${messages.join(' | ')}`).toBe(true);
 }
 
-/**
- * A connector that is restarting answers 503: an environment blocker (never retried, never a pass), unlike 502 / 400, which are the defect
- * under test.
- */
 const skipOn503 = (p: ApiAnswer): void => test.skip(p.status === 503, 'the authority connector answered 503 (unreachable or restarting): environment blocker, not retried');
 
 test.describe('RA profile with a required attribute empty (API leg)', { tag: tags.api }, () => {

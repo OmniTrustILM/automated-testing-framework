@@ -1,12 +1,7 @@
 /**
- * REG-CFG-04 — An ACME profile created through the UI (release checklist: Configuration 4; ilm#430).
- *
- * Creates the profile with one pre-authorized DNS identifier (exact match, a name under the run's prefix), enables it, and
- * checks in the API that the identifier is as entered and no Terms of Service is required. A pre-authorized identifier is
- * what lets an ACME order skip the challenge (as in REG-USE-05, which uses the run's ACME profile, not this one).
- *
- * Create-only: only this test's profile is enabled. The create answer is put in the ledger before the dialog or the list is
- * waited for. The run's ACME profile is made by the run-setup project, not here.
+ * REG-CFG-04 — An ACME profile created through the UI (release checklist: Configuration 4; ilm#430). Creates the profile
+ * with one pre-authorized DNS identifier (exact match, a name under the run's prefix), enables it, and checks in the API
+ * that the identifier is as entered and no Terms of Service is required.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { AcmeProfilePage } from '../../../pages/AcmeProfilePage';
@@ -43,7 +38,6 @@ test.describe('ACME profile configuration', { tag: tags.regression }, () => {
             const uuid = await test.step('Create → the profile exists, disabled', async () => {
                 const note = `pre-authorized ${identifier}`;
                 const answer = await submitRecordingByNameOnFailure({ type: 'acmeProfiles', name, spec: own.spec, note, lookup: lookupInList(api, '/api/v1/acmeProfiles') }, () => acmeProfiles.submitCreateForm());
-                // Ledger before assertion: from the create answer, before the dialog or the list is waited for.
                 const created = own.record('acmeProfiles', answer, { name, note });
                 await acmeProfiles.waitForCreateDialogClosed();
                 await expect.poll(async () => (await findByName(api, '/api/v1/acmeProfiles', name))?.uuid ?? '').not.toBe('');

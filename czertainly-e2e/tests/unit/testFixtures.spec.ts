@@ -1,9 +1,6 @@
 /**
- * testFixtures — the own-object fixture `ownRaProfile` of fixtures/testFixtures.ts, run for real with only `env` and `api`
- * replaced (a guarded context to a loopback fake core). When the helper refuses, the test is SKIPPED with the helper's own
- * reason and nothing is created; when it succeeds, the object is created through the guard and recorded in the ledger under
- * the test's ledger id before the test body runs. (The dedicated second identity's user is not a fixture: its helper
- * `ensureRestrictedUser` is proven in rbacWire.spec.ts, and the `second-identity` need in regressionFixtures.spec.ts.)
+ * testFixtures — the own-object fixture `ownRaProfile` of fixtures/testFixtures.ts, run for real with only `env` and
+ * `api` replaced (a guarded context to a loopback fake core).
  */
 import { APIRequestContext, expect, request, TestInfo } from '@playwright/test';
 import { ledgerSpecOf, test as fixtures } from '../../fixtures/testFixtures';
@@ -18,7 +15,6 @@ const ENV_KEYS = ['REG_STATE_DIR', 'BASE_URL', 'TIER_KIND', 'REG_RUN_ID', 'REG_R
 
 let server: LoopbackServer;
 function answer(a: Arrived): Answer {
-    // Connectors, authorities, RA profiles and custom-attribute definitions: none.
     if (a.method === 'GET') return { status: 200, body: [] };
     return { status: 404, body: { message: 'not in the fake core' } };
 }
@@ -27,7 +23,6 @@ function answer(a: Arrived): Answer {
 const test = fixtures.extend<{ raw: APIRequestContext }>({
     env: async ({}, use) => use({ baseUrl: process.env.BASE_URL, authMode: 'local', username: 'admin', password: 'unused' } as TestEnv),
     raw: async ({}, use) => {
-        // Only the loopback fake core may receive these requests, whatever BASE_URL the shell exported.
         const host = new URL(process.env.BASE_URL ?? 'http://invalid').hostname;
         if (host !== '127.0.0.1' && host !== 'localhost') throw new Error(`testFixtures unit: BASE_URL must point at the loopback fake core, got ${host}`);
         const raw = await request.newContext({ baseURL: process.env.BASE_URL, extraHTTPHeaders: { Authorization: 'Bearer UNIT' } });
@@ -67,7 +62,6 @@ test.afterEach(({}, testInfo: TestInfo) => {
     }
 });
 
-/** The process environment of one test: its own state dir (ledger, run state), the fake core as BASE_URL, a shared tier. */
 function prepare(testInfo: TestInfo): void {
     saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
     for (const k of ENV_KEYS) delete process.env[k];
@@ -80,10 +74,6 @@ function prepare(testInfo: TestInfo): void {
     server.reset();
 }
 
-/**
- * An auto fixture, set up before the fixtures under test (fixtures run before beforeEach hooks): the word in brackets in
- * the title picks the situation.
- */
 const rows = test.extend<{ setup: void }>({
     setup: [async ({}, use, testInfo) => {
         prepare(testInfo);

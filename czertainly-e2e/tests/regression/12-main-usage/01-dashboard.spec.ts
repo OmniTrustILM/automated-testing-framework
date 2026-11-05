@@ -1,12 +1,6 @@
 /**
- * REG-USE-01 — The certificates dashboard (release checklist: Usage 1; ilm#428).
- *
- * The four count tiles equal the statistics the page loaded itself, and a legend click opens the inventory with the matching
- * filter badge. The Type chart's legend opens the inventory unfiltered by design (fe-administrator#1136), so it is not checked.
- *
- * The tiles test is read-only. The legend test uploads two own self-signed certificates (one expired, one expiring in about
- * 25 days), recorded before use and removed by the run-end teardown. It skips, with the reason, only when the platform still
- * shows no data behind a legend after the upload.
+ * REG-USE-01 — The certificates dashboard (release checklist: Usage 1; ilm#428). The four count tiles equal the
+ * statistics the page loaded itself, and a legend click opens the inventory with the matching filter badge.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { DashboardCounts, DashboardPage, DashboardStatistics } from '../../../pages/DashboardPage';
@@ -16,10 +10,6 @@ import { revalidate } from '../../../utils/regression/lifecycle/preRegistration'
 import { selfSignedPem } from '../../../utils/regression/pkiBuilders';
 import { testMeta, tags } from '../../../utils/regression/tags';
 
-/**
- * A legend the second test clicks, and the statistic that says whether the tier has data behind it (a legend item exists only for a
- * non-zero count).
- */
 const DRILL_DOWNS: ReadonlyArray<{ chart: string; item: string; counts: (s: DashboardStatistics) => DashboardCounts | undefined; key: RegExp }> = [
     { chart: 'Certificates by State', item: 'Issued', counts: (s) => s.certificateStatByState, key: /^issued$/i },
     { chart: 'Certificates by Validation', item: 'Expired', counts: (s) => s.certificateStatByValidationStatus, key: /^expired$/i },
@@ -28,7 +18,6 @@ const DRILL_DOWNS: ReadonlyArray<{ chart: string; item: string; counts: (s: Dash
 
 const DAY_MS = 24 * 3600 * 1000;
 
-/** The legends of the table that have no certificate behind them in these statistics (a legend item exists only for a non-zero count). */
 const legendsWithoutData = (stats: DashboardStatistics): typeof DRILL_DOWNS[number][] =>
     DRILL_DOWNS.filter((d) => !Object.entries(d.counts(stats) ?? {}).some(([key, n]) => d.key.test(key) && n > 0));
 
@@ -66,21 +55,17 @@ test.describe('Certificates dashboard', { tag: tags.regression }, () => {
         }),
         async ({ signedIn: page, api, own }) => {
             const dashboard = new DashboardPage(page);
-            /** Dashboard, click a legend item, the inventory opens with its rows. */
             const drillDown = async (chart: string, item: string): Promise<void> => {
                 await dashboard.goToCertificatesDashboard();
                 await dashboard.openLegendItem(chart, item);
                 await waitForListRows(page);
             };
-            /** Narrows the opened inventory to one own certificate by its common name; the legend badge stays and the own row is shown. */
             const showsOwn = async (badge: string, cn: string): Promise<void> => {
                 await addInventoryTextFilter(page, 'Common Name', 'contains', cn);
                 await expect.poll(() => filterBadges(page)).toContain(`Property 'Common Name' contains '${cn}'`);
                 expect(await filterBadges(page), 'the legend filter is still applied').toContain(badge);
                 await expect(page.locator('main table tbody tr').filter({ hasText: cn }), 'the own certificate is shown by the legend filter').toHaveCount(1, { timeout: 30_000 });
             };
-            // Data first, so the legends exist: two own self-signed certificates, each recorded from its upload answer before anything else
-            // happens to it, then re-validated so the validation status is stored.
             const now = new Date();
             const expiredCn = ownName('legend-expired');
             const soonCn = ownName('legend-soon');
@@ -92,9 +77,8 @@ test.describe('Certificates dashboard', { tag: tags.regression }, () => {
                 await revalidate(api, expired);
                 await revalidate(api, soon);
             });
-            // The gate is a read of the statistics the dashboard loads: the statistics may need a moment to count the upload. A legend item
-            // exists only for a non-zero count, so a tier still without data for one is a named skip, and a tier WITH data and no legend
-            // fails below.
+            // A legend item exists only for a non-zero count: a tier still without
+            // data for one is a named skip; data without a legend fails below.
             let stats = await dashboard.goToCertificatesDashboard();
             await expect.poll(async () => {
                 stats = await dashboard.goToCertificatesDashboard();

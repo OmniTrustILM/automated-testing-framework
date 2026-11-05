@@ -1,12 +1,10 @@
 /**
- * Unit tests of utils/regression/inventory/seedCertificates.ts: certificates built with a chosen validity, key
- * size, hash and issuer. No environment, no network.
+ * Unit tests of utils/regression/inventory/seedCertificates.ts: certificates built with a chosen validity, key size,
+ * hash and issuer.
  */
 import { expect, test } from '@playwright/test';
 import * as crypto from 'crypto';
 import { buildCertificate, describeCertificate, generateKeys, verifiesUnder } from '../../utils/regression/inventory/seedCertificates';
-
-// ------------------------------------------------------------------ pure: seedCertificates
 
 test('buildCertificate: validity at second precision, key size, hash, self-signed vs issued, the CA flag', async () => {
     test.setTimeout(60_000);

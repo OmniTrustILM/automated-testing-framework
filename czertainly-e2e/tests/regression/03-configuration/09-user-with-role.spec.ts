@@ -1,12 +1,6 @@
 /**
- * REG-CFG-09 — Users in the admin UI (release checklist: Configuration 9; ilm#427).
- *
- * Creates a user with the run role (enabled, role shown on both sides), edits it with the username locked (.b) and deletes it
- * (.c). Signing in as the new user is a test.fixme: it needs an identity-provider account the suite cannot create.
- * Absence is read from the list (core#2511).
- *
- * Only users this run created are edited or deleted (created disabled through the API); the live check runs before the
- * browser changes one. The ledger line is written once the POST answered, whatever the roles PATCH does.
+ * REG-CFG-09 — Users in the admin UI (release checklist: Configuration 9; ilm#427). Creates a user with the run role
+ * (enabled, role shown on both sides), edits it with the username locked (.b) and deletes it (.c).
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { RolePage } from '../../../pages/RolePage';
@@ -36,7 +30,8 @@ test.describe('User with a role', { tag: tags.regression }, () => {
                 const answer = await submitRecordingByNameOnFailure(
                     { type: 'users', name, spec: own.spec, note: `role ${role.name}`, lookup: lookupInList(api, '/api/v1/users', 'username') },
                     () => users.createUser({ username: name, roleNames: [role.name] }));
-                // Ledger before anything else: the user exists once the POST answered (its uuid is in the answer), whatever the PATCH does.
+                // Ledger before anything else: the user exists once the POST answered (its uuid is in the answer),
+                // whatever the PATCH does.
                 const ref = own.record('users', answer, { name, note: `role ${role.name}` });
                 return { created: answer, uuid: ref.uuid };
             });

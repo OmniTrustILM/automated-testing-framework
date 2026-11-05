@@ -1,11 +1,7 @@
 /**
  * API-CERT-01, API-CERT-02 — Issuing a certificate through the v2 API: the happy path and the error contract (ilm#429).
- *
- * A validation error is a 422 string array, a malformed request a 400 {message}; that split must survive the migration
- * (ilm#424). No stack trace, class name or SQL state in an error body. The SAN oracle depends on the CA connector.
- * Known bug core#2140: a text/plain content type on the issue answers 500 instead of a 4xx (test.fail). The invalid-bearer
- * row skips on a local stack, where a proxy or the localhost identity may authenticate the call.
- * One own certificate is ledgered before any assertion; so is a request accepted by mistake.
+ * A validation error is a 422 string array, a malformed request a
+ * 400 {message}; that split must survive the migration (ilm#424).
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { expectMessageObject } from '../../../utils/regression/errorContract';
@@ -24,10 +20,8 @@ import { isLocalTier } from '../../../utils/regression/tier/kind';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const ISSUE_WALK = ['requested', 'pending_issue', 'issued'] as const;
-/** A synchronous CA issues within this time; a polling CA may take longer (the hard limit is ISSUED_WAIT_MS). */
 const SYNCHRONOUS_ISSUE_MS = 120_000;
 
-/** The raw PEM of `GET /v1/certificates/{uuid}/raw?encoding=pem` (JSON `{content}` or the PEM itself, base64 or armoured). */
 const pemOfRaw = (body: string): string => {
     const content = (() => {
         try {
@@ -51,7 +45,6 @@ test.describe('Certificate issue through the v2 API', { tag: tags.api }, () => {
             ],
         }),
         async ({ api, own, ownRaProfile }, testInfo) => {
-            // Issuance budget (180 s hard wait) plus the reads.
             test.setTimeout(ISSUE_MS);
             const ra = ownRaProfile;
             const base = opsBase(ra);
@@ -85,8 +78,6 @@ test.describe('Certificate issue through the v2 API', { tag: tags.api }, () => {
                 testInfo.annotations.push({ type: 'state-walk', description: `${walk.states.join(' → ')} in ${Math.round(walk.elapsedMs / 1000)} s` });
                 expect(isSubsequenceOf(walk.states, ISSUE_WALK), `observed ${walk.states.join(' → ')}`).toBe(true);
                 expect(walk.states[walk.states.length - 1]).toBe('issued');
-                // Expected: issued within SYNCHRONOUS_ISSUE_MS on a synchronous CA (a polling CA may take longer; the issued wait is the
-                // hard limit).
                 if (walk.elapsedMs > SYNCHRONOUS_ISSUE_MS) testInfo.annotations.push({ type: 'slow-issuance', description: `issued after ${Math.round(walk.elapsedMs / 1000)} s (> 120 s: not a synchronous CA?)` });
                 await own.derivedKey(cert.uuid, createdAfterOfAnswer(cert.answer));
             });
@@ -130,7 +121,6 @@ test.describe('Certificate issue through the v2 API', { tag: tags.api }, () => {
             const base = opsBase(ra);
             const create = `${base}/certificates`;
             const clean = (text: string, where: string) => expect(leaksIn(text), `${where}: no stack trace / class / SQL leak`).toEqual([]);
-            // Ledger before assertion: a negative the platform accepted made a certificate of this run.
             const parents = { raProfile: ra.uuid, authority: ra.authorityUuid };
 
             await test.step('Neither CSR nor key → 400 {message} "Failed to submit certificate request: Cannot submit certificate request without specifying key or uploaded request content"', async () => {
@@ -159,7 +149,6 @@ test.describe('Certificate issue through the v2 API', { tag: tags.api }, () => {
             });
 
             await test.step('Malformed uuid in a path → 400 {message} (type mismatch)', async () => {
-                // A mutation path holds canonical uuids and API words only (guard rule): the malformed-uuid case is read on a GET.
                 const p = await answerOf(await api.get('/api/v1/certificates/not-a-uuid'), Date.now());
                 const text = p.text;
                 expect(p.status, text.slice(0, 300)).toBe(400);
@@ -177,7 +166,8 @@ test.describe('Certificate issue through the v2 API', { tag: tags.api }, () => {
             await test.step('`attributes` omitted (the spec marks it required) → the status pinned by this probe, never 5xx', async () => {
                 const a = await sendRaw(api, 'POST', create, { request: 'bm90LWEtY3Ny', format: 'pkcs10', customAttributes: [] });
                 own.probe('certificates', a, { name: runCommonName('api-neg'), note: 'issue without attributes accepted (API-CERT-02 probe)', parents });
-                // Robustness only: the status is pinned by the annotation below (no documented contract), the oracle is "never 5xx".
+                // Robustness only: the status is pinned by the annotation
+                // below (no documented contract), the oracle is "never 5xx".
                 expect(a.status, a.text.slice(0, 300)).toBeLessThan(500);
                 testInfo.annotations.push({ type: 'pinned-status', description: `attributes omitted → ${a.status}` });
                 clean(a.text, 'attributes omitted');
@@ -193,7 +183,6 @@ test.describe('Certificate issue through the v2 API', { tag: tags.api }, () => {
             const ra = ownRaProfile;
             const create = `${opsBase(ra)}/certificates`;
             const a = await sendRaw(api, 'POST', create, '{"request": "bm90LWEtY3Ny", "format": "pkcs10", "attributes": []}', { headers: { 'Content-Type': 'text/plain' } });
-            // Ledger before assertion: a negative the platform accepted made a certificate of this run.
             own.probe('certificates', a, { name: runCommonName('api-neg'), note: 'text/plain issue accepted (API-CERT-02 negative)', parents: { raProfile: ra.uuid, authority: ra.authorityUuid } });
             expect(a.status, a.text.slice(0, 300)).toBeGreaterThanOrEqual(400);
             testInfo.annotations.push({ type: 'spec-gap', description: `wrong content type answered ${a.status} (415 is not declared on the issue operation)` });
@@ -218,7 +207,6 @@ test.describe('Certificate issue through the v2 API', { tag: tags.api }, () => {
             const base = opsBase(ra);
             const create = `${base}/certificates`;
             const clean = (text: string, where: string) => expect(leaksIn(text), `${where}: no stack trace / class / SQL leak`).toEqual([]);
-            // Ledger before assertion: a negative the platform accepted made a certificate of this run.
             const parents = { raProfile: ra.uuid, authority: ra.authorityUuid };
 
             await test.step('An invalid bearer token → 401 on issue, issue-existing, renew, rekey, revoke, approve and reject', async () => {
@@ -233,8 +221,7 @@ test.describe('Certificate issue through the v2 API', { tag: tags.api }, () => {
                     ['approve', 'PATCH', `/api/v1/approvals/${probe}/approve`, undefined],
                     ['reject', 'PATCH', `/api/v1/approvals/${probe}/reject`, undefined],
                 ];
-                // `register` is a path-less create the guard does not list yet (not yet a guarded path): its 401 check is in the
-                // registration spec.
+                // `register` is a path-less create the guard does not list yet (not yet a guarded path)
                 for (const [name, method, url, data] of calls) {
                     const a = await sendRaw(api, method, url, data, anon);
                     if (name === 'issue') own.probe('certificates', a, { name: runCommonName('api-neg'), note: 'issue with an invalid bearer accepted (API-CERT-02 negative)', parents });

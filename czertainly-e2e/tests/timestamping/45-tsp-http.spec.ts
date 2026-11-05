@@ -5,12 +5,7 @@ import { primaryFamily } from '../../utils/timestamping/provisioning';
 import { devTests } from '../../utils/timestamping/tags';
 import { describeOutcome, requestTimestamp, TimestampOutcome, TspRoute } from '../../utils/timestamping/tsp';
 
-/**
- * The TSP endpoints as HTTP resources: authentication challenges, cookies, media types, content
- * negotiation and methods. The servlet container, the MVC layer and the security chain decide
- * these before any signing happens, so a framework upgrade can change them while every token
- * stays valid.
- */
+/** The TSP endpoints as HTTP resources: challenges, cookies, media types, content negotiation and methods. */
 test.describe('TSP over HTTP', devTests(), () => {
   const routes: TspRoute[] = ['signing', 'tsp'];
 
@@ -33,7 +28,6 @@ test.describe('TSP over HTTP', devTests(), () => {
       tsp,
     }) => {
       const set = nonQualified();
-      // HTTP clients that answer a challenge, as Java's Authenticator does, send credentials only after it.
       const challenge = `Basic realm="${set.tspProfile.name}"`;
       const wrongPassword = await requestTimestamp(tsp, {
         label: `http-challenge-wrong-password-${route}`,
@@ -90,9 +84,7 @@ test.describe('TSP over HTTP', devTests(), () => {
   for (const contentType of ['application/x-www-form-urlencoded', 'application/octet-stream']) {
     test(`a '${contentType}' content type is refused like JSON`, devTests(), async ({ tsp }) => {
       const set = nonQualified();
-      // curl sends the form type for --data-binary unless told otherwise. Same pinned deviation as
-      // JSON in 40-tsp-errors: an unsupported media type reaches Core's catch-all handler
-      // (OmniTrustILM/core#2140), so these move to 415 together.
+      // curl sends the form type for --data-binary unless told otherwise.
       const outcome = await requestTimestamp(tsp, {
         label: `http-content-type-${contentType.replace(/[^a-z0-9]+/gi, '-')}`,
         profileName: set.signingProfile.name,
@@ -118,9 +110,8 @@ test.describe('TSP over HTTP', devTests(), () => {
 
   test('a client accepting only JSON is currently answered with HTTP 500', devTests(), async ({ tsp }) => {
     const set = nonQualified();
-    // Pinned deviation: the unacceptable representation reaches the same catch-all handler in
-    // Core's ExceptionHandlingAdvice as the unsupported media type of OmniTrustILM/core#2140,
-    // instead of becoming 406.
+    // Pinned deviation: the unacceptable representation reaches the same catch-all handler in Core's
+    // ExceptionHandlingAdvice as the unsupported media type of OmniTrustILM/core#2140, instead of becoming 406.
     const outcome = await requestTimestamp(tsp, {
       label: 'http-accept-json',
       profileName: set.signingProfile.name,
@@ -133,7 +124,6 @@ test.describe('TSP over HTTP', devTests(), () => {
   for (const method of ['GET', 'PUT'] as const) {
     test(`${method} is refused with HTTP 400`, devTests(), async ({ tsp }) => {
       const set = nonQualified();
-      // Core's ExceptionHandlingAdvice answers an unsupported method with 400.
       const outcome = await requestTimestamp(tsp, {
         label: `http-method-${method.toLowerCase()}`,
         profileName: set.signingProfile.name,

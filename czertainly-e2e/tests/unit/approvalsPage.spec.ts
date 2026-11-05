@@ -1,9 +1,5 @@
 /**
  * approvalsPage — offline checks of pages/ApprovalsPage.ts on stand-in documents.
- *
- * Checks the list row status and checkbox, the detail status and recipient comment, and the override Approve / Reject
- * through the confirm dialog; each override returns the answer of its PATCH. REG-CERT-16 / 17 assert that status, so a wrong
- * button must fail on the wait for the exact request. A loopback-addressed context answers the PATCH itself.
  */
 import { expect, test } from '@playwright/test';
 import { ApprovalsPage } from '../../pages/ApprovalsPage';
@@ -11,7 +7,6 @@ import { ApprovalsPage } from '../../pages/ApprovalsPage';
 const failsFast = async (call: Promise<unknown>): Promise<boolean> => call.then(() => false, () => true);
 
 test('ApprovalsPage list and detail: the row status, the row checkbox, the detail status and the recipient comment', async ({ page }) => {
-    // Four expected failures wait out the 5 s expect timeout each.
     test.setTimeout(90_000);
     const approvals = new ApprovalsPage(page);
     const U1 = '11111111-1111-4111-8111-111111111111';
@@ -30,7 +25,6 @@ test('ApprovalsPage list and detail: the row status, the row checkbox, the detai
     expect(await failsFast(approvals.assertRecipientComment('a comment nobody wrote'))).toBe(true);
 });
 
-/** A fake approvals list with the override dialogs: the confirm button PATCHes the route the page object waits for. */
 const approvalsList = (uuid: string) => `<!doctype html><html><body><main><section><div><h5>List of Approvals</h5>
   <button data-testid="check-button" onclick="openDialog('approve')">a</button><button data-testid="times-button" onclick="openDialog('reject')">r</button></div>
   <table><tbody><tr data-id="${uuid}"><td><input type="checkbox" id="${uuid}__checkbox__"></td><td>${uuid}</td><td><span id="st">Pending</span></td></tr></tbody></table></section></main>
@@ -66,7 +60,8 @@ test('ApprovalsPage.overrideApprove / overrideReject: the list toolbar, the conf
         expect((await approvals.overrideReject(U1)).status).toBe(204);
         await approvals.assertStatus(U1, 'Rejected');
         expect(patched).toEqual([`/api/v1/approvals/${U1}/approve`, `/api/v1/approvals/${U1}/reject`]);
-        // Mutant: Approve on the toolbar must never satisfy a reject (the wrong icon = the wrong route, caught by the wait).
+        // Mutant: Approve on the toolbar must never satisfy a reject
+        // (the wrong icon = the wrong route, caught by the wait).
         await approvals.goToList();
         await expect(approvals.row(U1)).toBeVisible();
         await page.evaluate(() => { document.querySelector('[data-testid="times-button"]')!.setAttribute('onclick', "openDialog('approve')"); });

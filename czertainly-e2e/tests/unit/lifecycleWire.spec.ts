@@ -1,11 +1,5 @@
 /**
  * lifecycleWire — loopback wire check of the lifecycle helpers.
- *
- * Checks that issue, renew, rekey, revoke, register and the parked-operation probes on OWN certificates are sent with
- * their bodies and record what they made before any assertion; that foreign objects and raw contexts are refused before
- * anything leaves; and that the approval gate, the override decisions and the teardown handlers of approvals and approval
- * profiles send what the rules say. These helpers act on a shared tier, so what they send and record is proven offline.
- * One stateful fake core sits behind a loopback server; each test asserts the requests that arrived and the ledger.
  */
 import { APIRequestContext, expect, test } from '@playwright/test';
 import { GuardedApi } from '../../utils/regression/guard/types';
@@ -35,15 +29,12 @@ const CN_ATTR = '9abaeba0-973d-11ed-a8fc-0242ac120002';
 
 type Json = Record<string, any>;
 
-/** A fake core that remembers what the run created and serves a fixed EJBCA-NG tier around it. */
 class LifecycleCore extends BaseCore {
     protected seq = 1000;
-    /** approvals by certificate uuid */
     readonly approvals = new Map<string, Json>();
     approvalProfileDeleteStatus = 204;
     associations: Json[] = [];
 
-    /** Answer without a Date header (the bound of a derived object then comes from the runner clock). */
     noDate = false;
 
     protected respond(a: Arrived): Answer | undefined {
@@ -118,13 +109,10 @@ class LifecycleCore extends BaseCore {
             const create = (cn: string, state: string) => {
                 const cert = { uuid, commonName: cn, state, raProfile: { uuid: raUuid } };
                 this.store.set(`/api/v1/certificates/${uuid}`, cert);
-                // ApprovalDto (core Approval.java:91-106): resource, objectUuid and the approval profile of the gate.
                 if (gated) this.approvals.set(uuid, { approvalUuid: this.next(), status: 'Pending', resource: 'certificates', objectUuid: uuid, resourceAction: 'issue', approvalProfileUuid: gate!.approvalProfileUuid });
                 return { status: 200, body: { certificateData: '', uuid, requestAttributeWarnings: [] } };
             };
             if (!certUuid && !op) return create(cnOf(body), gated ? 'pending_approval' : 'issued');
-            // core reads a v3 content item by its own contentType (BaseAttributeContentV3, no default subtype): without it the body is
-            // unreadable
             if (!certUuid && op === 'register' && (body?.csrAttributes ?? []).some((a: any) => a?.version === 'v3' && (a.content ?? []).some((c: any) => !c?.contentType))) return { status: 400, body: { message: 'Unable to read HTTP message' } };
             if (!certUuid && op === 'register') return create(String(body?.csrAttributes?.[0]?.content?.[0]?.data ?? ''), 'registered');
             const cert = this.store.get(`/api/v1/certificates/${certUuid}`);
@@ -177,7 +165,6 @@ class LifecycleCore extends BaseCore {
     }
 }
 
-/** The CN of a v2 issue body: the fake reads it from the CSR (the helper's CN is run-prefixed). */
 function cnOf(body: Json | undefined): string {
     const csr = require('node-forge').pki.certificationRequestFromPem(`-----BEGIN CERTIFICATE REQUEST-----\n${String(body?.request ?? '')}\n-----END CERTIFICATE REQUEST-----`);
     return csr.subject.getField('CN').value as string;
@@ -215,7 +202,8 @@ test('issue, renew, rekey, revoke, issue-existing and the parked-operation probe
     const issueBody = bodyOf('POST', `/api/v2/operations/authorities/${A_EJBCA}/raProfiles/${ra.uuid}/certificates`);
     expect(issueBody).toMatchObject({ format: 'pkcs10', attributes: [], customAttributes: [] });
     expect(readLedger().find((l) => l.uuid === cert.uuid)).toMatchObject({ type: 'certificates', name: cert.cn, parents: { raProfile: ra.uuid, authority: A_EJBCA } });
-    // An answer without a Date header: the bound is one the teardown keeps, a day ahead of the runner clock (never undefined).
+    // An answer without a Date header: the bound is one the teardown
+    // keeps, a day ahead of the runner clock (never undefined).
     core.noDate = true;
     const startedAt = Date.now();
     const noDate = await submitOwnCertificate(api, ra, 'T', { suffix: 'nodate' });
@@ -230,7 +218,6 @@ test('issue, renew, rekey, revoke, issue-existing and the parked-operation probe
     expect(renew.status).toBe(200);
     expect(renew.successor).toBeTruthy();
     expect(bodyOf('POST', `/api/v2/operations/authorities/${A_EJBCA}/raProfiles/${ra.uuid}/certificates/${cert.uuid}/renew`)).toEqual({ format: 'pkcs10', attributes: [], request: csr.derBase64 });
-    // Mutant: a challenge given to renewOwnCertificate travels in the body, an omitted one sends no field.
     server.reset();
     await renewOwnCertificate(api, cert, ra, 'T', { authorizationSecret: 'qa-wire-secret-0002' });
     expect(bodyOf('POST', `/api/v2/operations/authorities/${A_EJBCA}/raProfiles/${ra.uuid}/certificates/${cert.uuid}/renew`)).toEqual({ format: 'pkcs10', attributes: [], authorizationSecret: 'qa-wire-secret-0002' });
@@ -249,7 +236,6 @@ test('issue, renew, rekey, revoke, issue-existing and the parked-operation probe
     expect(bodyOf('POST', `/api/v2/operations/authorities/${A_EJBCA}/raProfiles/${ra.uuid}/certificates/${cert.uuid}/revoke`)).toEqual({ attributes: [], destroyKey: false, reason: 'keyCompromise' });
     expect((await revokeOwnCertificate(api, cert, ra)).status, 'the second revoke is refused by the fake like core').toBe(422);
     const sent = wire();
-    // rekey, the three parked-operation probes, issue-existing and the two revokes (the renews were reset above).
     expect(sent.filter((w) => w.includes(cert.uuid))).toHaveLength(7);
 });
 
@@ -313,7 +299,6 @@ test('the approval gate: the approval profile names the OWN role; the RA+ clone 
     server.reset();
     const cert = await submitOwnCertificate(api, gate.ra, 'T', { suffix: 'gated' });
     const approval = await findApproval(api, cert, 'T', { status: 'Pending' });
-    // The own approval profile is recorded as a parent too (the guard decides only with both own).
     expect(readLedger().find((l) => l.uuid === approval.uuid)).toMatchObject({ type: 'approvals', name: runName(`approval-${approval.uuid.slice(0, 8)}`), parents: { certificate: cert.uuid, approvalProfile: gate.approvalProfile.uuid } });
     expect((await findApproval(api, cert, 'T')).uuid, 'found again without a second ledger line').toBe(approval.uuid);
     expect(readLedger().filter((l) => l.uuid === approval.uuid)).toHaveLength(1);
@@ -335,7 +320,6 @@ test('the approval gate: the approval profile names the OWN role; the RA+ clone 
     await gate.release();
     await gate.release();
     expect(wire(), 'release once, idempotent').toEqual([`DELETE /api/v1/approvalProfiles/${gate.approvalProfile.uuid}/associations/raProfiles/${gate.ra.uuid}`]);
-    // Idempotent again at the API: the second association is also removed by the plain helper (404 tolerated).
     await dissociateApprovalProfile(api, gate.approvalProfile, gate.ra);
 });
 
@@ -343,11 +327,9 @@ test('findApproval names the approval profile as a parent only when it is an own
     await ensureRunRaProfile(api, 'T');
     const gate = await openApprovalGate(api, 'T', 'aptype');
     const cert = await submitOwnCertificate(api, gate.ra, 'T', { suffix: 'aptype' });
-    // The listed approval names an own object of ANOTHER type as its approval profile (the RA+ clone): no profile parent.
     core.approvals.get(cert.uuid)!.approvalProfileUuid = gate.ra.uuid;
     const approval = await findApproval(api, cert, 'T');
     expect(readLedger().find((l) => l.uuid === approval.uuid)?.parents).toEqual({ certificate: cert.uuid });
-    // So the guard refuses the decision (no own approval profile parent).
     await expect(decideApproval(api, approval, 'approve')).rejects.toThrow(/names no own approval profile/);
 });
 
@@ -380,7 +362,6 @@ test('teardown handlers: a Pending approval is rejected through the override pat
     core.approvalProfileDeleteStatus = 204;
     expect(await teardownHandlers.approvalProfiles.remove(ctx, apLine)).toBeUndefined();
     expect(wire()).toEqual([`DELETE /api/v1/approvalProfiles/${gate.approvalProfile.uuid}`]);
-    // A line of another run is refused by the handler's guard (ledger), nothing sent.
     server.reset();
     const foreignLine = { ...apLine, uuid: ROLE_FOREIGN };
     expect(await refusal(teardownHandlers.approvalProfiles.remove(ctx, foreignLine))).not.toBe('sent');

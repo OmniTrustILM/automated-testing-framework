@@ -1,11 +1,6 @@
 /**
- * regressionFixtures — unit tests of the spec-facing fixtures of fixtures/regressionFixtures.ts, against a loopback fake core.
- *
- * Checks:
- *   - own: a create followed by a throwing step still leaves its ledger line; no CA skips `own.raProfile`
- *   - needs: an unmet need skips with its reason and creates nothing; an unknown need errors
- *   - live: refuses a foreign object; a forged own-object handle does not type-check
- *   - localApi: refused outside a proven local stack and for a test that is not `@local`
+ * regressionFixtures — unit tests of the spec-facing fixtures of
+ * fixtures/regressionFixtures.ts, against a loopback fake core.
  */
 import { APIRequestContext, expect, request, TestInfo } from '@playwright/test';
 import { test as fixtures, needsApi, localApiProblem, withLocalApi } from '../../fixtures/regressionFixtures';
@@ -27,12 +22,10 @@ const FOREIGN_GROUP = U(31);
 const ENV_KEYS = ['REG_STATE_DIR', 'BASE_URL', 'TIER_KIND', 'REG_RUN_ID', 'REG_RESTRICTED_USERNAME', 'REG_RESTRICTED_PASSWORD', 'REG_RA_PROFILE_NAME', 'REG_CA_CONNECTORS', 'REG_SMTP_CATCHER_URL', 'REG_OPENSSL_BIN', 'REG_SSCEP_BIN', 'REG_KUBECTL_BIN', 'REG_DOCKER_BIN', 'REG_WEBHOOK_HOST', 'KUBECONFIG', 'REG_CM_NAMESPACE', 'REG_CM_AUTH_SECRET'];
 const META = (id: string, extra: Partial<Parameters<typeof testMeta>[0]> = {}) => testMeta({ id, prio: 'P1', issue: 'ilm#428', ...extra });
 
-/** A fake core that remembers what the test created (GET answers it) and serves a tier without connectors. */
 let server: LoopbackServer;
 const store = new Map<string, Record<string, unknown>>();
 let seq = 5000;
 const certs: Array<Record<string, unknown>> = [];
-/** The uuid the fake core answers to a v2 certificate issue. */
 let issueUuid = '';
 /** A certificate uuid whose reads answer 500 once its `failed` state was served (the key read after a failed wait). */
 let brokenAfterFailed: string | undefined;
@@ -52,7 +45,6 @@ function answer(a: Arrived): Answer {
             failedServed = true;
         }
         if (store.has(path)) return { status: 200, body: store.get(path) };
-        // Connectors, authorities, RA profiles and custom-attribute definitions: none.
         return /\/(connectors|authorities|raProfiles|resources\/\w+)$/.test(path) ? { status: 200, body: [] } : { status: 404, body: { message: 'not found' } };
     }
     if (a.method === 'POST' && path === '/api/v1/groups') {
@@ -71,7 +63,6 @@ function answer(a: Arrived): Answer {
 
 /** The real fixtures; only the environment, the authenticated context and the transport of `needs` are replaced. */
 const test = fixtures.extend<{ raw: APIRequestContext; setup: void }>({
-    // The process environment of one test, set up before the fixtures under test (fixtures run before beforeEach hooks).
     setup: [async ({}, use, testInfo) => {
         saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
         for (const k of ENV_KEYS) delete process.env[k];
@@ -90,7 +81,6 @@ const test = fixtures.extend<{ raw: APIRequestContext; setup: void }>({
     }, { auto: true }],
     env: async ({}, use) => use({ baseUrl: process.env.BASE_URL, authMode: 'local', username: 'admin', password: 'unused' } as TestEnv),
     raw: async ({ setup: _setup }, use) => {
-        // Only the loopback fake core may receive these requests, whatever BASE_URL the shell exported.
         const host = new URL(process.env.BASE_URL ?? 'http://invalid').hostname;
         if (host !== '127.0.0.1' && host !== 'localhost') throw new Error(`regressionFixtures unit: BASE_URL must point at the loopback fake core, got ${host}`);
         const raw = await request.newContext({ baseURL: process.env.BASE_URL, extraHTTPHeaders: { Authorization: 'Bearer UNIT' } });
@@ -134,8 +124,6 @@ test.afterEach(({}, testInfo: TestInfo) => {
 const created = (type: string) => readLedger().filter((l) => l.type === type && l.event === 'created');
 const wire = () => server.mutations().map((a) => `${a.method} ${a.url.split('?')[0]}`);
 
-// ------------------------------------------------------------------ own
-
 test('own: a create followed by a throwing step still leaves its ledger line, under the test ledger id', META('REG-FIX-01'), async ({ own }) => {
     expect(own.spec).toBe('REG-FIX-01');
     const step = async (): Promise<void> => {
@@ -157,7 +145,6 @@ test('own.record: the ledger line comes from the form answer and the name from t
     // The same object is not recorded twice (the helper keeps the first line).
     own.record('groups', { status: 201, uuid: U(70), text: '{}', body: { name: `${runId()}-ui-group` } });
     expect(created('groups')).toHaveLength(1);
-    // A user's name is the `username`; an explicit name wins over the body.
     expect(own.record('users', { status: 201, uuid: U(72), text: '{}', body: { username: `${runId()}-ui-user` } }).name).toBe(`${runId()}-ui-user`);
     expect(own.record('groups', { status: 201, uuid: U(73), text: '{}' }, { name: `${runId()}-given` }).name).toBe(`${runId()}-given`);
     expect(wire(), 'recording sends nothing').toEqual([]);
@@ -166,7 +153,6 @@ test('own.record: the ledger line comes from the form answer and the name from t
 test('own.record: an accepted duplicate is recorded before the refusal is raised; no name and no id are errors', META('REG-FIX-03'), async ({ own }) => {
     expect(() => own.record('groups', { status: 409, uuid: U(80), text: 'already exists', body: { name: `${runId()}-dup` } })).toThrow(/answered 409.*recorded/);
     expect(created('groups').map((l) => l.uuid), 'the line is written first').toEqual([U(80)]);
-    // No name in the request: the object (the answer carries an id) is recorded under a placeholder first, then the author is told.
     expect(() => own.record('groups', { status: 200, uuid: U(81), text: '{}', body: {} })).toThrow(/carries no name/);
     expect(created('groups').map((l) => [l.uuid, l.name]), 'recorded before the error, with no run prefix').toEqual([[U(80), `${runId()}-dup`], [U(81), '(no name)']]);
     expect(() => own.record('groups', { status: 201, text: '{}', body: { name: `${runId()}-noid` } })).toThrow(/without an id/);
@@ -184,7 +170,6 @@ test('own.recordNamed adopts the run-named certificates that are not on the ledg
     const ref = own.record('groups', { status: 201, uuid: U(91), text: '{}', body: { name: `${runId()}-gone` } });
     own.deleted('groups', ref, 'removed by the test');
     expect(readLedger().filter((l) => l.uuid === U(91)).map((l) => [l.event, l.spec, l.note])).toEqual([['created', 'REG-FIX-04', undefined], ['deleted', 'REG-FIX-04', 'removed by the test']]);
-    // Nothing of that name: nothing is recorded; a name without the run prefix is refused before any read.
     expect(await own.recordNamed(`${runId()}-other.example.test`, 'n')).toEqual([]);
     await expect(own.recordNamed('somebody-elses.example.test', 'n')).rejects.toThrow(/no run prefix/);
 });
@@ -200,11 +185,9 @@ test('own offers the creators of the own* helpers and the certificate steps', ME
     expect(Object.keys(own.certificate).sort()).toEqual(['issue', 'upload', 'uploadSelfSigned']);
 });
 
-// ------------------------------------------------------------------ needs
-
 expectedSkip.set('needs: a declared need skips the test before the base fixture creates anything', secondIdentityBlocker('admin', {}) ?? '');
 test('needs: a declared need skips the test before the base fixture creates anything', META('REG-FIX-10', { needs: 'second-identity' }), async ({ ownRaProfile, own }) => {
-    // The base fixture would skip with the CA reason (and read the tier); the declared need decides first, with no request at all.
+    // The base fixture would skip with the CA reason (and read the tier)
     expect(ownRaProfile, 'not reached').toBeUndefined();
     expect(own, 'not reached').toBeUndefined();
 });
@@ -246,7 +229,8 @@ test('needs: every need in the catalogue has a resolver; the first unmet one dec
     // No runner tool is run here, not even a fake one: every tool name points at a file that does not exist.
     for (const key of ['REG_OPENSSL_BIN', 'REG_SSCEP_BIN', 'REG_KUBECTL_BIN', 'REG_DOCKER_BIN']) process.env[key] = testInfo.outputPath(`no-such-${key}`);
     const context = { api, env };
-    // A need that reads the tier fails the test when the read fails (the fake core answers 404 to a path it does not serve): not a skip.
+    // A need that reads the tier fails the test when the read fails (the fake core answers 404 to a path it does not
+    // serve): not a skip.
     const READS_THE_TIER = ['platform-triggers-free', 'metadata-field', 'registration-settings', 'utils-service'];
     for (const need of NEEDS.filter((n) => !READS_THE_TIER.includes(n))) expect(['string', 'undefined'], need).toContain(typeof (await resolveNeed(need, context)));
     for (const need of READS_THE_TIER) await expect(resolveNeed(need as Needs, context), `${need}: a failed read is an error`).rejects.toThrow(/→ 404|answered 404/);
@@ -265,8 +249,6 @@ test('needs: every need in the catalogue has a resolver; the first unmet one dec
     expect(wire(), 'the resolvers only read').toEqual([]);
 });
 
-// ------------------------------------------------------------------ live
-
 test('live: an own object passes the check and comes back as a LiveOwn; a foreign one is refused', META('REG-FIX-20'), async ({ own, live }) => {
     const group = await own.group('g20');
     const handle = await live('groups', group);
@@ -275,7 +257,6 @@ test('live: an own object passes the check and comes back as a LiveOwn; a foreig
     expect(handle.uuid).toBe(group.uuid);
     expect(handle.name).toBe(group.name);
     expect(handle.proof.body?.name).toBe(group.name);
-    // A pre-existing object (no ledger line, a name without the run prefix) is refused for ownership; a made-up reference is too.
     await expect(live('groups', { uuid: FOREIGN_GROUP, name: 'Everyone' })).rejects.toBeInstanceOf(OwnObjectViolation);
     await expect(live('groups', { uuid: U(99), name: `${runId()}-not-in-the-ledger` })).rejects.toBeInstanceOf(OwnObjectViolation);
 });
@@ -287,8 +268,6 @@ test('live: a LiveOwn cannot be forged (type level) and a hand-built object is r
     expect(typeof built).toBe('function');
     // @ts-expect-error an object literal is not a LiveOwn (a private field makes the class nominal)
     const forged: LiveOwn<'groups'> = { type: 'groups', ref, proof: { line: {} as never }, uuid: ref.uuid, name: ref.name };
-    // Whatever a hand-built object (or a look-alike class) says about itself, the runtime brand check refuses it where a LiveOwn is
-    // required.
     const lookAlike = new (class { readonly proven = true; readonly type = 'groups'; readonly uuid = ref.uuid; readonly name = ref.name; readonly ref = ref; readonly proof = { line: {} }; })();
     for (const fake of [forged, lookAlike, { ...forged, proven: true }, null, undefined, 'groups']) {
         expect(LiveOwn.isProven(fake), `${typeof fake} is not a LiveOwn`).toBe(false);
@@ -300,8 +279,6 @@ test('live: a LiveOwn cannot be forged (type level) and a hand-built object is r
     expect(LiveOwn.isProven(handle)).toBe(true);
     expect(LiveOwn.require(handle)).toBe(handle);
 });
-
-// ------------------------------------------------------------------ the rest
 
 test('regressionEnv is the settings reader', async ({ regressionEnv }) => {
     process.env.REG_CA_CONNECTORS = 'One-Connector,Two-Connector';
@@ -356,13 +333,9 @@ test('localApi: the fixture body throws before it builds anything, and never han
     expect(server.arrived, 'no token grant and no request').toEqual([]);
 });
 
-// ------------------------------------------------------------------ more needs and the derived key of a timed-out issue
-
 test('needs ca and ejbca-ng skip, never throw, when the run CA cannot be read', async ({ api, env }) => {
-    // The run state names an authority the platform no longer has (the read answers 404).
     updateRunState({ raProfile: { uuid: U(3), name: `${runId()}-ra`, kind: 'own', authorityUuid: U(4) } });
     for (const need of ['ca', 'ejbca-ng'] as const) expect(await resolveNeed(need, { api, env }), need).toMatch(/^needs a CA: the run CA could not be read/);
-    // REG_RA_PROFILE_NAME that names nothing: the helper's own assertion fails, the need is unmet.
     updateRunState({ raProfile: undefined });
     process.env.TIER_KIND = 'local';
     process.env.REG_RA_PROFILE_NAME = 'no-such-ra-profile';

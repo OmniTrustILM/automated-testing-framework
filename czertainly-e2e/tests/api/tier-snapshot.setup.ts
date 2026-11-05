@@ -1,11 +1,7 @@
 /**
- * API-GEN-33 — Run setup: the guard proof, then the "before" snapshot of a shared tier (ilm#428).
- *
- * [guard] proves the tier assertion, one worker, and that an own role is accepted while a run-prefixed name without a
- * ledger line and pre-existing objects are refused.
- * [before] stores the pre-existing objects of every resource for the non-interference spec.
- * An unreadable required resource fails the setup. Runs in the `snapshot` project; the only spec allowed a raw context.
- * Needs BASE_URL; [before] is skipped on a local stack.
+ * API-GEN-33 — Run setup: the guard proof, then the "before" snapshot of a shared tier (ilm#428). [guard] proves the
+ * tier assertion, one worker, and that an own role is accepted while a run-prefixed name without a ledger line and
+ * pre-existing objects are refused.
  */
 import { randomUUID } from 'crypto';
 import { expect, getAuthenticatedApiContext, test } from '../../fixtures/testFixtures';
@@ -77,10 +73,10 @@ test.describe('run setup with the guard proof, then the before snapshot', { tag:
                 const watched = readOnlySpy(raw);
                 // A forged OwnRef and the guard layer removed on purpose: the helper's own assertOwnLive must refuse.
                 const forged = { uuid: raUuid, name: runName('forged'), kind: 'own' } as OwnRef;
-                // The refusal must be for OWNERSHIP: the brand of a raw context or a path rule would hide a broken check.
+                // The refusal must be for OWNERSHIP: the brand of a
+                // raw context or a path rule would hide a broken check.
                 const helperRefusal = await expectOwnershipRefusal(enableOwnRaProfile(watched.api as unknown as GuardedApi, authorityUuid, forged));
                 expect(helperRefusal.uuid, 'the helper refused the pre-existing RA profile itself').toBe(raUuid);
-                // The guarded context over the same spy: PATCH and DELETE refused for ownership (also under the dry run).
                 const guarded = guardApi(watched.api);
                 expect((await expectOwnershipRefusal(guarded.patch(`/api/v1/authorities/${authorityUuid}/raProfiles/${raUuid}/disable`))).uuid).toBe(raUuid);
                 expect((await expectOwnershipRefusal(guarded.delete(`/api/v1/authorities/${authorityUuid}/raProfiles/${raUuid}`))).uuid).toBe(raUuid);
@@ -109,7 +105,6 @@ test.describe('run setup with the guard proof, then the before snapshot', { tag:
 
     test('snapshot the shared tier before the first spec', testMeta({ id: 'API-GEN-33', row: 'before', prio: 'P1', issue: 'ilm#428' }), async ({ api }, testInfo) => {
         test.skip(isLocalTier(), 'local stack: the non-interference proof runs on shared tiers only');
-        // ~30 resources, three of them read as a newest sample plus an oldest window of up to four pages.
         test.setTimeout(180_000);
         expect(process.env.BASE_URL, 'BASE_URL is unset: a run without a tier fails').toBeTruthy();
         assertRunTier();

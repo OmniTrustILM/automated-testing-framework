@@ -1,10 +1,5 @@
 /**
  * errorCases — unit tests of utils/regression/inventory/errorCases/.
- *
- * Checks the response check and its shape rule, the leak scanner, the forged token, the upload bodies, and the structure
- * of the case tables (no duplicates, every listing and case has a request or a stated reason). The battery judges every
- * refusal of the API, so a check that passes a wrong answer, or a table with a hole, would hide a defect. Pure calls over
- * hand-made answers and the case tables; no request is sent.
  */
 import { test, expect } from '@playwright/test';
 import { jsonDepth, MAX_BODY_DEPTH } from '../../utils/regression/guard/targets';
@@ -21,8 +16,6 @@ const RUN = 'qa-reg-20261014-120000-ab12';
 let n = 0;
 const ctx = () => createBatteryContext('t', { runName: (s) => `${RUN}-${s}`, probe: () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}` });
 const answer = (status: number, body: unknown, contentType = 'application/json') => ({ status, contentType, text: typeof body === 'string' ? body : JSON.stringify(body) });
-
-// ------------------------------------------------------------------ the shape rule and the judge
 
 test('shapeProblems: a 422 is an array of non-empty strings, any other error {message}, both application/json', () => {
     expect(shapeProblems(422, 'application/json', '["a","b"]')).toEqual([]);
@@ -75,8 +68,6 @@ test('statusOk: a number, a family and any 4xx', () => {
     expect(statusOk('4xx', 399)).toBe(false);
 });
 
-// ------------------------------------------------------------------ the leak scanner
-
 test('leaks: stack frames, class and package names, SQL and file paths are findings', () => {
     const kinds = (text: string) => findLeaks(text).map((l) => l.kind);
     expect(kinds('\tat com.otilm.core.service.Foo.bar(Foo.java:123)')).toEqual(expect.arrayContaining(['stack-trace', 'package']));
@@ -118,8 +109,6 @@ test('leaks: the application enum classes the 400 for an unknown enum value name
     expect(findLeaks(observed).map((l) => l.kind)).toContain('package');
 });
 
-// ------------------------------------------------------------------ the forged token and the credentials
-
 test('forgeAlgNone: an unsecured JWT: {"alg":"none"} header, claims, an empty signature, base64url without padding', () => {
     const token = forgeAlgNone();
     const [h, c, s, ...rest] = token.split('.');
@@ -149,8 +138,6 @@ test('authorizationOf / secretsOf: the fabricated identities carry the marker an
     expect(identityReq('/api/v1/groups', 'Bearer x')).toEqual({ method: 'GET', url: '/api/v1/groups', headers: { authorization: 'Bearer x' }, identityOverride: true });
 });
 
-// ------------------------------------------------------------------ the five listings (API-GEN-02)
-
 test('the listing table: five resources, every (resource × case) pair has a request or a stated reason', () => {
     expect(LISTING_ENDPOINTS.map((l) => l.key)).toEqual(['certificates', 'keys', 'discoveries', 'auditLogs', 'oids']);
     expect(LISTING_ENDPOINTS.map((l) => l.url)).toEqual(['/api/v1/certificates', '/api/v1/keys', '/api/v1/discoveries/list', '/api/v1/auditLogs', '/api/v1/oids/list']);
@@ -161,8 +148,8 @@ test('the listing table: five resources, every (resource × case) pair has a req
     const ids = cases.map((c) => c.id);
     expect(new Set(ids).size, 'ids are unique').toBe(ids.length);
     for (const l of LISTING_ENDPOINTS) expect(cases.filter((c) => c.resource === l.key).length, l.key).toBeGreaterThanOrEqual(LISTING_CASES.length - 3);
-    // The gaps are the ones the code explains: the certificate has no number field, audit logs and OIDs do not sort, OIDs have no
-    // date-time.
+    // The gaps are the ones the code explains: the certificate has no number field, audit logs and OIDs do not sort,
+    // OIDs have no date-time.
     expect(na.map((x) => `${x.resource}.${x.caseId}`).sort()).toEqual([
         'auditLogs.filter.numberInvalid', 'auditLogs.sort.nonSortableField',
         'certificates.filter.numberInvalid',
@@ -221,8 +208,6 @@ test('the conditionNotAdvertised oracle compares the listed conditions with the 
     expect(checkResponse(s.expect, answer(422, ['Field CKI_NAME does not support the GREATER condition; it supports CONTAINS.']))[0]).toMatch(/absolute set of a string field/);
 });
 
-// ------------------------------------------------------------------ API-GEN-01: the battery
-
 test('the battery: at least 40 refused requests, each with a status-matrix row, a rule and an expectation; ids unique', () => {
     const rows = buildErrorContractCases(ctx());
     expect(rows.length).toBeGreaterThanOrEqual(40);
@@ -235,13 +220,9 @@ test('the battery: at least 40 refused requests, each with a status-matrix row, 
         expect(['GET', 'POST']).toContain(r.req.method);
         expect(r.req.url).toMatch(/^\/api\/v[12]\//);
     }
-    // Path uuids: a String path variable parsed with SecuredUUID answers 422 ["Invalid UUID <v> in the request"] (keys, groups,
-    // credentials); a typed `UUID` path variable answers 400 "Method parameter 'uuid': Failed to convert value …" (certificates). Keys
-    // answer 422, not 400.
     const expectOf = (id: string) => rows.find((r) => r.id === id)!.expect;
     for (const id of ['pathAndQueryTypes.keys.badUuid', 'pathAndQueryTypes.groups.badUuid', 'pathAndQueryTypes.credentials.badUuid']) expect(expectOf(id), id).toEqual({ status: 422, messages: ['Invalid UUID not-a-uuid in the request'] });
     expect(expectOf('pathAndQueryTypes.certificates.badUuid').status).toBe(400);
-    // Every matrix row of the battery is exercised, search / create / path / body endpoints alike.
     const matrix = new Set<string>(rows.map((r) => r.matrix));
     for (const m of ['paging', 'unreadableBody', 'beanValidation', 'sorting', 'conditionNotOffered', 'valueMissing', 'regex', 'valueFormat', 'attributeIdentifier', 'pathAndQueryTypes', 'unknownObject', 'wrongMethod', 'createName', 'createBody', 'contentType']) expect(matrix.has(m), m).toBe(true);
     const methods = new Set(rows.map((r) => r.req.method));
@@ -277,7 +258,6 @@ test('the battery: names and markers cannot be taken for a uuid by the guard\'s 
         expect(s, s).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
     }
     expect(a.name('gen05').startsWith(RUN)).toBe(true);
-    // A 22-character run of base64 characters is lengthened.
     const padded = createBatteryContext('x'.repeat(2), { runName: (s) => s, probe: () => 'p', now: () => 0 });
     expect(padded.marker).not.toMatch(/^[A-Za-z0-9+/_-]{22}$/);
     const exactly22 = createBatteryContext('t', { runName: () => 'a'.repeat(22), probe: () => 'p' });
@@ -293,8 +273,6 @@ test('nameInBody: the name of a create body, from an object or raw text', () => 
     expect(nameInBody(Buffer.from('null'))).toBeUndefined();
     expect(nameInBody(undefined)).toBeUndefined();
 });
-
-// ------------------------------------------------------------------ API-GEN-03: the upload bodies
 
 test('uploadBody: the decoded file is exactly the stated size, the import names one placeholder entry', () => {
     expect(UPLOAD_LIMIT).toBe(5_242_880);
@@ -328,8 +306,6 @@ test('sizeProblems: the limit rows answer the size text, the boundary row the fo
     expect(sizeProblems(six, answer(400, { message: ERROR_MESSAGES.unreadable })).join('\n'), 'a 400 is not the limit refusal').toMatch(/expected 422/);
 });
 
-// ------------------------------------------------------------------ API-GEN-05: the JSON battery
-
 test('the JSON battery: the bodies are what their rows say (malformed, type-invalid, valid, BOM, duplicate key, nesting)', () => {
     const rows = jsonBattery(ctx());
     const byId = (id: string) => rows.find((r) => r.id === id)!;
@@ -341,11 +317,9 @@ test('the JSON battery: the bodies are what their rows say (malformed, type-inva
             return false;
         }
     };
-    // Syntax errors: Jackson refuses them, JSON.parse refuses them too.
     for (const id of ['certificates.trailing-comma', 'certificates.trailing-comma-marker', 'certificates.comment-block', 'certificates.comment-line', 'certificates.nan', 'groups.trailing-comma', 'groups.comment-block', 'groups.comment-line', 'groups.nan']) {
         expect(parses(byId(id)), id).toBe(false);
     }
-    // Valid JSON of the wrong type or shape.
     for (const id of ['certificates.body-null', 'certificates.body-array', 'certificates.body-string', 'certificates.body-number', 'certificates.filters-object', 'certificates.filters-string', 'certificates.itemsPerPage-abc', 'certificates.includeArchived-yes', 'certificates.nesting-25', 'groups.body-null', 'groups.body-array', 'groups.body-number', 'groups.name-object', 'groups.description-array', 'groups.nesting-25', 'certificates.control', 'groups.blank-name-control']) {
         expect(parses(byId(id)), id).toBe(true);
     }
@@ -353,26 +327,22 @@ test('the JSON battery: the bodies are what their rows say (malformed, type-inva
     expect(byId('certificates.body-array').data.toString()).toBe('[]');
     expect(byId('certificates.body-number').data.toString()).toBe('123');
     expect(JSON.parse(byId('certificates.body-string').data.toString())).toContain('qa-marker-t-');
-    // Nesting: 25 levels of arrays in the typed field; inside the guard's own depth limit.
     const nested = JSON.parse(byId('certificates.nesting-25').data.toString()).filters;
     let depth = 0;
     for (let v: unknown = nested; Array.isArray(v); v = (v as unknown[])[0]) depth++;
     expect(depth).toBe(25);
     expect(jsonDepth(JSON.parse(byId('groups.nesting-25').data.toString()))).toBeLessThan(MAX_BODY_DEPTH);
-    // BOM and duplicate keys.
     expect([...byId('certificates.bom').data.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
     expect([...byId('groups.bom').data.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
     expect(jsonDuplicateKey(byId('certificates.duplicate-keys').data.toString())).toBe('itemsPerPage');
     expect(jsonDuplicateKey(byId('groups.duplicate-keys').data.toString())).toBe('name');
     // Markers sit in the echo rows; the marker is a plain string in the body, never a uuid.
     for (const r of rows.filter((x) => x.echo?.length)) expect(r.data.toString(), r.id).toContain(r.echo![0]);
-    // Kinds: documented refusals are P1 rows, the two contradictions of the written rules are pins, the controls are controls.
     expect(rows.filter((r) => r.kind === 'pin').map((r) => r.id).sort()).toEqual(['certificates.bom', 'certificates.duplicate-keys', 'groups.bom', 'groups.duplicate-keys']);
     expect(rows.filter((r) => r.kind === 'control').map((r) => r.id).sort()).toEqual(['certificates.control', 'groups.blank-name-control']);
     expect(rows.filter((r) => r.guardRefused).map((r) => r.id)).toEqual(['groups.duplicate-keys']);
     expect(rows.filter((r) => r.target === 'certificates').length).toBeGreaterThanOrEqual(15);
     expect(rows.filter((r) => r.target === 'groups').length).toBeGreaterThanOrEqual(12);
-    // A create body that names a group names a run-prefixed one: an accidental acceptance leaves a recordable, own object.
     for (const r of rows.filter((x) => x.target === 'groups')) {
         const name = nameInBody(r.data);
         if (name) expect(name.startsWith(RUN), r.id).toBe(true);
@@ -401,15 +371,12 @@ test('the JSON battery: pins accept their family, the groups BOM row can only be
     expect(checkResponse(control.expect, answer(400, { message: ERROR_MESSAGES.unreadable }))[0]).toMatch(/status 400, expected 200/);
 });
 
-// ------------------------------------------------------------------ API-GEN-06 / 07 / 08 tables
-
 test('the content-type rows: text/plain rows are sendable, xml / multipart / no content type are the guard requests', () => {
     expect(CONTENT_TYPE_ROWS.map((r) => r.id)).toEqual(['text-plain.search', 'text-plain.create', 'application-xml.create', 'multipart.create', 'no-content-type.create']);
     expect(CONTENT_TYPE_ROWS.filter((r) => !r.guardRefused).map((r) => r.id)).toEqual(['text-plain.search', 'text-plain.create']);
     for (const r of CONTENT_TYPE_ROWS.filter((x) => x.guardRefused)) expect(r.guardRefused!.length, r.id).toBeGreaterThan(20);
     expect(contentTypeReq(CONTENT_TYPE_ROWS[0])).toMatchObject({ method: 'POST', url: '/api/v1/certificates', headers: { 'content-type': 'text/plain' } });
     expect(contentTypeReq(CONTENT_TYPE_ROWS[4]).headers, 'no content type: no header').toBeUndefined();
-    // The group bodies of the content-type rows are blank-name groups: nothing can be created by them.
     for (const r of CONTENT_TYPE_ROWS.filter((x) => x.resource === 'groups')) expect(nameInBody(r.data), r.id).toBeUndefined();
     expect(acceptProblems(answer(200, { a: 1 }))).toEqual([]);
     expect(acceptProblems(answer(200, 'x', 'application/xml'))[0]).toMatch(/must be JSON/);
@@ -436,7 +403,6 @@ test('the protected endpoints: at least 20 distinct read-only paths across resou
     expect(new Set(PROTECTED_ENDPOINTS.map((p) => p.url)).size).toBe(PROTECTED_ENDPOINTS.length);
     expect(new Set(PROTECTED_ENDPOINTS.map((p) => p.resource)).size).toBe(PROTECTED_ENDPOINTS.length);
     for (const p of PROTECTED_ENDPOINTS) expect(p.url, p.resource).toMatch(/^\/api\/v1\/[A-Za-z/]+$/);
-    // none of them is a public endpoint (core AuthHelper.PERMITTED_ENDPOINTS: /v?/health/**, /v?/connector/register; branding for GET)
     for (const p of PROTECTED_ENDPOINTS) expect(p.url, p.resource).not.toMatch(/health|connector\/register|branding/);
     expect(PROTECTED_ENDPOINTS.map((p) => p.url)).toContain('/api/v1/info');
 });

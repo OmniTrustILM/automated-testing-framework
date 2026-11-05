@@ -1,12 +1,7 @@
 /**
- * REG-CFG-08 — Role permissions in the permissions editor (release checklist: Configuration 8; ilm#427).
- *
- * Sets Certificates and RA Profiles permissions on the run role and checks that the API returns exactly those and the reloaded
- * editor shows them. A fresh role gets RA Profiles List at resource level plus object-level Detail and Members on one RA
- * profile; the object must not get them for every RA profile (fe-administrator#2283, fixed, guarded against its return).
- *
- * Create-only: only this suite's roles change, and each passes the live check first. A fresh role is recorded in the ledger
- * before it is edited. The object-level check uses the run's own RA profile, so it needs a CA (skips without one).
+ * REG-CFG-08 — Role permissions in the permissions editor (release checklist: Configuration 8; ilm#427). Sets
+ * Certificates and RA Profiles permissions on the run role and checks that the API returns exactly those and the
+ * reloaded editor shows them.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { RolePermissionsPage } from '../../../pages/RolePermissionsPage';

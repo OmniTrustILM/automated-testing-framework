@@ -1,8 +1,6 @@
 /**
- * Fixture for tests/unit/specGuards.spec.ts: tests that are only LISTED, never run, through the real
- * REG / API configs (wrapped by regression.fixture.config.ts / api.fixture.config.ts, which point every project at this
- * folder). With TIER_KIND unset, no project may select a `@local` test, in any tag combination; the plain rows prove
- * that the projects still select something. Not a unit test itself: playwright.unit.config.ts ignores tests/unit/fixtures.
+ * Fixture for tests/unit/specGuards.spec.ts: tests that are only LISTED, never run, through the real REG / API configs
+ * (wrapped by regression.fixture.config.ts / api.fixture.config.ts, which point every project at this folder).
  */
 import { test } from '@playwright/test';
 

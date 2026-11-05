@@ -1,11 +1,6 @@
 /**
- * API-AUTH-01, 02, 03, 06 — Who may call the API: no credentials, valid, tampered and forged bearers, a disabled user (ilm#426).
- *
- * core#2502: the refused-method row is wrong on the migrated build (test.fail there).
- * Skips: the refused-method row when the ingress answers before core; tampered bearers in header mode; the disabled-user
- * row without the second identity and one core replica; the anonymous reads on a header-mode stack without
- * REG_LOCAL_CORE_URL (anonymous calls go to the core's own port, where no proxy authenticates them).
- * A role an anonymous call manages to create is ledgered before the assertion.
+ * API-AUTH-01, 02, 03, 06 — Who may call the API: no credentials, valid, tampered and forged bearers, a disabled user
+ * (ilm#426). core#2502: the refused-method row is wrong on the migrated build (test.fail there).
  */
 import { FEW_CALLS_TEST_MS, MANY_STEPS_TEST_MS, SEVERAL_STEPS_TEST_MS } from '../../../utils/regression/timeouts';
 import { expect, test } from '../../../fixtures/regressionFixtures';
@@ -24,7 +19,6 @@ import { answerOf } from '../../../utils/regression/apiReads';
 const DEFAULT_LISTINGS = ['dashboard', 'approvals', 'certificates', 'keys', 'secrets'];
 
 test.describe('Authentication of API callers', { tag: tags.api }, () => {
-    // ------------------------------------------------------------------ API-AUTH-01
 
     test('no credentials answer 401 on every protected read, and health and branding stay open',
         testMeta({
@@ -85,7 +79,6 @@ test.describe('Authentication of API callers', { tag: tags.api }, () => {
             const created = await test.step('POST /v1/roles with a valid body and no credentials → 401', async () => {
                 const started = Date.now();
                 const answer = await answerOf(await anonymousApi.post('/api/v1/roles', { data: { name, description: 'API-AUTH-01 anonymous probe', customAttributes: [] } }), started);
-                // Ledger before assertion: a role an anonymous caller managed to create is this run's object.
                 own.probe('roles', answer, { name, note: 'role created without credentials (API-AUTH-01[mutations])' });
                 expect(answer.status, answer.text.slice(0, 200)).toBe(401);
                 expect(leaksInternals(answer.text)).toBeUndefined();
@@ -108,8 +101,6 @@ test.describe('Authentication of API callers', { tag: tags.api }, () => {
                 expect(await usersOrRolesNamed(api, 'roles', created)).toEqual([]);
             });
         });
-
-    // ------------------------------------------------------------------ API-AUTH-02
 
     test('a valid identity gets its profile: JSON, its own name, the default listings, no ANY / NONE',
         testMeta({
@@ -163,21 +154,19 @@ test.describe('Authentication of API callers', { tag: tags.api }, () => {
             testInfo.annotations.push({ type: 'build', description: `core ${build.version ?? '?'} branch ${build.branch ?? '?'}` });
             const migrated = await isMigratedBuild(api, testInfo);
             const res = await api.fetch('/api/v1/auth/profile', { method: 'TRACE' });
-            // Whose answer is it (as in API-GEN-32[method])? An ingress that refuses TRACE before core (405, a proxy `Server`
-            // header, a non-JSON body) says nothing about core: skip with the named reason. The body is never printed (a proxy could
-            // echo the bearer); the verdict's problems and the skip detail are status codes, byte counts and a proxy name only.
+            // Whose answer is it (as in API-GEN-32[method])? An ingress that refuses TRACE before core (405, a proxy
+            // `Server` header, a non-JSON body) says nothing about core: skip with the named reason. The body is never printed (a proxy
+            // could echo the bearer).
             const verdict = checkRefusedMethod({ status: res.status(), headers: res.headers(), bodyText: await res.text() });
             if (verdict.outcome === 'skip') {
                 testInfo.annotations.push({ type: 'ingress-answer', description: verdict.why });
                 test.skip(true, INGRESS_SKIP_MESSAGE);
                 return;
             }
-            // The known bug only on the migrated build (the build marker from /v1/info; REG_BUILD overrides it): core answers 401 there.
+            // The known bug only on the migrated build (the build marker from /v1/info; REG_BUILD overrides it)
             test.fail(migrated, 'core#2502: the migrated build answers 401 to a refused method');
             expect(verdict.problems, 'a refused method with valid credentials answers 400 with an empty body (core, not the ingress)').toEqual([]);
         });
-
-    // ------------------------------------------------------------------ API-AUTH-03
 
     for (const variant of TOKENLESS_VARIANTS) {
         test(`a bearer built from nothing (${variant}) is refused with 401 between two controls`,
@@ -227,8 +216,6 @@ test.describe('Authentication of API callers', { tag: tags.api }, () => {
                 expect((await readProfile(api)).username, 'control after: the untouched token still answers 200').toBe(me.username);
             });
     }
-
-    // ------------------------------------------------------------------ API-AUTH-06
 
     test('a disabled user\'s token is refused on the next request, and re-enabling restores it',
         testMeta({

@@ -4,11 +4,7 @@ import { expect, test } from '../../utils/timestamping/fixtures';
 import { familyOrSkip, plannedSets, setOrSkip } from '../../utils/timestamping/provisioning';
 import { devTests } from '../../utils/timestamping/tags';
 
-/**
- * Everything the TSP request path depends on, verified through the API rather than trusted
- * because the provisioning script exited zero. A half-provisioned platform otherwise fails
- * much later as an opaque in-band rejection.
- */
+/** Everything the TSP request path depends on, verified through the API rather than trusted because the provisioning script exited zero. */
 test.describe('provisioning', devTests(), () => {
   for (const { label, family, qualified } of plannedSets()) {
     test(`the ${label} signing profile is enabled, timestamping, and bound to its certificate`, devTests(), async ({ admin }) => {
@@ -22,8 +18,8 @@ test.describe('provisioning', devTests(), () => {
       expect(workflow, 'signing profile carries a workflow').toBeDefined();
       expect(workflow!.type, 'workflow type').toBe('timestamping');
       expect(workflow!.defaultPolicyId, 'default policy OID').toBe(set.policyOid);
-      // Strict equality on purpose: Boolean(undefined) would let a missing field satisfy the
-      // non-qualified case and hide a dropped flag.
+      // Strict equality on purpose: Boolean(undefined) would let a missing field satisfy the non-qualified case and hide
+      // a dropped flag.
       expect(workflow!.qualifiedTimestamp, 'qualifiedTimestamp flag').toBe(set.qualified);
 
       const certificate = profile.signingScheme?.certificate;
@@ -51,8 +47,7 @@ test.describe('provisioning', devTests(), () => {
       const certificate: CertificateDetail = await admin.getCertificate(set.certificate.uuid);
 
       expect(certificate.commonName, 'certificate common name').toBe(set.certificate.commonName);
-      // An empty issuerCertificateUuid is the root cause behind
-      // "Certificate is not eligible for signing workflow type TIMESTAMPING".
+      // An empty issuerCertificateUuid is why the platform says "Certificate is not eligible for signing workflow type TIMESTAMPING".
       expect(certificate.issuerCertificateUuid, 'issuer is linked in the platform').toBeTruthy();
       expect(['valid', 'expiring'], `validation status (${certificate.validationStatus})`).toContain(
         certificate.validationStatus,
@@ -83,7 +78,7 @@ test.describe('provisioning', devTests(), () => {
     });
   }
 
-  // A re-run under pinned names must find every object again; with per-run provisioning there is no previous summary.
+  // A re-run under pinned names must find every object again.
   const NO_PREVIOUS = 'per-run provisioning: there is no previous summary to compare';
 
   test('re-provisioning reused every shared object', devTests(), async () => {

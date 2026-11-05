@@ -1,9 +1,6 @@
 /**
- * Unit tests for the parts of env.ts that compute a value rather than read one.
- *
- * SMK-005 derives the domain its HTTP-01 solver answers on from BASE_URL, and chooses how the
- * solver is routed. A wrong value in either fails the smoke run minutes later as an unreachable
- * challenge — far from the cause. Pinning them here keeps that failure next to the code.
+ * Unit tests for the parts of env.ts that compute a value rather than read one. SMK-005 derives the domain its HTTP-01
+ * solver answers on from BASE_URL, and chooses how the solver is routed.
  */
 import { test, expect } from '@playwright/test';
 import { acmeSolverFrom, loadEnv, parentDomainOf } from '../../utils/env';

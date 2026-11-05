@@ -1,14 +1,6 @@
 /**
- * key-onboarding.setup — the setup project of the key onboarding block (`@dev-tests`).
- *
- * The only creator of the block's shared objects and of the key pairs on the token. One test runs the preflight, the
- * provisioning and the planting, and ALWAYS writes the run's summary: `ready`, or `unavailable` with the reason every
- * key onboarding test then skips with.
- *
- * The objects are this run's (run-prefixed names, ledger spec `key-onboarding/setup`); the block teardown deletes them.
- * A tier or runner without what the block needs is not a failure: the test passes with an annotation. A refused body or
- * identity, a programming error or a guard refusal fails it.
- * No request goes to a shared tier: the guarded API is built only after the offline checks passed.
+ * key-onboarding.setup — the setup project of the key onboarding block (`@dev-tests`). The only creator of the block's
+ * shared objects and of the key pairs on the token.
  */
 import { test as setup } from '../../fixtures/testFixtures';
 import { getAuthenticatedApiContext } from '../../utils/auth/apiContext';
@@ -22,7 +14,6 @@ import { describeLocalOnly } from '../../utils/regression/tier/localProof';
 
 const logger = new Logger('KeyOnboardingSetup');
 
-// The second guard next to `@local`, as in every spec of the block.
 describeLocalOnly(setup);
 
 setup('the block provisions its token and plants its key pairs, or records why the tier cannot', devTests(), async ({ request, env }, testInfo) => {
@@ -47,7 +38,6 @@ setup('the block provisions its token and plants its key pairs, or records why t
     } catch (e) {
         // Not the tier's answer: the specs skip with it, and the setup test fails with the original error.
         try {
-            // The error itself fails this test (its report shows it); the summary only names its kind.
             writeSummary(unavailableSummary(`the key onboarding setup failed (${e instanceof Error ? e.name : 'error'}); see the key-onboarding-setup test`));
         } catch (writeError) {
             logger.error(`could not write the failed setup's summary: ${String(writeError)}`);

@@ -8,31 +8,11 @@ import { provisionedFamilies, readSummary } from '../../utils/timestamping/provi
 import { devTests } from '../../utils/timestamping/tags';
 import { describeOutcome, requestTimestamp, TimestampOutcome } from '../../utils/timestamping/tsp';
 
+/** Time quality gates the qualified profile only: degraded time must not stop the non-qualified one and must stop the qualified one. */
 describeLocalOnly(test);
 
-/**
- * Time quality gates the qualified profile only. The regression this guards against is a
- * change that makes degraded time either stop everything (non-qualified must keep working)
- * or nothing (qualified must stop).
- *
- * Time quality degrades in two ways that take different paths through Core: with the NTP
- * source gone the monitor keeps reporting, and its reports say DEGRADED; with the monitor gone
- * no report arrives, and Core's last one goes stale once it is older than the configured
- * accuracy.
- *
- * Outage and recovery are one test on purpose: recovery is only meaningful after an outage
- * this test caused, and a single try/finally guarantees the container is restored even when
- * an assertion fails midway.
- *
- * Every qualified profile is checked inside the one outage window rather than in a test per
- * family: the gate is a property of the time-quality configuration they share, so a second
- * outage would prove nothing and cost another few minutes.
- *
- * Tagged @slow: it takes a container away and waits for the platform to notice.
- */
 test.describe('time quality @slow', { tag: [...devTests({ slow: true, disruptive: true }).tag, DOCKER] }, () => {
   test.describe.configure({ timeout: 480_000 });
-  // The tests stop containers: a local stack with a docker daemon, and the explicit opt-in.
   test.skip(!timestampingConfig().allowDisruption, 'disruptive: set TSA_ALLOW_DISRUPTION=true');
   test.skip(() => !dockerAvailable(), 'docker is not available');
 
@@ -45,8 +25,6 @@ test.describe('time quality @slow', { tag: [...devTests({ slow: true, disruptive
     expectedAccuracy: number,
   ): Promise<void> {
     const families = provisionedFamilies();
-    // Polling one profile is enough to learn the platform has noticed; the rest are then
-    // checked once, because they are gated by the same configuration.
     const [leading] = families;
     const qualified = leading.qualified.signingProfile.name;
 
@@ -148,10 +126,8 @@ test.describe('time quality @slow', { tag: [...devTests({ slow: true, disruptive
     );
   });
 
-  // Whatever happened above, the next spec file must find an environment that can issue
-  // qualified timestamps; a silent failure here would surface as an unrelated red test.
+  // Whatever happened above, the next spec file must find an environment that can issue qualified timestamps.
   test.afterAll(async ({ tsp }) => {
-    // Without the opt-in, a docker daemon or a summary no test ran, so no container was stopped.
     if (!timestampingConfig().allowDisruption || !dockerAvailable() || readSummary().status !== 'ready') return;
     const [leading] = provisionedFamilies();
     for (const container of outageContainers) {

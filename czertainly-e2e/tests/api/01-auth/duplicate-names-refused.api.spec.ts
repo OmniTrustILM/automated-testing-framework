@@ -1,10 +1,6 @@
 /**
- * API-AUTH-11, API-AUTH-18 — Duplicate user and role names are refused with a conflict (ilm#427).
- *
- * Both answers should be a 409 naming the user or role; today they are a 500 (core#2297, open). `test.fail()` covers only
- * the status and message step, so the test turns red once the bug is fixed.
- * Uses own run objects; `admin` and `auditor` are only read, and a system role the build lacks is skipped, never created.
- * An accepted duplicate is ledgered before the assertion.
+ * API-AUTH-11, API-AUTH-18 — Duplicate user and role names are refused with a conflict (ilm#427). Both answers should be
+ * a 409 naming the user or role; today they are a 500 (core#2297, open).
  */
 import { ACCOUNT_STEPS_TEST_MS, SEVERAL_STEPS_TEST_MS } from '../../../utils/regression/timeouts';
 import { expect, test } from '../../../fixtures/regressionFixtures';
@@ -34,7 +30,8 @@ test.describe('Duplicate user and role names', { tag: tags.api }, () => {
                 expect(named.map((u) => u.uuid), 'exactly one user carries the username').toEqual([user.uuid]);
             });
 
-            // The known bug covers only the answer (500 "Internal server error." instead of a conflict naming the username).
+            // The known bug covers only the answer (500 "Internal
+            // server error." instead of a conflict naming the username).
             test.fail(true, 'core#2297: a duplicate username answers 500 "Internal server error." instead of a 409 naming the username');
             await test.step('A 409 {message} names the username and says it already exists (known bug core#2297)', async () => {
                 expect(second.status).toBe(409);
@@ -55,8 +52,7 @@ test.describe('Duplicate user and role names', { tag: tags.api }, () => {
         async ({ api, own }, testInfo) => {
             test.setTimeout(ACCOUNT_STEPS_TEST_MS);
             const role = await test.step('Own role', async () => own.role('dup'));
-            // Only a name that exists RIGHT NOW is a duplicate: a build without the `auditor` system role (before core#1911) would
-            // CREATE a role named `auditor` here, which carries no run prefix and could not be cleaned up.
+            // Only a name that exists now is a duplicate: creating a missing `auditor` role would leave an object nobody can clean up.
             const candidates = [role.name, 'admin', 'auditor'];
             const before = await test.step('Before: which of the names exist (the system ones are read, never touched)', async () => {
                 const all = await listAll(api, 'roles');

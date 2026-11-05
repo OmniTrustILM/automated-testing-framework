@@ -1,21 +1,15 @@
 /**
- * fakeCore — the base of the stateful fake cores of the wire tests.
- *
- * Keeps a store of detail URL to object, hands out sequential uuids and has generic routes: GET and DELETE of a stored detail,
- * and POST to one of its `collections`. A subclass adds its own rules in `route` or answers everything in `respond`; only the
- * ownCrud core uses the generic routes. In memory only; used with `registerFakeCore` and a loopback server.
+ * fakeCore — the base of the stateful fake cores of the wire tests. Keeps a store of detail URL to object, hands out
+ * sequential uuids and has generic routes: GET and DELETE of a stored detail, and POST to one of its `collections`.
  */
 import type { Answer, Arrived } from './loopbackServer';
 
 export type Json = Record<string, any>;
 
 export class FakeCore {
-    /** The first uuid number of a core is `seq + 1`. */
     protected seq = 5000;
-    /** The uuid prefix of the ids the core hands out. */
     protected uuidPrefix = 'aaaaaaaa-0000-4000-8000-';
     readonly store = new Map<string, Json>();
-    /** Collection paths a generic POST creates in. */
     protected collections = new Set<string>();
     protected createStatus = 201;
 
@@ -29,15 +23,12 @@ export class FakeCore {
         return this;
     }
 
-    /** The area rules; undefined falls through to the generic routes. */
     protected route(_a: Arrived, _path: string, _body: Json): Answer | undefined {
         return undefined;
     }
 
-    /** What the loopback server calls; a test may wrap it (`core.answer = ...`). */
     answer = (a: Arrived): Answer | undefined => this.respond(a);
 
-    /** The area rules first, then the generic routes. */
     protected respond(a: Arrived): Answer | undefined {
         const path = a.url.split('?')[0];
         const body: Json = a.body ? JSON.parse(a.body) : {};

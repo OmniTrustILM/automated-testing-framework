@@ -1,12 +1,7 @@
 /**
- * REG-USE-06.1 — A certificate issued through the cert-manager plugin (release checklist: Usage 6; ilm#430).
- *
- * Applies a CzertainlyIssuer driven by the run RA profile and a cert-manager Certificate for a run-prefixed DNS name; the
+ * REG-USE-06.1 — A certificate issued through the cert-manager plugin (release checklist: Usage 6; ilm#430). Applies a
+ * CzertainlyIssuer driven by the run RA profile and a cert-manager Certificate for a run-prefixed DNS name; the
  * certificate is then in the ILM inventory under the run RA profile.
- *
- * Needs a cluster (the KUBECONFIG and REG_CM_* settings, see .env.example), otherwise it skips with the reason. The issuer,
- * Certificate and Secret are run-prefixed, recorded before they exist and removed by the `clusterRun` fixture after the test.
- * The ILM certificates of the run's DNS names are recorded again after the cleanup, because an issuance in flight can still land.
  */
 import { expect, test } from '../../../fixtures/areas/clusterRun';
 import { applyOwnManifest, getJsonPath, K8sRef, recordOwnK8sObject, waitReady } from '../../../utils/regression/kubernetesOwnObjects';
@@ -27,17 +22,14 @@ test.describe('Certificate issue through cert-manager', { tag: tags.regression }
             ],
         }),
         async ({ api, env, own, regressionEnv, clusterRun, ownRaProfile }) => {
-            // Issuer Ready (120 s) + Certificate Ready (240 s) + inventory reads.
             test.setTimeout(LIFECYCLE_MS);
             const ra = ownRaProfile;
-            // The `cluster` need has proven the cluster settings before this body runs.
             const { cmNamespace: ns, cmAuthSecret, cmCaBundleSecret, cmApiUrl } = regressionEnv;
             const stamp = uniqueSuffix();
             const issuer: K8sRef = { kind: 'CzertainlyIssuer', namespace: ns, name: runName(`issuer-${stamp}`) };
             const certName = runName(`cm-${stamp}`);
             const certificate: K8sRef = { kind: 'Certificate', namespace: ns, name: certName, resource: 'certificates.cert-manager.io' };
             const secret: K8sRef = { kind: 'Secret', namespace: ns, name: `${certName}-tls` };
-            // The name is the certificate's common name and its DNS name alike, so the stricter common name limits apply to both.
             const dns = checkedCommonName(`${certName}.example.test`);
             const apiUrl = cmApiUrl ?? `${env.baseUrl.replace(/\/$/, '')}/api`;
 
@@ -61,8 +53,8 @@ test.describe('Certificate issue through cert-manager', { tag: tags.regression }
             clusterRun.issued.push({ dns, createdAfter });
             try {
                 await test.step('Record the Secret, then apply the Certificate → Ready', async () => {
-                    // cert-manager writes the Secret for the run: recorded BEFORE the Certificate exists, so a failing apply
-                    // or wait still leaves it in the ledger, and the clusterRun fixture removes the Certificate before the Secret.
+                    // cert-manager writes the Secret for the run: recorded BEFORE the Certificate exists, so a failing
+                    // apply or wait still leaves it in the ledger.
                     clusterRun.objects.push(secret);
                     recordOwnK8sObject(secret, own.spec, 'written by cert-manager for the run Certificate');
                     clusterRun.objects.push(certificate);
@@ -93,7 +85,6 @@ test.describe('Certificate issue through cert-manager', { tag: tags.regression }
                     expect(annotation.trim(), 'the Certificate annotation names the inventory certificate').toBe(found[0].uuid);
                 });
             } finally {
-                // Also after a failed wait (the CR may have reached core before it failed).
                 await own.issuedNamed(dns, createdAfter, `cert-manager certificate ${certName} (recorded in finally)`);
             }
         });

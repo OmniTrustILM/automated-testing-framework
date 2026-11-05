@@ -1,11 +1,9 @@
 /**
- * Unit tests of utils/regression/inventory/searchApi.ts: the absolute condition sets of the field types, the
- * catalogue field checks, and the catalogue, row and filter helpers. No environment, no network.
+ * Unit tests of utils/regression/inventory/searchApi.ts: the absolute condition sets of the field types, the catalogue
+ * field checks, and the catalogue, row and filter helpers.
  */
 import { expect, test } from '@playwright/test';
 import { ALL_CONDITIONS, CONDITION_KINDS, CONDITION_SETS, fieldsOf, findField, isolation, propertyFilter, rowsOf, uuidSet } from '../../utils/regression/inventory/searchApi';
-
-// ------------------------------------------------------------------ pure: searchApi
 
 test('the absolute condition sets: string 10, number 8, date / datetime 10, list 4, boolean 4 (core SearchFieldTypeEnum), the special kinds', () => {
     expect(CONDITION_SETS.string).toHaveLength(10);

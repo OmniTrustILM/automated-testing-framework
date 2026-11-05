@@ -1,7 +1,5 @@
 /**
- * protocolsWire — the protocol helpers through the real guard against a stateful loopback fake core: the dedicated RA
- * profile, SCEP / CMP profile create, enable and activation, their teardown handlers, the protocol CA fixture (with the
- * fallback to a v1 provider and its named blocker) and the removal of the protocol CA key by the registry's handler.
+ * protocolsWire — the protocol helpers through the real guard against a stateful loopback fake core.
  */
 import { APIRequestContext, expect, test } from '@playwright/test';
 import { GuardedApi } from '../../utils/regression/guard/types';
@@ -27,21 +25,14 @@ const FCA_CERT = U(5);
 const FOREIGN_CERT = U(6);
 const FINGERPRINT = 'ab'.repeat(32);
 
-/** A fake core that remembers what the run created (GETs answer it) and serves the fixed tier around it. */
 class ProtocolsCore extends BaseCore {
     protected seq = 100;
-    /** Protocol activations per RA profile uuid. */
     readonly scepOn = new Map<string, JsonObject>();
     readonly cmpOn = new Map<string, JsonObject>();
-    /** Certificate uuids whose detail answers 500 (the v2-token detail bug). */
     readonly detail500 = new Set<string>();
-    /** Which providers are registered. */
     providers: Array<{ uuid: string; name: string; version: string }> = [{ uuid: PROVIDER_V2, name: 'Soft-v2', version: 'v2' }, { uuid: PROVIDER_V1, name: 'Soft-v1', version: 'v1' }];
-    /** Key items: usages the fake gives new keys (a weak set exercises the usages PUT). */
     keyUsages: { priv: string[]; pub: string[] } = { priv: ['sign', 'decrypt'], pub: ['verify', 'encrypt'] };
-    /** The provider a certificate's key lives on, by certificate uuid. */
     readonly certProvider = new Map<string, string>();
-    /** The next protocol POST answers 302 to /elsewhere (the no-redirect check of protocolPost). */
     redirectOnce = false;
 
     protected respond(a: Arrived): Answer | undefined {
@@ -58,7 +49,6 @@ class ProtocolsCore extends BaseCore {
         let x: RegExpExecArray | null;
         if (a.method === 'GET') {
             if (path === '/api/v1/connectors') {
-                // core binds `kind` through OptionalEnumConverter: every kind value answers 422
                 if (/(^|&)kind=/.test(query)) return { status: 422, body: [`Unknown enum value ${new URLSearchParams(query).get('kind')}`] };
                 return {
                     status: 200,
@@ -109,7 +99,6 @@ class ProtocolsCore extends BaseCore {
                 });
             }
             if ((x = m(/^\/api\/v2\/operations\/authorities\/[^/]+\/raProfiles\/[^/]+\/certificates$/))) {
-                // core (AttributeEngine validateVersionsMatch): an attribute is sent in its definition's version; the CN is v3
                 const cnAttr = (body!.csrAttributes as JsonObject[]).find((c) => c.name === 'commonName');
                 if (cnAttr?.version !== 'v3') return { status: 400, body: { message: 'Failed to submit certificate request: Attribute commonName is defined in version v3 and must be sent with "version": "v3"' } };
                 if ((cnAttr.content as JsonObject[]).some((c) => !c.contentType)) return { status: 400, body: { message: 'Unable to read HTTP message' } };
@@ -158,7 +147,6 @@ class ProtocolsCore extends BaseCore {
                 return { status: 204 };
             }
             if (path === '/api/v1/keys') {
-                // the bulk key delete sends a bare JSON array of uuids; the stand-in's request body type is an object
                 for (const u of body as unknown as string[]) this.store.delete(u);
                 return { status: 204 };
             }
@@ -181,7 +169,6 @@ let api: GuardedApi;
 registerFakeCore(() => core, (rig) => ({ server, raw, api } = rig), { env: { API_DELETE_OWN: '1' }, clear: ['REG_RA_PROFILE_NAME', 'REG_SOFT_PROVIDER'] });
 test.beforeEach(() => {
     core = new ProtocolsCore();
-    // The run RA profile (own, recorded) and the protocol CA certificate (own, recorded) the helpers build on.
     const ra = recordCreated('raProfiles', { uuid: RUN_RA, name: `${runId()}-ra` }, { spec: 'T', note: 'run RA profile', parents: { authority: AUTHORITY } });
     updateRunState({ raProfile: { ...ra, authorityUuid: AUTHORITY } });
 });
@@ -200,8 +187,6 @@ async function refusal(call: Promise<unknown>): Promise<string> {
     }
 }
 
-// ------------------------------------------------------------------ the dedicated RA profile
-
 test('ensureProtocolRaProfile: the run RA profile is only read, the dedicated RA profile is created under the authority and enabled; a second call finds it in the ledger and sends nothing', async () => {
     const ra = await ensureProtocolRaProfile(api, 'T', 'scep');
     expect(ra.name).toBe(`${runId()}-ra-scep`);
@@ -215,8 +200,6 @@ test('ensureProtocolRaProfile: the run RA profile is only read, the dedicated RA
     expect(wire()).toEqual([]);
     await expect(ensureProtocolRaProfile(api, 'T', 'Bad Label')).rejects.toThrow(/\[a-z0-9-\]/);
 });
-
-// ------------------------------------------------------------------ SCEP profile
 
 test('SCEP profile: create names the own CA certificate and the password; enable; activate on the own RA profile with the DTO body; ensureScepActive is idempotent', async () => {
     const cert = fcaCert();
@@ -251,8 +234,6 @@ test('SCEP profile: a CA certificate the run did not create is refused before an
     expect(wire()).toEqual([]);
 });
 
-// ------------------------------------------------------------------ CMP profile
-
 test('CMP profile: create carries variant, both protection methods, the secret and the own RA profile; enable; activate sends both attribute lists; no secret → nothing sent', async () => {
     const ra = await ensureProtocolRaProfile(api, 'T', 'cmp');
     server.reset();
@@ -270,8 +251,6 @@ test('CMP profile: create carries variant, both protection methods, the secret a
     await expect(createOwnCmpProfile(api, 'T', 'cmp-2')).rejects.toThrow(/needs a secret/);
     expect(wire()).toEqual([]);
 });
-
-// ------------------------------------------------------------------ teardown handlers (registry → protocolProfiles)
 
 for (const kind of ['scep', 'cmp'] as const) {
     test(`teardown ${kind}Profiles: live read, deactivate on the own RA profile it is active on, DELETE, absence proven, deleted ledger line`, async () => {
@@ -297,8 +276,6 @@ for (const kind of ['scep', 'cmp'] as const) {
     });
 }
 
-// ------------------------------------------------------------------ protocol CA
-
 test('protocol CA: token, token profile, key pair and the v2 issue for the key are the only mutations, each recorded; the run state keeps them; a second call sends nothing', async () => {
     const ca = await ensureProtocolCaCertificate(api, 'T');
     expect(wire()).toEqual([
@@ -310,7 +287,6 @@ test('protocol CA: token, token profile, key pair and the v2 issue for the key a
     const token = bodyOf('POST', /\/api\/v1\/tokens$/);
     expect(token.name).toMatch(new RegExp(`^${runId()}-fca-token-`));
     expect(token.connectorUuid).toBe(PROVIDER_V2);
-    // the provider is chosen from the plain list (core answers 422 to any `kind` query); its declared kind is sent back
     expect(server.arrived.filter((a) => a.method === 'GET' && a.url.startsWith('/api/v1/connectors')).map((a) => a.url)).toEqual(['/api/v1/connectors']);
     expect(server.arrived.some((a) => a.method === 'GET' && a.url === `/api/v1/tokens/${PROVIDER_V2}/attributes?kind=SOFT`)).toBe(true);
     expect(token.kind).toBe('SOFT');

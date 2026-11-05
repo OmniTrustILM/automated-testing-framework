@@ -1,10 +1,6 @@
 /**
- * API-AUTH-30, 31, 32, 33 — The RBAC decision table through the API as the dedicated second identity (ilm#427).
- *
- * The 403 body's `statusCode` is 403 (interfaces#887 on builds without the fix, test.fail there).
- * The admin builds an own role per fixture and makes it the second identity's only role. Every test starts with the
- * second-identity, replica and CA preflights and skips with the named reason. A mismatch is a finding, never an adjusted
- * oracle. Anything the restricted user manages to create is ledgered before the assertion.
+ * API-AUTH-30, 31, 32, 33 — The RBAC decision table through the API as the dedicated second identity (ilm#427). The 403
+ * body's `statusCode` is 403 (interfaces#887 on builds without the fix, test.fail there).
  */
 import { BATTERY_TEST_MS, ISSUING_MATRIX_ROW_TEST_MS, LIFECYCLE_MS, LONG_TEST_MS } from '../../../utils/regression/timeouts';
 import { expect, test } from '../../../fixtures/regressionFixtures';
@@ -21,10 +17,8 @@ import type { GuardedApi } from '../../../utils/regression/guard/types';
 import type { OwnObjects } from '../../../utils/regression/ownObjects';
 import { ApiAnswer } from '../../../utils/regression/apiReads';
 
-
 interface Matrix {
     api: GuardedApi;
-    /** The ledger id of the test: every object the matrix makes carries it. */
     spec: string;
     /** The test's own-object steps (a create the second identity should not have been allowed is recorded through `own.probe`). */
     own: OwnObjects;
@@ -33,7 +27,6 @@ interface Matrix {
     token: string;
 }
 
-/** The fixtures `prepare` needs (the test's own destructured fixtures). */
 interface Fixtures {
     api: GuardedApi;
     env: TestEnv;
@@ -41,30 +34,22 @@ interface Fixtures {
     restrictedToken: string | undefined;
 }
 
-/**
- * The preflights and the data of every matrix row: second identity, one core replica, a token, the dedicated ILM user, and the
- * data table. A deploy gap is a skip with its reason, never a pass: the second identity and the CA are the `needs` of the rows, which the
- * fixtures resolve first.
- */
 async function prepare(fx: Fixtures): Promise<Matrix> {
     const spec = fx.own.spec;
     const blocker = replicaBlocker();
     test.skip(!!blocker, blocker);
     test.skip(fx.restrictedToken === undefined, `no bearer token for the second identity on AUTH_MODE=${fx.env.authMode}`);
-    // A dedicated user an earlier run left behind is a named skip, never an adoption. The healthy CA the fixture RA profiles copy from is
-    // the `ca` need's, resolved before anything is written.
+    // A dedicated user an earlier run left behind is a named skip, never an adoption.
     const user = await fx.own.restrictedUser();
     const refs = await ensureRbacObjects(fx.api, spec);
     return { api: fx.api, spec, own: fx.own, refs, sw: restrictedRoleSwitch(fx.api, user, fx.restrictedToken!), token: fx.restrictedToken! };
 }
 
-/** One cell against an answer: status, and the body contract + pair of a 403. */
 function expectCell(what: string, answer: ApiAnswer, cell: Cell): void {
     expect(answer.status, `${what}: ${answer.text.slice(0, 200)}`).toBe(cellStatus(cell));
     if (cellStatus(cell) === 403) expect(accessDeniedProblems(answer.contentType, answer.json, cellPair(cell)), `${what}: the 403 body`).toEqual([]);
 }
 
-/** The run's own `rbac` certificates the restricted user can see (`POST /v1/certificates`, filtered by the run prefix). */
 async function visibleCertificates(m: Matrix): Promise<Set<CertKey>> {
     const res = await callAs(m.api, m.token, 'POST', '/api/v1/certificates', {
         itemsPerPage: 100, pageNumber: 1, filters: [{ fieldSource: 'property', fieldIdentifier: 'COMMON_NAME', condition: 'STARTS_WITH', value: `${runId()}-rbac-` }],
@@ -74,7 +59,6 @@ async function visibleCertificates(m: Matrix): Promise<Set<CertKey>> {
     return new Set(CERT_KEYS.filter((k) => names.has(m.refs.certs[k].name)));
 }
 
-/** The role each permission fixture stands for, in words (the fixture codes are the keys of the shared tables). */
 const ROLE_WORDS: Record<Fixture, string> = {
     F0: 'a role without permissions', F1: 'a role with certificate list and detail', F2: 'an issuing role with one RA profile',
     F2b: 'a role with rights on one RA profile object', F3: 'a role with members right on one group', F4a: 'a role denied detail on one RA profile',
@@ -83,7 +67,6 @@ const ROLE_WORDS: Record<Fixture, string> = {
 };
 
 test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }, () => {
-    // ------------------------------------------------------------------ API-AUTH-30
 
     test(`no credentials 401, a user without the permission 403 ACCESS_DENIED, the admin 200`,
         testMeta({
@@ -109,9 +92,6 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
             await test.step('The pair is named exactly: Detail / Certificate (first gate), Members / RA Profile (second gate), Create / RA Profile, and a multi-word action (Check Compliance / Compliance Profile)', async () => {
                 const c1 = m.refs.certs.c1.uuid;
                 expectCell('no-permission role, detail of c1', await callAs(m.api, m.token, 'GET', `/api/v1/certificates/${c1}`), { status: 403, pair: { action: 'Detail', resource: 'Certificate' } });
-                // A multi-word action in human form: core's `BeautificationUtil.camelToHumanForm("checkCompliance")` is "Check Compliance"
-                // (capital C on both words); the route is gated by COMPLIANCE_PROFILE:CHECK_COMPLIANCE (`ComplianceServiceImpl`
-                // `checkResourceObjectsComplianceValidation`), so the resource label is "Compliance Profile".
                 expectCell('no-permission role, check compliance of c1', await callAs(m.api, m.token, 'POST', `/api/v2/compliance/certificates/${c1}`), { status: 403, pair: { action: 'Check Compliance', resource: 'Compliance Profile' } });
 
                 await applyFixture(m.api, m.sw, 'F1', m.refs, m.spec);
@@ -120,7 +100,6 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
                 await applyFixture(m.api, m.sw, 'F2', m.refs, m.spec);
                 const body = { name: runName('rbac-create-probe'), description: 'API-AUTH-30', attributes: [], customAttributes: [] };
                 const probe = await callAs(m.api, m.token, 'POST', `/api/v1/authorities/${m.refs.authorityUuid}/raProfiles`, body);
-                // Ledger before assertion: an RA profile the second identity managed to create is this run's object.
                 m.own.probe('raProfiles', probe, { name: body.name, note: 'created by the second identity in the contract row', parents: { authority: m.refs.authorityUuid } });
                 expectCell('issuing role, create an RA profile', probe, { status: 403, pair: { action: 'Create', resource: 'RA Profile' } });
             });
@@ -143,16 +122,14 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
             await applyFixture(m.api, m.sw, 'F0', m.refs, m.spec);
             const build = await getBuildInfo(m.api);
             testInfo.annotations.push({ type: 'build', description: `core ${build.version ?? '?'} branch ${build.branch ?? '?'}` });
-            // A separate test so the other 403 assertions are never masked: only a build WITHOUT the fix carries the bug.
+            // A separate test so the other 403 assertions are never
+            // masked: only a build WITHOUT the fix carries the bug.
             test.fail(!(await isMigratedBuild(m.api, testInfo)), 'interfaces#887: a build without the fix reports statusCode 400 inside a 403 body');
             const res = await callAs(m.api, m.token, 'GET', '/api/v1/roles');
             expect(res.status).toBe(403);
             expect(res.json?.statusCode, 'the body field statusCode').toBe(403);
         });
 
-    // ------------------------------------------------------------------ API-AUTH-31
-
-    /** What a fixture's profile and certificate visibility amount to (MATRIX_A_LIST / MATRIX_A_PROFILE), in words. */
     const VISIBILITY_WORDS: Record<Fixture, string> = {
         F0: 'a role without permissions sees no certificate and no extra listing',
         F1: 'a role with only certificate list and detail sees none of the run\'s certificates',
@@ -165,7 +142,6 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
         F5: 'an allow-all role denied one RA profile does not see that profile\'s certificate',
         F6: 'a custom role derived from auditor sees every certificate with read-only actions',
     };
-    /** What a fixture may do on RA profiles, authorities and issue (the MATRIX_B rows), in words. */
     const GATE_WORDS: Record<Fixture, string> = {
         F0: 'a role without permissions is refused every RA profile, authority and issue call',
         F1: 'a role with certificate list and detail is refused RA profile, authority and issue calls',
@@ -228,8 +204,6 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
             });
     }
 
-    // ------------------------------------------------------------------ API-AUTH-32
-
     for (const fixture of FIXTURES) {
         test(`${GATE_WORDS[fixture]}`,
             testMeta({
@@ -266,7 +240,6 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
                     const name = runName(`rbac-create-${fixture.toLowerCase()}`);
                     const body = await raProfileCreateBody(m.api, m.refs.source, name);
                     const res = await callAs(m.api, m.token, 'POST', `/api/v1/authorities/${authorityUuid}/raProfiles`, body);
-                    // Ledger before assertion: an RA profile the restricted user managed to create is this run's object.
                     m.own.probe('raProfiles', res, { name, note: 'created by the second identity in the matrix (allow-all fixture)', parents: { authority: authorityUuid } });
                     expectCell(`${ROLE_WORDS[fixture]} create RA profile`, res, MATRIX_B_RA_CREATE[fixture]);
                 });
@@ -310,8 +283,6 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
                 }
             });
     }
-
-    // ------------------------------------------------------------------ API-AUTH-33
 
     for (const fixture of ['F4a', 'F4b', 'F4c'] as const) {
         test(`a deny is per action for ${ROLE_WORDS[fixture]}`,

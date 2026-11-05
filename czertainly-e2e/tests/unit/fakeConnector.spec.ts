@@ -1,7 +1,6 @@
 /**
- * fakeConnector — the fake v2 connector on loopback: info, health, metrics and attributes answers, the callback echo
- * and its record, fault injection, and the probe document's round trip through JSON. No core is involved: the tests
- * talk to the fake connector directly.
+ * fakeConnector — the fake v2 connector on loopback: info, health, metrics and attributes answers, the callback echo and
+ * its record, fault injection, and the probe document's round trip through JSON.
  */
 import { expect, test } from '@playwright/test';
 import { CALLBACK_ATTRIBUTE, callbackProbeDocument, StubConnector } from '../../utils/regression/platform/fakeConnector';

@@ -1,12 +1,10 @@
 /**
- * keyPage — KeyPage against a static key detail shaped like the admin UI (widgets are `<section>`s with a title, rows are
- * `tr[data-id]`): the Key Details rows and its Enable button are looked up inside the Key Details widget, never in the
- * key item below with the same ids, and an item row is read from the tab that is shown.
+ * keyPage — KeyPage against a static key detail shaped like the admin UI (widgets are `<section>`s with a title, rows
+ * are `tr[data-id]`): the Key Details rows are looked up inside their widget, never in the key item below.
  */
 import { expect, test } from '@playwright/test';
 import { KeyPage } from '../../pages/KeyPage';
 
-/** Key Details with its toolbar, then the key items in tabs (the hidden item keeps its table in the DOM). */
 const KEY_DETAIL = `<main>
   <section><div><h5>Key Details</h5><button data-testid="check-button" onclick="this.dataset.clicked='yes'">enable</button></div>
     <table><tbody><tr data-id="name"><td>Name</td><td>the key</td></tr></tbody></table></section>

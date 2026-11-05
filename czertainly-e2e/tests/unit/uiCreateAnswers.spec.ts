@@ -1,9 +1,6 @@
 /**
- * uiCreateAnswers — unit tests: what a UI create reads from the answer, and how the object reaches the ledger.
- *
- * A refusal gives no uuid and keeps the answer text; an error answer that carries a uuid keeps it; only a canonical uuid is
- * taken. `recordUiCreate` writes the ledger line before it fails a refusal, so a created object is never off the ledger, and
- * `submitRecordingByNameOnFailure` adopts an object by the run's own name when its answer never arrives.
+ * uiCreateAnswers — unit tests: what a UI create reads from the answer, and how the object reaches the ledger. A refusal
+ * gives no uuid and keeps the answer text; an error answer that carries a uuid keeps it; only a canonical uuid is taken.
  */
 import { expect, request, test } from '@playwright/test';
 import type { Browser, Page } from '@playwright/test';
@@ -27,12 +24,10 @@ interface Answer {
     body: unknown;
 }
 
-/** A page at `hash` whose Create button POSTs `path` and does nothing with the answer (no redirect, the dialog stays open). */
 const createForm = (caption: string, path: string) => `<!doctype html><html><body><main><div role="dialog" aria-label="${caption}">
   <button data-testid="progress-button" onclick="fetch('${path}', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'qa-reg-x' }) })">Create</button>
   </div></main></body></html>`;
 
-/** Clicks Create in the stand-in's Create Token dialog and returns the create answer. */
 const createToken = (page: Page) => submitCreate(page, page.getByRole('dialog', { name: 'Create Token', exact: true }).getByTestId('progress-button').last(), { endpoint: '/v1/tokens' });
 
 async function withAnswers(browser: Browser, html: string, answer: Answer, body: (page: Page) => Promise<void>): Promise<void> {
@@ -79,12 +74,9 @@ test('recordUiCreate writes the ledger line before it fails a refusal; recordIfC
         expect(ok).toEqual({ uuid: U1, name: own('tok'), kind: 'own' });
         recordUiCreate('tokens', { status: 201, uuid: U1, text: '{}' }, own('tok'), SPEC);
         expect(readLedger().filter((l) => l.uuid === U1)).toHaveLength(1);
-        // A refusal with an id: the id is recorded first, then the call throws with the status and the text.
         expect(() => recordUiCreate('groups', { status: 500, uuid: U2, text: 'Internal server error.' }, own('grp'), SPEC)).toThrow(/groups create was answered 500.*recorded.*Internal server error/);
         expect(readLedger().map((l) => l.uuid)).toContain(U2);
-        // A refusal without an id records nothing and says why.
         expect(() => recordUiCreate('groups', { status: 422, text: 'already exists' }, own('grp2'), SPEC)).toThrow(/answered 422: already exists/);
-        // A 2xx answer without an id cannot be recorded: the failure names the object to look for.
         expect(() => recordUiCreate('groups', { status: 201, text: '' }, own('grp3'), SPEC)).toThrow(/without an id.*-grp3/);
         expect(readLedger()).toHaveLength(2);
         // A probe that expects a refusal: nothing for a plain refusal, a line for an accepted duplicate, never a throw.
@@ -105,22 +97,21 @@ test('submitRecordingByNameOnFailure: an answer that never arrives, or a 2xx wit
         const name = own('named');
         const base = { type: 'groups', name, spec: SPEC, note: 'own group' };
         const found = (...uuids: string[]) => async () => ({ rows: uuids.map((uuid) => ({ uuid })) });
-        // No answer at all (the create may still land): EVERY object of the name is recorded (a double click may have made two), the error
-        // continues.
         await expect(submitRecordingByNameOnFailure({ ...base, lookup: found(U1, U2) }, async () => { throw new Error('no answer within 60 s'); })).rejects.toThrow(/no answer/);
         expect(readLedger().map((l) => l.uuid)).toEqual([U1, U2]);
-        // A 2xx without a uuid: adopted by name, and the answer carries the recorded uuid instead of failing "without an id" later.
+        // A 2xx without a uuid: adopted by name, and the answer carries
+        // the recorded uuid instead of failing "without an id" later.
         const answer = await submitRecordingByNameOnFailure({ ...base, name: own('named2'), lookup: found(U3) }, async () => ({ status: 201, text: '{}' }));
         expect(answer).toMatchObject({ status: 201, uuid: U3, recordedByName: [U3] });
         expect(readLedger().map((l) => l.uuid)).toEqual([U1, U2, U3]);
         expect(recordUiCreate('groups', answer, own('named2'), SPEC).uuid, 'the normal recording path goes on with the by-name record').toBe(U3);
-        // A refusal created nothing: no lookup. An answer with a uuid needs none.
         let lookups = 0;
         const counting = async () => { lookups += 1; return { rows: [{ uuid: U4 }] }; };
         await submitRecordingByNameOnFailure({ ...base, lookup: counting }, async () => ({ status: 422, text: 'refused' }));
         await submitRecordingByNameOnFailure({ ...base, lookup: counting }, async () => ({ status: 201, uuid: U1, text: '{}' }));
         expect(lookups).toBe(0);
-        // A name that does not start with THIS run's id is never adopted, not even one of another run of the same family.
+        // A name that does not start with THIS run's id is never
+        // adopted, not even one of another run of the same family.
         for (const foreign of ['somebody-elses', 'qa-reg-20200101-000000-zzzz-group', 'qa-api-adhoc-group']) {
             await expect(submitRecordingByNameOnFailure({ ...base, name: foreign, lookup: counting }, async () => { throw new Error('boom'); })).rejects.toThrow(/boom/);
         }
@@ -141,7 +132,6 @@ test('by-name adoption checks the creation time against the server clock when th
         const base = { type: 'keys', spec: SPEC };
         const serverNow = new Date(Date.now() + 3_600_000); // the server clock runs an hour ahead of the runner
         const iso = (msFromServerNow: number) => new Date(serverNow.getTime() + msFromServerNow).toISOString();
-        // Created on the server a minute before "now": after the submit started (a moment ago) is false for it, so it is an older object.
         await expect(submitRecordingByNameOnFailure({ ...base, name: own('old'), lookup: async () => ({ rows: [{ uuid: U1, createdAt: iso(-60_000) }], serverNow, readAt: Date.now() }) }, async () => { throw new Error('boom'); })).rejects.toThrow(/boom/);
         expect(readLedger()).toHaveLength(0);
         // Created just now on the server clock: adopted (the skew between the clocks is measured, not guessed).

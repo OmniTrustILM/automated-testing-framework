@@ -1,12 +1,8 @@
 /**
- * specGuards — static rules over the REG and API specs and the regression helpers (run by `npm run test:unit` and by CI).
- *
- * Rules: `@local` specs call describeLocalOnly; every @bug sits in a test that calls test.fail(); one suite tag per test;
- * deny by default for raw mutations; no sleeps, icon classes or raw row locators outside pages/ (a counted allow-list that may
- * only shrink). The area fixtures are linted like specs.
- *
- * The timestamping and key onboarding blocks are NOT scanned, by agreement: they use plain contexts and child processes these
- * rules would refuse. Their safety rests on `@local` + describeLocalOnly, the guarded admin API and the ledger.
+ * specGuards — static rules over the REG and API specs and the regression helpers (run by `npm run test:unit` and by
+ * CI). Rules: `@local` specs call describeLocalOnly; every @bug sits in a test that calls test.fail(); one suite tag per
+ * test; deny by default for raw mutations.
+ * The timestamping and key-onboarding blocks are not scanned: they use plain contexts these rules would refuse.
  */
 import { test, expect } from '@playwright/test';
 import { listedTitleProblems, titleProblems } from '../../utils/regression/specLint/titleLint';
@@ -23,9 +19,7 @@ import { CONTEXT_FIXTURES } from '../../utils/regression/specLint/rules';
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const SCANNED = ['tests/regression', 'tests/api'];
-/** Linted by the deny-by-default rules besides the specs. */
 const HELPERS = ['utils/regression', 'utils/api'];
-/** Per-folder fixtures a spec may import `test` from: linted with the spec rules (they hand the spec its contexts). */
 const AREA_FIXTURES = 'fixtures/areas';
 
 /** Files (or rules of a file) the deny-by-default lint does not apply to; the reasons are in the header. */
@@ -33,7 +27,6 @@ const LINT_EXEMPT: Record<string, RawMutation['rule'][] | 'all'> = {
     'tests/api/tier-snapshot.setup.ts': ['raw-context', 'raw-request-use', 'guarded-cast'],
     'utils/api/apiCase.ts': ['raw-context'],
     'utils/regression/guard/createGuard.ts': 'all',
-    // The guard's one raw send: `api.fetch(url, { method })` with the method of a snapshot that was just checked.
     'utils/regression/guard/sendRequest.ts': ['fetch-method'],
     'utils/regression/teardown/teardownHandlers.ts': 'all',
     'utils/regression/teardown/runTeardown.ts': 'all',
@@ -62,22 +55,13 @@ const areaFixtures = filesUnder(AREA_FIXTURES);
 const isAreaFixture = (rel: string): boolean => rel.startsWith(`${AREA_FIXTURES}/`);
 const source = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
-/** The deny-by-default findings of one file, minus its exemptions. */
 function lintFile(rel: string): RawMutation[] {
     const exempt = LINT_EXEMPT[rel];
     if (exempt === 'all') return [];
     const found = rawMutations(source(rel), rel, { spec: rel.startsWith('tests/') || isAreaFixture(rel) }).filter((m) => !exempt?.includes(m.rule));
-    // An area fixture's one `extend` of the spec-facing fixtures is its purpose (counted by its own test below).
     return isAreaFixture(rel) ? found.filter((m) => m.rule !== 'fixture-extend') : found;
 }
 
-/**
- * The timestamping and key-onboarding blocks are outside the deny-by-default lint (see the header), but ONE rule reaches every file: `callback-target`.
- * Whoever can call `registerCallbackTarget` (guard/callbackTargets.ts) can make the guard accept a callback on any pre-existing connector, so
- * outside the guard, the lint, the unit tests and the timestamping preflight no .ts file of czertainly-e2e may name it or its module (a util that
- * re-exported it under another name would name it, so it is found too). One test over every file (node_modules and the report folders left out);
- * the allow-list is the rule's own (specLint/rules.ts CALLBACK_TARGET_ALLOWED).
- */
 const NOT_SOURCE = new Set(['node_modules', 'test-results', 'playwright-report', '.git']);
 function everyTsFile(dir = ''): string[] {
     return fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((e) => {
@@ -105,23 +89,15 @@ const FORBIDDEN = [
 
 type ForbiddenId = (typeof FORBIDDEN)[number]['id'];
 
-// Existing REG specs that still use these locators. REG-CFG-03, REG-CFG-05 (RaProfilePage), REG-CFG-08 (RolePermissionsPage)
-// and REG-USE-04 (CertificatePage.assertIssuedDetails) were migrated and their entries removed; REG-USE-02 remains. The
-// counts may only go down (a stale entry fails below, so the list cannot hide a new violation).
-// Keyed by the spec's path.
 const ALLOWED: Record<string, Partial<Record<ForbiddenId, number>>> = {
 };
-/** The ALLOWED entry of a spec path. */
 const allowedFor = (rel: string): Partial<Record<ForbiddenId, number>> | undefined =>
     ALLOWED[rel];
 
-// Raw mutations still pending a migration (each entry: "migrated in <change>"). EMPTY since 2026-10-14:
-// the REG specs and API-GEN-33 take the guarded `api` fixture. A stale entry fails below, so the list can only shrink.
 const MUTATION_ALLOWED: Record<string, Partial<Record<RawMutation['rule'], number>>> = {};
 
 const count = (text: string, needle: string) => text.split(needle).length - 1;
 
-/** What makes a spec a local-stack spec (needs describeLocalOnly): the tag anywhere, or the guard's local options in code. */
 const LOCAL_TAG = /@local\b|\btags\.local\b|\blocal\s*:\s*true\b/;
 const LOCAL_OPTIONS = ['localStack', 'localApi'];
 function isLocalSpec(src: string, rel: string): boolean {
@@ -140,7 +116,6 @@ test('the guards see the REG and API specs and the regression helpers', () => {
     }
 });
 
-// a spec that mentions @local anywhere, or sets localStack or takes the localApi fixture, calls describeLocalOnly
 test('a spec that mentions @local or sets localStack or takes localApi calls describeLocalOnly', () => {
     const offenders = specs.filter((rel) => {
         const src = source(rel);
@@ -150,7 +125,7 @@ test('a spec that mentions @local or sets localStack or takes localApi calls des
     expect(offenders, '@local specs must call describeLocalOnly(test) inside their describe').toEqual([]);
 });
 
-// the describeLocalOnly rule also covers specs that set the guard's local options in code, not in a comment
+// the describeLocalOnly rule also covers specs that set the guard's local options in code, not in a comment.
 test('the describeLocalOnly rule also covers specs that set the guard local options in code, not in a comment', () => {
     expect(isLocalSpec("test('x', async ({ localApi }) => {});", 'tests/api/X.spec.ts')).toBe(true);
     expect(isLocalSpec("const o = { localStack: true };", 'tests/api/X.spec.ts')).toBe(true);
@@ -158,7 +133,6 @@ test('the describeLocalOnly rule also covers specs that set the guard local opti
     expect(isLocalSpec("test('x', { tag: ['@local'] }, async () => {});", 'tests/api/X.spec.ts')).toBe(true);
 });
 
-/** Ids defined in two files on purpose: the non-interference setup (guard proof, before snapshot) and its check. */
 const ID_IN_TWO_FILES: Record<string, string[]> = {
     'API-GEN-33': ['tests/api/tier-non-interference.api.spec.ts', 'tests/api/tier-snapshot.setup.ts'],
 };
@@ -172,8 +146,6 @@ test('every testMeta() id is defined in exactly one spec file, so a reader knows
             files.get(b.id)!.add(rel);
         }
     }
-    // a floor against a scanner that silently finds nothing: ids under both folders and in most spec files; the others
-    // build their testMeta() in a local helper, which the scanner does not attribute to a test
     const filesWithIds = new Set([...files.values()].flatMap((set) => [...set]));
     for (const dir of SCANNED) expect([...filesWithIds].some((rel) => rel.startsWith(`${dir}/`)), `the scanner finds ids under ${dir}`).toBe(true);
     expect(filesWithIds.size * 2, 'the scanner finds ids in most REG and API spec files').toBeGreaterThan(specs.length);
@@ -194,7 +166,6 @@ test('titles: no tag in a describe title; test titles without an id prefix, shor
     expect(offenders, 'the id and the row go in testMeta({ id, row }); the title says the expected behaviour in words').toEqual([]);
 });
 
-// The static lint cannot read a title from a variable, a table or a template value: the listed titles can.
 test('the listed REG and API titles (template values included) keep the title rules', { tag: '@integration' }, () => {
     test.setTimeout(180_000);
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'titles-'));
@@ -232,9 +203,6 @@ test('deny by default: no raw mutation around the guard in a REG / API spec or a
     expect(offenders, 'use the guarded `api` fixture (or getGuardedApiContext / a GuardedApi parameter) and the own-object helpers').toEqual([]);
 });
 
-// an area fixture builds on the spec-facing fixtures (the test-import rule checks where its `test` comes from) and extends
-// them exactly once: a second extend could replace a guarded fixture under the same name
-/** Every fixture name that exists before an area fixture: Playwright's, the two fixture files', the spec lint's context names. */
 const BASE_FIXTURE_NAMES: ReadonlySet<string> = new Set([
     ...PLAYWRIGHT_FIXTURES,
     ...playwrightFixtureNamesOf(fs.readFileSync(path.join(ROOT, 'node_modules', 'playwright', 'types', 'test.d.ts'), 'utf8')),
@@ -243,8 +211,6 @@ const BASE_FIXTURE_NAMES: ReadonlySet<string> = new Set([
     ...fixtureNamesOf(source('fixtures/regressionFixtures.ts'), 'fixtures/regressionFixtures.ts'),
 ]);
 
-// an area fixture builds on the spec-facing fixtures (the test-import rule checks where its `test` comes from), extends
-// them exactly once and only adds names: a redefined `api`, `own` or `request` would reach a spec under a trusted name
 test('an area fixture extends the spec-facing fixtures once and redefines no fixture', () => {
     expect([...BASE_FIXTURE_NAMES]).toEqual(expect.arrayContaining(['api', 'localApi', 'own', 'live', 'needs', 'signedIn', 'request', 'baseURL', 'env']));
     const offenders: string[] = [];
@@ -257,7 +223,7 @@ test('an area fixture extends the spec-facing fixtures once and redefines no fix
 });
 
 // a spec imports an area fixture without an extension, so any other file there (.js, .tsx, .mts, a folder) would be
-// resolved by Playwright but never linted
+// resolved by Playwright but never linted.
 test('the area fixture folder holds only lower-camel .ts files', () => {
     const abs = path.join(ROOT, AREA_FIXTURES);
     const entries = fs.existsSync(abs) ? fs.readdirSync(abs, { withFileTypes: true }) : [];
@@ -331,17 +297,13 @@ test('every row that needs the second identity or the local Keycloak CALLS its p
             }
         }
     }
-    // not vacuous: the rule selects the rows that declare the needs (10 second-identity rows and 1 local Keycloak row today)
+    // not vacuous: the rule selects the rows that declare the needs
+    // (10 second-identity rows and 1 local Keycloak row today)
     expect(secondIdentity, 'rows tagged @needs:second-identity').toBeGreaterThanOrEqual(5);
-    // The local Keycloak row (sign-in area) is in the secondary tree only.
     expect(keycloak, 'rows tagged @needs:keycloak-local').toBeGreaterThanOrEqual(fs.existsSync(path.join(ROOT, 'tests/regression/01-sign-in-and-access')) ? 1 : 0);
     expect(offenders).toEqual([]);
 });
 
-/**
- * Known-bug tests whose unconditional \`test.fail()\` comes before any hard \`expect(\`: each sets up first and marks the
- * assertions it makes afterwards. The list can only shrink: a stale entry fails, and a new test must assert before its marker.
- */
 const MARKER_BEFORE_ASSERTION = new Set([
     'tests/api/01-auth/authentication.api.spec.ts: a refused HTTP method with valid credentials answers 400 on',
     "tests/api/01-auth/permissions-by-role.api.spec.ts: the 403 body's statusCode is 403",
@@ -363,13 +325,11 @@ test('a known-bug test keeps a hard assertion BEFORE its unconditional test.fail
     for (const rel of specs) {
         for (const b of testBlocks(source(rel), rel).filter((x) => x.tags.some((t) => t.startsWith('@bug:')))) {
             const body = stripComments(b.body);
-            // test.fail('title', fn) declares the whole test as expected to fail: nothing precedes the marker
             const at = b.kind === 'fail' ? 0 : body.search(/test\.fail\s*\(/);
             if (at < 0) continue;
             const before = body.slice(0, at);
             const lineStart = before.lastIndexOf('\n') + 1;
             const above = before.slice(0, Math.max(lineStart - 1, 0)).split('\n').pop() ?? '';
-            // a marker under a condition (an `if`, a ternary or `&&` on its line or the line above) is a deliberate one-assertion test
             const conditional = at > 0 && (/\bif\b|\?|&&/.test(before.slice(lineStart)) || /\bif\s*\(.*\)\s*\{?\s*$/.test(above));
             if (conditional || /\bexpect(?:\.soft)?\(/.test(before)) continue;
             const key = `${rel}: ${b.title.slice(0, 60).trim()}`;
@@ -378,7 +338,8 @@ test('a known-bug test keeps a hard assertion BEFORE its unconditional test.fail
         }
     }
     expect(offenders, 'assert something (hard, before the marker) or the marker hides a regression of the part that works').toEqual([]);
-    // An entry is stale when its spec is in the tree and no longer holds the marker (the main-flow branch lacks some specs).
+    // An entry is stale when its spec is in the tree and no longer
+    // holds the marker (the main-flow branch lacks some specs).
     const inTree = (k: string): boolean => fs.existsSync(path.join(ROOT, k.slice(0, k.indexOf(':'))));
     expect([...MARKER_BEFORE_ASSERTION].filter((k) => inTree(k) && !found.has(k)), 'stale entries: lower the list').toEqual([]);
     expect(MARKER_BEFORE_ASSERTION.size, 'the list can only shrink').toBeLessThanOrEqual(12);
@@ -386,7 +347,6 @@ test('a known-bug test keeps a hard assertion BEFORE its unconditional test.fail
 
 test('no spec or helper holds a literal password or secret value (a generated one, or the empty string of a pin)', () => {
     const offenders: string[] = [];
-    // a quoted literal is flagged whatever it holds (a `$` too); a template is flagged unless it interpolates a variable
     const literal = /\b(?:\w*[a-z])?(?:Password|Secret)\b\s*[:=]\s*(?:'([^']+)'|"([^"]+)"|`([^`]+)`)|\b(?:password|passwd|secret)\b\s*[:=]\s*(?:'([^']+)'|"([^"]+)"|`([^`]+)`)/g;
     for (const rel of [...specs, ...helpers, ...areaFixtures]) {
         for (const m of stripComments(source(rel)).matchAll(literal)) {
@@ -402,7 +362,6 @@ test('no spec or helper holds a literal password or secret value (a generated on
 
 test('the sign-out spec the logout project selects is the last spec of its area folder, and exactly one file matches', () => {
     const matches = specs.filter((rel) => LOGOUT_FILE.test(rel));
-    // The main-flow branch holds no sign-out spec (its logout project selects nothing); the secondary tree holds exactly one.
     expect(matches.length).toBeLessThanOrEqual(1);
     if (matches.length === 0) return;
     const folder = path.posix.dirname(matches[0]);
@@ -416,8 +375,6 @@ test('no test.only, describe.only or test.describe.only is left in a spec or a u
     expect(offenders, 'a stray .only silently skips every other test of the run').toEqual([]);
 });
 
-// product code is cited by component or symbol name: a line number goes stale with the next commit of the product
-/** The developers' blocks keep their own citations by agreement. */
 const CITATION_EXEMPT = ['tests/timestamping/', 'tests/key-onboarding/', 'utils/timestamping/', 'utils/keyOnboarding/', 'utils/devBlocks/'];
 
 test('no spec, page object or regression helper cites a source file with a line number', () => {

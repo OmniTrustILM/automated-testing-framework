@@ -1,9 +1,6 @@
 /**
- * guardedApiTimestamping — the guard rules the timestamping block needs on a shared tier (tests/timestamping/SHARED-TIER.md),
- * each in both directions on the wire (a real Playwright context, a loopback fake core, a second origin that must see nothing):
- * the time-quality configuration (own create / update / delete, no longer platform-level), the signing and TSP profile creates,
- * the nested connector reference of a signing profile, the TSP activation, Basic credentials, role grants, the three attribute
- * callbacks (a kind of their own: registered parent, scanned body, no raw context) and the lists. The refused neighbour of every allowance is a row too, so a rule cannot widen unnoticed.
+ * guardedApiTimestamping — the guard rules the timestamping block needs on a shared tier
+ * (tests/timestamping/SHARED-TIER.md), each in both directions on the wire.
  */
 import { APIRequestContext, expect, test } from '@playwright/test';
 import { guardApiWithSeams } from '../../utils/regression/guard/createGuard';
@@ -27,7 +24,6 @@ const O = {
     role: U(1), user: U(2), cert: U(3), vault: U(4), vaultProfile: U(5), tsp: U(6), sp: U(7), tqc: U(8), cred: U(9), key: U(10), token: U(11), tokenProfile: U(14),
     otherRole: U(12), otherSp: U(13),
 };
-// Pre-existing objects (no line, or a line of another run): foreign.
 const F = { tsp: U(21), sp: U(22), tqc: U(23), cert: U(24), connector: U(25), role: U(26), user: U(27), vaultProfile: U(28), cred: U(29), authority: U(30) };
 
 const mk = (type: string, uuid: string, name = `${RUN}-${type}`, parents?: LedgerLine['parents']): LedgerLine =>
@@ -88,8 +84,6 @@ const signingProfileBody = (over: { connector?: unknown; cert?: string; tqc?: st
     customAttributes: [], ...(over.extra ?? {}),
 });
 
-// ------------------------------------------------------------------ time-quality configuration: per object, not platform-level
-
 test('time-quality configuration: create, update and delete of an OWN one are sent; a pre-existing one is refused; it is not platform-level any more', async () => {
     const g = guard();
     expect(platformDenied(`/v1/timeQualityConfigurations/${O.tqc}`), 'no longer on the platform deny-list').toBeUndefined();
@@ -102,7 +96,6 @@ test('time-quality configuration: create, update and delete of an OWN one are se
         'POST /v1/timeQualityConfigurations', `PUT /v1/timeQualityConfigurations/${O.tqc}`, `DELETE /v1/timeQualityConfigurations/${O.tqc}`,
     ]);
     A.reset();
-    // The refused neighbours: a pre-existing configuration (update, delete), an own uuid of another type, the bulk delete (no route), a body naming a foreign object.
     expect(await kind(g.put(`/api/v1/timeQualityConfigurations/${F.tqc}`, { data: body })), 'update of a pre-existing configuration').toBe('ownership');
     expect(await kind(g.delete(`/api/v1/timeQualityConfigurations/${F.tqc}`)), 'delete of a pre-existing configuration').toBe('ownership');
     expect(await kind(g.delete(`/api/v1/timeQualityConfigurations/${O.role}`)), 'an own role is no configuration').toBe('ownership');
@@ -112,8 +105,6 @@ test('time-quality configuration: create, update and delete of an OWN one are se
     expect(B.arrived).toEqual([]);
 });
 
-// ------------------------------------------------------------------ signing profile create
-
 test('signing profile create: the connector is referenced, certificate and time-quality configuration must be own', async () => {
     const g = guard();
     expect(postRouteKind('/v1/signingProfiles')).toBe('create');
@@ -121,7 +112,6 @@ test('signing profile create: the connector is referenced, certificate and time-
     expect(await kind(g.post('/api/v1/signingProfiles', { data: signingProfileBody({ type: 'content_signing' }) })), 'the content-signing canary has the same waiver').toBe('sent');
     expect(sentMutations()).toEqual(['POST /v1/signingProfiles', 'POST /v1/signingProfiles']);
     A.reset();
-    // Direction 2: everything else the body names is still judged.
     expect(await kind(g.post('/api/v1/signingProfiles', { data: signingProfileBody({ cert: F.cert }) })), 'a pre-existing certificate').toBe('ownership');
     expect(await kind(g.post('/api/v1/signingProfiles', { data: signingProfileBody({ tqc: F.tqc }) })), 'a pre-existing time-quality configuration').toBe('ownership');
     expect(await kind(g.post('/api/v1/signingProfiles', { data: signingProfileBody({ tqc: O.role }) })), 'an own role under the configuration field (typed)').toBe('ownership');
@@ -133,7 +123,6 @@ test('signing profile create: the connector is referenced, certificate and time-
 test('the connector waiver is exact: one key path, one route, a string, the right workflow type', async () => {
     const g = guard();
     const wf = (over: Record<string, unknown>) => ({ ...signingProfileBody().workflow, ...over });
-    // The same field elsewhere in the body, another workflow type, a list, another route, another method, a non-canonical form.
     expect(await kind(g.post('/api/v1/signingProfiles', { data: { ...signingProfileBody(), signingScheme: { ...signingProfileBody().signingScheme, signatureFormattingConnectorUuid: F.connector } } })), 'nested elsewhere').toBe('ownership');
     expect(await kind(g.post('/api/v1/signingProfiles', { data: { ...signingProfileBody(), signatureFormattingConnectorUuid: F.connector } })), 'top level').toBe('ownership');
     expect(await kind(g.post('/api/v1/signingProfiles', { data: signingProfileBody({ type: 'raw_signing' }) })), 'a workflow type without the field').toBe('ownership');
@@ -144,7 +133,6 @@ test('the connector waiver is exact: one key path, one route, a string, the righ
     expect(await kind(g.post('/api/v1/tspProfiles', { data: { name: `${RUN}-t`, vaultProfileUuid: O.vaultProfile, signatureFormattingConnectorUuid: F.connector } })), 'another route').toBe('ownership');
     expect(await kind(g.post('/api/v1/signingProfiles', { data: JSON.stringify(signingProfileBody()) })), 'a text body is judged as written: no waiver').toBe('ownership');
     expect(A.mutations()).toEqual([]);
-    // The table and its helper.
     expect(ROUTE_PATH_WAIVERS.map((w) => `${w.method} ${w.path} ${w.keyPath.join('.')}`)).toEqual(['POST /v1/signingProfiles workflow.signatureFormattingConnectorUuid']);
     expect(routePathWaivers('POST', '/v1/signingProfiles', signingProfileBody())).toEqual([['workflow', 'signatureFormattingConnectorUuid']]);
     expect(routePathWaivers('POST', '/v1/signingProfiles', [])).toEqual([]);
@@ -153,8 +141,6 @@ test('the connector waiver is exact: one key path, one route, a string, the righ
     expect(findUuidsInBody(signingProfileBody(), {}).canonical).toContain(F.connector);
     expect(B.arrived).toEqual([]);
 });
-
-// ------------------------------------------------------------------ TSP profile, activation, credentials
 
 test('TSP profile: create and edit take an own vault profile and an own default signing profile; a foreign one is refused', async () => {
     const g = guard();
@@ -217,8 +203,6 @@ test('Basic credential: created only under an own TSP profile for an own user; d
     expect(B.arrived).toEqual([]);
 });
 
-// ------------------------------------------------------------------ role and user wiring of the setup
-
 test('mapped user and role: the role is attached to an own user and holds grants on own objects only', async () => {
     const g = guard();
     const grants = (uuid: string) => ({ allowAllResources: false, resources: [
@@ -236,8 +220,6 @@ test('mapped user and role: the role is attached to an own user and holds grants
     expect(B.arrived).toEqual([]);
 });
 
-// ------------------------------------------------------------------ what stays refused
-
 test('trusting the issuing root (a pre-existing certificate) is refused on a shared tier; the own certificate chain is read', async () => {
     const g = guard();
     expect(await kind(g.patch(`/api/v1/certificates/${F.cert}`, { data: { trustedCa: true } })), 'the one pre-existing change of the local setup').toBe('ownership');
@@ -246,8 +228,6 @@ test('trusting the issuing root (a pre-existing certificate) is refused on a sha
     expect(A.mutations()).toEqual([]);
     expect(B.arrived).toEqual([]);
 });
-
-// ------------------------------------------------------------------ reads: lists
 
 test('the lists are reads; deleting signing records is not', async () => {
     const g = guard();
@@ -266,14 +246,11 @@ test('the lists are reads; deleting signing records is not', async () => {
     expect(B.arrived).toEqual([]);
 });
 
-// ------------------------------------------------------------------ attribute callbacks: a kind of their own
-
 const DEF = U(901); // an attribute definition uuid: not an inventory object
 const callbackBody = (over: Record<string, unknown> = {}) => ({ uuid: DEF, name: 'certificateProfile', pathVariable: { endEntityProfileId: 7, authorityId: 'ejbca-authority-1' }, requestParameter: {}, body: {}, filter: {}, ...over });
 
 test('callbacks: the path id must be what the preflight registered (or an own token profile); the body keeps its definition uuids and nothing else foreign', async () => {
     const g = guard();
-    // Nothing registered yet: refused, whatever the body says.
     expect(await kind(g.post(`/api/v1/raProfiles/${F.authority}/callback`, { data: callbackBody() })), 'an authority nobody registered').toBe('request');
     expect(await kind(g.post(`/api/v2/connectors/${F.connector}/callback`, { data: callbackBody() })), 'a connector nobody registered').toBe('request');
     registerCallbackTarget(g, 'authority', F.authority);
@@ -285,7 +262,6 @@ test('callbacks: the path id must be what the preflight registered (or an own to
     expect(sentMutations()).toHaveLength(4);
     A.reset();
 
-    // The path id: another pre-existing object, the other kind's registration, a foreign or mistyped token profile.
     expect(await kind(g.post(`/api/v1/raProfiles/${F.tsp}/callback`, { data: callbackBody() })), 'an authority that is not the registered one').toBe('request');
     expect(await kind(g.post(`/api/v1/raProfiles/${F.connector}/callback`, { data: callbackBody() })), 'the connector registered, used as an authority').toBe('request');
     expect(await kind(g.post(`/api/v2/connectors/${F.authority}/callback`, { data: callbackBody() })), 'the authority registered, used as a connector').toBe('request');
@@ -327,7 +303,6 @@ test('callbacks: a raw context may not send one; registration takes canonical uu
     registerCallbackTarget(g, 'connector', F.connector.toUpperCase());
     expect(await kind(g.post(`/api/v2/connectors/${F.connector}/callback`, { data: callbackBody() })), 'registered in upper case, sent in lower').toBe('sent');
     A.reset();
-    // A registration belongs to its context: another guard over the same raw context has none.
     expect(await kind(guard().post(`/api/v2/connectors/${F.connector}/callback`, { data: callbackBody() }))).toBe('request');
     expect(await kind(g.post(`/api/v1/connectors/${F.connector}/cryptographyProvider/SOFT/callback`, { data: callbackBody() })), 'the v1 connector callback names its kind').toBe('request');
     expect(await kind(g.post(`/api/v1/tspProfiles/${F.tsp}/callback`, { data: callbackBody() })), 'a callback of another resource').toBe('ownership');

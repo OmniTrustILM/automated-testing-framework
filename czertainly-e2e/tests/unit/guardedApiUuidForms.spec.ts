@@ -1,8 +1,5 @@
 /**
- * What the guard counts as a uuid and how it reads bodies, without a network: every form a server could parse (trimmed,
- * lenient groups, base64, `urn:uuid:`) is uuid-like, only the exact canonical form is accepted, keys are scanned like
- * values, bodies are judged as serialised, and bulk targets sit in top-level lists only. The absence half of the
- * canonical-form probe is in runTeardownAbsenceProof.spec.ts.
+ * What the guard counts as a uuid and how it reads bodies, without a network.
  */
 import { expect, test } from '@playwright/test';
 import { findUuidsInBody, findUuidsInQuery, bodyView } from '../../utils/regression/guard/bodies';
@@ -34,15 +31,13 @@ test('canonical form: canonical is exact; every other uuid-like form is recognis
     expect(isCanonicalUuid(U.toUpperCase())).toBe(true);
 });
 
-// string findings: canonical uuids anywhere in a string must be own; non-canonical forms are refused; comma lists split
+// string findings: canonical uuids anywhere in a string must be own; non-canonical forms are refused.
 test('string findings: canonical uuids must be own; non-canonical forms refused; comma lists split', () => {
     expect(findUuidsInString(U)).toEqual({ canonical: [U], nonCanonical: [] });
     expect(findUuidsInString(` ${U}`).nonCanonical).toHaveLength(1);
     expect(findUuidsInString(`a,${U}, ${K}`)).toEqual({ canonical: [U, K], nonCanonical: [] });
     expect(findUuidsInString(`x,0-0-4000-8000-2`).nonCanonical).toHaveLength(1);
     expect(findUuidsInString(`see u${U} too`).canonical, 'glued or embedded: still named').toEqual([U]);
-    // JSON string values are read whole by the server: bounded base64 / lenient tokens inside them are not refused there,
-    // but query values and unparseable bodies (free text) are scanned for them.
     expect(findUuidsInString(`a ${url22} b`).nonCanonical).toEqual([]);
     expect(findUuidsInString(`a ${url22} b`, { free: true }).nonCanonical).toHaveLength(1);
     expect(findUuidsInString('qa-reg-20261013-120000-ab12-ca-1', { free: true }), 'a run-prefixed name is not a token').toEqual({ canonical: [], nonCanonical: [] });
@@ -51,7 +46,6 @@ test('string findings: canonical uuids must be own; non-canonical forms refused;
     expect(findUuidsInString(` ${K}`).nonCanonical[0]).not.toContain(K);
 });
 
-// body findings: keys are scanned, attribute subtrees skipped, reference fields waived at the top level only and for canonical values only
 test('body findings: keys scanned, attribute subtrees skipped, reference fields waived at top level', () => {
     expect(findUuidsInBody({ map: { [U]: ['read'] } }).canonical, 'a uuid as a map key').toEqual([U]);
     expect(findUuidsInBody({ [` ${U}`]: 1 }).nonCanonical, 'a padded uuid key').toHaveLength(1);
@@ -64,12 +58,10 @@ test('body findings: keys scanned, attribute subtrees skipped, reference fields 
     // The token-profile fields are no reference fields until a key teardown handler exists.
     expect(Object.keys(REFERENCE_FIELDS)).toEqual(['connectorUuid', 'interfaceUuid', 'raProfileUuid']);
     expect(findUuidsInBody({ tokenProfileUuid: U, altTokenProfileUuid: K }, { references: true }).canonical).toEqual([U, K]);
-    // Prototype keys are no reference fields (Object.hasOwn): `constructor` / `toString` / `__proto__` subtrees are scanned.
     const proto = JSON.parse(`{"constructor": "${U}", "toString": ["${K}"], "__proto__": {"x": "${U}"}}`);
     expect(findUuidsInBody(proto, { references: true }).canonical).toEqual([U, K]);
 });
 
-// bodies are judged as Playwright serialises them (toJSON, functions, typed arrays, String objects, UTF-16)
 test('bodies are judged as Playwright serialises them: toJSON, typed arrays, String objects, UTF-16', () => {
     expect(bodyView({ toJSON: () => [U] })).toEqual({ kind: 'json', value: [U] });
     expect(bodyView({ pipe() {}, userUuids: U })).toEqual({ kind: 'json', value: { userUuids: U } });
@@ -86,7 +78,6 @@ test('bodies are judged as Playwright serialises them: toJSON, typed arrays, Str
     expect(bodyView(5)).toEqual({ kind: 'json', value: 5 });
 });
 
-// bulk targets: top-level lists only; empty lists, nested lists, filters anywhere and non-canonical values are refused
 test('bulk targets: top-level lists only; empty, nested, filter and non-canonical values are refused', () => {
     expect(bulkTargets([U])).toEqual({ uuids: [U] });
     expect(bulkTargets({ uuids: [U], certificateUuids: [K] })).toEqual({ uuids: [U, K] });
@@ -104,7 +95,6 @@ test('bulk targets: top-level lists only; empty, nested, filter and non-canonica
 test('query findings read the effective URL (decoded) and the params option, keys included', () => {
     expect(findUuidsInQuery(`/x?a=%30${U.slice(1)}`).canonical).toEqual([U]);
     expect(findUuidsInQuery('/x', { [U]: '1' }).canonical).toEqual([U]);
-    // The base64 forms count only as the value of a uuid-shaped key.
     expect(findUuidsInQuery(`/x?a=${url22}`).nonCanonical).toHaveLength(0);
     expect(findUuidsInQuery(`/x?keyUuid=${url22}`).nonCanonical).toHaveLength(1);
     expect(findUuidsInQuery(`/x?ids=${url24}`).nonCanonical).toHaveLength(1);
@@ -112,7 +102,6 @@ test('query findings read the effective URL (decoded) and the params option, key
     expect(findUuidsInQuery('/x?name=qa-reg-20261013-120000-ab12-x&force=true')).toEqual({ canonical: [], nonCanonical: [] });
 });
 
-// pathProblem: printable ASCII, the path as written = as sent, unreserved segments, no non-canonical uuid segment
 test('unsafePath: printable ASCII, path as written equals as sent, no non-canonical uuid segment', () => {
     expect(pathProblem(`/api/v1/roles/${U}/users`)).toBeUndefined();
     const refused: Array<[string, RegExp]> = [
@@ -122,13 +111,11 @@ test('unsafePath: printable ASCII, path as written equals as sent, no non-canoni
         [`/api/v1/roles/${U}.`, /non-canonical uuid/], ['/api/v1/roles/0-0-4000-8000-2', /non-canonical uuid/],
     ];
     for (const [u, why] of refused) expect(pathProblem(u), JSON.stringify(u)).toMatch(why);
-    // Base64 is no path form (Spring converts a path variable with UUID.fromString); the guard refuses
-    // such a mutation segment as a name (nameSegmentProblem), tested in guardedApiInputSnapshot.spec.ts.
     expect(pathProblem(`/api/v1/roles/${url22}`)).toBeUndefined();
 });
 
-// the platform deny-list: v1 and v2, case-insensitive, purge / CBOM / OID / schedule / settings / local admins, objectUuid must be
-// canonical
+// the platform deny-list: v1 and v2, case-insensitive, purge / CBOM / OID / schedule / settings / local admins,
+// objectUuid must be canonical.
 test('the platform deny-list covers v1 and v2, is case-insensitive, and objectUuid must be canonical', () => {
     for (const p of ['/v1/auditLogs/purge', '/v1/cboms', '/v1/cboms/upload', '/v1/cboms/sync', '/v1/oids', '/v1/oids/1.2.3', '/v1/discoveries/schedule',
         '/v2/settings/platform', '/v1/Settings/platform', '/V1/settings', '/v1/LOCAL/admins']) {
