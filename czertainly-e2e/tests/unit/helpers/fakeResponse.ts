@@ -1,12 +1,9 @@
 /**
  * fakeResponse — a Playwright response built from an `ApiAnswer`, for the fake request contexts of the unit tests.
  *
- * WHAT: `fakeResponse({ status, body })` returns the members the helpers read (`status`, `ok`, `headers`, `json`, `text`) from a complete
- * `ApiAnswer` made by `fakeAnswer`; `FakeReply` is the `{ status, body }` shorthand the fake cores return (the status and the parsed body
- * of an `ApiAnswer`).
- * WHY: five unit files each built their own partial response object and their own `FakeReply` type; one builder keeps them in step
- * with the answer type the helpers read.
- * HOW: pure; the body is sent as JSON text and the parsed value is the body itself.
+ * `fakeResponse({ status, body })` returns the members the helpers read (`status`, `ok`, `headers`, `json`, `text`) from a
+ * complete `ApiAnswer` made by `fakeAnswer`. `FakeReply` is the `{ status, body }` shorthand the fake cores return. Pure;
+ * the body is sent as JSON text and the parsed value is the body itself.
  */
 import type { APIResponse } from '@playwright/test';
 import { fakeAnswer } from './fakeAnswer';

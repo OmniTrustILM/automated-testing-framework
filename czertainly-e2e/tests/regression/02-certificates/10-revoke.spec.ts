@@ -1,14 +1,10 @@
 /**
- * REG-CERT-10 — Revoke from the certificate detail dialog (release checklist: Certificates 10). ilm#429.
+ * REG-CERT-10 — Revoke from the certificate detail dialog (release checklist: Certificates 10; ilm#429).
  *
- * WHAT: 1. Detail → Revoke → the dialog offers exactly the nine revocation reasons.
- *       2. Choose Key compromise, submit → 204; the certificate becomes Revoked.
- *       3. After a reload the Details show Revoked and Revoke, Renew and Rekey are disabled.
- *       4. The History tab says "Certificate revoked. Reason: Key compromise".
- * WHY: revocation is terminal and must offer the full reason list; a red test means a reason is missing, the revoke does not
- *      complete through the authority, or the lifecycle actions stay enabled on a revoked certificate.
- * HOW: the certificate is issued by this run through the API (own RA profile) and checked as own with the live ownership check before
- *      the dialog acts; the state is read from the API and from the UI after a reload.
+ * The dialog offers exactly the nine revocation reasons. Revoking with Key compromise gives 204 and the certificate becomes
+ * Revoked. After a reload the Details show Revoked, Revoke, Renew and Rekey are disabled, and the History says why.
+ *
+ * The certificate is issued by this run (own RA profile); the live check runs before the dialog acts.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { CertificateDetailPage } from '../../../pages/CertificateDetailPage';

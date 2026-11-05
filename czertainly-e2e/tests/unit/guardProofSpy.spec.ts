@@ -1,14 +1,11 @@
 /**
- * Unit tests for the live guard proof's safety net and the runtime half of the deny-by-default rule,
- * against a fake raw context that records every request it receives:
- * - the blocking spy forwards GET / HEAD only and REFUSES everything else (post / put / patch / delete,
- *   fetch with any other method — also from a Request object — and unknown methods): it never reaches the raw context;
- * - the proof's composition: a guarded helper handed a pre-existing RA profile disguised as an OwnRef (guard layer
- *   removed on purpose) and the guarded PATCH / DELETE fail with an OwnObjectViolation of kind `ownership` — also under
- *   the dry run — and nothing is sent; a regressed guard shows up as GuardSpyBlocked, a refusal for the runtime brand
- *   as kind `not-guarded`: `expectOwnershipRefusal` accepts neither;
- * - `apiJson` sends a mutating method only through a guarded context (assertGuarded), a raw one may GET and POST to
- *   the allow-list only.
+ * guardProofSpy — unit tests of the live guard proof's safety net, against a fake raw context that records every request.
+ *
+ * Checks:
+ *   - the blocking spy forwards GET / HEAD only and never lets anything else reach the raw context
+ *   - a guarded helper handed a pre-existing RA profile, and the guarded PATCH / DELETE, are refused with an ownership
+ *     violation (also under the dry run) and send nothing
+ *   - `apiJson` sends a mutating method only through a guarded context
  */
 import { APIRequestContext, test, expect } from '@playwright/test';
 import { guardApi } from '../../utils/regression/guard/createGuard';

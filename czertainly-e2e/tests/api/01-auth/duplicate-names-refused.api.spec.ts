@@ -1,16 +1,10 @@
 /**
- * API-AUTH-11, API-AUTH-18 — Duplicate user and role names are refused with a conflict. ilm#427.
+ * API-AUTH-11, API-AUTH-18 — Duplicate user and role names are refused with a conflict (ilm#427).
  *
- * WHAT: 1. POST an existing username again → refused, exactly one user carries the name; the answer should be a 409 {message} naming
- *          the username and saying "already exists" (core#2297: today a 500, test.fail on that step).
- *       2. POST an own role's name, `admin` and `auditor` again → each refused, the role list unchanged, system roles untouched; the
- *          answer should be a 409 {message} naming the role (core#2297, test.fail on that step).
- * WHY: user and role names are unique, also against the system role names; the platform convention for "already exists" is a 409 with a
- *      message. The auth service answers 400, which surfaces as a 500 (known bug core#2297, open). The hard assertions (refused,
- *      exactly one object, nothing created behind the refusal) stay outside `test.fail()`, which is set right before the status and
- *      message step, so the test turns red once the bug is fixed and the marker must go.
- * HOW: own run objects (a disabled user, an own role) and the existing system roles `admin` / `auditor`, which are only read; a
- *      system role the build lacks is skipped, never created. An accepted duplicate is recorded in the ledger before the assertion.
+ * Both answers should be a 409 naming the user or role; today they are a 500 (core#2297, open). `test.fail()` covers only
+ * the status and message step, so the test turns red once the bug is fixed.
+ * Uses own run objects; `admin` and `auditor` are only read, and a system role the build lacks is skipped, never created.
+ * An accepted duplicate is ledgered before the assertion.
  */
 import { ACCOUNT_STEPS_TEST_MS, SEVERAL_STEPS_TEST_MS } from '../../../utils/regression/timeouts';
 import { expect, test } from '../../../fixtures/regressionFixtures';

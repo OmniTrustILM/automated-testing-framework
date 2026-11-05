@@ -1,17 +1,20 @@
 /**
- * Navigation — the sidebar navigation.
+ * Navigation — the sidebar navigation (SMK-002, REG-CERT-60).
  *
- * WHAT: the sidebar: expanding the rail and a parent group, and opening a page by its entry.
- * WHY: SMK-002 and REG-CERT-60 open every page the way a user does; the certificate pages open the list through it too.
- * HOW: every entry by its FE `data-testid` (`sidebar-<entry>`, `sidebar-<parent>-<entry>`, see `smokeData.sidebarItems`),
- *       scoped to `sidebar-sticky` because the flying menu over a collapsed rail renders the same ids; the URL hint is
- *       awaited together with the click.
+ * Expands a parent group and opens a page by its link, the way a user does; the certificate pages open the list
+ * through it too. A top-level link is scoped to the first-level items, so a nested link of the same name never
+ * matches. The URL hint is awaited together with the click.
  */
 import { Locator, Page, expect } from '@playwright/test';
 
 // The expanded sidebar is 260px wide, the collapsed rail 84px.
 const EXPANDED_MIN_WIDTH = 200;
 
+/**
+ * Sidebar navigation by the FE `data-testid` of each entry (see `smokeData.sidebarItems`).
+ * Scoped to the main sidebar (`sidebar-sticky`): the flying menu that opens over a collapsed rail
+ * renders the same test ids.
+ */
 export class Navigation {
   readonly sidebarNav: Locator;
 

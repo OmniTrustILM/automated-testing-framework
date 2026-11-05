@@ -1,15 +1,14 @@
 /**
  * snapshot — reads a tier into a `TierSnapshot` and stores it.
  *
- * WHAT: `snapshotTier` reads every resource of `SNAPSHOT_RESOURCES` (total, foreign objects with their marks, the windows of a large
- * collection, the platform event associations and system jobs), `unreadableRequired` names the required resources it could not read, and
- * `writeSnapshot` / `readSnapshot` / `deleteSnapshot` / `purgeOldSnapshots` carry the before snapshot across processes.
+ * `snapshotTier` reads every resource of `SNAPSHOT_RESOURCES`: the total, the foreign objects with their marks, the windows of
+ * a large collection, the platform event associations and the system jobs. `unreadableRequired` names the required resources it
+ * could not read. `writeSnapshot` / `readSnapshot` / `deleteSnapshot` / `purgeOldSnapshots` carry the before snapshot from the
+ * `snapshot` project to the run-end teardown, two processes that share only the state directory.
  *
- * WHY: the before snapshot is taken by the `snapshot` project and judged by the run-end teardown, two processes that
- * share only the state directory. Reading is the only I/O of the proof, so it is kept apart from the pure comparison.
- *
- * HOW: GET / POST reads through a context with `fetch` only; a read that fails is recorded on the resource (`error`), never
- * thrown, so the comparison can say "not compared" or "proof incomplete". Messages carry types and uuids only.
+ * Reading is the only I/O of the proof, so it is kept apart from the pure comparison. Reads are GET / POST through a context
+ * with `fetch` only. A read that fails is recorded on the resource (`error`), never thrown, so the comparison can say "not
+ * compared" or "proof incomplete". Messages carry types and uuids only.
  */
 import { APIRequestContext } from '@playwright/test';
 import * as fs from 'fs';

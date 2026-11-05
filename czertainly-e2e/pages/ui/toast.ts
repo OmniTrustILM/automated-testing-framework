@@ -1,16 +1,14 @@
 /**
  * toast — the toast stack.
  *
- * WHAT: the toast stack: find a card by text, assert one with its severity, dismiss all.
- * WHY: a refusal is shown as a danger toast that stays; success toasts vanish after six seconds, so they are
- *       asserted in the same step as their action and the API read-back stays the oracle.
- * HOW: cards by test id (while a modal is open the toasts outside it are hidden from roles); only danger toasts
- *       carry the alert role.
+ * Finds a card by text, asserts one with its severity, dismisses all. A refusal is shown as a danger toast that stays;
+ * success toasts vanish after six seconds, so they are asserted in the same step as their action and the API read-back
+ * stays the oracle. Only danger toasts carry the alert role.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { Logger } from '../../utils/Logger';
 
-const logger = new Logger('toast');
+const logger = new Logger('Toast');
 
 const toastCards = (page: Page): Locator => page.getByTestId(/^alert-\d+$/);
 

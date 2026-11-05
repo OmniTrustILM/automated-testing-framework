@@ -4,7 +4,7 @@
  * "contains" fallback; `{ value }` matches `data-value` exactly.
  */
 import { expect, Page, test } from '@playwright/test';
-import { chooseOption, chooseOptions, describeChoice, OptionChoice, selectById } from '../../pages/ui/select';
+import { chooseOption, chooseOptions, describeChoice, OptionChoice, SelectHandle } from '../../pages/ui/select';
 
 const OPTIONS = ['x-ra-2', 'x-ra (enabled)', 'Not equals', 'Equals', 'Starts with'];
 
@@ -21,12 +21,14 @@ async function render(page: Page): Promise<void> {
 }
 
 const picked = (page: Page) => page.locator('#picked').textContent();
+/** The stand-in's select `select-x`; its portalled content `select-x-content` is looked up page-wide. */
+const selectX = (page: Page): SelectHandle => ({ trigger: page.locator('main').getByTestId('select-x-trigger'), content: page.getByTestId('select-x-content'), name: 'x' });
 const failsWithin = async (p: Promise<unknown>): Promise<boolean> => p.then(() => false, () => true);
 
 // a text choice is the exact accessible name: "Equals" is never "Not equals", "x-ra-2" is chosen by its own name
 test('a text choice is the exact accessible name: Equals is never Not equals', async ({ page }) => {
     await render(page);
-    const sel = selectById(page, page.locator('main'), 'x');
+    const sel = selectX(page);
     expect(await chooseOption(page, sel, 'Equals')).toBe('Equals');
     expect(await chooseOption(page, sel, 'x-ra-2')).toBe('x-ra-2');
     await chooseOptions(page, sel, ['Starts with', { value: 'v2' }]);
@@ -37,7 +39,7 @@ test('a text choice is the exact accessible name: Equals is never Not equals', a
 test('a label that only starts or only appears in an option fails, with no contains fallback', async ({ page }) => {
     test.setTimeout(20_000);
     await render(page);
-    const sel = selectById(page, page.locator('main'), 'x');
+    const sel = selectX(page);
     expect(await failsWithin(chooseOption(page, sel, 'x-ra')), 'a prefix of "x-ra (enabled)"').toBe(true);
     await page.keyboard.press('Escape');
     expect(await failsWithin(chooseOption(page, sel, 'with')), 'contained in "Starts with"').toBe(true);
@@ -49,7 +51,7 @@ test('a label that only starts or only appears in an option fails, with no conta
 
 test('the prefix opt-in: word boundary, the reason is required', async ({ page }) => {
     await render(page);
-    const sel = selectById(page, page.locator('main'), 'x');
+    const sel = selectX(page);
     const choice: OptionChoice = { prefix: 'x-ra', reason: 'the UI appends the state "(enabled)" to the name' };
     expect(await chooseOption(page, sel, choice)).toBe('x-ra (enabled)');
     await expect(chooseOption(page, sel, { prefix: 'x-ra', reason: ' ' })).rejects.toThrow(/needs the reason/);

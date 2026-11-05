@@ -1,13 +1,12 @@
 /**
  * authApi — users, roles, memberships and permission documents through the guarded API.
  *
- * WHAT: users, roles, memberships and permission documents through the guarded API. Every helper that changes
- *       something takes an `OwnRef` and proves it with `assertOwnLive` first; reads take any context. Absence is read from the
- *       authoritative LIST, never from a detail GET (the detail of a deleted role or user answers 500, core#2511). Users: enable /
- *       disable, roles replace / add / remove; roles: description and e-mail only (the name is immutable), members, permissions.
- * WHY: Authorisation rows change identities and roles, which only an own object may suffer.
- * HOW: Every change takes an `OwnRef` and proves it with `assertOwnLive`; absence is read from the authoritative list, never from a detail
- * GET.
+ * Every helper that changes something takes an `OwnRef` and proves it with `assertOwnLive` first; reads take any context.
+ *   - Users: enable / disable, roles replace / add / remove.
+ *   - Roles: description and e-mail only (the name is immutable), members, permissions.
+ *
+ * Absence is read from the authoritative LIST, never from a detail GET (the detail of a deleted role or user answers 500,
+ * core#2511).
  */
 import { APIRequestContext, APIResponse, expect } from '@playwright/test';
 import { GuardedApi, assertGuarded } from '../guard/types';

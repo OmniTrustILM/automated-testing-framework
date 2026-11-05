@@ -1,58 +1,12 @@
 /**
- * checkRequest — judges one snapshot against the guard's rules 1–7.
+ * checkRequest — judges one request snapshot against the guard's rules 1-7 (second half of every guarded request).
  *
- * WHAT: the second half of every guarded request. A refused-method probe (TRACE, QAPROBE) goes to `checkProbeRead`, a
- * GET to `checkRead`, every other method to `checkMutation`. `checkMutation` runs its rules in a fixed order, each rule
- * a named function: checkMutationPath (1), the read-only and protocol POSTs (2), checkNoHandlerProbe (2b),
- * checkUuidSegments (3), checkBody (4, 4b), waiveSelfSteps (4d), findUuids (4), checkPlatformDeny (5), checkOwnership
- * (6) and checkDryRun (7).
- * WHY: the order of the rules is part of the specification: a request that breaks two rules is refused with the message
- * of the earlier one, and the unit tests pin those messages. A rule that moves changes which message a caller sees, so
- * the order lives in one short function and each rule can be read, and reordered, as a named step.
- * HOW: nothing is read from the caller any more: every rule reads the snapshot. Rule 6 is skipped for a proven local
- * stack (`localStack` on a local tier with this run's proof), as is rule 5. A refused request is never sent.
- *
- * The rules (the options, header, URL and `_method` rules a–d are in readRequest.ts):
- * GET passes a, b, c, d and the structural path rule (urls.ts `readPathProblem`: no `//`, dot segment, `;`,
- * `%2f` / `%5c` / `%2e`, backslash, parser-changed path or `/API` spelling), carries no body, and a GET that persists
- * something (guard/routes.ts SIDE_EFFECT_GETS) is allowed only on own objects of the type the route names or on probe
- * uuids. Redirects are followed by the guard, only to BASE_URL's origin and through the same rules.
- * TRACE and QAPROBE (PROBE_METHODS, the refused-method probes) are bodyless reads held to the GET rules and
- * stricter: no identity header, no `text/plain`, never a redirect follow, never a side-effect GET path. Sent through
- * `fetch` only. Any other method token stays refused.
- * Every other method, in this order (a refused request is never sent; `maxRedirects` is always 0):
- *   1. Path: the structural rule, the path as written equals the effective pathname, every segment matches
- *      `^[A-Za-z0-9._~-]+$`, and the path lies under `/api/v1|v2`.
- *   2. A POST to the read-only allow-list (lists, searches, validations) or to client protocol traffic (ACME / SCEP /
- *      CMP) is allowed; the body is a query or a protocol message.
- *   2c. An attribute callback (allowLists.ts POST_CALLBACK, kind `callback`) is not a read: it goes on through rules 3, 4 and 6 with its own
- *      body scan (attribute subtrees included; only attribute definition uuids and the registered parent are not claimed) and a path id that
- *      must be the authority / connector the preflight registered (`registerCallbackTarget`) or an own token profile.
- *   3. Uuid-like values: a path segment, query key / value or body string that a server parser could read as a uuid but
- *      is not canonical is refused, never canonicalised (padded, Java-lenient groups, `urn:uuid:`, padded base64; the
- *      unpadded 22-character form only under a uuid-typed key; see uuids.ts).
- *   4. The body as it will be sent: a duplicate JSON key at any depth, nesting deeper than MAX_BODY_DEPTH, a non-JSON
- *      Buffer outside an allow-listed create, a `text/plain` body with NUL, or on a bulk route, is refused; every
- *      canonical uuid in a text body must be own or a probe.
- *   5. The platform deny-list (allowLists.ts `PLATFORM_DENY`) is refused unless `localStack` on a proven local stack.
- *   6. Ownership, before the dry run and lifted only by `localStack` on a proven local stack:
- *        (a) every path segment is a canonical uuid or an API word (a name-keyed path cannot be proven own);
- *        (b) uuids in the path must be own, except a scope parent (an own child may live under a foreign parent);
- *        (c) a mutation without a uuid in the path is an allow-listed create or an allow-listed bulk route whose body is
- *            exactly its DTO (a non-empty canonical uuid list, no other field);
- *        (d) every canonical uuid in a body string outside attribute subtrees must be own; a top-level string field of
- *            REFERENCE_FIELDS may name a pre-existing object on an own create or update, never on a DELETE;
- *        (e) every canonical uuid in the effective query string must be own.
- *      "Own" means a ledger `created` line of this run and a live run-prefixed name (`assertOwnLive`), or a probe uuid.
- *      A derived ledger object is refused. A target must have a ledger line of exactly the type of the resource the
- *      route acts on; a uuid that is the whole value of a typed body field must have a ledger line of that type.
+ * A refused request is never sent. The rule order is part of the specification: a request that breaks two rules gets the
+ * message of the earlier one (the unit tests pin it). Mutations are checked, in order, for:
+ *   1. a safe path under /api/v1|v2; 2. the read-only allow-list and protocol POSTs; 3. non-canonical uuids; 4. the body;
+ *   5. the platform deny-list; 6. ownership (a live run-prefixed name plus a `created` ledger line, or a probe uuid);
  *   7. DELETE under API_TEARDOWN_DRY_RUN throws DryRunRefusal.
- * Approvals, on top of rules 4–6:
- *   - approvals (approvals.ts): an approval profile step may name the caller's own user (`GET /v1/auth/profile`) on an own
- *     profile write; an approval named in a path may only be decided (four PATCH routes) as the run's own user, and
- *     only when its ledger line names an own certificate and an own approval profile that its live detail confirms.
- * `localStack: true` (`@local` specs only) lifts rules 5 and 6 only while TIER_KIND=local in the process environment and
- * this run holds its unexpired local-backend proof (tier/localProof.ts `hasLocalProof`); on a shared tier it changes nothing.
+ * `localStack: true` (`@local` specs only) lifts rules 5 and 6 only on a proven local stack.
  */
 import { isCanonicalUuid, merge, findUuidsInString, unescapeJson, UUID_ANYWHERE, FoundUuids } from './uuids';
 import { apiPathOfPathname, nameSegmentProblem, NO_BASE, readApiPath, readPathProblem, structuralPathProblem, uuidSegmentProblem } from './urls';

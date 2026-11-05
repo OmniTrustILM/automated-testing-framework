@@ -1,14 +1,10 @@
 /**
  * tlsTarget — a TLS scan target the run controls.
  *
- * WHAT: a TLS scan target the run controls: runner-hosted listeners on random ports that serve per-run certificates
- *       (a root, an optional intermediate, one leaf per listener, every name run-prefixed), so every certificate a discovery
- *       onboards is recognisable and recorded, and `servedFingerprints()` is an oracle the test computed itself. The discovery rows
- *       scan only this server or RFC 5737 documentation ranges. REG_SCAN_HOST = the dotted name or address the connector reaches.
- * WHY: A discovery test needs certificates it can recognise and compute itself, and must never scan anything but its own server or
- * documentation ranges.
- * HOW: Runner-hosted listeners on random ports serve per-run, run-prefixed certificates; `servedFingerprints()` is the oracle the test
- * computes itself.
+ * Runner-hosted listeners on random ports serve per-run certificates (a root, an optional intermediate, one leaf per
+ * listener, every name run-prefixed), so every certificate a discovery onboards is recognisable and recorded.
+ * `servedFingerprints()` is an oracle the test computes itself. Discovery rows scan only this server or RFC 5737
+ * documentation ranges. REG_SCAN_HOST is the dotted name or address the connector reaches.
  */
 import * as forge from 'node-forge';
 import * as net from 'net';
@@ -45,6 +41,10 @@ export interface TlsTarget {
     ports: number[];
     /** The certificate (chain) served on each port, in port order. */
     served: ServedCertificate[][];
+    /** The root that issues the intermediate, PEM. No listener serves it: a client that verifies the target trusts it. */
+    rootPem: string;
+    /** The intermediate that issues every leaf, PEM; served only when `withIntermediate`. */
+    intermediatePem: string;
     /** Distinct certificates over all ports (leaves and the intermediate). */
     distinct(): ServedCertificate[];
     servedFingerprints(): string[];
@@ -189,6 +189,8 @@ export async function startTlsTarget(opts: TlsTargetOptions = {}): Promise<TlsTa
         host: scanHost(env),
         ports,
         served,
+        rootPem: forge.pki.certificateToPem(root),
+        intermediatePem: interPem,
         distinct: distinctServed,
         servedFingerprints: () => distinctServed().map((c) => c.fingerprint).sort(),
         ipAttribute: () => scanHost(env),

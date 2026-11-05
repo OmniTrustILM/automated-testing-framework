@@ -1,12 +1,10 @@
 /**
  * workerApiRenewal — the worker-scoped admin context renews its token, and a block's worker guard needs a proven local stack.
  *
- * WHAT: (1) `renewingContext` sends to the current context while its token has more than the margin left, opens a new context for
- * the next request when it has less (one renewal for any number of waiting requests), retries after a failed grant, and disposes every
- * context it opened; (2) `withWorkerApi(..., { localStack: true })` refuses off a proven local stack before any request;
- * (3) every ledger type the key onboarding block records is a registry type with a live ownership read.
- * WHY: a worker fixture lives longer than one access token, and the key onboarding hooks are minutes apart.
- * HOW: stub contexts with an injected clock; no network.
+ * Checks `renewingContext` sends to the current context while its token has more than the margin left, opens one new context
+ * for any number of waiting requests when it has less, retries after a failed grant and disposes every context it opened;
+ * `withWorkerApi(..., { localStack: true })` refuses off a proven local stack before any request; every ledger type the key
+ * onboarding block records is a registry type with a live ownership read. Uses stub contexts and an injected clock.
  */
 import { expect, test } from '@playwright/test';
 import type { APIRequestContext } from '@playwright/test';

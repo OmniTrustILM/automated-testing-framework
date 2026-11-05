@@ -1,17 +1,12 @@
 /**
- * The guarded fixtures `anonymousApi` and `adminToken` / `restrictedToken` (a failed password grant is remembered for the process and every
- * later test that takes the fixture SKIPS with the named reason), proven on the wire and through a REAL Playwright run of the fixtures:
- * - anonymousApi u1: a credential-less guarded context sends no authorization / ssl-client-cert / cookie header;
- *   u2: `X-Forwarded-For: 192.0.2.1` for a loopback / private BASE_URL or a local tier, never for a public host, and a
- *   per-request `x-forwarded-for` is still refused; u3: the guard rules are unchanged for it;
- * - token fixtures u1: one grant per identity per validity window against a loopback token endpoint, the second call served from
- *   the cache, a token inside the 60 s margin fetched again, the form carrying the identity's own credentials;
- *   u2: a 401 throws once and the second call throws WITHOUT a request; u3: neither the token nor the secret appears in
- *   the logger output or in the thrown message; u4: `String(token)` / `JSON.stringify` / a template literal print
- *   `[token]`, `bearer()` is the only way out;
- * - a real run: `playwright test` over tests/unit/fixtures/token-skip with the real fixtures and a 401 identity provider: the
- *   grant is sent exactly ONCE across the three tests taking `restrictedToken` (and once for `adminToken`), and every
- *   test ends SKIPPED with the reason.
+ * tokenFixtures — unit tests of the guarded fixtures `anonymousApi` and `adminToken` / `restrictedToken`, on the wire
+ * and in a real Playwright run.
+ *
+ * Checks:
+ *   - anonymousApi sends no credentials; a per-request `x-forwarded-for` is still refused
+ *   - tokens: one grant per identity per validity window, cached; a 401 is remembered, so later tests skip with the
+ *     reason
+ *   - no token or secret appears in logs or messages; printing a token gives `[token]`
  */
 import { APIRequestContext, expect, request, test } from '@playwright/test';
 import { spawn } from 'child_process';

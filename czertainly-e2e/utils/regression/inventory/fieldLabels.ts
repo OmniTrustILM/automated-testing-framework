@@ -1,13 +1,10 @@
 /**
  * fieldLabels — the labels the filter widget shows.
  *
- * WHAT: The labels the filter widget shows, computed from the platform enums and the search catalogue: source, condition and
- *       enum labels (read from `GET /api/v1/enums`, where the admin UI reads them), the Field select labels with the
- *       disambiguation of shared labels, the widget input for an API-shaped filter and the text of its badge.
- * WHY: A page test needs the exact words of the widget, and they come from the platform enums and the search catalogue, not from the page
- * under test.
- * HOW: Source, condition and enum labels read from `GET /api/v1/enums`, the Field select labels with the disambiguation of shared labels,
- * the widget input for an API-shaped filter and the badge text.
+ * Computed from the platform enums and the search catalogue, not from the page under test:
+ *   - source, condition and enum labels (read from `GET /api/v1/enums`, where the admin UI reads them)
+ *   - the Field select labels, with the disambiguation of shared labels
+ *   - the widget input for an API-shaped filter and the text of its badge
  */
 import type { APIRequestContext } from '@playwright/test';
 import { CatalogueGroup, Filter, findField } from './searchApi';
@@ -108,7 +105,7 @@ export function expectedBadgeText(parts: { source: string; field: string; condit
 /** A badge's text without the screen-reader `Remove badge` of its inner button. */
 export const badgeTextOf = (raw: string): string => collapse(raw).replace(/\s*Remove badge$/, '').trim();
 
-/** A filter given by the labels the widget shows (what `FilterWidget.addFilter` takes for an API-shaped filter). */
+/** A filter given by the labels the widget shows, for an API-shaped filter. */
 export interface LabelledFilterSpec {
     source: string;
     field: string;

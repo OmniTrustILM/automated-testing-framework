@@ -1,30 +1,11 @@
 /**
- * areaFixtures — the shape rule of an area fixture (`fixtures/areas/<name>.ts`), the per-folder setup a spec may take `test` from.
+ * areaFixtures — the shape rule of an area fixture (`fixtures/areas/<name>.ts`), the per-folder setup a spec may use.
  *
- * WHAT: an area fixture has exactly one shape: one named import of `test` from the spec-facing fixtures (or another area
- * fixture), used once, in `export const test = <base>.extend<…>({ … })`. The object literal only ADDS fixtures: no key is a
- * fixture that already exists (Playwright's own fixtures and options, the fixtures of `fixtures/testFixtures.ts` and
- * `fixtures/regressionFixtures.ts`, the spec-facing context names the spec lint knows, the fixtures of the other area
- * files), every key is a plain name, and the file mentions `extend` nowhere else, calls no `.use(…)`, refers to its own
- * `test` nowhere else, loads no module by `require` / `import()`, and exports no other value than `test` and `expect`
- * (types are fine). A spec takes only `test` / `expect` (and types) from an area fixture (rules.ts, test-import). A
- * fixture of the file destructures its inputs and takes only the allowed ones (AREA_FIXTURE_INPUTS: the guarded contexts
- * and the ledger / needs / settings fixtures, never a page or a Playwright raw source), the file reads no `.request`,
- * `.context`, `.browser` member and no credential member (password, secret, token, kubeconfig …; by access or
- * destructuring) and no computed member, uses no reflection and never says
- * `newContext`: what it builds comes from the guarded fixtures. A page is driven by the spec (`signedIn`) through a
- * page object, not handed out by an area fixture.
- * WHY: the spec lint trusts a guarded fixture by its name (`api`, `localApi`, `own`, `signedIn`, …). An area fixture that
- * redefined one of those names, or Playwright's `request` / `baseURL`, could hand a spec a raw context or another tier
- * under a trusted name, and no spec-side rule would see it. A second extend reached any other way (`.call`, `Reflect`,
- * an alias, a destructured `extend`) would escape the key check, so the rule pins the one shape instead of chasing forms.
- * A new name gets no trust in a spec's own calls, but a spec may pass it on to a helper, so no raw context may be built
- * in an area fixture at all. With the
- * export rule, whatever else an area file builds cannot leave it. This is a guard against mistakes and shortcuts in
- * test code, not a sandbox against a hostile author: every change is still read by a person before it is merged.
- * HOW: TypeScript AST (the compiler is loaded lazily, as in parseSpec). The file name must be root-relative (the lint
- * resolves relative imports from it). The rest of an area file (imports, raw contexts, mutations) is linted with the spec
- * rules by tests/unit/specGuards.spec.ts.
+ * One shape only: `export const test = <base>.extend<...>({ ... })`, which only ADDS fixtures.
+ *   - no key may be an existing fixture, so an area fixture cannot redefine `api` or Playwright's `request`
+ *   - a fixture takes only AREA_FIXTURE_INPUTS (guarded contexts, ledger / needs / settings fixtures, never a page)
+ *   - no `.request`, `.context`, `.browser`, credential member, `newContext` or reflection
+ * This guards against mistakes, not a hostile author.
  */
 import * as path from 'path';
 import type * as TS from 'typescript';

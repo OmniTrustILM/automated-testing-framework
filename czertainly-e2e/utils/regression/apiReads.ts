@@ -1,20 +1,12 @@
 /**
  * apiReads — the one answer type and the JSON reads every area shares.
  *
- * WHAT: the one answer type of the regression helpers (`ApiAnswer`, built by `answerOf`) and the JSON reads every area
- *       shares. `apiJson` is deny by default:
- *       a raw context may GET (BASE_URL's origin only) and send a read-only / protocol POST; any other method, a create
- *       included, needs the guarded context. `apiJsonWithDate` also returns the server clock (`createdAfterOf`) so derived
- *       objects get a server-time bound. Certificate reads: detail, search, the fingerprint lookup.
- * WHY: Every helper that reads an API answer needs the same status, text and parsed body, and the server clock that bounds a derived
- * object; one reader keeps them from drifting apart.
- * HOW: `answerOf` builds the `ApiAnswer`; `apiJson` is deny by default (a raw context may only GET or send a read-only POST, anything else
- * needs the guarded context) and `apiJsonWithDate` adds the server time through `createdAfterOf`.
+ * `apiJson` is deny by default: a raw context may GET (BASE_URL's origin only) or send a read-only / protocol POST; any other
+ * method, a create included, needs the guarded context. Also here: `apiJsonWithDate` and the certificate reads.
  *
- *       The clock rule of a derived object (a platform-made key or certificate the teardown may delete): its age is judged
- *       on the SERVER's clock. Where the answer carries no server time, `createdAfterOf` returns `keepingBound()`, a bound
- *       so far ahead that no object made so far is created after it, so the teardown keeps the object (a visible leftover
- *       a person decides) instead of trusting the runner's clock, which may be ahead of or behind the server's.
+ * A derived object (a platform-made key or certificate) is aged on the SERVER's clock. When the answer carries no server time,
+ * `createdAfterOf` returns a bound far in the future, so the teardown keeps the object as a visible leftover instead of
+ * trusting the runner's clock.
  */
 import { APIRequestContext, APIResponse } from '@playwright/test';
 import { Logger } from '../Logger';
@@ -27,7 +19,7 @@ import { pollUntil } from './wait';
 import type { JsonObject } from './json';
 import { rowsOf } from './json';
 
-const logger = new Logger('apiReads');
+const logger = new Logger('ApiReads');
 
 /**
  * What one request answered, whatever its status: the one shape every transport of the helpers returns, so one error

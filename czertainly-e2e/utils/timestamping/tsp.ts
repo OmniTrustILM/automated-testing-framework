@@ -1,10 +1,9 @@
 /**
  * tsp — one TSP request, captured on disk and parsed.
  *
- * WHAT: `requestTimestamp` builds a query (or takes raw bytes), sends it with Basic auth and parses the reply.
- * WHY: every protocol spec asserts on the same outcome shape; the artifacts live under the test's own output dir so
- * two tests never overwrite each other's bytes.
- * HOW: ported from the developers' suite; artifacts and credentials come from provisioning.ts (lazily, inside the test).
+ * `requestTimestamp` builds a query (or takes raw bytes), sends it with Basic auth and parses the reply. Artifacts live
+ * under the test's own output dir, so two tests never overwrite each other's bytes; artifacts and credentials come from
+ * provisioning.ts (lazily, inside the test).
  */
 import { APIRequestContext } from '@playwright/test';
 import * as fs from 'fs';

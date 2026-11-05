@@ -1,23 +1,9 @@
 /**
- * API-CERT-64, 65, 68 — Inspection, import and plain upload of certificates. ilm#428.
+ * API-CERT-64, 65, 68 — Inspection, import and plain upload of certificates (ilm#428).
  *
- * WHAT: 1. Inspection (POST /v1/inspections), one test per input: garbage bytes, an empty file, a DH PARAMETERS block, two private keys in
- *          a PEM, a PKCS#12 without or with a wrong passphrase (the same text), an encrypted PKCS#8 key without or with a wrong
- *          passphrase, a key under another passphrase than its store, 201 certificates and 101 other entries, a malformed or unknown
- *          tokenProfileUuid, a `file` that is not base64 or not a string, no `file` → the fixed refusal (422 array of strings, 400 / 404
- *          {message}); 200 certificates and 100 other entries are accepted; a refused file stores nothing.
- *       2. Plain upload (POST /v1/certificates/upload): PEM, DER, PKCS#7 PEM and DER → 201 {uuid}, state issued, the uploaded
- *          fingerprint and common name; the asynchronous upload → 202 {fingerprint} and the certificate appears.
- *       3. A keystore, a certificate request and garbage uploaded as a certificate → 422 with the fixed text, nothing created.
- *       4. The same certificate twice → 409 and one certificate; the same certificate through /import → 200 `existing` with the
- *          uuid of the uploaded one.
- * WHY: the refusal texts are fixed and the password refusals are non-oracular (a wrong and a missing password give the same text);
- *      the limits are 200 certificates and 100 other entries (core#2137). An import never changes an object that already exists
- *      (core#2414), so the wizard and the plain upload treat an existing certificate alike; the plain upload keeps its 409. PEM, DER
- *      and PKCS#7 uploads must not regress (ilm#248). The published OpenAPI document declares no 409 / 422 for the upload (spec gap).
- * HOW: files are built in memory (importFixtures) with run-prefixed common names and generated passwords; every create is recorded in the
- *      ledger (with its derived key) before the first assertion; required custom attributes of certificates are read first and only
- *      an unfillable one skips. The inspection rows are stored as data and run as a loop.
+ * Limits: 200 certificates, 100 other entries (core#2137). An import never changes an existing object (core#2414).
+ * Uploads must not regress (ilm#248). The OpenAPI document declares no 409 / 422 for the upload (spec gap).
+ * Files are built in memory; every create is ledgered (with its key) before the first assertion.
  */
 import { ASYNC_UPLOAD_WAIT_MS, MANY_STEPS_TEST_MS } from '../../../utils/regression/timeouts';
 import { expect, test } from '../../../fixtures/regressionFixtures';

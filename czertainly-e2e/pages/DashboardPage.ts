@@ -1,12 +1,10 @@
 /**
  * DashboardPage — the certificates dashboard.
  *
- * WHAT: the certificates dashboard: the sidebar, the count tiles, the charts, header and footer.
- * WHY: an operator starts here: the tile numbers must be those of the statistics the page loaded, and a legend click must lead to the
- *      inventory. The smoke suite asserts the sidebar, header, footer and tiles after sign-in through the same regions.
- * HOW: five regions (sidebar, count tiles, charts, header, footer) by test id; a tile by its heading inside the counts
- *      section and a legend item by its button inside the chart's section; opening the dashboard returns the statistics
- *      answer of the same page load, so a number is never compared with another user's data.
+ * Provides the five regions by test id (sidebar, count tiles, charts, header, footer), a tile by its heading and a
+ * legend item by its button. The smoke suite asserts the sidebar, header, footer and tiles after sign-in through the
+ * same regions. Opening the dashboard returns the statistics answer of the same page load, so a number is never
+ * compared with another user's data.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { Logger } from '../utils/Logger';
@@ -44,6 +42,26 @@ export class DashboardPage {
         this.footer = this.page.getByTestId('footer');
     }
 
+    /** The section of one count tile, found by its heading. */
+    tile(title: string): Locator {
+        return this.topTiles.locator('section').filter({ has: this.page.getByRole('heading', { name: title, exact: true }) });
+    }
+
+    /** The number of a count tile. It has no test id yet (FE test-id request): it is the large-text block of the tile. */
+    tileValue(title: string): Locator {
+        return this.tile(title).locator('div.text-3xl');
+    }
+
+    /** The section of one chart, found by its heading. */
+    chart(title: string): Locator {
+        return this.bottomTiles.locator('section').filter({ has: this.page.getByRole('heading', { name: title, exact: true }) });
+    }
+
+    /** One legend item of a chart (a button). */
+    legendItem(chart: string, item: string): Locator {
+        return this.chart(chart).getByRole('button', { name: item, exact: true });
+    }
+
     /** Opens the certificates dashboard by its route; returns the statistics the page loaded, once the first chart is drawn. */
     async goToCertificatesDashboard(): Promise<DashboardStatistics> {
         logger.info('Opening the certificates dashboard');
@@ -53,20 +71,9 @@ export class DashboardPage {
         return statistics;
     }
 
-    /** The section of one count tile, found by its heading. */
-    private tile(title: string): Locator {
-        return this.topTiles.locator('section').filter({ has: this.page.getByRole('heading', { name: title, exact: true }) });
-    }
-
-    /** The section of one chart, found by its heading. */
-    private chart(title: string): Locator {
-        return this.bottomTiles.locator('section').filter({ has: this.page.getByRole('heading', { name: title, exact: true }) });
-    }
-
     /** The number a count tile shows (every non-digit, such as a thousands separator, is dropped). */
     async readTile(title: string): Promise<number> {
-        // The number has no test id yet (FE test-id request): it is the large-text block of the tile.
-        const text = await this.tile(title).locator('div.text-3xl').innerText();
+        const text = await this.tileValue(title).innerText();
         return Number(text.replace(/[^0-9]/g, ''));
     }
 
@@ -80,7 +87,7 @@ export class DashboardPage {
      * non-zero count, so a missing one fails: the caller has read the statistics and knows the tier has data behind it.
      */
     async openLegendItem(chart: string, item: string): Promise<void> {
-        const button = this.chart(chart).getByRole('button', { name: item, exact: true });
+        const button = this.legendItem(chart, item);
         await expect(button, `legend "${item}" is shown in "${chart}" (a legend item exists only for a non-zero count)`).toBeVisible();
         logger.info(`Clicking the legend "${item}" of "${chart}"`);
         await button.click();

@@ -1,12 +1,12 @@
 /**
  * The pure helpers of the events area: workflow request builders (trigger body, Set field items, condition items), the
- * association ledger notes, the event labels, the absence window, and the notification request attributes (the Java
- * name-based uuid of the webhook template attribute, e-mail / webhook attributes, ISO-8601 durations). No network: a change
+ * association ledger notes, the event labels, the absence window, and the notification request attributes (the connector's
+ * uuid per content type of the webhook template attribute, e-mail / webhook attributes, ISO-8601 durations). No network: a change
  * in a builder fails here before it fails a run against a tier.
  */
 import { expect, test } from '@playwright/test';
 import { durationSeconds } from '../../utils/regression/events/notificationProfiles';
-import { emailAttributes, nameUuidFromBytes, webhookAttributes, webhookTemplateAttribute, WEBHOOK_TEMPLATE_UUID } from '../../utils/regression/events/notificationAttributes';
+import { emailAttributes, webhookAttributes, webhookTemplateAttribute } from '../../utils/regression/events/notificationAttributes';
 import { associationKey } from '../../utils/regression/events/eventAssociations';
 import { assertHeldFor, firingsOfObject } from '../../utils/regression/events/eventHistory';
 import { EVENT, EVENT_LABEL } from '../../utils/regression/events/eventVocabulary';
@@ -95,17 +95,13 @@ test('assertHeldFor reads through the whole window and once at its end; a violat
 
 // ------------------------------------------------------------------ notification builders
 
-test('nameUuidFromBytes is Java UUID.nameUUIDFromBytes (version 3, IETF variant)', () => {
-    expect(nameUuidFromBytes(Buffer.from(''))).toBe('d41d8cd9-8f00-3204-a980-0998ecf8427e'); // the well-known empty-input vector
-    const u = nameUuidFromBytes(Buffer.from('abc'));
-    expect(u).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-3[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
-    expect(nameUuidFromBytes(Buffer.from('abc'))).toBe(u);
-});
-
-test('the webhook template attribute: uuid derived per content type, codeblock content with a base64 template', () => {
+test('the webhook template attribute: the connector uuid per content type, codeblock content with a base64 template', () => {
     const json = webhookTemplateAttribute('JSON', '{"a":"${event}"}');
     expect(json.name).toBe('data_contentTemplate_json');
-    expect(json.uuid).toBe(nameUuidFromBytes(Buffer.from(`${WEBHOOK_TEMPLATE_UUID}json`)));
+    // Java UUID.nameUUIDFromBytes of the connector's template uuid + the content type code (webhook Attributes.java)
+    expect(json.uuid).toBe('77ddf598-724a-31d4-943b-79ee71c854c5');
+    expect(webhookTemplateAttribute('XML', '<a/>').uuid).toBe('610ed4fa-0b1f-33a9-9a31-0be332673a58');
+    expect(webhookTemplateAttribute('RAW_JSON', '{}').uuid).toBe('07ea053b-3515-3ce8-a8a5-acfca3d4ed15');
     expect(json.contentType).toBe('codeblock');
     expect(contentOf(json)[0].data.language).toBe('json');
     expect(Buffer.from(contentOf(json)[0].data.code, 'base64').toString('utf8')).toBe('{"a":"${event}"}');

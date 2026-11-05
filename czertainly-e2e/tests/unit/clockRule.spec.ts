@@ -1,11 +1,9 @@
 /**
- * Unit tests of the clock rule of derived objects.
+ * clockRule — unit tests of the clock rule of derived objects.
  *
- * WHAT: a derived object's age is judged on the server's clock; where the answer carries no server time, the bound is one
- *       the object cannot reach, so the teardown keeps it.
- * WHY: a bound taken from the runner's clock deletes a key on a guess when the runner is behind the server; the rule must
- *      err toward keeping.
- * HOW: `createdAfterOf` and `keepingBound` against `derivedDeletable`, the teardown's own test of a creation time.
+ * A derived object's age is judged on the server's clock. Where the answer carries no server time, the bound is one the
+ * object cannot reach, so the teardown keeps it: a bound taken from the runner's clock would delete a key on a guess when
+ * the runner is behind the server. Tests `createdAfterOf` and `keepingBound` against `derivedDeletable`.
  */
 import { expect, test } from '@playwright/test';
 import { createdAfterOf } from '../../utils/regression/apiReads';

@@ -1,38 +1,14 @@
 /**
  * teardownHandlers — how the run-end teardown removes each kind of object the regression suite can create.
  *
- * WHAT: one handler per kind of object (certificates, keys, discoveries, ACME profiles, compliance profiles, roles, users, …), and the
- * certificate-key safety net. Loaded lazily by runTeardown's registry (type → module) and wrapped by `wrapHandlerWithGuard`: before
- * `remove` runs, the dry run is checked and the live object is read through `assertOwnLive` (ledger line of this run on this tier, live
- * run-prefixed name for named types); `ctx.live` is that object and its uuid is in `ctx.seen`. Later batches add their own
- * `teardownHandlers` export in the module that creates the objects (protocolProfiles, cryptoApi, workflowTeardown, …) and get the same
- * wrapper; until such a module exists the teardown reports "no handler (type X)".
- *
- * Deletion rule: `deleteAndVerify` sends the DELETE only for an object read with 200 in this step, accepts a 404
- * answer only then, and proves absence afterwards with a detail GET (polled: some deletes finish asynchronously).
- * Only a 404 proves absence; a 5xx never does by itself. Roles and users are the one exception path (found
- * by the first live guard proof): their detail answers 500 for a deleted uuid (known bug core#2511), so a 5xx there is
- * confirmed through the authoritative full list (`GET /v1/roles`, `GET /v1/users`; ledger/ownership.ts `absenceOf`) and the
- * workaround is logged and listed in the run's kept report (`knownBugs`). A list that still names the uuid, or that
- * cannot prove anything (unreadable, at its 1000-row cap), leaves the delete unconfirmed (red).
- * A handler that touches a SECOND object (deactivating ACME on an RA profile) checks that one live too. A handler throws
- * on failure (attemptCleanup records it); an error carrying `blockedBy` names the object that prevents it (a CA that
- * refuses the revoke). Returning 'kept' means "provably not ours" or "adopted" (a derived key the platform made before
- * the run, a discovered certificate someone assigned to a group): no delete, a warning and a line in the kept report
- * (REG_KEPT_STRICT=1 turns a non-empty kept list red). A derived object whose creation time cannot be read is NOT
- * kept quietly: the handler throws, the object stays on the tier and the run ends red, so a human checks it.
- *
- * Clock rule: a derived object's age is judged on the server's clock (a history or discovery time, or the `createdAfter`
- * taken from a response's Date header); where no server time exists, the object is still recorded, with `keepingBound()`,
- * so its handler answers 'kept' and it lands in the kept report. It is never judged on the runner's clock and never left
- * out of the ledger.
- *
- * WHY: the teardown is the one place that deletes, so every delete must be proven safe before it is sent and proven done
- *      after it: an object of another run or another person is never touched, an object whose absence cannot be shown
- *      leaves the run red.
- * HOW: the wrapper reads the live object through `assertOwnLive`; the handler sends the DELETE only for what that read
- *      returned; `deleteAndVerify` confirms absence with a detail read (a list read for roles and users); a handler that
- *      cannot decide throws.
+ * One handler per kind, run wrapped by `wrapHandlerWithGuard` (dry-run check, then `assertOwnLive`).
+ *   - `deleteAndVerify` sends DELETE only for an object read with 200 in this step and proves absence with a polled detail GET;
+ *     only a 404 proves absence, a 5xx never does.
+ *   - core#2511: roles and users answer 500 for a deleted uuid; absence is then confirmed through the full list (an
+ *     unreadable or 1000-row-capped list leaves the delete unconfirmed, red).
+ *   - 'kept' means "provably not ours" or "adopted": no delete, a warning.
+ *   - A derived object's age is judged on the server's clock: with no server time at recording it is ledgered with
+ *     `keepingBound()` and kept; one whose creation time cannot be read at delete time throws and ends the run red.
  */
 import { APIRequestContext, APIResponse } from '@playwright/test';
 import { listNewlyDiscoveredInventoryUuids, revokeThroughAuthority, waitUntilRevoked } from './certificateTeardownCalls';

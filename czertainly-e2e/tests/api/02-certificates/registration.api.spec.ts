@@ -1,25 +1,10 @@
 /**
- * API-CERT-21, 22, 23 — Platform-level pre-registration through the v2 API. ilm#429.
+ * API-CERT-21, 22, 23 — Platform-level pre-registration through the v2 API (ilm#429).
  *
- * WHAT: 1. Register with a CN and a challenge → 200; the certificate becomes registered with an active registration, no failed attempt and
- *          an expiry of now plus the default issuance window; the secret is never echoed, stored in the detail or written to the
- *          history; without a secret there is no registration block.
- *       2. The "Certificate registered" event fires for a challenge-protected registration and not for one without a challenge.
- *       3. Register with an invalid bearer token → 401 (not on a local stack).
- *       4. A CN with RFC 4514 special characters registers with an escaped subject DN (core#2258, core#2509: test.fail while open).
- *       5. Complete a registered certificate with the right secret and a CSR → issued with the CSR key, the registered identity kept, the
- *          authorization still active, the window cleared; without a challenge a CSR alone completes.
- *       6. Completion refuses a wrong secret (422, failed attempts counted, history "attempt N"), a missing or blank secret (422, no
- *          attempt), no CSR, a secret without an active authorization and an already issued certificate; the right secret afterwards
- *          issues and resets the counter.
- * WHY: a registration reserves an identity and a challenge-protected right to complete it (core#1820; ilm#279 for the wrong-secret rule).
- *      The secret is stored encrypted and never returned. The Certificate Registered event fires only with a challenge. The subject DN
- *      built from request attributes must be well-formed and RFC 4514 escaped.
- * HOW: registration creates new own certificates only, recorded in the ledger before any assertion. The event rows observe through an own
- *      trigger on an own clone of the run RA profile (the run RA profile is shared by other specs and is never associated) and skip while
- *      a platform-level trigger on the event would act on these certificates too. The rows skip when the tier's registration settings
- *      cannot hold a challenge (completion table: maxFailedAttempts must exceed 2, because two wrong secrets are sent before the right
- *      one; settings are read, never set). The register call has no path and is not on the guard's list yet.
+ * Rules: core#1820; ilm#279 (wrong secret). A CN with RFC 4514 special characters: core#2258, core#2509 (test.fail while open).
+ * Only new own certificates, ledgered before any assertion. Event rows use an own trigger on an own clone of the run RA
+ * profile and skip while a platform-level trigger on the event exists. Rows skip when maxFailedAttempts is not above 2
+ * (settings are read, never set).
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { historyMessages, historyOf } from '../../../utils/regression/lifecycle/certificateHistory';

@@ -1,13 +1,11 @@
 /**
- * The run-setup project and logout-last: the regression config's project table (utils/regression/regressionProjects.ts) — the logout file
- * is selected by the `logout` project only, every other REG file by `regression` only, nothing twice; `logout` is the
- * TEARDOWN of `regression` (runs after failed rows too) and has no dependencies (a teardown may not, and a
- * `dependencies` project would be skipped on any red row: playwright runner/tasks.js:348-364); it is not infrastructure,
- * so the `@local` invert and the `@phaseB` grep apply to it. The real `--list` is part of the exit check.
+ * regressionProjects — unit tests of the regression config's project table (utils/regression/regressionProjects.ts).
  *
- * `run-setup` makes the run objects once: it depends on `snapshot`, `regression` depends on it, it is infrastructure (kept by
- * REG_PHASE=B, `@local` still excluded), `regression` ignores its file, and the API config neither has it nor depends on it (its
- * `api-p1` rows must run when the gate is red). Order: snapshot → run-setup → regression → logout, then non-interference.
+ * Checks:
+ *   - the logout file runs only in the `logout` project, and `logout` is the teardown of `regression`, so it runs
+ *     after failed rows
+ *   - `run-setup` depends on `snapshot` and `regression` on it; the API config does not depend on it
+ *   - order: snapshot, run-setup, regression, logout, then non-interference
  */
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';

@@ -1,11 +1,8 @@
 /**
- * externalToolRunner — the one place a protocol test starts an external client.
+ * externalToolRunner — the one place a protocol test starts an external client (`sscep`, `openssl cmp`).
  *
- * WHAT: the one place a protocol test starts an external client (`sscep`, `openssl cmp`): synchronous,
- *       bounded by a timeout, output captured, arguments passed as a list (never a shell). The binary is the one
- *       `tools.requireTool` probed, so a test runs exactly the binary its preflight accepted.
- * WHY: Protocol tests run `sscep` and `openssl cmp` and must run exactly the binary the preflight accepted.
- * HOW: Synchronous, bounded by a timeout, output captured, arguments as a list and never a shell.
+ * Synchronous, bounded by a timeout, output captured, arguments passed as a list (never a shell). The binary is the one
+ * `tools.requireTool` probed, so a test runs exactly the binary its preflight accepted.
  */
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';

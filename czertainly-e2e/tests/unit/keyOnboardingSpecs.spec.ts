@@ -1,13 +1,10 @@
 /**
  * keyOnboardingSpecs — static checks over tests/key-onboarding/*.spec.ts (the `@dev-tests` block).
  *
- * WHAT: every spec calls describeLocalOnly; every test and describe carries devTests(…); no provisioning reader runs at
- * module scope; no password-like literal; every recordCreated uses ledgerSpec; every removal from the inventory is
- * followed by a recordDeleted in the same test or hook (a test that expects the refusal, 422, is exempt).
- * WHY: Playwright lists the tests before the setup project writes the summary (a module-scope read would throw), the block
- * must never run off the local stack, a fixed password in source would be guessable, and an object the ledger does not
- * know is left behind by the run-end teardown.
- * HOW: a small string- and template-aware scanner finds the argument span of each call.
+ * Checks every spec calls describeLocalOnly and every test and describe carries devTests(...); no provisioning reader runs
+ * at module scope (Playwright lists tests before the setup writes the summary); no password-like literal; every recordCreated
+ * uses ledgerSpec; every removal from the inventory is followed by a recordDeleted in the same test or hook (a test expecting
+ * the 422 refusal is exempt), as the run-end teardown leaves behind what the ledger does not know.
  */
 import { expect, test } from '@playwright/test';
 import * as fs from 'fs';

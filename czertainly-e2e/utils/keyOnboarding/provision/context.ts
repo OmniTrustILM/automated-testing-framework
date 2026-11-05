@@ -1,13 +1,11 @@
 /**
- * context — what every step of the key onboarding setup shares: the admin transport, the configuration, the waits,
- * the docker runner, the name stamp, and the one way a step records what it created.
+ * context — what every step of the key onboarding setup shares.
  *
- * WHAT: `SETUP_LEDGER_SPEC` (the `spec` of every ledger line the setup writes), `SetupContext`, `recordOwn` (the ledger
- * line of a create, written right after the create answered) and the waits' defaults.
- * WHY: the block teardown selects exactly the lines whose spec starts with `key-onboarding/`; the run-end teardown's
- * live-name check accepts only `<run id>-…` names. The transport, the error kinds, the name stamp and the step wrapper
- * are shared with the timestamping setup (`utils/devBlocks/provision`); `uuidOf` binds this block's logger name.
- * HOW: plain helpers, no requests.
+ * Provides `SETUP_LEDGER_SPEC` (the `spec` of every ledger line the setup writes), `SetupContext`, `recordOwn` (the ledger
+ * line of a create, written right after the answer) and the waits' defaults. No requests.
+ *
+ * The block teardown selects the lines whose spec starts with `key-onboarding/`; the run-end teardown accepts only
+ * `<run id>-…` names. The transport, error kinds and step wrapper are shared with the timestamping setup.
  */
 import { uuidOf as sharedUuidOf } from '../../devBlocks/provision/names';
 import type { Logger } from '../../Logger';

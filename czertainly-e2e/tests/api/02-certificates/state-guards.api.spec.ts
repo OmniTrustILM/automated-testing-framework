@@ -1,18 +1,9 @@
 /**
- * API-CERT-08 — The state and operation refusal matrix of an own certificate. ilm#429.
+ * API-CERT-08 — The state and operation refusal matrix of an own certificate (ilm#429).
  *
- * WHAT: 1. For an own certificate in each fixture state (pending approval, rejected, revoked, failed, registered): renew, rekey, revoke,
- *          issue-existing, confirm revoke, cancel and finalize each answer 422 with a one-element string array naming the state, e.g.
- *          "Cannot perform operation <op> on certificate in state <label>. Certificate: …".
- *       2. Nothing changes: the state, the history messages and the successor count are the same before and after.
- * WHY: renew, rekey and revoke are legal only from issued; finalize only from pending issue, confirm only from pending revoke, cancel only
- *      from a pending state; an already revoked certificate has its own text and a registered one needs the operator's CSR. A
- *      ValidationException is a 422 JSON string array, never a 400 or a 5xx.
- * HOW: each test builds its own certificate and records it in the ledger before any assertion: gated states use an own RA profile clone
- *      with the approval profile (leftover approvals are rejected and the clone is released in `finally`), the revoked state revokes
- *      an issued certificate, the registered state is a platform-level pre-registration with a challenge, and the failed state needs
- *      EJBCA NG, whose end-entity profile refuses an e-mail SAN (skip with the named reason on another connector or when the CA
- *      accepts the SAN).
+ * A ValidationException is a 422, never a 400 or 5xx. Each test builds and ledgers its own certificate before any
+ * assertion. Gated states use an own RA profile clone with the approval profile, released in `finally`.
+ * The failed state needs EJBCA NG; it skips elsewhere.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { ApprovalGate, decideApproval, findApproval, openApprovalGate } from '../../../utils/regression/lifecycle/approvals';

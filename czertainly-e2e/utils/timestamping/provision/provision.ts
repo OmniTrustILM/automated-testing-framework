@@ -1,23 +1,12 @@
 /**
  * provision — the timestamping setup: preflight, per-run provisioning in timestamping-setup.sh order, and the summary.
  *
- * WHAT: `provisionTimestamping(api)` returns the run's `TimestampingSummary`: `unavailable` with the reason when the
- * tier lacks a prerequisite (preflight.ts) or a shared step fails at the tier, else `ready` with every set that could be
- * provisioned and `missingFamilies` for the others. `writeSummary` stores it at `summaryFile()` (mode 0600: it holds
- * no password: those are derived from the run secret). `SETUP_LEDGER_SPEC` is the `spec` of every ledger line written here.
- * WHY: replaces development-environment `scripts/timestamping-setup.sh` for the block: instead of reusing and changing
- * fixed-name objects, each run creates its own (run-prefixed names, a ledger line per object right after its create), and
- * the block teardown, then the run-end teardown, delete them.
- * HOW: shared objects first (vault profile, token, token profile, time-quality configuration, mapped user, role); then per
- * planned family the non-qualified and the qualified set (key → RA profile → certificate → chain → TSP profile → signing
- * profile → link → Basic credential → grants). One token and token profile serve every family, as the developers'
- * suite ran the ML-DSA script on the RSA run's token. A family other than RSA that fails mid-way at the tier is reported
- * in `missingFamilies` with the step and the status; what it created stays in the ledger. The RSA family is required by
- * the plan (the protocol and canary specs run on it): its failure mid-way fails the setup test. Only a TierError becomes
- * a reason: a SetupError (a refused body, a refused identity), a programming error or a guard refusal propagates and
- * fails the setup test. Shared tier or local stack, the same strict guard judges the setup (tests/timestamping/SHARED-TIER.md): the one
- * request it cannot send, marking a not-yet-trusted issuing root CA trusted, needs `opts.localApi` (a proven local stack), else the tier
- * is `unavailable` with that reason.
+ * `provisionTimestamping(api)` returns `unavailable` with the reason when the tier lacks a prerequisite or a shared step fails
+ * at the tier, else `ready` with every set that could be provisioned and `missingFamilies` for the others. `writeSummary`
+ * stores it (mode 0600, no password in it).
+ * Each run creates its own objects and records each in the ledger; the block teardown, then the run-end teardown, delete them.
+ * The RSA family is required: its failure, like any SetupError or guard refusal, fails the setup test. A non-RSA family that
+ * fails at the tier goes to `missingFamilies`. Marking an untrusted root CA trusted needs `opts.localApi` (a proven local stack).
  */
 import * as fs from 'fs';
 import { writeJsonAtomic } from '../../devBlocks/provision/summaryFile';

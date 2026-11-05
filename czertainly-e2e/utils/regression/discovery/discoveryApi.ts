@@ -1,12 +1,10 @@
 /**
  * discoveryApi — own network discoveries of both generations through the guarded API.
  *
- * WHAT: Finds the healthy v1 and v2 discovery connector of the tier (a missing one is a named deploy gate), builds the run attributes from
- * the connector's live definitions, creates and probes discoveries, stops, resumes and cancels them, waits for their state, reads the
- * results and records the new certificates a run found.
- * WHY: Both generations share one create-and-read flow, and targets must stay the run's own TLS target or RFC 5737 documentation ranges.
- * HOW: Every run is recorded before any assertion and its new certificates as derived ledger lines; the scheduled variant lives in
- * discoveryJobs.
+ * Finds the healthy v1 and v2 discovery connector of the tier (a missing one is a named deploy gate), builds the run
+ * attributes from its live definitions, and creates, probes, stops, resumes, cancels and reads discoveries.
+ * Targets are only the run's own TLS target or RFC 5737 documentation ranges. Every run is recorded before any
+ * assertion, and its new certificates as derived ledger lines. The scheduled variant is in discoveryJobs.
  */
 
 import { waitForDiscoveryCompletion } from '../../discoveryUtils';

@@ -1,19 +1,18 @@
 /**
  * form — form helpers.
  *
- * WHAT: form helpers: the one way to fill a text input, the form's submit button, a switch, and the filler of empty required
- *       custom attributes a tier may define (with the API read that says whether any are defined).
- * WHY: inputs are readonly until focused (anti-autofill), so every fill goes through `fillText`; a switch is a hidden input
- *       under its label, so it is clicked through the label and its state proven; tiers differ in custom attributes, so a
- *       create form fills whatever is required, and waits for the editor only on a tier that defines any.
- * HOW: labels that end in an asterisk mark required attributes; selects get their first option, inputs a value; whether the
- *       editor renders is decided from the definitions the API lists, never from a timed wait.
+ * Provides `fillText` (the one way to fill a text input), `cancelIfOpen`, switches, and the filler of empty required
+ * custom attributes.
+ *
+ * Inputs are readonly until focused, so every fill goes through `fillText`. A switch is a hidden input under its label,
+ * so it is clicked through the label. Tiers differ in custom attributes, so the form waits for the editor only on a tier
+ * whose API lists definitions.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { Logger } from '../../utils/Logger';
 import { chooseOption } from './select';
 
-const logger = new Logger('form');
+const logger = new Logger('Form');
 
 /** TextInputs are readonly until focused (anti-autofill): click, then fill. */
 export async function fillText(input: Locator, value: string): Promise<void> {
@@ -21,8 +20,13 @@ export async function fillText(input: Locator, value: string): Promise<void> {
     await input.fill(value);
 }
 
-/** The form's submit (ProgressButton, data-testid progress-button: "Create", "Save", …). */
-export const submitButtonOf = (scope: Locator): Locator => scope.getByTestId('progress-button').last();
+/** Clicks `cancelButton` when `dialog` is still open (after a refused submit) and waits until the dialog is gone. */
+export async function cancelIfOpen(dialog: Locator, cancelButton: Locator): Promise<void> {
+    if (await dialog.isVisible()) {
+        await cancelButton.click();
+        await expect(dialog).toBeHidden();
+    }
+}
 
 /**
  * Sets a switch (a visually hidden input with a `label[for]`) by clicking its label, then proves the state with

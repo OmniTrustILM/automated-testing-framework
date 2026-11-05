@@ -1,15 +1,10 @@
 /**
- * specLint/rawMutations — the deny-by-default lint of the REG / API specs and the regression helpers: every request
- * that could change an object must go through the guarded context.
+ * specLint/rawMutations — the deny-by-default lint of the REG / API specs and the regression helpers: every request that
+ * could change an object must go through the guarded context.
  *
- * WHAT: `rawMutations(src, fileName, opts)` parses one source, resolves its names once (bindings.ts `Bindings`) and
- * lets every rule of the table (rules.ts `RULES`) look at every syntax node; it returns the findings as
- * `RawMutation[]` in source order of the visit. The rules are listed below; specGuards runs the lint over tests/regression,
- * tests/api, utils/regression and utils/api.
- * WHY: deny by default: anything the lint cannot prove safe is reported, so a spec cannot reach a shared tier through
- * a raw context, a rewritten route, a changed environment or a loaded module.
- * HOW: one file per concern: bindings.ts (names and aliases), rules.ts (one entry per rule, how to add one with a
- * temporary allow-list), this file (the rule list, the output types and the visitor).
+ * `rawMutations(src, fileName, opts)` parses one source and lets every rule of rules.ts look at every syntax node. Anything
+ * the lint cannot prove safe is reported, so a spec cannot reach a shared tier through a raw context, a rewritten route, a
+ * changed environment or a loaded module. specGuards runs it over tests/regression, tests/api, utils/regression and utils/api.
  */
 import type * as TS from 'typescript';
 import { typescript } from './parseSpec';

@@ -1,11 +1,9 @@
 /**
- * widget — widgets and their icon-only buttons.
+ * widget — the widget a title names.
  *
- * WHAT: the widget (a section with a title heading) and the icon-only buttons inside one.
- * WHY: icon buttons repeat on one page and have no accessible name, so a button is always looked up inside its
- *       widget, never page-wide.
- * HOW: the heading by its name, then the closest enclosing section (the one structural lookup of the suite; a
- *       widget test id would remove it, FE test-id request).
+ * A widget is a section with a title heading. Icon buttons repeat on one page and have no accessible name, so a page
+ * object looks a button up inside its widget, never page-wide. The widget is the heading's closest enclosing section (the
+ * one structural lookup of the suite; a widget test id would remove it, FE test-id request).
  */
 import { Locator, Page } from '@playwright/test';
 import { escapeRegExp } from '../../utils/regression/text';
@@ -19,6 +17,3 @@ export function widgetTitled(scope: Locator | Page, title: string | RegExp): Loc
     // The closest <section> around the title heading (widgets nest: an outer section holds every inner heading too).
     return scope.getByRole('heading', { name }).locator('xpath=ancestor::section[1]');
 }
-
-/** An icon-only toolbar button (`<icon>-button`) inside a widget (never a bare page-wide `.first()`). */
-export const iconButton = (scope: Locator, icon: string): Locator => scope.getByTestId(`${icon}-button`);

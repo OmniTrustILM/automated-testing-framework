@@ -1,12 +1,9 @@
 /**
- * secretsAndVaults — the run's own vault instances, vault profiles and secrets.
+ * secretsAndVaults — the run's own vault instances, vault profiles and secrets (REG-SEC-01…03).
  *
- * WHAT: the run's own vault instances, vault profiles and secrets (REG-SEC-01…03): creates recorded with
- *       the parents a later delete needs, the secret state wait, and the run's vault chain kept in RunState. A pre-existing
- *       vault instance may only be the parent of an own vault profile; the content of a pre-existing secret is never read.
- * WHY: Vault rows need a chain they own without reading anyone else's secret.
- * HOW: Creates recorded with the parents a later delete needs, a secret state wait and the vault chain kept in the run state; a
- * pre-existing vault instance is only ever a parent.
+ * Creates are recorded with the parents a later delete needs. Also here: the secret state wait, and the run's vault chain kept
+ * in RunState. A pre-existing vault instance may only be the parent of an own vault profile; the content of a pre-existing
+ * secret is never read.
  */
 import type { APIRequestContext, APIResponse } from '@playwright/test';
 import { Logger } from '../../Logger';

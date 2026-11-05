@@ -1,22 +1,9 @@
 /**
- * API-GEN-19 — Groups: name rules, duplicates, PUT semantics, uuids, delete, members and list against detail. ilm#428.
+ * API-GEN-19 — Groups: name rules, duplicates, PUT semantics, uuids, delete, members and list against detail (ilm#428).
  *
- * WHAT: 1. A blank, null or whitespace-only name → 422 "Name must not be empty"; the same name again → 409 and exactly one group has the
- *          name.
- *       2. PUT ignores the body name and overwrites description, e-mail and custom attributes; PUT without e-mail and custom attributes
- *          clears both.
- *       3. GET, PUT and DELETE of an unknown group → 404; a malformed uuid on GET, PUT and DELETE → 422 "Invalid UUID <value> in the
- *          request".
- *       4. Deleting an own group → 204, the group is gone and a certificate that was in it shows no group; bulk delete [own, unknown] → 204
- *          and removes the own group; a new group's users list is [] and an unknown group answers 404.
- *       5. List items have null customAttributes and the detail has the array.
- *       6. A 301-character description, the e-mail "notanemail" and a trailing-space name are accepted (201): the UI blocks them, the API
- *          does not (recorded as today's behaviour, P3).
- * WHY: core checks the name (not trimmed, case-sensitive); an edit overwrites the editable fields and replaces custom attributes wholesale
- *      (core#1124); delete is never refused for being in use and removes every association; the path types differ per resource (groups 422,
- *      certificates 400). Members of a group: core#2210, interfaces#950.
- * HOW: create-only on shared tiers with run-prefixed names; every create goes through a probe helper that records the ledger line before
- *      the first assertion; the tier's required custom attributes are read and sent with every request.
+ * An edit replaces custom attributes wholesale (core#1124). Members: core#2210, interfaces#950. Inputs the UI blocks but
+ * the API accepts are recorded as today's behaviour (P3). Create-only on shared tiers; every create is ledgered before the
+ * first assertion; the tier's required custom attributes are sent with every request.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { deleteOwnAndProveGone, expectGoneWith404, refused422, refusedWith } from '../../../utils/regression/inventory/configProbes';

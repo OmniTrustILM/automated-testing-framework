@@ -1,13 +1,10 @@
 /**
  * text — small string helpers and the one unique suffix.
  *
- * WHAT: small string helpers every module used to carry its own copy of: regex escaping, whitespace collapsing,
- *       base64url, and the one unique suffix (`uniqueSuffix`) that makes an object name unique per run.
- *       Pure, no I/O.
- * WHY: Every module used to carry its own copy of these helpers, and four generators of a unique name part.
- * HOW: Pure functions; `uniqueSuffix` is nine base-36 characters from a counter, random digits and the clock.
+ * Provides regex escaping, whitespace collapsing, base64url, and `uniqueSuffix`, which makes an object name unique per run (nine
+ * base-36 characters from a counter, random digits and the clock). Pure, no I/O.
  */
-import { randomBytes } from 'crypto';
+import { randomInt } from 'crypto';
 
 /** The text with every regular-expression metacharacter escaped, for `new RegExp(...)` around a literal. */
 export const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -30,7 +27,7 @@ export const UNIQUE_SUFFIX_LENGTH = 9;
  */
 export const uniqueSuffix = (): string => {
     const counter = (uniqueCounter++ % 46656).toString(36).padStart(3, '0');
-    const random = randomBytes(4).readUInt32BE(0) % 1679616;
+    const random = randomInt(1679616); // 36^4, without the bias of a modulo
     const clock = (Date.now() % 1296).toString(36).padStart(2, '0');
     return `${counter}${random.toString(36).padStart(4, '0')}${clock}`;
 };

@@ -1,14 +1,11 @@
 /**
  * sharedNeeds — the needs that read the tier or the runner settings, each answered met / unmet / failed read.
  *
- * WHAT: `crypto-v2`, `platform-triggers-free`, `metadata-field`, `scep-https`, `registration-settings`, `required-attributes-fillable`,
- * `bearer-token`, `openapi-document` and the extended `ca` (a healthy authority can be picked), resolved through `resolveNeed` against a
- * loopback fake core. Each need is shown with a tier that meets it (undefined), a tier that does not (the named reason) and a read that
- * fails (the resolver throws: the test fails, it does not skip). The options of the three parametrised needs change the answer. No
- * resolver sends anything but a GET.
- * WHY: a skip decided from a read the suite could not make hides a broken tier behind a green run, and a skip that comes after the first
- * create leaves objects behind; the needs are what the `needs` fixture resolves before any write.
- * HOW: a fake core answers the GET routes the test sets (404 for every other path); the run state and the environment are the test's own.
+ * Covers `crypto-v2`, `platform-triggers-free`, `metadata-field`, `scep-https`, `registration-settings`,
+ * `required-attributes-fillable`, `bearer-token`, `openapi-document` and the extended `ca`, resolved through `resolveNeed`
+ * against a loopback fake core: met (undefined), unmet (the named reason), failed read (the resolver throws, so the test
+ * fails and does not skip). No resolver sends anything but a GET. A skip decided from a read that failed hides a broken tier
+ * behind a green run, and a skip after the first create leaves objects behind.
  */
 import * as fs from 'fs';
 import { expect, test } from '@playwright/test';

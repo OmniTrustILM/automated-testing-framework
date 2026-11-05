@@ -1,18 +1,12 @@
 /**
  * workflowFixtures — the own objects the workflow and discovery rows need around their triggers.
  *
- * WHAT: the own objects the workflow and discovery rows need around their triggers: pre-registered and revoked
- *       certificates, the object updates that put a certificate into a group or give it a custom attribute value, and the
- *       read of a certificate detail. The creators themselves (groups, custom attributes, RA profiles, issued certificates) live
- *       in `ownGroups`, `customAttributes`, `ownRaProfiles` and `ownCertificates`.
+ * Provides pre-registered and revoked certificates, object updates that put a certificate into a group or give it a custom
+ * attribute value, and the read of a certificate detail.
  *
- *       RA profile per row: an event association on the RUN RA profile would fire for every certificate other specs issue on it, so
- *       each association row gets its OWN RA profile (`createOwnRaProfile`). Every helper takes a `GuardedApi`, records what it
- *       creates in the ledger before the caller asserts, and calls `assertOwnLive` before it changes an object.
- * WHY: A trigger test needs a certificate in a known state and group, and an event association on the run RA profile would fire for every
- * other spec.
- * HOW: Every helper takes a `GuardedApi`, records what it creates before the caller asserts, and runs `assertOwnLive` before it changes an
- * object; each association row gets its own RA profile.
+ * An event association on the RUN RA profile would fire for every certificate other specs issue on it, so each association row
+ * gets its own RA profile. Every helper records what it creates before the caller asserts, and checks the object is own
+ * before it changes it.
  */
 import { waitForCertificateState } from '../wait/certificateState';
 import { GuardedApi } from '../guard/types';
@@ -23,6 +17,7 @@ import { requiredCustomAttributes, OwnCustomAttribute } from '../customAttribute
 import { OwnRef, recordCreated } from '../ledger/ledger';
 import { isOk, sendJson } from './workflowRequests';
 import { ownName, ownCommonName } from '../ledger/runState';
+import { randomBytes } from 'crypto';
 import { uniqueSuffix } from '../text';
 import { ApiAnswer } from '../apiReads';
 import type { CertificateDetail } from '../apiReads';
@@ -45,7 +40,7 @@ export async function registerPlaceholder(api: GuardedApi, spec: string, ra: Own
     const commonName = ownCommonName(suffix);
     const sent = await sendJson(api, 'POST', `/api/v2/operations/authorities/${ra.authorityUuid}/raProfiles/${ra.uuid}/certificates/register`, {
         subjectDn: `CN=${commonName}`,
-        authorizationSecret: `s${Math.random().toString(36).slice(2, 12)}${uniqueSuffix()}`,
+        authorizationSecret: `s${randomBytes(5).toString('hex')}${uniqueSuffix()}`,
         attributes: [],
         customAttributes: await requiredCustomAttributes(api, 'certificates', ownName('ca')),
         ...(opts.ownerUuid ? { ownerUuid: opts.ownerUuid } : {}),

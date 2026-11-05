@@ -315,7 +315,7 @@ test('protocol CA: token, token profile, key pair and the v2 issue for the key a
     expect(server.arrived.some((a) => a.method === 'GET' && a.url === `/api/v1/tokens/${PROVIDER_V2}/attributes?kind=SOFT`)).toBe(true);
     expect(token.kind).toBe('SOFT');
     expect((token.attributes as JsonObject[]).map((a) => a.name)).toEqual(['data_options', 'data_createTokenAction', 'data_newTokenName', 'data_tokenCode']);
-    expect(((token.attributes as JsonObject[])[2].content as JsonObject[])[0].data).toMatch(/^[a-zA-Z](?:_?[a-zA-Z0-9]+)*$/);
+    expect(((token.attributes as JsonObject[])[2].content as JsonObject[])[0].data).toMatch(/^[a-zA-Z][a-zA-Z0-9]*(?:_[a-zA-Z0-9]+)*$/);
     expect(bodyOf('POST', /tokenProfiles$/).usage).toEqual(['sign', 'verify', 'encrypt', 'decrypt']);
     const key = bodyOf('POST', /keys\/keyPair$/);
     expect(key.enabled).toBe(true);

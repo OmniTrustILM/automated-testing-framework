@@ -1,15 +1,15 @@
 /**
  * compare — judges two snapshots: did the run change anything it did not create?
  *
- * WHAT: `compareSnapshots(before, after, options)` returns the violations (a finding for a human) and the notes. It checks
- * that every stored foreign object is unchanged, that the net change of every total is explained by the ledger (own objects
- * created and deleted since the before snapshot, other tools' lines inside the window), that platform event associations and
- * system jobs are identical, that required resources were readable and that both snapshots come from the same tier.
+ * `compareSnapshots(before, after, options)` returns the violations (a finding for a human) and the notes. It checks that:
+ *   - every stored foreign object is unchanged
+ *   - the net change of every total is explained by the ledger (own objects created and deleted since the before snapshot,
+ *     other tools' lines inside the window)
+ *   - platform event associations and system jobs are identical
+ *   - required resources were readable, and both snapshots come from the same tier
  *
- * WHY: this is the proof that the run touched nothing foreign on a shared tier; a wrong sign in the accounting would be a
- * silent false "clean".
- *
- * HOW: pure; the rules are listed in the header of nonInterference.ts and pinned by tests/unit/nonInterference*.spec.ts.
+ * This is the proof that the run touched nothing foreign on a shared tier; a wrong sign in the accounting would be a silent
+ * false "clean". Pure; the rules are in the header of nonInterference.ts and pinned by tests/unit/nonInterference*.spec.ts.
  * `REG_NET_TOLERANCE` (default 0) widens the accepted unexplained change of a total.
  */
 import { foreignWindowLines, LedgerWindowOptions, ownUuidsOf } from './foreignLedger';

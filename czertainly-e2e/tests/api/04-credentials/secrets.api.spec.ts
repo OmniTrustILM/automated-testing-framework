@@ -1,19 +1,9 @@
 /**
- * API-GEN-17 — Credentials keep their secret. ilm#428.
+ * API-GEN-17 — Credentials keep their secret (ilm#428).
  *
- * WHAT: 1. A new Basic credential: the 201 answer, the detail and the list show the password as a secret attribute without data, the
- *          username stays readable, and the plain password is in no body.
- *       2. PUT with a new username and password → 200; name, connector and kind are unchanged (a name in the body is ignored and creates or
- *          renames nothing), the new username is stored and the secret is still masked.
- *       3. PUT without the password → 422 ["Required attribute <Password label> not found."] and nothing changes.
- *       4. Disable and enable → 204 and `enabled` toggles in detail and list; delete → 204, then 404 and the row is gone; bulk delete
- *          [own, unknown uuid] → 204 with no body and the own credential is gone.
- * WHY: a SECRET attribute is serialised with data null (ResponseAttributeSerializer; core#202, interfaces#125). An edit changes attributes
- *      and custom attributes only; the content is replaced wholesale and re-validated, so a required secret must be supplied again. Bulk
- *      delete skips unknown uuids with a warning.
- * HOW: create-only on shared tiers with run-prefixed names and random generated secrets; every create is recorded in the ledger before the
- *      first assertion; the test skips with the named reason when the tier has no credential connector. Deletes under test record the
- *      ledger deletion after the 404 read-back.
+ * A SECRET attribute is serialised with data null (core#202, interfaces#125). An edit replaces the content wholesale, so a
+ * required secret must be supplied again. Create-only on shared tiers with run-prefixed names and random secrets; every
+ * create is ledgered before the first assertion. Skips when the tier has no credential connector.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { credentialConnectorOrSkip, deleteOwnAndProveGone, expectGoneWith404, refused422 } from '../../../utils/regression/inventory/configProbes';

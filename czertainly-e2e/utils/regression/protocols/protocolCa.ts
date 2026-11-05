@@ -1,13 +1,10 @@
 /**
  * protocolCa — the protocol CA fixture.
  *
- * WHAT: the protocol CA fixture: an own software token, token profile and RSA-2048 key pair, and a certificate
- *       for that key issued through the run RA profile. SCEP profiles take it as their CA certificate. A v2 software provider
- *       is preferred, a v1 provider is the fallback; when neither yields a readable certificate the fixture throws
- *       `ProtocolCaBlocked` with the reason and the test skips. Every object is recorded right after its create.
- * WHY: SCEP profiles need a CA certificate issued through the run RA profile.
- * HOW: An own software token, profile and RSA-2048 key, and a certificate issued for that key; v2 provider first, v1 as fallback, else
- * `ProtocolCaBlocked` and the test skips; every object is recorded right after its create.
+ * An own software token, token profile and RSA-2048 key pair, plus a certificate for that key issued through the run RA
+ * profile. SCEP profiles take it as their CA certificate. A v2 software provider is preferred, a v1 provider is the fallback;
+ * when neither yields a readable certificate the fixture throws `ProtocolCaBlocked` with the reason and the test skips.
+ * Every object is recorded right after its create.
  */
 import { waitForCertificateState } from '../wait/certificateState';
 import { Logger } from '../../Logger';

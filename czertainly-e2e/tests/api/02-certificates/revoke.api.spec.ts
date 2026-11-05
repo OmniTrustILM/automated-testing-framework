@@ -1,15 +1,8 @@
 /**
- * API-CERT-11 — Revoke of an own issued certificate through the v2 API. ilm#429.
+ * API-CERT-11 — Revoke of an own issued certificate through the v2 API (ilm#429).
  *
- * WHAT: 1. Revoke with keyCompromise → 204 with an empty body; the state becomes revoked; the history says "Certificate revoked. Reason:
- *          Key compromise"; a second revoke → 422 "Certificate is already revoked. Certificate: …".
- *       2. After revocation the certificate's validation status is revoked (re-validated and polled up to 60 s for the CA's CRL / OCSP
- *          timing).
- * WHY: revoked is terminal; the revoke is completed through the authority with the wire code keyCompromise, and the validation status
- *      follows (product documentation, certificate validation table). The validation row can only be judged where validation is enabled and
- *      the issuer certificate is in the inventory; otherwise it skips with the named reason.
- * HOW: the certificate is own and recorded in the ledger before any assertion; the run-end teardown deletes it. Issuance (180 s) plus
- *      revocation (120 s) plus the reads.
+ * The validation row is judged only where validation is enabled and the issuer certificate is in the inventory;
+ * otherwise it skips with the named reason. The certificate is own and ledgered before any assertion.
  */
 import { ISSUE_AND_REVOKE_TEST_MS, STATE_CHANGE_WAIT_MS } from '../../../utils/regression/timeouts';
 import { expect, test } from '../../../fixtures/regressionFixtures';

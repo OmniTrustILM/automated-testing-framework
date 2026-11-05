@@ -1,17 +1,12 @@
 /**
- * REG-CFG-05 — The run's ACME profile activated on an own RA profile (release checklist: Configuration 5). ilm#430.
+ * REG-CFG-05 — The run's ACME profile activated on an own RA profile (release checklist: Configuration 5; ilm#430).
  *
- * WHAT: 1. RA profile → Protocols tab → ACME row → Activate with the run's ACME profile (REG-CFG-05) → the row is Enabled and
- *          Deactivate is offered.
- *       2. The API says acmeAvailable and the RA-profile directory answers with the new-account and new-order resources.
- *       3. An RA profile whose name holds a space (REG-CFG-05.2) → activation is refused with the backend text ("RA Profile name
- *          can contain only unreserved URI characters"); the row stays inactive after a reload and acmeAvailable is false.
- * WHY: the ACME directory is addressed by the RA profile name, so the name must use URI-safe characters; the RA profile create
- *      does not enforce that, so the refusal comes late, at activation (core#743), and the UI must show the backend text (fe#884).
- * HOW: the browser is not behind the API guard, so both profiles pass the live own-object check (`live`) before the UI changes
- *      them. The activation always runs on a fresh own RA profile (a copy of the run RA profile), never on the run RA profile
- *      itself, so the ACME state the other rows rely on is left alone. The tests declare that they need a CA, so without one they
- *      skip before anything exists; the spaced profile is a copy of the run RA profile with a time-suffixed name.
+ * Activation: the row is Enabled, the API says acmeAvailable and the RA-profile directory answers.
+ * REG-CFG-05.2: an RA profile whose name holds a space is refused at activation with the backend text; the row stays inactive.
+ * The create does not enforce the name rule, so the refusal comes late (core#743); the UI must show the backend text (fe#884).
+ *
+ * Both profiles pass the live check before the UI changes them. Activation always runs on a fresh copy of the run RA profile.
+ * The tests need a CA, so without one they skip before anything exists.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { RaProfilePage } from '../../../pages/RaProfilePage';

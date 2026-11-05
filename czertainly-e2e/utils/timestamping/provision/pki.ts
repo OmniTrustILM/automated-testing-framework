@@ -1,23 +1,12 @@
 /**
- * pki — the token, the token profile and, per set, the key pair, the RA profile and the TSA certificate with its
- * trusted chain (timestamping-setup.sh steps 6, 7 and 12–16).
+ * pki — the token, the token profile and, per set, the key pair, the RA profile and the TSA certificate with its trusted chain
+ * (timestamping-setup.sh steps 6, 7 and 12-16).
  *
- * WHAT: each function sends the script's requests with the script's bodies, under run-prefixed names, and records the
- * object right after its create answered (`tokens`, `tokenProfiles` ← token, `keys` ← token + tokenProfile,
- * `keyItems` ← key, `raProfiles` ← authority, `certificates` ← raProfile + authority).
- * WHY: the bash script reused objects by fixed names and changed what it found; the block creates its own per run and
- * touches nothing else, with ONE exception on the local stack (design rule 1): the root of the TSA certificate's chain is
- * marked trusted when it is not yet (step 16), because a signing profile refuses an untrusted chain. It is logged.
- * The root is changed only when it is self-signed and its `trustedCa` is exactly false (a CA Core has not trusted yet);
- * a top of the chain that is not self-signed, or a certificate that is no CA (`trustedCa` absent), is a TierError.
- * Issuer certificates the platform adds for the run: building the chain (`GET …/chain`) makes Core fetch a missing
- * issuer from the leaf's CA Issuers URI into the inventory. Every certificate of the walked chain whose platform
- * creation time (the earliest event of its history, read on the server clock) is not earlier than the provisioning
- * start is recorded as a DERIVED `certificates` line with `createdAfter` from the server clock; the existing derived
- * rules (creation time, adoption) decide at the teardown. A certificate whose history cannot be read or is empty is not
- * recorded (not provably made by the run) and is logged: it stays in the inventory.
- * HOW: attribute bodies come from attributes.ts over the connector's live definitions; waits use the script's attempt
- * counts (`PollSettings`); every failure the tier decides is a TierError.
+ * Each function sends the script's requests under run-prefixed names and records the object right after its create answered.
+ * ONE exception on the local stack: the root of the TSA chain is marked trusted when it is not yet, because a signing profile
+ * refuses an untrusted chain; this is done only when the root is self-signed and its `trustedCa` is exactly false.
+ * Chain certificates that core fetched during the run are recorded as DERIVED lines with a server-clock bound; one whose
+ * history cannot be read is not recorded and stays.
  */
 import { createdAfterMarker, OwnRef, recordDerived } from '../../regression/ledger/ledger';
 import { isOwnObject } from '../../regression/ledger/ownership';

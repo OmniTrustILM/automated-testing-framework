@@ -1,17 +1,12 @@
 /**
- * REG-USE-06.1 — A certificate issued through the cert-manager plugin (release checklist: Usage 6). ilm#430.
+ * REG-USE-06.1 — A certificate issued through the cert-manager plugin (release checklist: Usage 6; ilm#430).
  *
- * WHAT: 1. Apply a CzertainlyIssuer driven by the run RA profile's `raProfileUuid` → Ready (within 120 s).
- *       2. Apply a cert-manager Certificate for a run-prefixed DNS name → Ready (within 240 s).
- *       3. The certificate in the secret is in the ILM inventory (found by fingerprint) under the run RA profile, and the Certificate's
- *          `certificate-uuid` annotation is that certificate's uuid.
- * WHY: cert-manager is the Kubernetes path to ILM; the issuer's CRD requires apiUrl, authSecretName and raProfileUuid (raProfileName is
- *      optional and never read), and signing goes through the v2 issue.
- * HOW: declares the `cluster` need (KUBECONFIG, REG_CM_NAMESPACE, REG_CM_AUTH_SECRET; optional REG_CM_CA_BUNDLE_SECRET, REG_CM_API_URL),
- *      so the row is skipped with the reason where there is no cluster; the kubectl preflight runs at run time, never at collection. The
- *      issuer, Certificate and Secret are run-prefixed, recorded before they exist and removed by the `clusterRun` fixture after the test
- *      (Certificate, then Secret, then issuer); the ILM certificates of the run's DNS names are recorded in `finally` and again after the
- *      cluster cleanup, because an issuance in flight can still land.
+ * Applies a CzertainlyIssuer driven by the run RA profile and a cert-manager Certificate for a run-prefixed DNS name; the
+ * certificate is then in the ILM inventory under the run RA profile.
+ *
+ * Needs a cluster (the KUBECONFIG and REG_CM_* settings, see .env.example), otherwise it skips with the reason. The issuer,
+ * Certificate and Secret are run-prefixed, recorded before they exist and removed by the `clusterRun` fixture after the test.
+ * The ILM certificates of the run's DNS names are recorded again after the cleanup, because an issuance in flight can still land.
  */
 import { expect, test } from '../../../fixtures/areas/clusterRun';
 import { applyOwnManifest, getJsonPath, K8sRef, recordOwnK8sObject, waitReady } from '../../../utils/regression/kubernetesOwnObjects';

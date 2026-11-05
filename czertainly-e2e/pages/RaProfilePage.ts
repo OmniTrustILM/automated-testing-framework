@@ -1,13 +1,12 @@
 /**
- * RaProfilePage — the RA profile list and detail.
+ * RaProfilePage — Page Object Model for RA profiles (REG-CFG-03, 05).
  *
- * WHAT: the RA profile list, its Create dialog (returned as `CreateRaProfileDialog`) and the detail with its status row, its
- *       tabs and the Available Protocols widget (activate a protocol with a profile, read whether a row is active).
- * WHY: REG-CFG-03 creates an RA profile through the dialog, enables it and opens its tabs; REG-CFG-05 activates ACME on an own RA
- *      profile and checks the row and the refusal toast of a name with a space; REG-CERT-68 proves the form validation. A method
- *      that changes an RA profile is only called on one the run created, which the spec proves first.
- * HOW: tabs by URL or by their name; protocol rows by data id inside the widget, each with a status badge and one progress
- *      button; the refusal is read from the toast; an `assert…` method never navigates and never clicks a tab.
+ * Encapsulates:
+ *   - the RA profile list, its Create dialog (`CreateRaProfileDialog`) and the detail with its tabs
+ *   - the Available Protocols widget: activate a protocol with a profile, read whether a row is active
+ *
+ * A method that changes an RA profile is called only on one the run created, which the spec proves first. An `assert…`
+ * method never navigates and never clicks a tab.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { Logger } from '../utils/Logger';
@@ -15,7 +14,6 @@ import { CreateRaProfileDialog } from './CreateRaProfileDialog';
 import { waitForDetailRoute } from './ui/detailRoute';
 import { chooseOption } from './ui/select';
 import { assertToast } from './ui/toast';
-import { toolbarButton } from './ui/toolbar';
 import { widgetTitled } from './ui/widget';
 
 const logger = new Logger('RaProfilePage');
@@ -31,20 +29,65 @@ const ERROR_TEXT = /unexpected error|internal server error/i;
 export class RaProfilePage {
     readonly page: Page;
     readonly main: Locator;
-    /** The Available Protocols widget of the detail. */
-    readonly protocolsWidget: Locator;
+
+    // RA Profiles list
+    readonly addRaProfileButton: Locator;
+
+    // RA profile detail
+    readonly enableButton: Locator;
     /** The Enabled / Disabled badge in the status row of the detail. */
     readonly statusBadge: Locator;
+
+    // Available Protocols (Protocols tab)
+    readonly availableProtocols: Locator;
 
     constructor(page: Page) {
         this.page = page;
         this.main = page.locator('main');
-        this.protocolsWidget = widgetTitled(this.main, 'Available Protocols');
+
+        // RA Profiles list
+        this.addRaProfileButton = this.main.getByTestId('plus-button').first();
+
+        // RA profile detail
+        this.enableButton = this.main.getByTestId('enable-button').first();
         this.statusBadge = this.main.locator('tr[data-id="enabled"] [data-testid="status-badge"]');
+
+        // Available Protocols (Protocols tab)
+        this.availableProtocols = widgetTitled(this.main, 'Available Protocols');
+    }
+
+    /** A tab of the RA profile detail. */
+    tab(name: RaProfileTab): Locator {
+        return this.page.getByRole('tab', { name, exact: true });
+    }
+
+    /** The protocol's row in `Available Protocols`. */
+    protocolRow(protocol: Protocol): Locator {
+        return this.availableProtocols.locator(`tr[data-id="${protocol}"]`);
+    }
+
+    /** The Activate / Deactivate button of the protocol's row. */
+    protocolActivationButton(protocol: Protocol): Locator {
+        return this.protocolRow(protocol).getByTestId('progress-button');
+    }
+
+    /** The "Activate <PROTOCOL> protocol" dialog. */
+    activateProtocolDialog(protocol: Protocol): Locator {
+        return this.page.getByRole('dialog', { name: `Activate ${PROTOCOL_LABEL[protocol]} protocol` });
+    }
+
+    /** The profile select of the "Activate <PROTOCOL> protocol" dialog. */
+    activateDialogProfileTrigger(protocol: Protocol): Locator {
+        return this.activateProtocolDialog(protocol).getByTestId('select-profilesSelect-trigger');
+    }
+
+    /** The Activate button of the "Activate <PROTOCOL> protocol" dialog. */
+    activateDialogButton(protocol: Protocol): Locator {
+        return this.activateProtocolDialog(protocol).getByRole('button', { name: 'Activate', exact: true });
     }
 
     async goToList(): Promise<void> {
-        await this.page.goto('administrator/#/raprofiles');
+        await this.page.goto('/administrator/#/raprofiles');
         await expect(this.main).toBeVisible();
     }
 
@@ -52,7 +95,7 @@ export class RaProfilePage {
     async openCreateDialog(): Promise<CreateRaProfileDialog> {
         logger.info('Opening Create RA Profile');
         const dialog = new CreateRaProfileDialog(this.page);
-        await toolbarButton(this.page, 'plus').click();
+        await this.addRaProfileButton.click();
         await expect(dialog.dialog).toBeVisible();
         return dialog;
     }
@@ -61,7 +104,7 @@ export class RaProfilePage {
     async goToDetail(authorityUuid: string, raProfileUuid: string, tab?: RaProfileTab): Promise<void> {
         const query = tab ? `?tab=${tab.toLowerCase()}` : '';
         logger.info(`Opening RA profile ${raProfileUuid}${tab ? ` (${tab})` : ''}`);
-        await this.page.goto(`administrator/#/raprofiles/detail/${authorityUuid}/${raProfileUuid}${query}`);
+        await this.page.goto(`/administrator/#/raprofiles/detail/${authorityUuid}/${raProfileUuid}${query}`);
         await expect(this.main).toBeVisible();
     }
 
@@ -74,7 +117,7 @@ export class RaProfilePage {
     }
 
     async openTab(tab: RaProfileTab): Promise<void> {
-        await this.page.getByRole('tab', { name: tab, exact: true }).click();
+        await this.tab(tab).click();
     }
 
     /** The page shows no error text (a tab that failed to load shows the platform's error); it never clicks a tab. */
@@ -84,21 +127,12 @@ export class RaProfilePage {
 
     /** The detail's Enable button (the RA profile is created disabled). */
     async enable(): Promise<void> {
-        await toolbarButton(this.page, 'enable').click();
+        await this.enableButton.click();
     }
 
     /** The status row shows Enabled or Disabled. */
     async assertStatus(status: 'Enabled' | 'Disabled'): Promise<void> {
         await expect(this.statusBadge).toHaveText(status);
-    }
-
-    /** The protocol's row in `Available Protocols`. */
-    protocolRow(protocol: Protocol): Locator {
-        return this.protocolsWidget.locator(`tr[data-id="${protocol}"]`);
-    }
-
-    private rowButton(protocol: Protocol): Locator {
-        return this.protocolRow(protocol).getByTestId('progress-button');
     }
 
     /**
@@ -108,20 +142,18 @@ export class RaProfilePage {
      */
     async activateProtocol(protocol: Protocol, profileName: string): Promise<void> {
         logger.info(`Activating ${PROTOCOL_LABEL[protocol]} with profile ${profileName}`);
-        const row = this.protocolRow(protocol);
-        await expect(row).toBeVisible();
-        await expect(this.rowButton(protocol)).toHaveText('Activate');
-        await this.rowButton(protocol).click();
-        const dialog = this.page.getByRole('dialog', { name: `Activate ${PROTOCOL_LABEL[protocol]} protocol` });
-        await expect(dialog).toBeVisible();
-        await chooseOption(this.page, dialog.getByTestId('select-profilesSelect-trigger'), profileName);
-        await dialog.getByRole('button', { name: 'Activate', exact: true }).click();
-        await expect(dialog).toBeHidden();
+        await expect(this.protocolRow(protocol)).toBeVisible();
+        await expect(this.protocolActivationButton(protocol)).toHaveText('Activate');
+        await this.protocolActivationButton(protocol).click();
+        await expect(this.activateProtocolDialog(protocol)).toBeVisible();
+        await chooseOption(this.page, this.activateDialogProfileTrigger(protocol), profileName);
+        await this.activateDialogButton(protocol).click();
+        await expect(this.activateProtocolDialog(protocol)).toBeHidden();
     }
 
     /** The row shows the protocol active: status Enabled and the Deactivate button. */
     async assertProtocolActive(protocol: Protocol): Promise<void> {
-        await expect(this.rowButton(protocol)).toHaveText('Deactivate');
+        await expect(this.protocolActivationButton(protocol)).toHaveText('Deactivate');
         await expect(this.protocolRow(protocol)).toContainText('Enabled');
     }
 
@@ -130,7 +162,7 @@ export class RaProfilePage {
      * text "<PROTOCOL> is not active"; the row itself is the visible state.)
      */
     async assertProtocolInactive(protocol: Protocol): Promise<void> {
-        await expect(this.rowButton(protocol)).toHaveText('Activate');
+        await expect(this.protocolActivationButton(protocol)).toHaveText('Activate');
         await expect(this.protocolRow(protocol)).toContainText('Disabled');
         await expect(this.protocolRow(protocol)).not.toContainText('Enabled');
     }

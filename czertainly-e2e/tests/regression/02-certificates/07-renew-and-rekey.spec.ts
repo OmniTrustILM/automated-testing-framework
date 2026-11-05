@@ -1,20 +1,14 @@
 /**
- * REG-CERT-07, REG-CERT-08 — Renew and rekey from the certificate detail dialogs (release checklist: Certificates 7 and 8). ilm#429.
+ * REG-CERT-07, REG-CERT-08 — Renew and rekey from the certificate detail dialogs (release checklist: Certificates 7
+ * and 8; ilm#429).
  *
- * WHAT: 1. Detail → Renew with a same-key CSR (REG-CERT-07, row renew) → the successor is Issued with the same public key; the
- *          Related Certificates tab lists it as a Renewal and the History tab says "Renewed using RA Profile <name>".
- *       2. A challenge-protected pre-registration, completed through the API (row challenge) → the Renew dialog shows a
- *          required Challenge field and the submit button stays disabled while it is empty.
- *       3. Detail → Rekey with a CSR on the same key (REG-CERT-08) → refused (422, "Public key of certificate and CSR are same"),
- *          no successor exists.
- *       4. Rekey with a new key, same subject and SANs → the successor is Issued with a different fingerprint and the same SAN
- *          set, related as Rekey; the History tab says "Rekeyed using RA Profile <name>".
- * WHY: renew and rekey are the lifecycle actions an operator uses on an issued certificate; a rekey must change the key, a
- *      renew must keep it, and a challenge-protected certificate must ask for its challenge.
- * HOW: every certificate acted on is issued by this run through the API (or pre-registered in the form); every successor is
- *      recorded in the ledger right after the dialog's answer, before any assertion, and its platform-made key after the
- *      issuance; the live ownership check runs before each dialog acts. The authority is the run's own RA profile; timeouts cover the
- *      issuances (180 s each).
+ * Renew keeps the public key and lists the successor as a Renewal; a challenge-protected pre-registration makes the
+ * Renew
+ * dialog require its Challenge. Rekey with a CSR on the same key is refused (422); with a new key it issues a successor
+ * with a different fingerprint and the same SANs, related as Rekey.
+ *
+ * Every certificate acted on is issued by this run, under the run's own RA profile. Each successor is recorded in the
+ * ledger before any assertion, and the live check runs before each dialog acts.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { CertificateAddPage } from '../../../pages/CertificateAddPage';

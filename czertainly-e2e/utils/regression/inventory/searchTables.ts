@@ -1,13 +1,10 @@
 /**
- * searchTables — the expected row sets of the certificate filter rows.
+ * searchTables — the expected row sets of the certificate filter rows, and the sort comparators.
  *
- * WHAT: The expected row sets of the certificate filter rows over the full seed, and the sort comparators. Each row has
- *       `expect` (computed by a predicate that states the rule) and `expectedIds` (the same set written down by hand, as ids or as
- *       a count: the second, independent derivation); a unit test checks they agree. A row whose engine behaviour is a filed bug
- *       carries `bug`, a row without a written rule `pin` (a behaviour word or an issue id).
- * WHY: The filter rows must name their expected result twice, once by rule and once by hand, so a wrong rule cannot agree with itself.
- * HOW: Each row has `expect` (a predicate that states the rule) and `expectedIds`; a unit test checks they agree; a known product bug is
- * `bug`, a row without a written rule is `pin`.
+ * Each row names its expected result twice, so a wrong rule cannot agree with itself: `expect` (a predicate that states
+ * the rule) and `expectedIds` (the same set written by hand, as ids or a count). A unit test checks they agree. A row
+ * whose engine behaviour is a filed bug carries `bug`; a row without a written rule carries `pin` (a behaviour word or
+ * an issue id).
  */
 import type { Filter } from './searchApi';
 import { propertyFilter, customAttributeFilter } from './searchApi';

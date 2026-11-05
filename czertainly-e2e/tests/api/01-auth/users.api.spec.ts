@@ -1,15 +1,9 @@
 /**
- * API-AUTH-07, API-AUTH-14 — User state model and role membership through the API. ilm#427.
+ * API-AUTH-07, API-AUTH-14 — User state model and role membership through the API (ilm#427).
  *
- * WHAT: 1. A user is created disabled; enable and disable (each twice, idempotent) are shown by the answer and by GET; PUT keeps username
- *          and enabled; delete → 204 and the users list no longer names it.
- *       2. Roles and users link from both sides: PATCH replaces the whole list, [] clears it, PUT / DELETE add or remove one role
- *          (repeats are idempotent), PATCH on a role replaces its members, a role listed twice is never a 5xx.
- * WHY: the state model and the membership rules of users and roles; an empty list used to be a 500 (core#1370, core#1371, closed).
- *      A deleted user's detail answers 500 (known bug core#2511), so presence is decided by the list.
- * HOW: own objects only (disabled users, own roles, no permissions, the user cannot sign in); the ledger line is written before any
- *      assertion and the run-end teardown removes them. The hard 200 on a repeated PUT stays: a red there is unexpected behaviour to
- *      confirm, not a reason to change the oracle.
+ * A deleted user's detail answers 500 (core#2511), so presence is read from the list. Own objects only; the ledger line
+ * is written before any assertion. The hard 200 on a repeated PUT stays: a red there is behaviour to confirm, not a
+ * reason to change the oracle.
  */
 import { ACCOUNT_STEPS_TEST_MS, MANY_STEPS_TEST_MS } from '../../../utils/regression/timeouts';
 import { expect, test } from '../../../fixtures/regressionFixtures';

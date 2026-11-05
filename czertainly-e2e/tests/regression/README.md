@@ -156,9 +156,10 @@ project then selects nothing).
 | smoke | `playwright.config.ts` | `npm run test:smoke` | `junit.xml` |
 | unit | `playwright.unit.config.ts` | `npm run test:unit` | none (line output) |
 
-The file names above are the contract with the Testkube workflows: do not rename a config, a report or a folder. A block
-(`DEV_BLOCK`) is `@local` only: on a shared tier it selects nothing and exits 0 with an empty report (add
-`--pass-with-no-tests`); see `tests/dev-blocks/README.md`.
+The file names above are the contract with the Testkube workflows: do not rename a config, a report or a folder.
+`key-onboarding` is `@local` only: on a shared tier it selects nothing and exits 0 with an empty report (add
+`--pass-with-no-tests`). `timestamping` has its own shared-tier model (`tests/timestamping/SHARED-TIER.md`) and is
+not enabled on develop-01 yet; see `tests/dev-blocks/README.md`.
 
 ## The safety model in short
 
@@ -244,8 +245,8 @@ Projects of the regression config (`utils/regression/regressionProjects.ts`):
    its dependency failed). It is infrastructure: `REG_PHASE=B` keeps it. A run with `--no-deps`, or a `--grep` that leaves it out, still gets
    each object when the spec that needs it calls its `ensure…` helper;
 3. `regression`: every REG spec except the sign-out spec and the setup file;
-4. `logout`: `01-sign-in-and-access/99-sign-out.spec.ts`, the teardown project of `regression` (it ends the shared admin's sign-in, so it
-   runs after every other row, failed or not);
+4. `logout`: the teardown project of `regression` (it ends the shared admin's sign-in, so it runs after every other row, failed or
+   not). Its spec, `01-sign-in-and-access/99-sign-out.spec.ts`, belongs to the secondary flow; on the main flow the project is empty;
 5. `non-interference`: the teardown project of `snapshot`;
 6. the run-end teardown.
 
@@ -303,7 +304,7 @@ deploy gate, never pass.
 | `needs` | resolves what the test needs from reads and skips with the named reason of the first unmet need; the needs declared in `testMeta({ needs })` are resolved before any `own` or page call | `await needs.require('ca', 'second-identity')`, or `await needs.ca()` |
 | `own` | creators and ledger steps bound to the test's ledger id (`createOwn<Thing>` helpers); `record` writes the ledger line of a UI create from the form's answer, `recordNamed` the by-name line, `deleted` the deleted line | `const ref = own.record('groups', await groupsPage.submitCreate(), { note: 'created in the dialog' })` |
 | `live` | runs the live own-object check and returns the `LiveOwn` handle that page actions on own objects take (nothing else builds one; `as LiveOwn` is refused by the lint) | `const role = await live('roles', ref)` |
-| `signedIn` | the admin page after the sign-in (the sign-in and sign-out specs keep their explicit logins) | `await signedIn.goto('administrator/#/roles')` |
+| `signedIn` | the admin page after the sign-in (the sign-in and sign-out specs keep their explicit logins) | `await signedIn.goto('/administrator/#/roles')` |
 | `regressionEnv` | the typed reader of the `REG_*` / `API_*` settings | `regressionEnv.caConnectors` |
 | `localApi` | the guarded API of a `@local` row on a proven local stack (the guard's `localStack` option); it throws for any other test | `await localApi.post('/api/v1/…', …)` inside `describeLocalOnly` |
 
@@ -346,9 +347,10 @@ bug exists and turn red ("expected to fail, but passed") once it is fixed; remov
 - **`pkiBuilders`**: the one module that builds keys, CSRs and certificates and their encodings for every flow.
 - **`seedMinimal`** / **`seedFull`**: the three-certificate seed of the migration checks, and the 24-certificate seed of the
   inventory filter, sort and paging rows.
-- **`uiWidget`**: the unit file of `pages/ui/widget.ts` (an admin UI `<section>` with a title and its icon buttons).
+- **`uiWidget`**: the unit file of `pages/ui/widget.ts` (an admin UI `<section>` with a title, the scope of its icon buttons).
 - **`lifecycle/rawAnswers`**: one guarded request whose answer is read without throwing, and the readers of its error body.
-- **`FormDialog`**: a create / edit dialog of the admin UI (text inputs, submit, cancel), used by the role and user pages.
+- **Page object**: locator fields grouped by screen area (`// Create Role dialog`) and set in the constructor in the same
+  order, then only the methods the specs use (main's `TablePage` style); shared steps are functions in `pages/ui/`.
 - **`platform.spec` / `protocols.spec`**: the unit files of the pure parts of the `platform/` and `protocols/` helpers
   (no server, no browser); their wire halves are `platformWire` and `protocolsWire`.
 
@@ -375,5 +377,4 @@ bug exists and turn red ("expected to fail, but passed") once it is fixed; remov
   offers), `ledger/liveOwn.ts` (the `LiveOwn` handle), `run/runObjects.ts` (the objects of the `run-setup` project).
 - The area helpers (`lifecycle/`, `platform/`, `protocols/`, `events/`, `discovery/`, `rbac/`, `inventory/`,
   `config/`) and the page objects in `pages/` (shared UI parts in `pages/ui/`: select, toolbar, toast, widget, form,
-  list, table). Every module is imported from the file that defines it (the one re-export, `utils/regression/tier.ts`, serves the
-  smoke suite's `utils/env.ts`, which never changes).
+  list, the create answer, the detail route, the API waits and `openHashRoute`). Every module is imported from the file that defines it.

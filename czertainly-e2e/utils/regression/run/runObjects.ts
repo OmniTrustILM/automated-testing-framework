@@ -1,17 +1,10 @@
 /**
  * runObjects — the objects every later spec of a run builds on, made once by the `run-setup` project.
  *
- * WHAT: `RUN_OBJECTS` lists the run's authority, RA profile, ACME profile, role and token chain; `prepareRunObject` makes one
- * of them through the API with the `ensure…` helper that already owns its logic (RA profile on the first healthy CA of
- * REG_CA_CONNECTORS, ACME profile, role, token → profile → key) and answers whether it is ready or why it is not.
- * WHY: until now the first spec that created a role, RA profile, ACME profile or authority became the run's object, so the CA
- * behind every lifecycle row depended on which spec ran first (and on whether it passed). The run objects are now decided
- * before the first spec, by one project, in one order, from reads of the tier.
- * HOW: each helper reads the run state first (a reused REG_RUN_ID finds its objects) and writes it after a create, so the
- * setup is idempotent and a spec run alone (`--no-deps`, a `--grep` that drops the setup) still gets the object lazily from
- * the same helper. A tier that cannot offer an object (no healthy CA, no cryptography connector, no MS ADCS authority) is a
- * named skip, never a failure: Playwright does not start a project whose dependency has a failed test, and one missing CA
- * must not stop every row. The create goes through the guarded `api` and the ledger line is written before anything else.
+ * `RUN_OBJECTS` lists the run's authority, RA profile, ACME profile, role and token chain. `prepareRunObject` makes one through
+ * the guarded API and answers whether it is ready or why not; the ledger line is written right after the create answers. This fixes the CA behind every
+ * lifecycle row before the first spec. A tier that cannot offer an object is a named skip, never a failure, because Playwright
+ * does not start a project whose dependency has a failed test.
  */
 import { ensureAuthority, adcsBlocker } from '../config/authorities';
 import { ensureAcmeProfile } from '../config/acmeProfiles';

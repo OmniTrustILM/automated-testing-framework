@@ -57,7 +57,7 @@ test('UserPage.waitForCustomAttributeEditor: no definitions for users, no editor
             const page = await context.newPage();
             await page.setContent(EDIT_DIALOG_WITHOUT_EDITOR);
             const started = Date.now();
-            await new UserPage(page).waitForCustomAttributeEditor(page.getByRole('dialog', { name: 'Edit User' }));
+            await new UserPage(page).waitForCustomAttributeEditor();
             expect(Date.now() - started, 'returns without the 15 s editor wait').toBeLessThan(5_000);
         } finally {
             await context.close();
@@ -68,7 +68,7 @@ test('UserPage.waitForCustomAttributeEditor: no definitions for users, no editor
         try {
             const page = await context.newPage();
             await page.setContent(EDIT_DIALOG_WITHOUT_EDITOR);
-            expect(await failsFast(new UserPage(page).waitForCustomAttributeEditor(page.getByRole('dialog', { name: 'Edit User' }))), 'an unreadable definition list is no proof of "none"').toBe(true);
+            expect(await failsFast(new UserPage(page).waitForCustomAttributeEditor()), 'an unreadable definition list is no proof of "none"').toBe(true);
         } finally {
             await context.close();
         }
@@ -82,7 +82,7 @@ test('UserPage.waitForCustomAttributeEditor: a tier whose definitions are all re
             const page = await context.newPage();
             await page.setContent(`<div role="dialog" aria-label="Edit User"><div role="tablist"><button role="tab" aria-selected="true">Custom attributes</button></div>
               <label for="__attributes__custom__.team">Team *</label><input id="__attributes__custom__.team" value="blue"></div>`);
-            await new UserPage(page).waitForCustomAttributeEditor(page.getByRole('dialog', { name: 'Edit User' }));
+            await new UserPage(page).waitForCustomAttributeEditor();
         } finally {
             await context.close();
         }
@@ -97,7 +97,7 @@ test('UserPage.waitForCustomAttributeEditor: a tier with definitions waits for t
             await page.setContent(`<div role="dialog" aria-label="Edit User"><div role="tablist"><button role="tab" aria-selected="true">Custom attributes</button></div>
               <button data-testid="select-selectAddCustomAttribute-trigger">Show custom attribute</button>
               <label for="__attributes__custom__.team">Team *</label><input id="__attributes__custom__.team" value="blue"></div>`);
-            await new UserPage(page).waitForCustomAttributeEditor(page.getByRole('dialog', { name: 'Edit User' }));
+            await new UserPage(page).waitForCustomAttributeEditor();
         } finally {
             await context.close();
         }

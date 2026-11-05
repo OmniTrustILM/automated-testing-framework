@@ -46,6 +46,11 @@ interface CoreOptions {
     secretDeletable?: boolean;
     /** Core queues the explicit delete too: the secret stays readable for this many reads after it, then answers 404. */
     deleteLag?: number;
+    /**
+     * The path-scoped listing returns a record whose `signingProfile.uuid` is not the requested profile
+     * (the regression the ownership check must refuse before any bulk DELETE).
+     */
+    foreignSigningRecord?: { uuid: string; signingProfileUuid: string };
 }
 
 /** A stateful core: signing profiles, TSP profiles, time-quality configurations, signing records and vault secrets. */
@@ -83,9 +88,13 @@ class TimestampingCore {
             return { status: 200, body: t ? { available: true, uuid: p.tsp, name: t.name } : { available: false } };
         }
         if ((m = /^\/api\/v1\/signingProfiles\/([^/]+)\/signingRecords$/.exec(path)) && method === 'POST') {
-            const p = this.signing.get(m[1]);
+            const profileUuid = m[1];
+            const p = this.signing.get(profileUuid);
             if (!p) return { status: 404 };
-            return { status: 200, body: { items: p.records.slice(0, this.opts.perPage ?? 1000).map((uuid) => ({ uuid })), totalItems: p.records.length } };
+            const page = this.opts.foreignSigningRecord
+                ? [{ uuid: this.opts.foreignSigningRecord.uuid, signingProfile: { uuid: this.opts.foreignSigningRecord.signingProfileUuid, name: 'foreign' } }]
+                : p.records.slice(0, this.opts.perPage ?? 1000).map((uuid) => ({ uuid, signingProfile: { uuid: profileUuid, name: p.name } }));
+            return { status: 200, body: { items: page, totalItems: page.length } };
         }
         if (path === '/api/v1/signingRecords' && method === 'DELETE') {
             const uuids = data as string[];
@@ -540,6 +549,18 @@ test('a bulk delete that answers messages is a failure naming the count, not a s
     const { error } = await run(core, 'signingProfiles');
     expect(String(error)).toMatch(/core kept 2 of 2 signing record\(s\)/);
     expect(core.writes().some((w) => w === `DELETE /api/v1/signingProfiles/${SIGNING}`)).toBe(false);
+});
+
+test('a listing that returns a record owned by another signing profile fails closed and never bulk-deletes', async () => {
+    const foreignProfile = 'signing-foreign';
+    const foreignRecord = 'record-foreign';
+    const core = fullCore({ foreignSigningRecord: { uuid: foreignRecord, signingProfileUuid: foreignProfile } }, 1);
+    core.tsp.get(TSP)!.defaultSigning = undefined;
+    const { error } = await run(core, 'signingProfiles');
+    expect(String(error)).toMatch(new RegExp(`listing returned record ${foreignRecord} owned by ${foreignProfile}`));
+    expect(core.writes().some((w) => w === 'DELETE /api/v1/signingRecords')).toBe(false);
+    expect(core.writes().some((w) => w === `DELETE /api/v1/signingProfiles/${SIGNING}`)).toBe(false);
+    expect(core.signing.has(SIGNING)).toBe(true);
 });
 
 test('a record staged after the last page makes core refuse once; the handler empties the profile again and succeeds', async () => {

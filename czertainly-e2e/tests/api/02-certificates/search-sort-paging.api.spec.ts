@@ -1,21 +1,9 @@
 /**
- * API-CERT-53, 54, 56 — Certificate search sorting and paging over the run's own certificate seed. ilm#428.
+ * API-CERT-53, 54, 56 — Certificate search sorting and paging over the run's own certificate seed (ilm#428).
  *
- * WHAT: 1. Sorting by Expires At, Valid From, Group and Owner, ascending and descending: the 24 seeds come in the comparator order, objects
- *          without a value last in both directions, ties ordered by uuid, stable across two reads and across pages of 10.
- *       2. Sorting by the number, date and multi-select custom attribute columns (numerically, chronologically, by smallest value
- *          ascending and largest descending) and by the text column (only the collation-independent facts) puts empty values last.
- *       3. With no sort the list is newest first by creation, the CA last; itemsPerPage 1, 10, 24, 25 and 1000 give ceil(24 / size) pages
- *          whose union is the whole seed; a page past the last answers 200 with an empty list and the real totals; omitted paging gives
- *          page 1 of size 10.
- *       4. Invalid paging (page 0 or negative, items per page 0, negative, above 1000) → 422 with one message; eight combinations of sort,
- *          size, includeArchived and filter count page to the same rows as one big request.
- * WHY: sorting runs on the whole set before paging, with a unique tie-break and nulls last (core#2031, core#2033, core#2394; ilm#322 for
- *      the null ordering after the Hibernate 7 migration, ilm#133 for the default order); multi-valued fields sort by their minimum
- *      ascending and maximum descending. Paging is validated by core itself with a 422 (core PR #2527).
- * HOW: the run's 24-certificate seed is planned once; a sort field is first checked as sortable in the live catalogue; the order oracle is
- *      the comparator over the seed manifest (searchTables), and a Common Name prefix filter keeps other objects of the tier out. The
- *      search is a read.
+ * Sorting runs on the whole set before paging, with a unique tie-break and nulls last (core#2031, core#2033, core#2394;
+ * ilm#322 for nulls after the Hibernate 7 migration, ilm#133 for the default order). Core validates paging itself
+ * (core PR #2527). A Common Name prefix keeps other objects out. The search is a read.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { expectRefused } from '../../../utils/regression/errorContract';

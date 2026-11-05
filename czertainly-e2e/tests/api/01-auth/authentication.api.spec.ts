@@ -1,21 +1,11 @@
 /**
- * API-AUTH-01, 02, 03, 06 — Who may call the API: no credentials, a valid bearer, tampered and forged bearers, a disabled user. ilm#426.
+ * API-AUTH-01, 02, 03, 06 — Who may call the API: no credentials, valid, tampered and forged bearers, a disabled user (ilm#426).
  *
- * WHAT: 1. No credentials: every protected read and every create, update and delete answers 401 with a body free of internals; health
- *          and GET branding stay open; nothing is created.
- *       2. A valid identity reads its own profile (JSON, its own name, the default listings, no ANY / NONE); the profile's username
- *          equals the username claim of the bearer; a refused HTTP method with valid credentials answers 400 on the main build.
- *       3. Bearers built from nothing and the valid token altered in one place are each refused with 401, between two controls that
- *          answer 200 with the untouched token.
- *       4. A disabled user's token is refused on the next request; enabling the user restores it.
- * WHY: no or failed authentication always ends as 401 (never 200, 403, 404, 405 or 500); only health, connector registration and GET
- *      branding are public. A bearer is verified by signature, issuer, time and audience; a disabled user is refused for every
- *      method. A red test means a protected call got through or answered with the wrong status; the refused-method row is a known bug
- *      on the migrated build (core#2502, test.fail there).
- * HOW: bearer variants built from nothing run everywhere; tampered ones need a bearer token and skip in header mode; the disabled-user
- *      row needs the dedicated second identity and one core replica (own objects only). Anonymous calls go through the local core's own
- *      port where a header-mode proxy would authenticate them. A role an anonymous call manages to create is recorded in the ledger before
- *      the assertion; the refused-method row skips with a named reason when the ingress answers before core.
+ * core#2502: the refused-method row is wrong on the migrated build (test.fail there).
+ * Skips: the refused-method row when the ingress answers before core; tampered bearers in header mode; the disabled-user
+ * row without the second identity and one core replica; the anonymous reads on a header-mode stack without
+ * REG_LOCAL_CORE_URL (anonymous calls go to the core's own port, where no proxy authenticates them).
+ * A role an anonymous call manages to create is ledgered before the assertion.
  */
 import { FEW_CALLS_TEST_MS, MANY_STEPS_TEST_MS, SEVERAL_STEPS_TEST_MS } from '../../../utils/regression/timeouts';
 import { expect, test } from '../../../fixtures/regressionFixtures';

@@ -1,14 +1,12 @@
 /**
- * ownSharedSteps — the ledger steps of `own` that specs use instead of the lower-level record helpers, and the worker-scoped API context.
+ * ownSharedSteps — the ledger steps of `own` that specs use instead of the lower-level record helpers, and the
+ * worker-scoped API context.
  *
- * WHAT: `own.probe` (an accepted create that a row expected to be refused, API answer or form answer), `own.adoptNamed` (the row a refused
- * create left behind: run-prefixed names only, recorded, then proven live), `own.restrictedUser` (a left-behind dedicated user skips the
- * test), `own.derivedKey`, `own.issuedNamed`, `own.acmeAccount`, `own.runAuthority`; `withWorkerApi` (a guarded context for a worker
- * fixture) and `buildRig` (no skip: a tier without a CA is the `ca` need's to skip).
- * WHY: each of them is a safety step (record before assert, never adopt what is not this run's); a unit test per step keeps a
- * refactor from loosening one of them.
- * HOW: `ownObjects` is built directly over a guarded context to a loopback fake core; assertions read the ledger lines and the requests
- * that reached the wire.
+ * Checks `own.probe` (an accepted create a row expected to be refused), `own.adoptNamed` (the row a refused create left
+ * behind: run-prefixed names only, recorded, then proven live), `own.restrictedUser` (a left-behind user skips the test),
+ * `own.derivedKey`, `own.issuedNamed`, `own.acmeAccount`, `own.runAuthority`, `withWorkerApi` and `buildRig` (no skip: a
+ * tier without a CA is for the `ca` need to skip). Each is a safety step (record before assert, never adopt what is not this
+ * run's); a test per step keeps a refactor from loosening one. Assertions read the ledger and the requests on the wire.
  */
 import { expect, test } from '@playwright/test';
 import type { TestEnv } from '../../utils/env';

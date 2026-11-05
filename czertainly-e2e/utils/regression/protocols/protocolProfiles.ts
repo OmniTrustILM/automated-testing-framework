@@ -1,13 +1,9 @@
 /**
  * protocolProfiles — own SCEP and CMP profiles.
  *
- * WHAT: own SCEP and CMP profiles: create (recorded before any assertion), enable, activate on an own RA
- *       profile and deactivate, plus the teardown handlers for `scepProfiles` / `cmpProfiles`. Activation is only sent for an
- *       RA profile and a protocol profile this run created (`assertOwnLive` on both), so the run RA profile and every
- *       pre-existing object stay untouched.
- * WHY: Protocol activation must never touch the run RA profile or a pre-existing profile.
- * HOW: Create (recorded before any assertion), enable, activate and deactivate with `assertOwnLive` on both objects, plus the teardown
- * handlers for `scepProfiles` and `cmpProfiles`.
+ * Creates (recorded before any assertion), enables, activates on an own RA profile and deactivates them, plus the teardown
+ * handlers for `scepProfiles` / `cmpProfiles`. Activation is only sent for an RA profile and a protocol profile this run
+ * created (`assertOwnLive` on both), so the run RA profile and every pre-existing object stay untouched.
  */
 import * as crypto from 'crypto';
 import { Logger } from '../../Logger';

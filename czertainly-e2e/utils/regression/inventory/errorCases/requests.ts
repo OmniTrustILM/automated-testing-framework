@@ -1,12 +1,10 @@
 /**
  * requests — sending the error-contract requests.
  *
- * WHAT: Sending the error-contract requests: the request shape, the context with its unique markers, and the batteries of
- *       the error-contract spec (at least 40 refused requests, each naming the status-matrix row it exercises, and the
- *       anonymous-access rows). Requests go through the guarded `api` fixture; reads and refused creates only.
- * WHY: The battery needs unique markers and names per execution so repeated runs and the guard's free-text scan stay quiet.
- * HOW: A per-execution context, the request shape, and the batteries of at least 40 refused requests and the anonymous-access rows, sent
- * through the guarded `api`; reads and refused creates only.
+ * Provides the request shape, a per-execution context with unique markers and names (so repeated runs and the guard's
+ * free-text scan stay quiet), and the batteries of the error-contract spec: at least 40 refused requests, each naming
+ * the status-matrix row it exercises, and the anonymous-access rows. Requests go through the guarded `api` fixture;
+ * reads and refused creates only.
  */
 import { uniqueSuffix } from '../../text';
 import { ApiAnswer, answerOf } from '../../apiReads';

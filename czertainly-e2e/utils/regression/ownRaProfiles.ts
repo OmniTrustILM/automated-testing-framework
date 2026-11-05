@@ -1,24 +1,12 @@
 /**
  * ownRaProfiles — every way the suite gets an RA profile it may change.
  *
- * WHAT: every way the regression suite gets an RA profile it may change, in one family:
+ *   - `ensureRunRaProfile`: the RUN RA profile every issuing flow goes through (REG_RA_PROFILE_NAME on a local stack is
+ *     an issue-only parent; otherwise a new own one under the first healthy CA)
+ *   - `ensureOwnRaProfile`, `cloneRunRaProfile`, `createOwnRaProfile`, `ensureProtocolRaProfile`: own RA profiles to change
  *
- *       - `createOwnRaProfileLike`: the create of a NEW RA profile whose connector attributes are copied (read-only) from a source RA
- *         profile, recorded in the ledger with its authority as parent, then enabled — the one sequence every creator below ends in;
- *       - `ensureRunRaProfile`: the RUN RA profile every issuing flow goes through (run state first; REG_RA_PROFILE_NAME on a local
- *         stack as an issue-only parent; otherwise a new own RA profile under the first healthy CA);
- *       - `ensureOwnRaProfile`: an RA profile this run CREATED, for flows that change it (protocol activation): the run RA profile
- *         when it is own, else an own clone of the issue-only one;
- *       - `ensureProtocolRaProfile`: the dedicated RA profile of one protocol flow (`<run>-ra-<label>`), found again through the ledger;
- *       - `cloneRunRaProfile`: an own, enabled clone of the run RA profile for flows that flip flags or associations on it;
- *       - `createOwnRaProfile`: a new own RA profile for one row, named by suffix, under the first healthy CA (event rows hang
- *         their associations on it alone).
- *
- *       No healthy CA with an enabled RA profile to copy from: `RaProfileSourceMissing` (the caller skips with the named deploy
- *       gate; a skip is never coverage). Every change goes through `assertOwnLive`; nothing pre-existing is ever changed.
- * WHY: Specs that flip flags or protocols on an RA profile must never do it on a pre-existing one.
- * HOW: One family of creators ends in `createOwnRaProfileLike`; no healthy CA to copy from raises `RaProfileSourceMissing` (the caller
- * skips with a named gate); every change goes through `assertOwnLive`.
+ * Every change goes through `assertOwnLive`; nothing pre-existing is ever changed. With no healthy CA to copy from it
+ * throws `RaProfileSourceMissing`, and the caller skips with the named deploy gate.
  */
 import type { APIRequestContext } from '@playwright/test';
 import { expect } from '@playwright/test';

@@ -1,13 +1,8 @@
 /**
- * TablePage — the smoke suite's generic list table.
+ * TablePage — the smoke suite's generic list table (SMK-003, 007, 008).
  *
- * WHAT: the generic list table of the admin UI: the filter row (field, condition, value, Add), the rows, select-all and the
- *       bulk delete with its confirmation.
- * WHY: SMK-003 / 007 / 008 filter a list by the run's name and SMK-007 bulk-deletes its own rows; `bulkDelete` refuses a page
- *      that shows anything but the expected rows (atf#99), so a wrong filter can never delete a foreign object. The smoke suite
- *      calls these methods by name: they keep their names and their behaviour.
- * HOW: filter selects go through the Select helper; the delete button is found by its icon (it should be the toolbar test id: FE
- *      test-id request); never used by the regression suite, which has its own list widgets.
+ * The smoke suite calls these methods by name; the regression suite does not use this class. `bulkDelete` refuses a
+ * page that shows anything but the expected rows (atf#99), so a wrong filter can never delete a foreign object.
  */
 import { Page, Locator, expect } from '@playwright/test';
 import { Logger } from '../utils/Logger';

@@ -1,14 +1,11 @@
 /**
- * Non-interference reads the SHARED ledger (created-objects.jsonl): lines of other QA tools (other run
- * ids) inside the run window explain a foreign object that vanished and the change of a total; anything else stays a
- * violation. The ledger text below copies the SHAPE of the real file's lines (keys, event-less `DELETED (own)` notes of
- * the qa-man tool, singular types such as `certificate` / `key`); every value is synthetic.
+ * nonInterferenceForeignLedger — non-interference against the SHARED ledger (created-objects.jsonl).
  *
- * Rows: a situation seen on a live tier (a foreign certificate and its key deleted by a qa-man cleanup inside the window ⇒ no
- * violation, one note); the same without the deletion lines ⇒ violations; a deletion line outside the window ⇒
- * violation; creates by another tool ⇒ the total is explained. Limits (fail-closed): unreadable / malformed lines, an
- * ambiguous note, this run's own lines, another tier, an unknown type, a creation of an object that existed before or
- * is not there after, a deletion of an object that is still there, an own uuid named by another tool.
+ * Lines of other QA tools (other run ids) inside the run window explain a vanished foreign object and a changed total;
+ * anything else stays a violation. The ledger text copies the SHAPE of real lines; every value is synthetic. Explained: a
+ * foreign certificate and key deleted by a qa-man cleanup inside the window; creates by another tool. Violations: the same
+ * without deletion lines, or a deletion line outside the window. Fail-closed: malformed lines, an ambiguous note, this run's
+ * own lines, another tier, an unknown type, a creation that contradicts the snapshots, an own uuid named by another tool.
  */
 import { expect, test } from '@playwright/test';
 import { compareSnapshots, confirmForeignCreates, foreignEventOf, foreignResourceType, foreignWindowLines, TierSnapshot } from '../../utils/regression/teardown/nonInterference';

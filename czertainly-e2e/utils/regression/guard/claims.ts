@@ -1,15 +1,14 @@
 /**
- * Claims — the objects one request names, and the proof that each of them is the run's own.
+ * claims — the objects one request names, and the proof that each of them is the run's own.
  *
- * WHAT: `Claims` collects every uuid a mutation names (a path target, a typed body field, a top-level uuid list, any
- * other uuid in the body) together with the ledger type its line must have. `assertOwnAll` then proves each one: a
- * probe uuid passes, every other uuid needs a ledger `created` line of this run, of exactly the type the route acts on,
- * and a live read of the object. `assertOwnApprovalDecision` proves an approval before it may be decided.
- * WHY: a request may only change what the run created. The type match stops an id-named `approvals` line from
- * authorising a request on an RA profile, and one uuid named as two different resources in one request is refused.
- * HOW: the guard builds one Claims per mutation, adds the targets, the typed fields and the list, and calls
- * `assertOwnAll` once; the refusal kind is `ownership` or `derived` when the ledger or the live read says no, `request`
- * when the request itself names a resource the suite has no ledger type for.
+ * `Claims` collects every uuid a mutation names (a path target, a typed body field, a top-level uuid list, any other
+ * uuid in the body) with the ledger type its line must have. `assertOwnAll` proves each one: a probe uuid passes, every
+ * other uuid needs a ledger `created` line of this run, of exactly the type the route acts on, and a live read of the
+ * object. `assertOwnApprovalDecision` proves an approval before it may be decided.
+ *
+ * The type match stops an id-named `approvals` line from authorising a request on an RA profile, and one uuid named as
+ * two different resources in one request is refused. The refusal kind is `ownership` or `derived` when the ledger or the
+ * live read says no, `request` when the request names a resource the suite has no ledger type for.
  */
 import { assertOwn, assertOwnLive, isIdNamed } from '../ledger/ownership';
 import { approvalLiveProblem } from './approvals';

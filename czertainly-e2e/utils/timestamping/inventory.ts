@@ -1,18 +1,10 @@
 /**
  * inventory — a read-only before / after check of what the timestamping block must never touch on a shared tier.
  *
- * WHAT: `takeBaseline(admin)` (the block's setup, before it creates anything) reads the signing profiles, the TSP profiles and the
- * time-quality configurations of the tier and stores, per resource, the COUNT and a SHA-256 of the rows the run did not create, in
- * `<state dir>/<run id>.timestamping.inventory.json`. `compareBaseline(admin)` (the block's teardown, after its own objects went)
- * reads them again and says `same`, `differs` (naming the resource and the two counts and hash prefixes, never a name) or `skipped`
- * with the reason.
- * WHY: the guard and the ledger keep the block's requests on its own objects; this is the independent proof that nothing pre-existing
- * of the three resources the block adds to changed, was added or went (a pre-existing signing profile disabled, a configuration edited).
- * The regression snapshot does not list these resources, and a block run has no snapshot.
- * HOW: the list POSTs are reads for the guard; every page is read (200 a page); a row of this run (a `created` ledger line of the run) is left
- * out of both sides, so a late delete does not matter; the hash is over the rows with sorted keys, ordered by uuid. A tier whose endpoint is
- * missing (404, or any answer the tier gives as an error) is `skipped` with the reason, never a failure; a refused identity (401 / 403) still
- * fails. Another user changing the same resources between the two reads also shows as `differs`: the message says so.
+ * `takeBaseline` (setup, before anything is created) stores, per resource, the count and a SHA-256 of the signing profiles, TSP
+ * profiles and time-quality configurations the run did not create. `compareBaseline` (teardown) reads them again and says
+ * `same`, `differs` (resource, counts and hash prefixes, never a name) or `skipped` with the reason.
+ * A tier whose endpoint is missing is `skipped`, never a failure; a refused identity (401 / 403) still fails.
  */
 import * as crypto from 'crypto';
 import * as fs from 'fs';

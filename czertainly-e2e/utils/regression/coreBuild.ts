@@ -1,15 +1,13 @@
 /**
- * build — which core build a run talks to, for the one build-dependent oracle and the migration gate.
+ * coreBuild — which core build a run talks to, for the one build-dependent oracle and the migration gate.
  *
- * `GET /api/v1/info` answers `{ app: { name, version }, build: { timestamp, branch, commitId }, db: { system, version } }`
- * (interfaces CoreInfoResponseDto). A successful read is cached in RunState.buildInfo; a failed one is NEVER cached:
- * the next call reads again, so one 503 at the start of a run cannot pin "baseline" for the whole run.
+ * Reads `GET /api/v1/info`; a successful read is cached for the run, a failed one never, so one 503 at the start cannot pin
+ * "baseline" for the whole run. `isMigratedBuild()` is true when REG_BUILD=sb41, or when the build branch names the Spring
+ * Boot 4.1 integration branch.
  *
- * `isMigratedBuild()` is true when REG_BUILD=sb41, or when `build.branch` names the Spring Boot 4.1 integration branch.
- * REG_BUILD=main (or baseline) states the baseline explicitly. An unreadable marker means baseline AND adds a test
- * annotation, never a silent default: the refused-method oracle (API-GEN-07 / API-PROT-37 / API-CORE-08: 400 on main,
- * `test.fail()` + `@bug:core#2502` on the migrated build) depends on it. `isMigratedBuild` therefore REQUIRES the
- * test's `testInfo` (the annotation has nowhere to go without it).
+ * An unreadable marker means baseline and adds a test annotation. The refused-method oracle (API-GEN-07 / API-PROT-37 /
+ * API-CORE-08: 400 on main, `test.fail()` + `@bug:core#2502` on the migrated build) depends on it, so `isMigratedBuild`
+ * requires the test's `testInfo`.
  */
 import { APIRequestContext } from '@playwright/test';
 import { Logger } from '../Logger';

@@ -1,19 +1,13 @@
 /**
- * REG-DEP-02 — An upgrade of a local stack keeps the seeded objects and the connectors (release checklist: Deployment 2). ilm#425.
+ * REG-DEP-02 — An upgrade of a local stack keeps the seeded objects and the connectors (release checklist: Deployment
+ * 2; ilm#425).
  *
- * WHAT: 1. On the old core image, seed an own role, a group and a token chain; snapshot lists, totals, connector statuses and
- *          the schema history.
- *       2. Stop the old core and start the target core on the same database → liveness within the startup budget; the upgrade
- *          direction is checked.
- *       3. Snapshot again and diff: objects kept, counts equal (system extras listed), the audit log not reset, the schema history
- *          kept with the new rows successful and an out-of-order migration evidenced.
- *       4. Every seeded detail answers 200 and every connected connector keeps a live health.
- * WHY: migration checksums are a contract and the upgrade is one way (a downgrade is refused); an upgrade must lose no object
- *      and no connector.
- * HOW: local stack only (@local, @needs:docker). The old tag and the target compose file come from the environment
- *      (REG_UPGRADE_FROM_TAG, LOCAL_COMPOSE_FILE_TARGET); the test skips with a named reason unless the stack runs the old image.
- *      Seeded objects are own and recorded in the ledger. The UI sign-in as a seeded user is not part of it: the local stack
- *      has no identity provider.
+ * Seeds an own role, a group and a token chain on the old core image, starts the target core on the same database, and
+ * diffs the snapshots: objects kept, counts equal, audit log not reset, schema history kept, every connected connector
+ * still healthy. The upgrade is one way (a downgrade is refused).
+ *
+ * Local stack only (@local, @needs:docker). Skips with a named reason unless the stack runs the old image. Seeded
+ * objects are own and recorded in the ledger.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { ACCEPT_JSON, expectHealthGroupUp, healthByVersion, isHealthGroupUp, listConnectors, PROBE_PATHS } from '../../../utils/regression/platform/connectorApi';

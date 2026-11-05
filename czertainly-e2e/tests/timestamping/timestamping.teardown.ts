@@ -1,11 +1,11 @@
 /**
- * timestamping.teardown — the tear-down project of the timestamping block (the `teardown` of `timestamping-setup`).
+ * timestamping.teardown — the teardown project of the timestamping block (the `teardown` of `timestamping-setup`).
  *
- * WHAT: one test that deletes every object the block's setup and specs recorded in this run (utils/timestamping/
- * blockTeardown.ts), in the run-end teardown's delete order and through its own-object guard.
- * WHY: one tear-up fills the environment for the block, one tear-down empties it again right after the block; the
+ * One test deletes every object the block's setup and specs recorded in this run
+ * (utils/timestamping/blockTeardown.ts), in the run-end teardown's delete order and through its own-object guard.
+ * Playwright runs a teardown project after its setup project and every project depending on it, failed or not. The
  * run-end teardown is the safety net for anything left.
- * HOW: Playwright runs a teardown project after its setup project and every project depending on it, failed or not.
+ *
  * Red when an object could not be deleted (named by type and uuid); the run-end teardown then retries it.
  */
 import { test as teardown, expect } from '../../fixtures/testFixtures';

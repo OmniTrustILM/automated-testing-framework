@@ -1,17 +1,9 @@
 /**
  * specLint/bindings — what the deny-by-default lint knows about the names of one source file.
  *
- * WHAT: `Bindings` resolves the names of a single-file TypeScript program once, before any rule runs: the guarded
- * contexts (the `api` / `anonymousApi` fixtures, parameters typed `GuardedApi`, results of the guard factories and
- * every alias of them), the opaque token fixtures, the `request` / `page` fixtures, Map / Set style collections, the
- * `apiJson*` functions, the bindings of the fs modules, the `process` and `process.env` aliases and the functions
- * imported from the suite's own modules. It also holds the small predicates the rules ask about those names
- * (isGuarded, isFsBinding, isProcessEnv, isEnvTarget, urlAllowed, ...).
- * WHY: the rules in rules.ts stay one-screen checks of a single syntax node; the binding work (a fix-point over
- * aliases) happens in one place and is not repeated per rule. Bindings are resolved by symbol, never by name, so a
- * name guarded in one function is not trusted in another.
- * HOW: the constructor walks the file once (the sub-collectors below, in a fixed order), then repeats over the
- * variable declarations until no alias is added (a fix-point). After that the object is read-only.
+ * `Bindings` resolves the names of a single-file program once, before any rule runs: the guarded contexts and their aliases,
+ * the token fixtures, the `request` / `page` fixtures, the fs and `process` bindings, and the predicates the rules ask
+ * (isGuarded, isFsBinding, ...). Names are resolved by symbol, so a name guarded in one function is not trusted in another.
  */
 import type * as TS from 'typescript';
 import * as path from 'path';

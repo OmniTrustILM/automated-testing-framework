@@ -1,12 +1,10 @@
 /**
  * preRegistration — platform-level pre-registration of own certificates.
  *
- * WHAT: platform-level pre-registration of own certificates (`…/certificates/register`, with or without a
- *       challenge), the registration block of a detail, the registration and validation settings of the tier (read, never
- *       set), and the re-validation of an own certificate. The placeholder a register makes is recorded before any assertion.
- * WHY: A placeholder certificate registered with or without a challenge must be recorded and completed like any own certificate.
- * HOW: The register call, the registration block of a detail, the registration and validation settings (read, never set) and re-validation;
- * the placeholder is recorded before any assertion.
+ * Provides the register call (with or without a challenge), the registration block of a certificate detail, the tier's
+ * registration and validation settings (read, never set) and the re-validation of an own certificate.
+ *
+ * The placeholder a register makes is recorded in the ledger before any assertion.
  */
 import type { APIRequestContext } from '@playwright/test';
 import { apiJson, getCertificate, ApiAnswer } from '../apiReads';
@@ -21,6 +19,7 @@ import { runId } from '../ledger/runState';
 import { opsBase } from './certificateLabels';
 import { certificateName } from '../ownCertificates';
 import { createdAfterOfAnswer, sendRaw } from './rawAnswers';
+import { randomBytes } from 'crypto';
 import { uniqueSuffix } from '../text';
 
 const logger = new Logger('Lifecycle');
@@ -44,7 +43,7 @@ interface PlatformCertificateSettings {
 // ------------------------------------------------------------------ register and complete (pre-registration)
 
 /** A challenge secret: 12–255 printable ASCII; run-prefixed so a log line never looks like a real secret. */
-export const newChallenge = (): string => `${runId()}-s-${Math.random().toString(36).slice(2, 10)}${uniqueSuffix()}`;
+export const newChallenge = (): string => `${runId()}-s-${randomBytes(4).toString('hex')}${uniqueSuffix()}`;
 
 /** The platform default CN definition (core `CsrAttributes`, a fixed uuid). */
 export const DEFAULT_CN_DEFINITION: Readonly<AttributeDefinitionRef> = { uuid: '9abaeba0-973d-11ed-a8fc-0242ac120002', name: 'commonName', contentType: 'string', version: 'v3' };

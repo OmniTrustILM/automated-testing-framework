@@ -35,7 +35,6 @@ test('assertRegistration / assertNoRegistration read the Registration widget row
     const cert = new CertificateDetailPage(page);
     await page.setContent(registration({ registrationState: 'Active', registrationExpiresAt: '2026-10-21T10:00:00Z', registrationFailedAttempts: '0' }));
     await cert.assertRegistration({ state: 'Active', failedAttempts: 0 });
-    expect((await cert.registrationExpires()).toISOString()).toBe('2026-10-21T10:00:00.000Z');
     expect(await failsFast(cert.assertRegistration({ state: 'Locked' }))).toBe(true);
     expect(await failsFast(cert.assertRegistration({ failedAttempts: 1 }))).toBe(true);
     expect(await failsFast(cert.assertNoRegistration())).toBe(true);

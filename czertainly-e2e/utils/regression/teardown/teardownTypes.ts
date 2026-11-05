@@ -1,13 +1,10 @@
 /**
  * teardownTypes — the shapes every teardown handler and the teardown run share.
  *
- * WHAT: `TeardownContext` (what a handler gets), `TeardownHandler` (what a handler is), `RemoveResult` and
- * `TeardownPrepStep` (a hook that runs before a delete step).
- *
- * WHY: the handler modules and runTeardown refer to each other; the shapes live in this type-only module so that a handler
- * module imports no runtime code from runTeardown and runTeardown can import every handler module statically.
- *
- * HOW: types only, no runtime code; runTeardown re-exports them under their old names.
+ * `TeardownContext` (what a handler gets), `TeardownHandler` (what a handler is), `RemoveResult` and `TeardownPrepStep` (a hook
+ * that runs before a delete step). Types only, no runtime code: the handler modules and runTeardown refer to each other, so a
+ * handler module imports no runtime code from runTeardown, and runTeardown can import every handler module statically. runTeardown
+ * re-exports them under their old names.
  */
 import type { APIRequestContext } from '@playwright/test';
 import type { LedgerLine } from '../ledger/ledger';

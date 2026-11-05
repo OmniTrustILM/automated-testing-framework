@@ -1,10 +1,7 @@
 /**
- * timeouts — the named time budgets of the tests.
+ * timeouts — the named time budgets of the regression and API tests (`test.setTimeout(ISSUE_MS)`).
  *
- * WHAT: the named time budgets of the regression and API tests (`test.setTimeout(ISSUE_MS)`), so the reason for a
- *       budget is written once here instead of in a comment next to a number. Pure, no I/O.
- * WHY: A budget should carry its reason once instead of a comment next to a number.
- * HOW: Constants such as ISSUE_MS used by `test.setTimeout`; pure, no I/O.
+ * Each budget carries its reason once here, instead of a comment next to a number. Constants only, no I/O.
  */
 
 const MINUTE_MS = 60_000;
@@ -142,10 +139,6 @@ export const ADD_FORM_OUTCOME_MS = 15_000;
 /** The list request a filter change causes is seen within 20 seconds; the request is only observed for 5. */
 export const FILTER_LIST_REQUEST_MS = 20_000;
 export const FILTER_REQUEST_SEEN_MS = 5_000;
-/** A typed filter value shows in its input within 1 second, a retried fill within 10, a reopened badge within 15. */
-export const FILTER_VALUE_SHOWN_MS = 1_000;
-export const FILTER_FILL_SETTLE_MS = 10_000;
-export const FILTER_BADGE_REOPEN_MS = 15_000;
 
 /** A certificate reaches a state that needs no CA decision (pending approval, rejected, registered after a retry): 1 minute. */
 export const STATE_CHANGE_WAIT_MS = MINUTE_MS;

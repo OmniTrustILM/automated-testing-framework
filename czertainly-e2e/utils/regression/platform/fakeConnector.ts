@@ -1,12 +1,9 @@
 /**
  * fakeConnector — an in-test stand-in for a v2 connector.
  *
- * WHAT: an in-test HTTP stand-in for a v2 connector: it answers info, health and metrics, echoes the body of
- *       its one attributes callback, records every request and can answer with an injected fault. It listens on loopback (or
- *       the bind host the environment names) and is registered as an own connector, removed by the run-end teardown.
- * WHY: Connector rows need a connector whose answers and faults the test controls.
- * HOW: It answers info, health and metrics, echoes its attributes callback, records requests and injects faults; it listens on loopback, is
- * registered as an own connector and removed by the run-end teardown.
+ * An HTTP server that answers info, health and metrics, echoes the body of its one attributes callback, records every request
+ * and can answer with an injected fault. It listens on loopback (or the bind host the environment names) and is registered as
+ * an own connector, which the run-end teardown removes. Connector rows use it to control the answers and faults.
  */
 import * as http from 'http';
 import type { AddressInfo } from 'net';

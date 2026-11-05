@@ -1,12 +1,12 @@
 /**
  * fakeCertificateListApp — a stand-in of the admin UI certificate list with a fake list API.
  *
- * WHAT: the DOM contract FilterWidget and CertificateListPage rely on (test ids, roles, header ids and aria-sort, portalled
- * selects, the date picker, badges, the empty cell, the pager, the bulk toolbar), served with a fake list API over the
- * seed plan's certificates.
- * WHY: the page objects' logic (choose, add, badge, remove, sort, page) must be proven offline, without a tier.
- * HOW: a browser context routes the page and the list API to in-memory data (`fakeData`); it proves the page objects'
- * logic, not the product, so the filter tables are proven elsewhere (the table unit tests and the live rows).
+ * Provides a DOM shaped like the admin UI list (test ids, roles, header ids and aria-sort,
+ * portalled selects, the date picker, badges, the empty cell, the pager, the bulk toolbar), served with a fake list API
+ * over the seed plan's certificates. A browser context routes the page and the list API to in-memory data (`fakeData`).
+ *
+ * It proves the list page object and helpers (filter, badge, remove, the list request, a row by name) offline, not the
+ * product; the filter tables are proven elsewhere (the table unit tests and the live rows).
  */
 import type { Browser, BrowserContext, Page } from '@playwright/test';
 import { SEED_A_DEFAULT_ORDER, CertificateSeedPlan, planCertificateSeed } from '../../../utils/regression/inventory/seedFull';
@@ -549,7 +549,7 @@ const APP_JS = String.raw`
           display: S.draft.cond ? label('FilterConditionOperator', S.draft.cond) : '', isSelected: function (o) { return o.value === S.draft.cond; },
           onPick: function (o) { S.draft = { source: S.draft.source, field: S.draft.field, cond: o.value, value: undefined }; S.cal = null; } }),
         h('div', {}, h('label', { for: 'valueSelect' }, 'Filter Value'), valueControl()),
-        h('button', { id: 'addFilter', type: 'button', disabled: addDisabled(), onclick: onAdd }, S.badge === -1 ? 'Add' : 'Update')),
+        h('button', { id: 'addFilter', type: 'button', disabled: addDisabled(), onclick: onAdd }, S.badge === -1 ? 'Apply' : 'Update')),
       h('div', {}, S.filters.map(badge)),
       h('div', { 'data-testid': 'switch-archived-switch' }, h('label', { for: 'archived-switch' }, 'Include archived'),
         h('label', { for: 'archived-switch' }, h('input', { type: 'checkbox', id: 'archived-switch', class: 'sr-only', 'data-testid': 'switch-archived-switch-input', checked: S.archived,

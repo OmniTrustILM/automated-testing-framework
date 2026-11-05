@@ -1,11 +1,8 @@
 /**
- * listExpectations — pure checkers over listing reads.
+ * listExpectations — pure checkers over listing reads that listInvariants.ts does not have.
  *
- * WHAT: Pure checkers over listing reads that utils/regression/inventory/listInvariants.ts does not have: count partitions,
- *       set equality, continuation, the block of empty values, mirror order, text order without knowing the collation,
- *       tie-break and instant order. Each names the field, the neighbouring rows or the sets when it fails.
- * WHY: Some list rules (partitions, continuation, mirror order, tie-break) are not covered by `listInvariants`.
- * HOW: Each checker names the field, the neighbouring rows or the sets when it fails; text order is checked without knowing the collation.
+ * Count partitions, set equality, continuation, the block of empty values, mirror order, text order without knowing the
+ * collation, tie-break and instant order. Each names the field, the neighbouring rows or the sets when it fails.
  */
 import { InvariantViolation } from '../listInvariants';
 import type { ListRow } from '../listInvariants';

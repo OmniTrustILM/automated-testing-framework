@@ -1,10 +1,9 @@
 /**
- * Unit tests of the shared test-design helpers the area specs call.
+ * sharedOracles — unit tests of the shared test-design helpers the area specs call.
  *
- * WHAT: the SAN oracle of a connector, the refusal check, the health-group body check, the named wait budgets, and the
- *       filter evaluator both the reference rows and the stand-in use.
- * WHY: a rule written once is only safe if its helper is proven to pass the right answer and fail the wrong one.
- * HOW: pure calls with hand-made answers; no network, no ledger.
+ * Checks the SAN oracle of a connector, the refusal check, the health-group body check, the named wait budgets, and the
+ * filter evaluator both the reference rows and the stand-in use. A rule written once is only safe if its helper passes the
+ * right answer and fails the wrong one. Pure calls with hand-made answers; no network, no ledger.
  */
 import { expect, test } from '@playwright/test';
 import { sanOracle, waitIssued, waitRevoked } from '../../utils/regression/ownCertificates';

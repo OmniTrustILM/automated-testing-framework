@@ -1,19 +1,10 @@
 /**
- * API-GEN-32 — The migration gate: six checks of behaviour a framework migration must keep. ilm#425, ilm#426, ilm#428, ilm#436.
+ * API-GEN-32 — The migration gate: six checks of behaviour a framework migration must keep (ilm#425, ilm#426, ilm#428, ilm#436).
  *
- * WHAT: 1. Anonymous liveness and readiness bodies are exactly {"status":"UP"}.
- *       2. A 422 answers a JSON array of strings (sort on an unknown field) and a 404 answers {message} (an unknown certificate).
- *       3. A refused HTTP method (TRACE) answers 400 with an empty body (core#2502: 401 on the migrated build, test.fail there).
- *       4. A signed-in browser session survives a reload (same user, same session cookie, an API read as that user).
- *       5. One attribute round trip through a healthy connector: its live health by version, then its attribute definitions load.
- *       6. Rows without a value sort last in both directions, by OWNER and by a custom attribute column (core#2394, core#2033).
- * WHY: these are the behaviours a platform migration is most likely to change silently: health bodies, error body shapes and status codes,
- *      the session, the connector wire and the null sort order. A pipeline runs `--project=gate` first and stops on red.
- * HOW: tagged `@gate`. Read-only except the sort row's seed subset (three certificates, an own attribute, an own user, own uploads), which
- *      is recorded in the ledger before any assertion and deleted by the run-end teardown. The connector row reads attribute definitions
- *      only (a callback would be a write, because core stores what some callbacks answer) and skips when the connector is not registered.
- *      The session row needs an identity-provider login and skips otherwise; the TRACE row skips with a named reason when the ingress
- *      answers before core.
+ * core#2502: TRACE answers 401 on the migrated build (test.fail there). The null-last sort row: core#2394, core#2033.
+ * Tagged `@gate`; a pipeline runs `--project=gate` first and stops on red. Read-only except the sort row's own seed
+ * subset, ledgered before any assertion. The connector row reads attribute definitions only and skips when the connector
+ * is not registered. The session row needs an identity-provider login.
  */
 import { FEW_CALLS_TEST_MS, SEED_SORT_TEST_MS, SEVERAL_STEPS_TEST_MS, SINGLE_PROBE_TEST_MS } from '../../../utils/regression/timeouts';
 import { expect, test } from '../../../fixtures/regressionFixtures';

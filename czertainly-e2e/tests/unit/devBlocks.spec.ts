@@ -2,10 +2,9 @@
  * devBlocks — the registry of the developers' blocks, the project builder, the DEV_BLOCK choice of
  * playwright.devblock.config.ts and the block run's global teardown.
  *
- * WHAT: unknown or unset DEV_BLOCK is an error; each block yields proof → setup → block → teardown with the right
- * files; a shared tier selects nothing in any of them and a local one selects all four; the regression config holds no block.
- * WHY: a block reports on its own and must exit 0 with an empty report on a shared tier; the proof project must come first.
- * HOW: pure functions with an injected environment; the global teardown with injected seams.
+ * Checks that unknown or unset DEV_BLOCK is an error, each block yields proof, setup, block, teardown, a shared tier selects
+ * nothing and a local one all four, and the regression config holds no block. A block must exit 0 with an empty report on a
+ * shared tier. Pure functions with an injected environment.
  */
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';

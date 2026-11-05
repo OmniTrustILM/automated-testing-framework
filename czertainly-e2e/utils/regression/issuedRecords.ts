@@ -1,21 +1,11 @@
 /**
  * issuedRecords — ledger before assertion for certificates and keys the PLATFORM made.
  *
- * WHAT: records the `certKey_<CN>` key linked to a
- * run certificate (a derived object with a server-clock bound), certificates a protocol issued under a run-prefixed
- * common name (ACME, cert-manager), the recording that also runs when an issuance step throws, the recording after the
- * issuance settled, and the ACME account the run registered.
+ * Records the `certKey_<CN>` key linked to a run certificate, the certificates a protocol issued (ACME, cert-manager) under a
+ * run-prefixed common name, and the ACME account the run registered.
  *
- * Clock rule: a derived key's age is judged on the server's clock (`createdAfter` from the Date header of the call that
- * made it). Without one the key is recorded with `keepingBound()`, a bound the key can never reach, so the teardown keeps
- * it and warns; the runner's own clock is never used to decide that a key may be deleted.
- *
- * WHY: the teardown only removes what the ledger holds, so a certificate or key that the platform made on the run's behalf
- *      and that was never recorded would stay on the tier; recording must happen right after the call, before any
- *      assertion, and also when the issuance step throws.
- * HOW: `recordDerivedKeyOf` reads the certificate detail and records its key as a derived line with the server-clock bound;
- *      `recordCertificatesNamed` / `recordIssuedNamed` adopt the certificates of a run-prefixed name from the inventory;
- *      `recordingIssued` and `recordIssuedSettled` wrap an issuance and record whether it returns or throws.
+ * The teardown only removes what the ledger holds, so recording happens right after the call, before any assertion. A derived
+ * key's age is judged on the server's clock; without one the key is kept and the teardown warns.
  */
 import { APIRequestContext, expect } from '@playwright/test';
 import { Logger } from '../Logger';
@@ -27,7 +17,7 @@ import { hasRunFamilyPrefix } from './run/runId';
 import type { JsonObject } from './json';
 import { objectOf } from './json';
 
-const logger = new Logger('issuedRecords');
+const logger = new Logger('IssuedRecords');
 
 /**
  * Records the key the platform linked to a run certificate (`certKey_<CN>`) as a DERIVED ledger object with the server-clock

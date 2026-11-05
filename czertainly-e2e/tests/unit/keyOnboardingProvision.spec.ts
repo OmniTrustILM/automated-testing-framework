@@ -622,3 +622,9 @@ test('unplant-keys.sh selects exactly the run\'s private keys, public keys and c
     expect(src, 'one pkcs11-tool login for every call, with the PIN read from the environment').toContain('--login --pin env:TOKEN_PIN "$@"');
     expect(src, 'the second listing decides').toMatch(/after=\$\(run_objects\)\nif \[ "\$after" -ne 0 \]/);
 });
+
+test('plant-keys.sh reads the PIN from the environment, never puts it on the pkcs11-tool command line', () => {
+    const src = fs.readFileSync(PLANT_SCRIPT, 'utf8');
+    expect(src, 'pkcs11-tool login reads TOKEN_PIN from the environment').toContain('--login --pin env:TOKEN_PIN "$@"');
+    expect(src, 'no expanded TOKEN_PIN on the command line').not.toMatch(/--pin\s+"\$TOKEN_PIN"/);
+});

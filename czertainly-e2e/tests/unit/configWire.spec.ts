@@ -1,12 +1,10 @@
 /**
  * configWire — loopback wire check of the config helpers of the main flows.
  *
- * WHAT: the helpers for own RA profiles, roles, users, the inventory seed subset, ACME activation and issued records, on one
- *       stateful fake core (tests/unit/helpers/loopbackServer.ts): every request goes through the guard, each test asserts
- *       what arrived, the ledger is written before any assertion, a foreign object or a raw context is refused before
- *       anything is sent.
- * WHY: a helper that creates or changes an object is only safe if what it sends and records is proven, without a tier.
- * HOW: a loopback server answers like core; the ledger lives in a per-test REG_STATE_DIR.
+ * Covers the helpers for own RA profiles, roles, users, the inventory seed subset, ACME activation and issued records,
+ * against one stateful fake core (tests/unit/helpers/loopbackServer.ts). Every request goes through the guard, the ledger is
+ * written before any assertion, and a foreign object or a raw context is refused before anything is sent. The ledger lives
+ * in a per-test REG_STATE_DIR.
  */
 import { APIRequestContext, expect, test } from '@playwright/test';
 import * as forge from 'node-forge';

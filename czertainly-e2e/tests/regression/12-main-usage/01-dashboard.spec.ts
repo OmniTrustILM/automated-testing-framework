@@ -1,18 +1,12 @@
 /**
- * REG-USE-01 — The certificates dashboard (release checklist: Usage 1). ilm#428.
+ * REG-USE-01 — The certificates dashboard (release checklist: Usage 1; ilm#428).
  *
- * WHAT: 1. Open the certificates dashboard → the four count tiles (Certificates, Groups, Discoveries, RA Profiles) equal the statistics
- *          the page loaded itself; the State and Validation charts render.
- *       2. Click a legend item → the inventory opens with the matching filter badge: State 'Issued', Validation status 'Expired', and
- *          for the expiration bucket "30" a window of two Expires At badges.
- * WHY: the dashboard is the first page of an operator; its numbers must be those of the statistics API and its legends must lead to the
- *      same objects. The Type chart's legend opens the inventory unfiltered by design (fe-administrator#1136), so it is not checked.
- * HOW: the tiles test is read-only; the page signs in through the `signedIn` fixture. The tiles are compared with the statistics response
- *      of the same page load, so other users cannot cause a race. A legend item exists only for a non-zero count, so the legend test first
- *      uploads two own self-signed certificates (one already expired, one expiring in about 25 days), recorded before use and removed by the
- *      run-end teardown, and re-validates them so the validation status is stored. After the click it narrows the inventory to the own
- *      certificate by its common name and asserts that it is shown. Only when the platform still shows no data behind a legend after the
- *      upload does the row skip, with the reason; a tier with data and no legend fails.
+ * The four count tiles equal the statistics the page loaded itself, and a legend click opens the inventory with the matching
+ * filter badge. The Type chart's legend opens the inventory unfiltered by design (fe-administrator#1136), so it is not checked.
+ *
+ * The tiles test is read-only. The legend test uploads two own self-signed certificates (one expired, one expiring in about
+ * 25 days), recorded before use and removed by the run-end teardown. It skips, with the reason, only when the platform still
+ * shows no data behind a legend after the upload.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { DashboardCounts, DashboardPage, DashboardStatistics } from '../../../pages/DashboardPage';

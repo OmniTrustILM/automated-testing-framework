@@ -1,11 +1,8 @@
 /**
  * cases — the refusal cases of the error-contract API spec.
  *
- * WHAT: The refusal cases of the error-contract API spec: the rows of the inventory API status matrix, the refusal texts,
- *       and the five listings with one request per resource and case (the refusal text per resource, or the reason a case
- *       does not apply to it).
- * WHY: The status matrix of the inventory API is the contract; its rows and refusal texts must be data, not scattered literals.
- * HOW: Rows, texts and the five listings with one request per resource and case, or the reason a case does not apply.
+ * Data, not scattered literals: the rows of the inventory API status matrix, the refusal texts, and the five listings
+ * with one request per resource and case (the refusal text, or the reason the case does not apply to that resource).
  */
 import { CONDITION_SETS, sameSet } from '../searchApi';
 import { Expectation, Oracle, preview } from './checks';

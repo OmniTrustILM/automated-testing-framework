@@ -1,17 +1,9 @@
 /**
  * guardProofSpy — the blocking spy of the live guard proof (tests/api/tier-snapshot.setup.ts).
  *
- * The proof hands pre-existing objects of the target tier to the guard and to a guarded helper and expects an
- * OWNERSHIP refusal. The raw context underneath sits behind this spy, which forwards ONLY reads: `get`, `head`, `fetch`
- * with GET / HEAD (from the options or a Request object), plus the two local helpers `dispose` / `storageState` that
- * send nothing to the tier. Every other call — `post` / `put` / `patch` / `delete`, `fetch` with any other method,
- * and any method the spy does not know — is recorded and REFUSED with GuardSpyBlocked, never forwarded. So even a
- * regressed guard cannot disable or delete a real object during the proof: the proof fails on the error class and on
- * the recorded list.
- *
- * `expectOwnershipRefusal(promise)` resolves to the OwnObjectViolation of a refused call and fails unless its kind is
- * `ownership`: a refusal for another reason (the runtime brand of a raw context, a path rule) would hide a broken
- * ownership check, so the proof asserts the specific reason.
+ * The proof hands pre-existing objects of the tier to the guard and expects an OWNERSHIP refusal. The raw context sits behind
+ * this spy, which forwards ONLY reads (GET / HEAD); every other call is recorded and refused with GuardSpyBlocked, so even a
+ * regressed guard cannot change a real object. `expectOwnershipRefusal` fails unless the refusal is of kind `ownership`.
  */
 import type { APIRequestContext } from '@playwright/test';
 import { OwnObjectViolation } from './ledger/ownership';

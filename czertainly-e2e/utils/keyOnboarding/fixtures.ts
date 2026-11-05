@@ -1,15 +1,13 @@
 /**
  * fixtures — the fixtures of the key onboarding specs.
  *
- * WHAT: extends the framework's `test` (env, localApi) with `admin` (AdminApi over the guarded `api`, here the local-stack `localApi`),
- * `adminWorker` (the same over a worker-scoped local-stack guard, for hooks) and `provisioned` (the run's ready provisioning), and keeps
- * the two lookups the specs use on a token listing.
- * WHY: the specs were written with `admin` / `provisioned`; the names stay, the plumbing is the regression framework's.
- * `adminWorker` is not the framework's `workerApi`: that one is the plain guard, and this block's calls (onboarding, removal from the
- * inventory) pass only under the guard's `localStack` option, which a worker fixture may take only on a proven local stack
- * (`withWorkerApi(..., { localStack: true })` checks the tier and the proof before it builds anything).
- * HOW: `provisioned` skips the test with the setup's reason when the block is unavailable; `api` is the framework's `localApi` (the block
- * runs on a proven local stack only); `adminWorker` builds its context once per worker and renews the token when it runs low.
+ * Extends the framework's `test` with:
+ *   - `admin`: `AdminApi` over the local-stack `localApi` (the block runs on a proven local stack only)
+ *   - `adminWorker`: the same over a worker-scoped local-stack guard, for hooks
+ *   - `provisioned`: the run's ready provisioning; skips the test with the setup's reason when the block is unavailable
+ *
+ * `adminWorker` is not the framework's `workerApi`: this block's calls pass only under the guard's `localStack` option, which
+ * a worker fixture may take only on a proven local stack.
  */
 import { test as base, expect, withWorkerApi } from '../../fixtures/regressionFixtures';
 import { loadEnv } from '../env';

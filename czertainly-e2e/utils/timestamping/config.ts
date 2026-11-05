@@ -1,15 +1,10 @@
 /**
  * config — the environment contract of the timestamping block.
  *
- * WHAT: every TSA_* variable the block reads, with the defaults of development-environment
- * `scripts/timestamping-setup.sh`, the plan of families (which sets the setup creates and the specs title their tests
- * after), and where the setup leaves its summary.
- * WHY: Playwright lists the tests BEFORE the setup project runs, so data-driven titles cannot come from the summary
- * (it does not exist yet). They come from the plan; a test looks its set up in the summary and skips when the setup
- * could not provision it.
- * HOW: `timestampingConfig()` reads the process environment once per call (the env file is already loaded by
- * prepareRun); `plannedFamilies()` turns TSA_FAMILIES into the plan; `summaryFile()` is the run's summary path under
- * REG_STATE_DIR (never inside the clone).
+ * The TSA_* settings the block reads, with the defaults of development-environment `scripts/timestamping-setup.sh`, the plan
+ * of families (which sets the setup creates), and where the setup leaves its summary (under REG_STATE_DIR, never in the clone).
+ * Playwright lists tests BEFORE the setup runs, so data-driven titles come from the plan, not from the summary. A test skips
+ * when the setup could not provision its set.
  */
 import * as path from 'path';
 import { currentRunId, regressionStateDir } from '../regression/run/runId';

@@ -1,20 +1,12 @@
 /**
  * transport — the admin requests of the timestamping setup and the two kinds of failure it tells apart.
  *
- * WHAT: `Admin` sends every admin request of the preflight and the provisioner through the GUARDED context (`/api` is
- * prefixed here, callers write `/v1/...` like timestamping-setup.sh does), remembers the server's Date header of the
- * first response after `markProvisioningStart()`, and polls with attempt counts instead of fixed sleeps.
- * - `TierError`: the TIER cannot provide what a step needs (a 404 or 5xx answer, an attribute or profile the connector
- *   does not offer, a wait that runs out). It becomes the summary's `unavailable` reason or a family's entry in
- *   `missingFamilies`, and the setup test passes.
- * - `SetupError`: the setup itself is wrong (401 / 403 on any request: the admin identity is broken; 400 / 422 on a
- *   POST, PUT or PATCH: the setup sent a body core refuses). It propagates, and the setup test fails.
- * WHY: a refused body or a broken identity must never pass green as "this tier lacks timestamping".
- * HOW: the generic parts live in `utils/devBlocks/provision/transport.ts`; this file re-exports them and instantiates `Admin` with the
- * timestamping setup's logger name. GET goes through `api.get`, every other method through `api.fetch` of the guarded context (the guard judges and
- * sends it; on a proven local stack `localStack` lifts the ownership rule and the platform deny-list only). A reason
- * carries the method, the path with every uuid replaced by `{id}` and the status, never the answer's body (it may echo
- * fragments of the request); the body goes to the log only.
+ * `Admin` sends every admin request through the GUARDED context, remembers the server's Date header of the first response
+ * after `markProvisioningStart()`, and polls with attempt counts.
+ *   - `TierError`: the TIER cannot provide what a step needs; it becomes the `unavailable` reason and the setup test passes.
+ *   - `SetupError`: the setup itself is wrong (401 / 403, or 400 / 422 on a write); it propagates and the setup test fails.
+ * A reason carries the method, the path with uuids replaced by `{id}` and the status, never the answer's body.
+ * The generic parts live in utils/devBlocks/provision/transport.ts; this file re-exports them and names the logger.
  */
 import type { GuardedApi } from '../../regression/guard/types';
 import { Admin as SharedAdmin } from '../../devBlocks/provision/transport';

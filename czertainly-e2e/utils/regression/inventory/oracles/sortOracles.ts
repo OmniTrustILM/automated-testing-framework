@@ -1,12 +1,12 @@
 /**
  * sortOracles — sort oracles of a listing.
  *
- * WHAT: Sort oracles of a listing: non-decreasing in both directions with empty values last, page 2 continues page 1, a
- *       second read answers the same order, asc and desc mirror each other, composition and tie-break. Text order is checked
- *       only where it is decidable without the database collation; enum columns are checked structurally.
- * WHY: Ordering bugs hide in empty values, page boundaries and ties.
- * HOW: Non-decreasing in both directions with empty values last, page 2 continues page 1, a repeat read gives the same order, asc and desc
- * mirror, composition and tie-break; text order only where decidable, enums structurally.
+ * Checks:
+ *   - non-decreasing in both directions, with empty values last
+ *   - page 2 continues page 1, and a repeat read gives the same order
+ *   - asc and desc mirror each other; composition and tie-break
+ *
+ * Text order is checked only where it is decidable without the database collation; enum columns structurally.
  */
 import type { Filter, Sort } from '../searchApi';
 import { expectSorted, InvariantViolation } from '../listInvariants';

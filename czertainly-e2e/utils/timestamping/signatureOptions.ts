@@ -1,9 +1,7 @@
 /**
  * signatureOptions — what a signing profile's signature options are expected to be, per key algorithm.
  *
- * WHAT: what a signing profile's signature options are expected to be, per key algorithm.
- * WHY: the signature-options spec compares the offer of a certificate and the signature of a token with the same table.
- * HOW: ported unchanged from the developers' suite; only the import of the algorithm codes moved to provisioning.ts.
+ * The signature-options spec compares the offer of a certificate and the signature of a token with the same table.
  */
 import { AttributeDefinition, AttributeValue } from './adminApi';
 import { ECDSA, RSA } from './provisioning';

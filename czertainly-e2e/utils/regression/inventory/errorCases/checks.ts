@@ -1,11 +1,9 @@
 /**
  * checks — the oracle of the error contract for refused requests.
  *
- * WHAT: The oracle of the error contract, applied to refused requests only: the expected status, the 422 messages or the
- *       single `message`, the body shape, and the leak scan (stack frames, exception classes, packages, SQL, file paths) plus
- *       the echo of a token or a marker. One list of problems per request.
- * WHY: A refusal can be correct in status and still leak a stack frame, a class name, SQL, a path or an echoed token.
- * HOW: One list of problems per request: expected status, 422 messages or single message, body shape, the leak scan and the echo check.
+ * Returns one list of problems per request: the expected status, the 422 messages or the single `message`, the body
+ * shape, the leak scan (stack frames, exception classes, packages, SQL, file paths) and the echo of a token or a marker.
+ * A refusal can be correct in status and still leak one of these.
  */
 
 // ------------------------------------------------------------------ the oracle vocabulary

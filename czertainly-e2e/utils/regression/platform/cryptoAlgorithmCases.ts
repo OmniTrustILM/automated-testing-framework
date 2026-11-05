@@ -1,12 +1,9 @@
 /**
  * cryptoAlgorithmCases — the key algorithm cases as data.
  *
- * WHAT: the key algorithm cases as data: per provider what must be offered, must not be offered, and
- *       which cells the tests run (generate, sign / verify, encrypt / decrypt), with the software cryptography provider's
- *       attribute names. Pure data and functions; the live attribute definitions are still read before a key is made.
- * WHY: The algorithm matrix must be read as data, with the provider's names in one place.
- * HOW: Per provider what must be offered, must not be offered and which cells run; pure, while the live attribute definitions are still
- * read before a key is made.
+ * Per provider: what must be offered, what must not be offered, and which cells the tests run (generate, sign / verify,
+ * encrypt / decrypt), with the software cryptography provider's attribute names. The data and functions are pure; the live
+ * attribute definitions are still read before a key is made.
  */
 
 export type Provider = 'scp-v1' | 'scp-v2' | 'pkcs11';

@@ -1,14 +1,14 @@
 /**
  * globalTeardown of a developers' block run (playwright.devblock.config.ts) — the retry net, not the run-end teardown.
  *
- * WHAT: (a) runs the block's own prefix-scoped tear-down once more (utils/devBlocks/blockTeardown.ts: only this run's
- * live ledger lines of the block, idempotent, with the dry-run, API_DELETE_OWN and `after` rules), (b) always removes
- * this run's local-backend proof.
- * WHY: a block run has no run-end teardown, no snapshot and no non-interference check; the block's teardown project
- * can have failed or been skipped (a failed setup), and an object it missed must not stay behind.
- * HOW: on a shared tier with no ledger line of the block nothing is read from the tier and nothing is sent (a run that skipped
- * every row, or a `key-onboarding` run, holds no object). With lines (the timestamping block on a shared tier) the block's own tear-down
- * runs: own objects only, by ledger line, tier identity and live run-prefixed name. The tear-down error, if any, is rethrown after the proof is gone.
+ * A block run has no run-end teardown, and the block's teardown project can have failed or been skipped. So this runs
+ * the
+ * block's own teardown once more (this run's live ledger lines of the block only) and always removes this run's local-
+ * backend proof.
+ *
+ * On a shared tier with no ledger line of the block, nothing is read and nothing is sent. A teardown error is rethrown
+ * after
+ * the proof is gone.
  */
 import { readLedger } from '../regression/ledger/ledger';
 import { currentRunId } from '../regression/run/runId';

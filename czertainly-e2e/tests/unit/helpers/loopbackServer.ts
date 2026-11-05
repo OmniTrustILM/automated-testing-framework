@@ -1,10 +1,9 @@
 /**
  * loopbackServer — a fake HTTP server on the loopback interface for the unit tests.
  *
- * WHAT: `loopbackServer(answer)` listens on 127.0.0.1 with a random port, records every request (method, path as received,
- * body, headers) and answers what `answer` returns (default 200 `{}`).
- * WHY: requests go through a REAL Playwright APIRequestContext, and the tests assert what actually reached the wire.
- * HOW: Node's http module; never anything but 127.0.0.1; `reset()` clears the record between tests, `close()` stops it.
+ * `loopbackServer(answer)` listens on 127.0.0.1 with a random port, records every request (method, path as received, body,
+ * headers) and answers what `answer` returns (default 200 `{}`). Requests go through a real Playwright APIRequestContext,
+ * so the tests assert what actually reached the wire. `reset()` clears the record between tests, `close()` stops it.
  */
 import * as http from 'http';
 import type { AddressInfo } from 'net';

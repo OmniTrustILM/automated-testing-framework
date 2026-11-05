@@ -1,10 +1,10 @@
 /**
  * renewDialog — offline check of pages/RenewDialog.ts on a stand-in certificate detail.
  *
- * WHAT: the dialog opens from the toolbar, the register switch is off, the CSR is pasted and submit returns the renew
- *       answer with its status and the successor uuid.
- * WHY: REG-CERT-07 reads the successor's uuid from the answer and asserts the status; both must come back exactly.
- * HOW: a loopback-addressed context answers the renew POST itself; the stand-in dialog mirrors the product's test ids.
+ * Checks that the dialog opens from the toolbar, the register switch is off, the CSR is pasted, and submit returns the
+ * renew answer with its status and the successor uuid. REG-CERT-07 reads the successor's uuid from the answer and asserts
+ * the status, so both must come back exactly. A loopback-addressed context answers the renew POST itself; the stand-in
+ * dialog mirrors the product's test ids.
  */
 import { expect, test } from '@playwright/test';
 import { RenewDialog } from '../../pages/RenewDialog';
@@ -27,12 +27,12 @@ test('RenewDialog: open from the toolbar, register switch off, CSR pasted, submi
             return route.fulfill({ contentType: 'text/html', body: renewDetail(U1) });
         });
         const page = await context.newPage();
-        await page.goto('administrator/#/certificates/detail/' + U1);
+        await page.goto('/administrator/#/certificates/detail/' + U1);
         const renew = new RenewDialog(page);
         await renew.open();
         await renew.assertRegisterOff();
         await renew.pasteCsr('-----BEGIN CERTIFICATE REQUEST-----\nYQ==\n-----END CERTIFICATE REQUEST-----');
-        await expect(renew.dialog.locator('#__fileUpload__fileContent')).toHaveValue(/BEGIN CERTIFICATE REQUEST/);
+        await expect(renew.csrTextarea).toHaveValue(/BEGIN CERTIFICATE REQUEST/);
         const answer = await renew.submit();
         expect(answer.status).toBe(200);
         expect(answer.uuid).toBe(U2);

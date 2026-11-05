@@ -1,18 +1,13 @@
 /**
- * blockTeardown — the tear-down of a developers' test block (`@dev-tests`: tests/timestamping, tests/key-onboarding):
- * deletes what the block's setup and specs created, right after the block, before the rest of the run goes on.
+ * blockTeardown — teardown of a developers' test block (`@dev-tests`), right after the block.
  *
- * WHAT: selects the ledger lines of THIS run that the block wrote (spec `<block>/…`) and hands exactly those to the
- * run-end delete engine (`executeTeardown`: delete order, own-object guard per object, one retry, final pass, absence
- * proof by GET). Deleted objects get their `deleted` ledger line (spec `<block>/teardown`). An optional `after` step
- * removes what the block made OUTSIDE the platform (key pairs planted on a token); it runs only when every ledger object
- * of the block is gone, so the platform never keeps a key whose token objects were removed under it.
- * WHY: one tear-up fills the environment for the block, one tear-down empties it again. The run-end teardown stays the
- * safety net: whatever fails here is still a live line there, and is retried and reported.
- * HOW: `blockLines()` is pure (unit-tested). `teardownBlock()` follows the run-end teardown's switches: under
- * API_TEARDOWN_DRY_RUN it only reports the plan, with API_DELETE_OWN off it keeps everything, and on a local tier it
- * re-checks the authenticated local-backend proof before the first delete. It throws when an object could not be
- * deleted, so the block's teardown test is red and names it (type and uuid only: names stay in the local state).
+ * Takes the ledger lines of THIS run that the block wrote (spec `<block>/…`) and hands exactly those to the run-end delete
+ * engine, which checks each object is own and proves its absence by a read.
+ * An optional `after` step removes what the block made outside the platform (key pairs on a token); it runs only when every
+ * ledger object of the block is gone.
+ * It follows the run-end teardown's switches: API_TEARDOWN_DRY_RUN only reports the plan, API_DELETE_OWN off keeps everything,
+ * and on a local tier it re-checks the local-backend proof first.
+ * It throws when an object could not be deleted (type and uuid only). The run-end teardown stays the safety net.
  */
 import { Logger } from '../Logger';
 import { readLedger, recordDeleted, type LedgerLine } from '../regression/ledger/ledger';

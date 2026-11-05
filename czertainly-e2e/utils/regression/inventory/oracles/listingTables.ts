@@ -1,11 +1,8 @@
 /**
- * listingTables — the listings the contract specs run the oracles on.
+ * listingTables — the listings the contract specs run the oracles on (keys, discoveries, audit logs).
  *
- * WHAT: The listings the contract specs run the oracles on (keys, discoveries, audit logs), with the property fields of each
- *       and their verified DTO member, the expected catalogue facts, and the listings that refuse a sort.
- * WHY: Each listing needs its fields with the verified DTO member and the expected catalogue facts.
- * HOW: Tables for keys, discoveries and audit logs, plus the listings that refuse a sort, each field carrying the component that proves its
- * mapping.
+ * Each listing has its property fields with the verified DTO member (and the component that proves the mapping) and the
+ * expected catalogue facts. Also the listings that refuse a sort.
  */
 import { elementsOf, member, nested } from './values';
 import { CatalogueExpectations } from './catalogueContract';

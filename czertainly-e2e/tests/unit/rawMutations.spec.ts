@@ -3,11 +3,10 @@
  * rules.ts, bindings.ts): raw contexts, request methods, imports by allow-list, env and fs writes, dynamic code, request
  * options and the token fixtures.
  *
- * WHAT: lints inline sources and checks the rules reported (line and rule name) or that nothing is reported; the
- * last block gives every rule of the table one positive and one negative case.
- * WHY: the lint is the proof that no spec can reach a shared tier around the guarded context; a rule that stops
- * firing is a hole, a rule that fires on clean code blocks the suite.
- * HOW: pure unit cases over `rawMutations` (the real tree is linted by specGuards.spec.ts).
+ * Lints inline sources and checks the rules reported (line and rule name), or that nothing is reported. The last block
+ * gives every rule of the table one positive and one negative case. The lint is the proof that no spec can reach a shared
+ * tier around the guarded context: a rule that stops firing is a hole, one that fires on clean code blocks the suite.
+ * The real tree is linted by specGuards.spec.ts.
  */
 import { test, expect } from '@playwright/test';
 import { RawMutationRule, rawMutations, rawMutationsWith } from '../../utils/regression/specLint/rawMutations';

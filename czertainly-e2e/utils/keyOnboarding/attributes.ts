@@ -1,10 +1,9 @@
 /**
  * attributes — request attributes the key onboarding specs send.
  *
- * WHAT: the attribute definition shape, lookup by name, the option a list attribute offers for a value, and the request item
- * that answers a definition.
- * WHY: Core accepts an offered option only verbatim, so a value is always looked up in the definition first.
- * HOW: ported from the developers' suite unchanged.
+ * Provides the attribute definition shape, lookup by name, the option a list attribute offers for a value, and the
+ * request item that answers a definition. Core accepts an offered option only verbatim, so a value is always looked up
+ * in the definition first. Ported from the developers' suite unchanged.
  */
 const REQUEST_ATTRIBUTE_VERSION = 'v3';
 

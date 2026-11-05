@@ -1,10 +1,9 @@
 /**
- * contentOf — the content items of a request attribute, for the unit tests that read what a builder produced.
+ * contentOf — the content items of a request attribute, for unit tests that read what a builder produced.
  *
- * WHAT: `contentOf(attribute)` returns the `content` list of a request attribute as items whose members can be read.
- * WHY: request attributes are typed as JSON objects, whose `content` is unknown; a test that checks the first item's data would need a cast
- * on every line.
- * HOW: pure; a missing or non-list `content` reads as an empty list.
+ * `contentOf(attribute)` returns the `content` list of a request attribute as items whose members can be read. Request
+ * attributes are typed as JSON objects whose `content` is unknown, so without it each check would need a cast. A missing or
+ * non-list `content` reads as an empty list.
  */
 import type { JsonObject } from '../../../utils/regression/json';
 

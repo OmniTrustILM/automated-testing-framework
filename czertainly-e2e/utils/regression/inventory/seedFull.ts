@@ -1,20 +1,12 @@
 /**
  * seedFull — the full certificate seed of the inventory specs.
  *
- * WHAT: The full certificate seed of the inventory specs: 24 own certificates with chosen dates, keys and issuers, 2 own
- *       groups, 5 own custom attribute definitions and an own owner, uploaded in a fixed order so the default list order is
- *       known. Every object is in the ledger before any assertion; the manifest is reused while every object is still this run's.
+ * 24 own certificates with chosen dates, keys and issuers, 2 own groups, 5 own custom attribute definitions and an own owner,
+ * uploaded in a fixed order so the default list order is known. Every object is in the ledger before any assertion.
  *
- *       Differences from the expected row tables, each deliberate:
- *       - notBefore is `clock - 30 d - <index> h` (distinct per certificate, C21 and C22 equal), not a flat `-30 d`, so a sort
- *         by NOT_BEFORE has the single C21 / C22 tie the row tables expect instead of 22 ties; every window oracle that
- *         reads notBefore keeps its ±1 day margin;
- *       - the `day` attribute values are `<Y>-01-10 …` with Y = clock year + 4 (fixed literal dates such as 2030 would rot);
- *       - the clock is read ONCE per seed (`clock`), values are read back from the API after the upload and the read-back values
- *         are what the tests use as EQUALS literals.
- * WHY: Exact row-set checks need a known data set in a known default order.
- * HOW: Uploaded in a fixed order and recorded before any assertion; the manifest is reused while every object is still this run's; the
- * clock is read once and read-back values become the EQUALS literals.
+ *   - notBefore is `clock - 30 d - <index> h`, so a sort by NOT_BEFORE has the single C21 / C22 tie the row tables expect
+ *   - the `day` attribute values use the clock year + 4, so fixed literal dates cannot rot
+ *   - the clock is read ONCE per seed
  */
 import { Logger } from '../../Logger';
 import { assertOwn } from '../ledger/ownership';

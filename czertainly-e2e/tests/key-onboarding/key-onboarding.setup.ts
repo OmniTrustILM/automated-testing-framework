@@ -1,20 +1,14 @@
 /**
- * key-onboarding.setup — the tear-up project of the key onboarding block (`@dev-tests`): the only creator of the
- * block's shared objects and of the key pairs on the token.
+ * key-onboarding.setup — the setup project of the key onboarding block (`@dev-tests`).
  *
- * WHAT: one test that runs the preflight, the provisioning and the planting (utils/keyOnboarding/provision) and ALWAYS
- * writes the run's summary (`summaryFile()`, mode 0600): `ready` with the token, the token profile and the planted
- * labels, or `unavailable` with the reason every key onboarding test then skips with.
- * WHY: replaces the source suite's global setup; the objects are this run's (run-prefixed names, ledger spec
- * `key-onboarding/setup`), deleted by the block teardown right after the block and by the run-end teardown as the
- * safety net; the planted key pairs carry the run prefix and are removed by the block teardown's last step.
- * HOW: the first thing the test does is overwrite the summary with "not finished", so a killed or retried attempt never
- * leaves an older `ready` file behind. A tier or runner without what the block needs is not a failure: the test passes
- * with an annotation of the reason. It fails on a refused body or identity, a programming error or a guard refusal (the
- * summary then says so, and the original error is rethrown). The guarded API is built only after the checks that need
- * no request passed (tier, local proof, PIN, docker, sidecar), so a shared tier gets no request at all (not even the
- * token grant the `api` fixture would make); it is built like the fixture, with the guard's `localStack` option, which takes
- * effect only on a proven local stack.
+ * The only creator of the block's shared objects and of the key pairs on the token. One test runs the preflight, the
+ * provisioning and the planting, and ALWAYS writes the run's summary: `ready`, or `unavailable` with the reason every
+ * key onboarding test then skips with.
+ *
+ * The objects are this run's (run-prefixed names, ledger spec `key-onboarding/setup`); the block teardown deletes them.
+ * A tier or runner without what the block needs is not a failure: the test passes with an annotation. A refused body or
+ * identity, a programming error or a guard refusal fails it.
+ * No request goes to a shared tier: the guarded API is built only after the offline checks passed.
  */
 import { test as setup } from '../../fixtures/testFixtures';
 import { getAuthenticatedApiContext } from '../../utils/auth/apiContext';

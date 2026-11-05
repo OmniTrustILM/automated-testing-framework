@@ -1,16 +1,12 @@
 /**
- * REG-CFG-02 — An MS ADCS authority created through the UI (release checklist: Configuration 2). ilm#436.
+ * REG-CFG-02 — An MS ADCS authority created through the UI (release checklist: Configuration 2; ilm#436).
  *
- * WHAT: 1. Authorities → + → the add page.
- *       2. Name, provider MS-ADCS-NG-Connector, "Enter CA host and name manually", CA host and CA name.
- *       3. Create → the connector checks connectivity (up to 90 s) → the authority detail opens.
- *       4. The API shows the authority as connected on the NG connector.
- * WHY: the authority is the base of every issuance flow of the checklist; a red test means the connector cannot reach its CA
- *      or the form no longer sends what the connector needs.
- * HOW: create-only: the CA host and name are read at run time from an existing NG authority, never stored in the repository,
- *      and that source is only read. The test needs a connected MS ADCS authority whose connector answers its live health;
- *      otherwise it skips with the named environment blocker (never a pass) and the CA-agnostic run RA profile takes over. The
- *      create answer is put in the ledger (`own.record`) before the redirect is waited for.
+ * Creates the authority on the MS-ADCS-NG-Connector, waits for the connectivity check (up to 90 s), and checks that the API
+ * shows it connected.
+ *
+ * Create-only. The CA host and name are read at run time from an existing NG authority (only read), never stored in the
+ * repository. Needs a connected MS ADCS authority whose connector answers its live health; otherwise it skips with the named
+ * blocker, never a pass. The create answer is put in the ledger before the redirect is waited for.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { AuthorityPage } from '../../../pages/AuthorityPage';

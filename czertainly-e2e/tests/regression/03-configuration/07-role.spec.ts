@@ -1,18 +1,12 @@
 /**
- * REG-CFG-07 — Roles in the admin UI (release checklist: Configuration 7, and the role rows of the authorization area). ilm#427.
+ * REG-CFG-07 — Roles in the admin UI (release checklist: Configuration 7; ilm#427).
  *
- * WHAT: 1. Roles → + → Create Role (name, description, e-mail) → listed, not a system role, no users and no permissions.
- *       2. (REG-CFG-07.a) The run role's name again → refused; exactly one role has that name (core#2297: today a 500
- *          "Internal server error." instead of a message naming the collision; test.fail on the message only).
- *       3. (REG-CFG-07.b) Detail → Edit: the name is locked; description and e-mail are saved and shown after a reload and
- *          read back from the API.
- *       4. (REG-CFG-07.c) Detail → Delete: gone from the API list and from the UI list.
- * WHY: the release-checklist flow for roles. A duplicate must be refused and never create a second role; the name is the
- *      identity of a role and cannot change.
- * HOW: edited and deleted roles are new roles of this run, never the shared run role or a role from before the run; the
- *      browser is not behind the API guard, so the live own-object check (`live`) runs before it acts. The ledger line is written
- *      from the create answer (`own.record`) before the first assertion; a duplicate the platform accepted is recorded too.
- *      Absence is read from the list (the detail of a deleted role answers 500, core#2511).
+ * Creates a role, refuses a duplicate name (.a), edits it with the name locked (.b) and deletes it (.c).
+ * core#2297: a duplicate name answers 500 instead of a message (test.fail on the message only).
+ * A deleted role's detail answers 500 (core#2511), so absence is read from the list.
+ *
+ * Only roles this run created are edited or deleted; the live check runs before the browser acts. The ledger line is
+ * written before the first assertion.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { RolePage } from '../../../pages/RolePage';
@@ -46,14 +40,14 @@ test.describe('Role configuration', { tag: tags.regression }, () => {
                 own.record('roles', answer, { name });
                 const created = await findByName(api, '/api/v1/roles', name);
                 expect(created?.name, 'the role is listed').toBe(name);
-                await expect(roles.createDialog.dialog).toBeHidden();
+                await expect(roles.createRoleDialog).toBeHidden();
                 expect(created!.systemRole).toBe(false);
                 return created!.uuid as string;
             });
 
             await test.step('Detail page: Role Details, no assigned users, no permissions yet', async () => {
                 await roles.goToDetail(uuid);
-                await expect(roles.detailsWidget).toContainText(name);
+                await expect(roles.roleDetails).toContainText(name);
                 const permissions = await apiJson(api, 'GET', `/api/v1/roles/${uuid}/permissions`);
                 expect(permissions.allowAllResources).toBe(false);
                 expect(permissions.resources ?? []).toHaveLength(0);
@@ -98,7 +92,7 @@ test.describe('Role configuration', { tag: tags.regression }, () => {
             test.fail(true, 'core#2297: a duplicate role name answers 500 "Internal server error." instead of naming the collision');
             await test.step('The refusal names the collision (known bug)', async () => {
                 await roles.assertDuplicateRefused(role.name);
-                await roles.createDialog.cancel();
+                await roles.closeCreateDialog();
             });
         });
 
@@ -119,22 +113,22 @@ test.describe('Role configuration', { tag: tags.regression }, () => {
                 await roles.goToDetail(liveRole.uuid);
                 await roles.openEditDialog();
                 await roles.assertNameLockedInEdit(liveRole.name);
-                await roles.editDialog.cancel();
+                await roles.closeEditDialog();
             });
 
             await test.step('Edit description and e-mail → Save', async () => {
                 const { status } = await roles.editRole({ description, email });
                 expect(status, 'PUT /api/v1/roles/{uuid}').toBeLessThan(300);
-                await expect(roles.editDialog.dialog).toBeHidden();
+                await expect(roles.editRoleDialog).toBeHidden();
             });
 
             await test.step('Reopen after a reload: new description and e-mail, the same name', async () => {
                 await page.reload();
-                await expect(roles.detailsWidget).toBeVisible();
+                await expect(roles.roleDetails).toBeVisible();
                 await roles.assertDetailRows({ name: role.name, description });
                 await roles.openEditDialog();
                 await roles.assertEditFormValues({ name: role.name, description, email });
-                await roles.editDialog.cancel();
+                await roles.closeEditDialog();
             });
 
             await test.step('API: the stored role agrees', async () => {
@@ -158,7 +152,7 @@ test.describe('Role configuration', { tag: tags.regression }, () => {
                 await roles.goToDetail(liveRole.uuid);
                 const { status } = await roles.deleteFromDetail();
                 expect(status, 'DELETE /api/v1/roles/{uuid}').toBeLessThan(300);
-                await expect(roles.deleteDialog.dialog).toBeHidden();
+                await expect(roles.deleteRoleDialog).toBeHidden();
             });
 
             await test.step('API: the roles list no longer names it (the list itself is not empty)', async () => {

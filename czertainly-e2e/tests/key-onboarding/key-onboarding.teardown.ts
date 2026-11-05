@@ -1,14 +1,11 @@
 /**
- * key-onboarding.teardown — the tear-down project of the key onboarding block (the `teardown` of
- * `key-onboarding-setup`).
+ * key-onboarding.teardown — the teardown project of the key onboarding block (the `teardown` of `key-onboarding-setup`).
  *
- * WHAT: one test that deletes every platform object the block's setup and specs recorded in this run, then the key
- * pairs this run planted on the token (utils/keyOnboarding/blockTeardown.ts).
- * WHY: one tear-up fills the environment for the block, one tear-down empties it again right after the block; the
- * run-end teardown is the safety net for the platform objects left.
- * HOW: Playwright runs a teardown project after its setup project and every project depending on it, failed or not.
- * Red when an object could not be deleted (named by type and uuid); the token objects then stay until a later run's
- * clean-up, and the run-end teardown retries the platform objects.
+ * One test deletes every platform object the block's setup and specs recorded in this run, then the key pairs this run
+ * planted on the token (utils/keyOnboarding/blockTeardown.ts). Playwright runs it after the block, failed or not.
+ *
+ * Red when an object could not be deleted (named by type and uuid). The run-end teardown is the safety net for the
+ * platform objects left.
  */
 import { test as teardown } from '../../fixtures/testFixtures';
 import { describeLocalOnly } from '../../utils/regression/tier/localProof';

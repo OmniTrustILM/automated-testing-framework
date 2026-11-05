@@ -1,13 +1,14 @@
 /**
- * CustomAttributesPage — the Custom Attributes list, its Create dialog and the delete-by-search flow.
+ * CustomAttributesPage — Page Object for Settings → Custom Attributes.
  *
- * WHAT: the Custom Attributes list page under Settings, the Create Custom Attribute dialog (name, label, content type, resources)
- *       and the search that finds an attribute by name so that it can be deleted.
- * WHY: SMK-008 drives the whole lifecycle of a custom attribute (create, assign, unassign, delete); the locators stay here so
- *      that the smoke spec reads as the steps of the flow. The smoke suite calls these methods by name: they keep their
- *      names and their behaviour.
- * HOW: locators are fields built in the constructor, by test id where the admin UI has one; the selects go through the Select
- *      helper (their trigger buttons). Never used by the regression suite.
+ * WHAT: encapsulates the Custom Attributes list page, the Create Custom Attribute
+ *       modal, and the delete-by-search flow.
+ * WHY: SMK-008 tests the full lifecycle (create → assign → unassign → delete);
+ *      this POM keeps locators out of the spec file.
+ * HOW: locators declared in constructor. Methods: goToList, openCreateModal,
+ *      fillAndSubmitCreate, deleteByName.
+ *
+ * The smoke suite calls these methods by name; the regression suite does not use this class.
  */
 
 import { Page, Locator, expect } from '@playwright/test';

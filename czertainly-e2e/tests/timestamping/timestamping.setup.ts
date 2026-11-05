@@ -1,21 +1,14 @@
 /**
- * timestamping.setup — the tear-up project of the timestamping block (`@dev-tests`): the only creator of the block's
- * shared objects.
+ * timestamping.setup — the setup project of the timestamping block (`@dev-tests`): the only creator of the block's shared
+ * objects.
  *
- * WHAT: one test that runs the preflight and the provisioning (utils/timestamping/provision/provision.ts) and ALWAYS
- * writes the run's summary (`summaryFile()`, mode 0600): `ready` with the provisioned sets, or `unavailable` with the
- * reason every timestamping test then skips with.
- * WHY: replaces development-environment `scripts/timestamping-setup.sh`; the objects are this run's (run-prefixed names,
- * ledger spec `timestamping/setup`), deleted by the block teardown right after the block and by the run-end teardown as
- * the safety net.
- * HOW: the first thing the test does is overwrite the summary with "not finished", so a killed or retried attempt never
- * leaves an older `ready` file (with older credentials) behind. A tier without timestamping is not a failure: the test
- * passes with an annotation of the reason. It fails on a refused body or identity, a failure of the required RSA
- * family, a programming error or a guard refusal (the summary then says so, and the original error is rethrown). The
- * guarded API is built only after the offline checks passed; it is the STRICT guard, on a shared tier and on a local stack alike
- * (tests/timestamping/SHARED-TIER.md), so a local green run exercises the rules a shared tier runs under. A second guard with the
- * `localStack` option is built on a proven local stack only, for the two requests the strict one refuses (provision.ts `localApi`).
- * A tier without the components ends in `unavailable` after reads only: the preflight creates nothing.
+ * One test runs the preflight and the provisioning and ALWAYS writes the run's summary: `ready`, or `unavailable` with the
+ * reason every timestamping test then skips with. The summary is overwritten with "not finished" first, so a killed or
+ * retried attempt never leaves an older `ready` file behind. The objects are this run's (ledger spec `timestamping/setup`);
+ * the block teardown deletes them. A tier without timestamping is not a failure: the test passes with an annotation. A
+ * refused body or identity, a failure of the required RSA family, a programming error or a guard refusal fails it.
+ * The guarded API is built only after the offline checks passed. It is the strict guard on every tier
+ * (tests/timestamping/SHARED-TIER.md); a second guard with `localStack` exists on a proven local stack only.
  */
 import { test as setup } from '../../fixtures/testFixtures';
 import { getAuthenticatedApiContext } from '../../utils/auth/apiContext';

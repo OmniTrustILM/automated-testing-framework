@@ -1,15 +1,12 @@
 /**
- * REG-CFG-08 — Role permissions in the permissions editor (release checklist: Configuration 8). ilm#427.
+ * REG-CFG-08 — Role permissions in the permissions editor (release checklist: Configuration 8; ilm#427).
  *
- * WHAT: 1. Roles → the run role → permissions editor: Certificates List, Detail, Create, Issue and RA Profiles List → Save → the
- *          API returns exactly those permissions, and the reloaded editor shows them.
- *       2. A fresh role: RA Profiles List at resource level, plus an object-level Detail and Members on one RA profile → Save →
- *          the resource level keeps List only and the object carries Detail and Members (it is not granted on every RA profile;
- *          fe-administrator#2283, fixed, guarded against its return).
- * WHY: a permission set on one object must not widen to the whole resource, and what the editor shows must be what the API stores.
- * HOW: create-only: only this suite's roles change (the run role, and a fresh role of this run recorded in the ledger before
- *      it is edited); the browser is not behind the API guard, so each role passes the live own-object check (`live`) first. The
- *      save request is captured and attached. The object-level check uses the run's own RA profile.
+ * Sets Certificates and RA Profiles permissions on the run role and checks that the API returns exactly those and the reloaded
+ * editor shows them. A fresh role gets RA Profiles List at resource level plus object-level Detail and Members on one RA
+ * profile; the object must not get them for every RA profile (fe-administrator#2283, fixed, guarded against its return).
+ *
+ * Create-only: only this suite's roles change, and each passes the live check first. A fresh role is recorded in the ledger
+ * before it is edited. The object-level check uses the run's own RA profile, so it needs a CA (skips without one).
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { RolePermissionsPage } from '../../../pages/RolePermissionsPage';

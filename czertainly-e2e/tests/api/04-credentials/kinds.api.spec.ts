@@ -1,19 +1,10 @@
 /**
- * API-GEN-41, API-GEN-42 — Credentials of the kinds ApiKey and SoftKeyStore. ilm#428.
+ * API-GEN-41, API-GEN-42 — Credentials of the kinds ApiKey and SoftKeyStore (ilm#428).
  *
- * WHAT: 1. (API-GEN-41, ApiKey) An own credential with valid attributes → 201; the detail shows the kind, the connector and the secret
- *          attributes without data, and the list lists it; the plain secrets are in no body; deleting it → 204, then 404.
- *       2. (API-GEN-41) Each required attribute left out in turn → 422 and nothing stays behind.
- *       3. (API-GEN-42, SoftKeyStore) The same two rows for a credential built from a PKCS#12 keystore the runner generates: type PKCS12,
- *          password and file.
- * WHY: the credential provider offers three kinds and only Basic had a test; a kind that cannot be created from its own definitions, or
- *      shows a secret in a detail or a list, is a defect the Basic rows do not show. A missing required attribute is refused by the
- *      connector and relayed as 422 (interfaces#898).
- * HOW: create-only on shared tiers with run-prefixed names; the attributes come from the live definitions of the kind, the secrets and
- *      the keystore are generated per run and logged nowhere. Every create goes through `createOwn` or a probe that records an accepted
- *      create in the ledger before any assertion, and a credential row that a refused create left behind is adopted by its unique name.
- *      A row skips with the named reason when no connected credential connector offers the kind (a read, before anything is written).
- *      Env: REG_CREDENTIAL_CONNECTOR (the connector to prefer).
+ * A missing required attribute is refused by the connector and relayed as 422 (interfaces#898). Create-only on shared
+ * tiers with run-prefixed names; generated secrets and keystores are logged nowhere. Every create is ledgered before any
+ * assertion. A row skips when no connected credential connector offers the kind. REG_CREDENTIAL_CONNECTOR picks the
+ * connector to prefer.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { deleteOwnAndProveGone, refused422 } from '../../../utils/regression/inventory/configProbes';

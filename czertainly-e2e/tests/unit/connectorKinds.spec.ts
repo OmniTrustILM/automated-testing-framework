@@ -1,14 +1,10 @@
 /**
  * connectorKinds — the connector finder, the shape readers and the needs that depend on which connectors a tier has.
  *
- * WHAT: `matchesSpec` and the readers of a connector detail (groups, interfaces, features, shape problems, the info shape, the inventory
- *       line); `findRegisteredConnector` and `findVaultConnector` against a loopback fake core; the needs `crypto-v1`, `vault-connector`,
- *       `ejbca-connector` and `adcs-connector`, each shown with a tier that meets it (undefined), one that does not (the named reason) and
- *       a read that fails (the resolver throws, so the test fails and does not skip).
- * WHY: a row that skips because a connector is absent must decide it from reads before it writes, and must not skip on a failed read; the
- *      read-only probe of the main flow relies on the shape readers to say what is wrong with a connector.
- * HOW: the fake core serves the connector list and the v2 details the test sets and answers 404 for every other path; nothing but GET
- *      reaches it.
+ * Checks `matchesSpec` and the connector detail readers, `findRegisteredConnector` and `findVaultConnector` against a
+ * loopback fake core, and the needs `crypto-v1`, `vault-connector`, `ejbca-connector` and `adcs-connector`. Each need is
+ * shown met (undefined), unmet (the named reason) and with a failed read (the resolver throws, so the test fails and does
+ * not skip). Only GET reaches the fake core; it answers 404 for paths the test did not set.
  */
 import { expect, test } from '@playwright/test';
 import type { GuardedApi } from '../../utils/regression/guard/types';

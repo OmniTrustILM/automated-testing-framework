@@ -1,12 +1,9 @@
 /**
- * raProfileValidation — RA-profile helpers of the required-attribute API spec.
+ * raProfileValidation — RA-profile helpers of the ra-profile-required-attribute API spec.
  *
- * WHAT: RA-profile helpers of the ra-profile-required-attribute API spec: the authority whose RA-profile schema has a required
- *       attribute (read-only), the missing / empty attribute arms, the texts core answers for them, and the create and
- *       validate probes (an accepted create is in the ledger before this returns).
- * WHY: The create form's required attribute is a server rule that must be probed without leaving objects behind.
- * HOW: Finds the authority whose schema has a required attribute (read-only), builds the missing and empty arms, and probes create and
- * validate; an accepted create is recorded before this returns.
+ * Finds the authority whose RA-profile schema has a required attribute (read-only), builds the missing and empty
+ * attribute arms, and has the texts core answers for them. Create and validate probes: an accepted create is in the
+ * ledger before the probe returns.
  */
 import type { APIRequestContext } from '@playwright/test';
 import { requestVersion } from '../attributeVersion';

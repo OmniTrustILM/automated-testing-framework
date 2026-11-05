@@ -1,21 +1,10 @@
 /**
  * resourceTypes — the registry of every ledger resource type the regression and API suites can create.
  *
- * WHAT: one entry per ledger type with everything the safety layers need to know about it: the step the teardown deletes it
- * in and the module whose handler deletes it, how its ownership is proven (a live read of the object's own name, or the
- * ledger line alone for an id-named type), how the non-interference snapshot sees it (a resource definition, an explicit
- * gap, or the type that covers it), and the path an own delete is allowed on, if any.
- *
- * WHY: a new type used to be added by hand to a delete-order table, a handler map, a live-read table, an id-named list, a
- * snapshot resource list and a gap list, and nothing proved that the lists agreed. Now a type is added here once; the tables
- * the teardown (`teardown/runTeardown.ts`), the ownership check (`ledger/ownership.ts`), the snapshot
- * (`teardown/snapshotModel.ts`) and `ownCrud.ts` use are derived from it, and `tests/unit/resourceTypes.spec.ts` checks that
- * every entry is complete. The guard's own tables (`guard/routes.ts`, `guard/allowLists.ts`) stay literal and deny-by-default;
- * a unit test checks that every type they name is a type of this registry.
- *
- * HOW: data only (no I/O, no handler code: a handler module is named by a key that `runTeardown` maps to an import). The
- * ARRAY ORDER is the delete order: entries are grouped by teardown step and, inside a step, deleted in the listed order
- * (dependants before what they depend on; the reference graph core enforces is `REFERENCED_BY` in runTeardown).
+ * One entry per type: the teardown step and handler that deletes it, how its ownership is proven, how the non-interference
+ * snapshot sees it, and the path an own delete is allowed on. A type is added here once; the other tables are derived from it
+ * and `tests/unit/resourceTypes.spec.ts` checks every entry. The guard's own tables stay literal and deny-by-default.
+ * The ARRAY ORDER is the delete order: dependants before what they depend on.
  */
 import { TIMESTAMPING_REGISTRY_ENTRIES } from '../timestamping/resourceTypes';
 import {

@@ -1,14 +1,11 @@
 /**
- * REG-CFG-01 — A Basic credential created on the Credentials page (release checklist: Configuration 1). ilm#436.
+ * REG-CFG-01 — A Basic credential created on the Credentials page (release checklist: Configuration 1; ilm#436).
  *
- * WHAT: 1. Credentials → + → Create Credential: name, the Common Credential Connector, kind Basic, user name and password.
- *       2. Create → the credential exists with kind Basic.
- *       3. Detail → the credential is shown and the password appears nowhere, neither on the page nor in the API detail.
- *       4. The same name again → refused ("already exists"); exactly one credential has that name.
- * WHY: credentials hold secrets used by connectors; the password must never come back and a name must be unique.
- * HOW: create-only: the password is random per run and nothing is deleted. The create answer is put in the ledger (`own.record`)
- *      before the dialog or the list is waited for; a duplicate the platform accepted is recorded too, so the test then fails on
- *      it. It is a credential of its own: no later spec reads it.
+ * Creates the credential, checks it exists with kind Basic, and that the password appears nowhere, neither on the page nor in
+ * the API detail. The same name again is refused, and exactly one credential has that name.
+ *
+ * Create-only: the password is random per run and nothing is deleted. The create answer is put in the ledger before the
+ * dialog or the list is waited for; a duplicate the platform accepted is recorded too, so the test then fails on it.
  */
 import { randomBytes } from 'node:crypto';
 import { expect, test } from '../../../fixtures/regressionFixtures';
@@ -46,7 +43,7 @@ test.describe('Credential configuration', { tag: tags.regression }, () => {
                 const answer = await submitRecordingByNameOnFailure({ type: 'credentials', name, spec: own.spec, lookup }, () => credentials.submitCreateForm());
                 // Ledger before assertion: from the create answer, before the dialog or the list is waited for.
                 const created = own.record('credentials', answer, { name });
-                await expect(credentials.createDialog.dialog).toBeHidden();
+                await expect(credentials.createCredentialDialog).toBeHidden();
                 await expect.poll(async () => (await findByName(api, '/api/v1/credentials', name))?.uuid ?? '').not.toBe('');
                 expect((await findByName(api, '/api/v1/credentials', name))!.kind).toBe('Basic');
                 return created.uuid;

@@ -1,15 +1,9 @@
 /**
  * projectFilters — the tier rules (`@local` exclusion, `@phaseB` switch) ANDed into every Playwright project.
  *
- * WHY: Playwright 1.58 resolves `grep` / `grepInvert` per project as `takeFirst(project, config)`: a project's own value
- * REPLACES the config-level one. A project with `grep: /@p1/` would silently drop a config-level `grepInvert: /@local/`
- * and the `@phaseB` grep. So the rules are not set on the config alone; `withTierFilters()` folds them into every
- * project as single RegExps:
- *   grep       = allOf(projectGrep, phaseBGrep)      (phaseBGrep only when REG_PHASE=B; not on infrastructure projects)
- *   grepInvert = anyOf(projectInvert, localInvert)    (localInvert unless TIER_KIND=local; on every project)
- * `describeLocalOnly()` stays as the second guard inside each `@local` spec.
- *
- * `resolveProjectFilters()` mirrors Playwright's takeFirst so a unit test can check what a config really selects.
+ * Playwright resolves `grep` / `grepInvert` per project, so a project's own value REPLACES the config-level one and would
+ * silently drop `grepInvert: /@local/`. `withTierFilters()` folds the rules into every project, so `@local` rows run only
+ * with TIER_KIND=local. `describeLocalOnly()` stays as the second guard inside each `@local` spec.
  */
 import { isLocalTier } from './tier/kind';
 import { settings } from './run/settings';

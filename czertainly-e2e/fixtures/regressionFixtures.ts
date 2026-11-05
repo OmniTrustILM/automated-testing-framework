@@ -1,26 +1,15 @@
 /**
- * regressionFixtures — the spec-facing fixtures of the REG-* and API-* suites, on top of the smoke-sized fixtures/testFixtures.ts.
+ * regressionFixtures — the fixtures of the REG-* and API-* specs, on top of fixtures/testFixtures.ts.
  *
- * WHAT: `test` is `testFixtures.test` plus seven fixtures, and `expect` is re-exported with it:
- *   - `needs`: `needs.require('ca', 'second-identity')`, or one method per need (`needs.ca()`, `needs.secondIdentity()`,
- *     `needs.v2Discovery()`; `needs.platformTriggersFree(EVENT.registered)`, `needs.registrationSettings({ minFailedAttempts: 3 })` and
- *     `needs.requiredAttributesFillable('raProfiles')` take what the row depends on): resolves what the test needs from READS and skips the
- *     test with the named reason of the first unmet need. The needs a test declares in `testMeta({ needs })` are resolved by an automatic
- *     fixture before any `own` or page call.
- *   - `own`: the own-object creators and ledger steps bound to the test's ledger id (`own.group('g1')`, `own.record('groups', answer)`,
- *     `own.recordNamed(cn, note)`, `own.deleted('groups', ref)`; utils/regression/ownObjects.ts).
- *   - `live`: `await live('roles', ref)` runs the live own-object check and returns the `LiveOwn` handle that page actions take.
- *   - `signedIn`: the admin page after the sign-in (the sign-in and sign-out specs keep their explicit logins).
- *   - `regressionEnv`: the typed reader of the REG_* / API_* settings.
- *   - `localApi`: the guarded API of a `@local` row on a proven local stack (the guard's `localStack` option).
- *   - `workerApi` (worker scope): the guarded API of the admin identity for a worker-scoped fixture, built through the same guard factory
- *     as `api` and kept for the worker; a worker fixture never builds a raw context.
- * WHY: a spec used to repeat the same choreography by hand: sign in inside the test, a `const SPEC` next to its `testMeta` id, the
- *      record-then-assert block after every submit, a skip decided differently in every file, a hand-built local-stack context in
- *      `beforeEach`. Each of these is a place where a safety step could be forgotten; here the step is the fixture's job.
- * HOW: fixtures are test-scoped and lazy: a test that does not name one never builds it. `testFixtures.ts` stays unchanged for the
- *      smoke suite, which must not load more than before. Every name is registered in the spec lint (utils/regression/specLint/rules.ts
- *      and bindings.ts) so that `test.use({ … })` cannot replace it and a mutation through `localApi` is judged like one through `api`.
+ * Adds to `test`:
+ *   - needs: skips the test, with the reason, when the tier lacks something it needs (a CA, a second user, …)
+ *   - own: creates the test's own objects and records them in the run ledger
+ *   - live: checks that an object belongs to this run before a page acts on it
+ *   - signedIn, regressionEnv: the signed-in admin page and the REG_* / API_* settings
+ *   - localApi: the guarded API for a `@local` row on a proven local stack (throws elsewhere); workerApi: the guarded
+ *     admin API for worker-scoped fixtures
+ *
+ * Every fixture name is registered in the spec lint, so a spec cannot replace it.
  */
 import type { APIRequestContext, Page, TestInfo } from '@playwright/test';
 import { ledgerSpecOf, loginAsSmokeUser, test as testFixtures } from './testFixtures';

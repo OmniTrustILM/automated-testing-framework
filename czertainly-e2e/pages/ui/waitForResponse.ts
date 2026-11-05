@@ -1,10 +1,9 @@
 /**
  * waitForResponse — act, then wait for the API answer.
  *
- * WHAT: act, then wait for the API answer: the one place that runs an action and returns the response it caused.
- * WHY: the wait is registered before the action, so a fast answer is never missed.
- * HOW: method and path of the call match the response; `UUID` is the shared pattern for an id in a path; `answerFrom` reads
- *       a response into the one `ApiAnswer` shape.
+ * The one place that runs an action and returns the response it caused. The wait is registered before the action, so a
+ * fast answer is never missed. Provides `UUID`, the shared pattern for an id in a path, and `answerFrom`, which reads
+ * a response into the one `ApiAnswer` shape.
  */
 import type { Page, Response } from '@playwright/test';
 import { ApiAnswer, answerOf } from '../../utils/regression/apiReads';
@@ -58,4 +57,20 @@ export async function answerFrom(response: Response, startedAt: number): Promise
         text = '';
     }
     return answerOf({ status: () => response.status(), headers: () => response.headers(), text: async () => text }, startedAt);
+}
+
+/** Runs `act` and returns the API answer it caused in the `ApiAnswer` shape, timed from just before `act`. */
+export async function actAndReadAnswer(page: Page, call: ApiCall, act: () => Promise<unknown>): Promise<ApiAnswer> {
+    const startedAt = Date.now();
+    return answerFrom(await actAndWaitForApi(page, call, act), startedAt);
+}
+
+/** The answer of a lifecycle request, with the uuid of the successor certificate when the answer names one. */
+export type AnswerWithUuid = ApiAnswer & { uuid?: string };
+
+/** `actAndReadAnswer`, plus the uuid its JSON body names. */
+export async function actAndReadAnswerWithUuid(page: Page, call: ApiCall, act: () => Promise<unknown>): Promise<AnswerWithUuid> {
+    const answer = await actAndReadAnswer(page, call, act);
+    const uuid = (answer.json as { uuid?: unknown } | undefined)?.uuid;
+    return { ...answer, uuid: typeof uuid === 'string' ? uuid : undefined };
 }

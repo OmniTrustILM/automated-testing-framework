@@ -1,16 +1,14 @@
 /**
  * certificateTeardownCalls — the three platform calls the certificate and discovery teardown handlers make.
  *
- * WHAT: `revokeThroughAuthority` (the v2 revoke of a certificate through its RA profile), `waitUntilRevoked` (poll the
- * certificate until its state is `revoked`) and `listNewlyDiscoveredInventoryUuids` (the inventory certificates a discovery
- * added as new).
+ * Provides:
+ *   - `revokeThroughAuthority`: the v2 revoke of a certificate through its RA profile
+ *   - `waitUntilRevoked`: polls the certificate until its state is `revoked`; this is `waitForCertificateState`
+ *     (wait/certificateState.ts), which fails fast and names the last state, the newest history entries and the elapsed time
+ *   - `listNewlyDiscoveredInventoryUuids`: the inventory certificates a discovery added as new
  *
- * WHY: the run-end teardown belongs to the regression framework and depends on nothing in the smoke-era `utils/*Utils.ts`
- * modules; the calls it needs live here, next to the handlers that use them.
- *
- * HOW: plain requests with the context the handler was given (no guard: the handler's own-object check ran before). The
- * revoked wait is `waitForCertificateState` of `wait/certificateState.ts`, which fails fast instead of waiting out the
- * timeout and names the last state, the newest history entries and the elapsed time in its error.
+ * The run-end teardown depends on nothing in the smoke-era `utils/*Utils.ts` modules, so the calls live here. They are plain
+ * requests with the context the handler was given (no guard: the handler's own-object check ran before).
  */
 import type { APIRequestContext } from '@playwright/test';
 import { Logger } from '../../Logger';

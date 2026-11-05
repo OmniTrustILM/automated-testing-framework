@@ -1,27 +1,12 @@
 /**
- * The guard — wraps an APIRequestContext so that nothing the run did not create can be changed.
+ * createGuard — wraps an APIRequestContext so that nothing the run did not create can be changed.
  *
- * WHAT: `guardApi` (and `getGuardedApiContext`, which wraps the authenticated context) returns a GuardedApi whose
- * `get`, `post`, `put`, `patch`, `delete` and `fetch` judge every request before sending it. A refusal is an
- * OwnObjectViolation whose `kind` says why: `ownership` (not this run's object), `derived` (an object the platform
- * made for a run object, e.g. a key or an onboarded certificate), `request` (the URL, options, headers, body format, a
- * non-canonical uuid, a platform endpoint, a name-keyed path, a path-less mutation off the allow-lists) or
- * `not-guarded` (a raw context in a mutating helper).
- * WHY: shared tiers are create-only. Deny by default: a request is sent only when a rule lets it through, and a rule
- * that is missing refuses. The guard judges what is SENT, and sends what it judged: it reads every request input once
- * into a snapshot (the URL string, the method, each allowed option, each header, each `params` entry, the body
- * serialised once), judges the snapshot and hands Playwright only the snapshot. Getters, `toJSON`, Proxies, stateful
- * `toString`s and Request objects are never read twice (a Request object is refused), and an option the guard does not
- * know never reaches Playwright. A string body is sent as Playwright sends it under `application/json` (as written when
- * it parses as JSON, else re-quoted) and judged as exactly that; a Buffer is sent byte for byte; a string or Buffer
- * under `text/plain` is sent as written and judged as raw text.
- * HOW: this module only wires the steps, one module each. The rules are listed once, where they are applied:
- * readRequest.ts (rules a–d and the snapshot) and checkRequest.ts (the GET and probe rules, rules 1–7, the approval
- * rules and `localStack`); claims.ts holds the ownership claims, sendRequest.ts the only function that sends (it checks
- * first), guardState.ts what the context keeps. `probeUuid()` returns a fresh random uuid the guard accepts as a
- * mutation target, for negative cases that must answer 404; it cannot name an existing object. The ledger, run id, tier
- * identity and environment the guard judges against are the process's own; unit tests inject them through
- * `guardApiWithSeams` and `judgeWithSeams` only (the spec lint refuses those names outside tests/unit).
+ * Every request (`get`, `post`, `put`, `patch`, `delete`, `fetch`) is judged before it is sent. Shared tiers are create-only
+ * and the guard denies by default: a request goes out only when a rule lets it through. A refusal is an OwnObjectViolation
+ * (kind `ownership`, `derived`, `request` or `not-guarded`).
+ *
+ * The guard sends exactly what it judged: the input is read once into a snapshot and Playwright gets only the snapshot.
+ * `probeUuid()` gives a random uuid the guard accepts as a target, for negative cases that must answer 404.
  */
 import { getAuthenticatedApiContext } from '../../auth/apiContext';
 import { GuardState, STATES } from './guardState';

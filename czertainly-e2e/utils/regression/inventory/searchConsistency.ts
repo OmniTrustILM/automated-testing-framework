@@ -1,12 +1,9 @@
 /**
- * searchConsistency — relations between certificate searches.
+ * searchConsistency — relations between certificate searches that hold over whatever data a tier holds.
  *
- * WHAT: Relations between certificate searches that hold over whatever data a tier holds (no exact counts): empty plus not
- *       empty is the total, equals plus not equals is the total, a second AND filter never widens, contradicting filters give 0.
- *       Pure logic over a `count(filters)` callback; one re-read absorbs a concurrent change, a second mismatch fails.
- * WHY: Some search rules hold for any data: empty plus not empty is the total, equals plus not equals is the total, a second AND never
- * widens.
- * HOW: Pure logic over a `count(filters)` callback; one re-read absorbs a concurrent change and a second mismatch fails.
+ * Checks, with no exact counts: empty plus not empty is the total, equals plus not equals is the total, a second AND
+ * filter never widens, contradicting filters give 0. Pure logic over a `count(filters)` callback; one re-read absorbs a
+ * concurrent change, a second mismatch fails.
  */
 import type { CatalogueField, CatalogueGroup, Filter } from './searchApi';
 

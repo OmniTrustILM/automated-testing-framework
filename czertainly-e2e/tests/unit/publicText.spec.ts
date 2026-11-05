@@ -1,10 +1,10 @@
 /**
  * publicText — the public-text lint (utils/regression/publicText.ts) over comments, titles, messages, rules and docs.
  *
- * WHAT: no private shorthand, tool or model names or local paths; each pattern class is caught, ordinary words and the
- *       allow-listed public ids are not; no file name under the scanned folders carries a round or batch marker.
- * WHY: the repository is public; a private id or path in a comment or a title must fail before it is pushed.
- * HOW: hand-made source strings go through `publicTextHitsIn`, and the allow-list entries are checked against their exact files.
+ * Checks that private shorthand, tool or model names and local paths are caught, each pattern class included, while
+ * ordinary words and the allow-listed public ids are not; and that no file name under the scanned folders carries a round
+ * or batch marker. The repository is public, so a private id or path in a comment or a title must fail before it is
+ * pushed. Hand-made source strings go through `publicTextHitsIn`; the allow-list entries are checked against their exact files.
  */
 import { test, expect } from '@playwright/test';
 import * as path from 'path';

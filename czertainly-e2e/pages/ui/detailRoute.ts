@@ -1,21 +1,14 @@
 /**
  * detailRoute — a create form's submit and the detail route it leaves behind.
  *
- * WHAT: `submitCreate` clicks the Create button of a form scope and returns the create request's answer (the `CreateAnswer` of
- *       `createAnswer.ts`: status, uuid, request, body and the shared `ApiAnswer`, formerly `CreateOutcome`); the later
- *       `waitForDetailRoute` waits for the redirect to `#/<route>/detail/<uuid>`; `uuidFromHash` reads the uuid out of that route (the
- *       second uuid of a two-id route with `segments: 2`, the version of a versioned route with `version: true`; a trailing tab or query is
- *       allowed).
- * WHY: the answer comes first so that the spec writes the ledger line from it before any wait for the redirect: an
- *      object created on a shared tier must be on the ledger even when the page never redirects. The pages share one
- *      submit and one uuid reader instead of four click-and-wait copies and five regexes.
- * HOW: `submitCreate` builds on `createAnswerFrom` (wait registered before the click, uuid from the answer body); the
- *      route readers match a canonical uuid (8-4-4-4-12 hex) only, so a truncated id or a stray `-` is never taken.
+ * Provides `submitCreate` (clicks Create and returns the create answer), `waitForDetailRoute` (waits for the redirect to
+ * the detail route) and `uuidFromHash` (reads the uuid from that route).
+ *
+ * The answer comes first, so the spec writes the ledger line before any wait for the redirect.
  */
 import type { Locator, Page } from '@playwright/test';
 import { expect } from '@playwright/test';
 import { CreateAnswer, createAnswerFrom } from './createAnswer';
-import { submitButtonOf } from './form';
 import { ApiCall } from './waitForResponse';
 
 /** A canonical uuid: 8-4-4-4-12 hex digits. */
@@ -60,13 +53,12 @@ export interface SubmitCreateOptions {
 }
 
 /**
- * Clicks the submit button of `scope` and returns the answer of the create request (`POST` to `endpoint`): status, the new
+ * Clicks the form's Create button and returns the answer of the create request (`POST` to `endpoint`): status, the new
  * uuid, the request and its body. The wait is registered before the click; the redirect is NOT waited for: record the
  * ledger line from the answer first, then `waitForDetailRoute`.
  */
-export async function submitCreate(page: Page, scope: Locator, options: SubmitCreateOptions): Promise<CreateAnswer> {
-    const button = submitButtonOf(scope);
-    return createAnswerFrom(page, { method: 'POST', path: options.endpoint, timeout: options.timeout }, () => (options.doubleClick ? button.dblclick() : button.click()));
+export async function submitCreate(page: Page, createButton: Locator, options: SubmitCreateOptions): Promise<CreateAnswer> {
+    return createAnswerFrom(page, { method: 'POST', path: options.endpoint, timeout: options.timeout }, () => (options.doubleClick ? createButton.dblclick() : createButton.click()));
 }
 
 /** Waits for the redirect to `#/<route>/detail/<uuid>` (the form's last act) and returns that uuid. Call it AFTER the ledger line. */
