@@ -10,6 +10,7 @@ import { ensureRunRole } from '../../../utils/regression/ownRoles';
 import { setOwnUserRoles } from '../../../utils/regression/ownUsers';
 import { findByName } from '../../../utils/regression/listReads';
 import { ownName } from '../../../utils/regression/ledger/runState';
+import { fullListRow } from '../../../utils/regression/ledger/ownership';
 import { lookupInList, submitRecordingByNameOnFailure } from '../../../utils/regression/ledger/uiCreates';
 import { testMeta, tags } from '../../../utils/regression/tags';
 import { LIST_STATE_MS } from '../../../utils/regression/timeouts';
@@ -139,11 +140,9 @@ test.describe('User with a role', { tag: tags.regression }, () => {
                 await expect(users.deleteUserDialog).toBeHidden();
             });
 
-            await test.step('API: the users list no longer names it (the list itself is not empty)', async () => {
-                await expect.poll(async () => {
-                    const all = await apiJson<Array<{ uuid: string }>>(api, 'GET', '/api/v1/users');
-                    return all.length > 0 && !all.some((u) => u.uuid === user.uuid);
-                }, { timeout: LIST_STATE_MS }).toBe(true);
+            await test.step('API: the full users list no longer names it (not empty, below its cap)', async () => {
+                const gone = async () => (await fullListRow(api, 'users', user.uuid)) === undefined;
+                await expect.poll(gone, { timeout: LIST_STATE_MS }).toBe(true);
                 own.deleted('users', user, 'deleted through the UI (the behaviour under test)');
             });
 

@@ -2,10 +2,12 @@
 import type { APIRequestContext } from '@playwright/test';
 import { readJsonOk, readAnswer } from './inventory/searchApi';
 import { JsonObject } from './json';
+import { assertFullList } from './ledger/ownership';
 
 export async function rowsNamed(api: APIRequestContext, listUrl: string, value: string, key = 'name'): Promise<JsonObject[]> {
     const rows = readJsonOk<JsonObject[]>(await readAnswer(api, listUrl), `GET ${listUrl}`);
     if (!Array.isArray(rows)) throw new Error(`GET ${listUrl} did not answer a list`);
+    assertFullList(listUrl, rows, `rows by ${key}`);
     return rows.filter((r) => r?.[key] === value);
 }
 

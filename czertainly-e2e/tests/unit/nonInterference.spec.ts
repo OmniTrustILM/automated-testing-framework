@@ -420,3 +420,16 @@ test('keys: a straddler whose detail answers 404 is dropped with a note the comp
     expect(r.notes).toEqual([`before: keys: ${cutPair.uuid} vanished between the search and its detail read; not compared`]);
     expect(r.notes.join(), 'uuid only').not.toMatch(/token key/);
 });
+
+test('a users or roles list at its cap or empty is an unreadable resource, never a partial snapshot', async () => {
+    const reply = (status: number, body: unknown) => ({ status: () => status, text: async () => JSON.stringify(body) });
+    const rows = (n: number) => Array.from({ length: n }, (_, i) => ({ uuid: `u${i}`, username: `user-${i}`, name: `role-${i}`, enabled: true }));
+    const listing = (users: unknown[], roles: unknown[]) => fakeContext({
+        fetch: async (url: string) => reply(200, url === '/api/v1/users' ? users : url === '/api/v1/roles' ? roles : []),
+    });
+    const capped = await snapshotTier(listing(rows(1000), []), { only: ['users', 'roles'], runId: RUN, env: {} });
+    expect(capped.resources.users.error).toBe('Error: users: /api/v1/users answered 1000 rows (one page holds at most 1000); it may be truncated and proves nothing');
+    expect(capped.resources.roles.error).toBe('Error: roles: /api/v1/roles answered an empty list; it proves nothing');
+    const read = await snapshotTier(listing(rows(999), rows(3)), { only: ['users', 'roles'], runId: RUN, env: {} });
+    expect([read.resources.users.total, read.resources.users.error, read.resources.roles.total, read.resources.roles.error]).toEqual([999, undefined, 3, undefined]);
+});

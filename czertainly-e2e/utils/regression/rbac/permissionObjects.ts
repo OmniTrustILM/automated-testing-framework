@@ -4,7 +4,7 @@
  */
 
 import { APIRequestContext, expect } from '@playwright/test';
-import { PermissionDocument, readPermissions, replaceOwnUserRoles, saveOwnPermissions, setOwnUserEnabled } from './authApi';
+import { listAll, PermissionDocument, readPermissions, replaceOwnUserRoles, saveOwnPermissions, setOwnUserEnabled } from './authApi';
 import { callAs, Credentials, parseProfile, Profile } from './identities';
 import { GuardedApi } from '../guard/types';
 import { selfSignedPem } from '../pkiBuilders';
@@ -90,7 +90,7 @@ export async function ensureRbacObjects(api: GuardedApi, spec: string): Promise<
 }
 
 export async function auditorDocument(api: APIRequestContext): Promise<PermissionDocument> {
-    const roles = await apiJson<JsonObject[]>(api, 'GET', '/api/v1/roles');
+    const roles = await listAll(api, 'roles');
     const auditor = roles.find((r) => r.name === 'auditor');
     if (!auditor) throw new Error('the auditor system role is not listed (API-AUTH-23 seeds it); F6 cannot be derived');
     const stored = await readPermissions(api, String(auditor.uuid));
@@ -129,7 +129,7 @@ export class RestrictedUserNotOwn extends Error {
 export async function ensureRestrictedUser(api: GuardedApi, spec: string, dedicatedUser: Credentials): Promise<OwnRef> {
     const known = ledgerRef('users', dedicatedUser.username);
     if (known) return known;
-    const rows = (await apiJson<JsonObject[]>(api, 'GET', '/api/v1/users')).filter((u) => String(u.username).toLowerCase() === dedicatedUser.username.toLowerCase());
+    const rows = (await listAll(api, 'users')).filter((u) => String(u.username).toLowerCase() === dedicatedUser.username.toLowerCase());
     if (rows.length) {
         throw new RestrictedUserNotOwn();
     }

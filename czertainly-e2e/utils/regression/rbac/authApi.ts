@@ -6,7 +6,7 @@
 import { APIRequestContext, APIResponse, expect } from '@playwright/test';
 import { GuardedApi, assertGuarded } from '../guard/types';
 import { assertNotCaller } from './identities';
-import { assertOwnLive } from '../ledger/ownership';
+import { assertFullList, assertOwnLive } from '../ledger/ownership';
 import { ApiAnswer, answerOf, apiJson } from '../apiReads';
 import { requiredCustomAttributes } from '../customAttributes';
 import { probeCollectionCreate, deleteOwn } from '../ownCrud';
@@ -40,7 +40,9 @@ export async function roleUserUuids(api: APIRequestContext, roleUuid: string): P
 }
 
 export async function listAll(api: APIRequestContext, kind: 'users' | 'roles'): Promise<JsonObject[]> {
-    return apiJson<JsonObject[]>(api, 'GET', `/api/v1/${kind}`);
+    const rows = await apiJson<JsonObject[]>(api, 'GET', `/api/v1/${kind}`);
+    assertFullList(`/api/v1/${kind}`, rows, `the ${kind} list`);
+    return rows;
 }
 
 /** `POST /v1/users` for a username, answer returned (never asserted); a 2xx answer is recorded before this returns. */

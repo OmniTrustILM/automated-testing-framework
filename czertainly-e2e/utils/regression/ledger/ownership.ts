@@ -211,6 +211,21 @@ export function fullListOf(type: string | undefined): { listUrl: string; bug: st
     return typeof type === 'string' && Object.hasOwn(FULL_LIST_TYPES, type) ? FULL_LIST_TYPES[type] : undefined;
 }
 
+/** Throws when a roles or users list proves nothing (not a list, at the cap, empty, a row without a string uuid); other lists pass. */
+export function assertFullList(listUrl: string, rows: unknown, what: string): void {
+    const listPath = new URL(listUrl, 'http://list.invalid').pathname.replace(/\/+$/, '');
+    const spec = Object.values(FULL_LIST_TYPES).find((s) => s.listUrl === listPath);
+    if (!spec) return;
+    if (!Array.isArray(rows)) throw new Error(`${what}: ${listUrl} did not answer a list`);
+    if (rows.length >= spec.cap) {
+        throw new Error(`${what}: ${listUrl} answered ${rows.length} rows (one page holds at most ${spec.cap}); it may be truncated and proves nothing`);
+    }
+    if (rows.length === 0) throw new Error(`${what}: ${listUrl} answered an empty list; it proves nothing`);
+    if (!rows.every((r) => typeof (r as JsonObject | null)?.uuid === 'string')) {
+        throw new Error(`${what}: ${listUrl} answered rows without a string uuid; it proves nothing`);
+    }
+}
+
 /** The row of `uuid` in the full list, or undefined when not named; throws when the list proves nothing (unreadable, capped, empty). */
 export async function fullListRow(api: Pick<APIRequestContext, 'get'>, type: string, uuid: string): Promise<JsonObject | undefined> {
     const spec = fullListOf(type);
@@ -218,14 +233,7 @@ export async function fullListRow(api: Pick<APIRequestContext, 'get'>, type: str
     const res = await api.get(spec.listUrl);
     if (!res.ok()) throw new Error(`${type} ${uuid}: the authoritative list ${spec.listUrl} answered ${res.status()}`);
     const rows = (await res.json()) as unknown;
-    if (!Array.isArray(rows)) throw new Error(`${type} ${uuid}: ${spec.listUrl} did not answer a list`);
-    if (rows.length >= spec.cap) {
-        throw new Error(`${type} ${uuid}: ${spec.listUrl} answered ${rows.length} rows (one page holds at most ${spec.cap}); it may be truncated and proves nothing`);
-    }
-    if (rows.length === 0) throw new Error(`${type} ${uuid}: ${spec.listUrl} answered an empty list; it proves nothing`);
-    if (!rows.every((r) => typeof (r as JsonObject | null)?.uuid === 'string')) {
-        throw new Error(`${type} ${uuid}: ${spec.listUrl} answered rows without a string uuid; it proves nothing`);
-    }
+    assertFullList(spec.listUrl, rows, `${type} ${uuid}`);
     const wanted = uuid.toLowerCase();
     return (rows as JsonObject[]).find((r) => typeof r?.uuid === 'string' && r.uuid.toLowerCase() === wanted);
 }
