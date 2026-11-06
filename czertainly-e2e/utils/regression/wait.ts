@@ -15,7 +15,7 @@ export interface WaitOptions {
 export interface PollOptions extends WaitOptions {
     /**
      * `throw` (default): a wait that runs out raises an error naming `what`; `return`: returns the last value read so the caller can assert
-     * on it (the last error is raised when no read ever succeeded).
+     * on it (the last error is raised when every read or check threw).
      */
     onTimeout?: 'throw' | 'return';
 }
@@ -39,9 +39,10 @@ export async function pollUntil<T>(read: () => Promise<T>, done: (value: T) => b
         reads += 1;
         try {
             last = await read();
+            const finished = done(last);
             succeeded = true;
             failures = 0;
-            if (done(last)) return last;
+            if (finished) return last;
         } catch (e) {
             failures += 1;
             lastError = e;

@@ -254,6 +254,23 @@ test('core\'s secret body (secret polymorphic on type), and the credential provi
     expect(found, 'the space-spelled credential provider wins over the first connected connector').toMatchObject({ uuid: 'c2', interfaceUuid: 'i2' });
 });
 
+test('a disconnected named connector or credential provider v2 never wins over a connected provider', async () => {
+    const provider = [{ functionGroupCode: 'credentialProvider' }];
+    const rows = [
+        { uuid: 'c1', name: 'Named-Provider', status: 'offline', functionGroups: provider },
+        { uuid: 'c2', name: 'Common-Credential-Connector-v2', status: 'failed', functionGroups: provider },
+        { uuid: 'c3', name: 'Other-Provider', status: 'connected', functionGroups: provider },
+    ];
+    const { api, calls } = fakeApi((c) => {
+        if (c.url === '/api/v1/connectors') return { status: 200, body: rows };
+        const uuid = c.url.split('/').pop();
+        return { status: 200, body: { interfaces: [{ uuid: `i-${uuid}`, code: 'secret' }] } };
+    });
+    const found = await findConnectorWithInterface(partialOf<APIRequestContext>(api), /^secret/i, { REG_SECRET_CONNECTOR: 'Named-Provider' } as NodeJS.ProcessEnv);
+    expect(found, 'the connected provider is picked').toMatchObject({ uuid: 'c3', interfaceUuid: 'i-c3' });
+    expect(calls.map((c) => c.url), 'disconnected connectors are not read').toEqual(['/api/v1/connectors', '/api/v2/connectors/c3']);
+});
+
 {
     function fakeApi(handler: (url: string) => { status: number; body?: unknown }) {
         const calls: string[] = [];
