@@ -7,7 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { parseFlag } from '../../utils/regression/run/flags';
 import {
-    absenceOf, assertOwn, assertOwnLive, cachedLedger, carriesRunPrefix, derivedDeletable, fullListRow, ID_NAMED, isOwnObject, WorkaroundNote, LiveObjectMissing, mayDeleteOwn, OwnObjectViolation, checkOwnership,
+    absenceOf, assertFullList, assertOwn, assertOwnLive, cachedLedger, carriesRunPrefix, derivedDeletable, fullListRow, ID_NAMED, isOwnObject, WorkaroundNote, LiveObjectMissing, mayDeleteOwn, OwnObjectViolation, checkOwnership,
     resetLedgerCacheForTests, restrictedUsername,
 } from '../../utils/regression/ledger/ownership';
 import { createdAfterMarker, LedgerLine, parseLedger, serverDate } from '../../utils/regression/ledger/ledger';
@@ -208,6 +208,22 @@ test('absenceOf: 404 proves absence; a 5xx only via the full role or user list; 
     const capped = pathApi({ '/api/v1/users': { status: 200, body: Array.from({ length: 1000 }, (_, i) => ({ uuid: `u-${i}` })) } });
     await expect(fullListRow(capped.api, 'users', 'x')).rejects.toThrow(/1000 rows .*may be truncated/);
     await expect(fullListRow(capped.api, 'groups', 'x')).rejects.toThrow(/no authoritative full list/);
+});
+
+test('assertFullList: a roles or users list at the cap, empty, not a list or with a row without a uuid proves nothing; other lists pass', () => {
+    const rows = (n: number) => Array.from({ length: n }, (_, i) => ({ uuid: `u-${i}` }));
+    expect(() => assertFullList('/api/v1/users', rows(999), 'w')).not.toThrow();
+    expect(() => assertFullList('/api/v1/users', rows(1000), 'w')).toThrow('w: /api/v1/users answered 1000 rows (one page holds at most 1000); it may be truncated and proves nothing');
+    expect(() => assertFullList('/api/v1/roles', [], 'w')).toThrow('w: /api/v1/roles answered an empty list; it proves nothing');
+    expect(() => assertFullList('/api/v1/roles', { roles: [] }, 'w')).toThrow('w: /api/v1/roles did not answer a list');
+    expect(() => assertFullList('/api/v1/roles', [{ uuid: 'r-1' }, { name: 'admin' }], 'w')).toThrow(/without a string uuid/);
+    for (const spelling of ['/api/v1/users/', '/api/v1/users?itemsPerPage=5', 'https://tier.example.test/api/v1/users']) {
+        expect(() => assertFullList(spelling, rows(1000), 'w'), spelling).toThrow(/may be truncated/);
+    }
+    for (const other of ['/api/v1/groups', '/api/v1/credentials', '/api/v1/users/u-1/roles']) {
+        expect(() => assertFullList(other, rows(1000), 'w')).not.toThrow();
+        expect(() => assertFullList(other, [], 'w')).not.toThrow();
+    }
 });
 
 test('createdAfter comes from the server clock minus the margin and the request time', () => {

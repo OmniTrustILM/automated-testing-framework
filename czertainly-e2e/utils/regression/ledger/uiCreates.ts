@@ -6,7 +6,7 @@
 import type { APIRequestContext } from '@playwright/test';
 import { Logger } from '../../Logger';
 import { currentRunId } from '../run/runId';
-import { checkOwnership } from './ownership';
+import { assertFullList, checkOwnership } from './ownership';
 import { LedgerLine, OwnRef, recordCreated } from './ledger';
 
 const logger = new Logger('UiCreates');
@@ -67,6 +67,7 @@ export const lookupInList = (api: APIRequestContext, listUrl: string, key = 'nam
     if (!res.ok()) throw new Error(`GET ${listUrl} answered ${res.status()}`);
     const rows = (await res.json()) as Array<Record<string, unknown>>;
     if (!Array.isArray(rows)) throw new Error(`GET ${listUrl} did not answer a list`);
+    assertFullList(listUrl, rows, `lookup by ${key}`);
     return { rows: rows.filter((r) => r[key] === name && r.uuid !== undefined).map((r) => rowOf(r, createdKey)), serverNow: serverClock(res), readAt: readAt };
 };
 

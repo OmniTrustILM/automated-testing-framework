@@ -8,6 +8,7 @@ import * as path from 'path';
 import { Logger } from '../../Logger';
 import { currentRunId } from '../run/runId';
 import { tierIdentity } from '../tier/kind';
+import { assertFullList } from '../ledger/ownership';
 import { SNAPSHOT_RESOURCES } from '../resourceTypes';
 import {
     canonicalJson, descriptionOf, isRunNamed, ItemMark, NEWEST_ROWS_SAMPLED, OLDEST_ROWS_CHECKED, PAGE, REQUIRED_RESOURCES,
@@ -94,6 +95,7 @@ async function readAllSearch(api: SnapshotReader, def: ResourceDef): Promise<Rea
 
 async function readList(api: SnapshotReader, def: ResourceDef): Promise<ReadRows> {
     const list: JsonObject[] = await get(api, 'GET', def.path);
+    assertFullList(def.path, list, def.type);
     return { items: list ?? [], total: (list ?? []).length };
 }
 

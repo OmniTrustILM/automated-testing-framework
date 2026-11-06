@@ -3,7 +3,7 @@
  */
 import { APIRequestContext, expect, test } from '@playwright/test';
 import * as forge from 'node-forge';
-import { probeRole, probeUser, replaceOwnRoleUsers, replaceOwnUserRoles, roleUserUuids, saveOwnPermissions, setOwnUserEnabled, updateOwnRole, updateOwnUser, userRoleUuids, addOwnUserRole, removeOwnUserRole, readPermissions, deleteOwnUserOrRole } from '../../utils/regression/rbac/authApi';
+import { probeRole, probeUser, replaceOwnRoleUsers, replaceOwnUserRoles, roleUserUuids, saveOwnPermissions, setOwnUserEnabled, updateOwnRole, updateOwnUser, userRoleUuids, addOwnUserRole, removeOwnUserRole, readPermissions, deleteOwnUserOrRole, listAll } from '../../utils/regression/rbac/authApi';
 import { usersOrRolesNamed } from '../../utils/regression/listReads';
 import { GuardedApi } from '../../utils/regression/guard/types';
 import { callAs, callWithAuthorization } from '../../utils/regression/rbac/identities';
@@ -380,12 +380,26 @@ test('ensureRestrictedUser: a user of that name this run did not create is not a
     expect(wire()).toEqual([]);
     expect(readLedger().filter((l) => l.type === 'users')).toEqual([]);
     // Any other error is not turned into a skip.
-    core.users.clear();
+    core.users.delete(U(901));
     core.duplicateStatus = 500;
     const skipped: string[] = [];
     const ref = await ensureRestrictedUserOrSkip(api, 'T', dedicatedUser, (r) => skipped.push(r));
     expect(ref.name).toBe(dedicatedUser.username);
     expect(skipped).toEqual([]);
+});
+
+test('a users or roles list at its cap or empty proves nothing: the list reads, the DED user lookup and a delete read-back throw', async () => {
+    const user = await createOwnUser(api, 'T', 'capped');
+    for (let i = 0; i < 999; i++) core.users.set(U(5000 + i), { uuid: U(5000 + i), username: `someone-${i}`, enabled: true, roles: [] });
+    expect(core.users.size).toBe(1001);
+    server.reset();
+    await expect(usersOrRolesNamed(api, 'users', user.name)).rejects.toThrow(/answered 1001 rows .*may be truncated/);
+    await expect(ensureRestrictedUser(api, 'T', { username: 'qa-restricted-account', password: GEN_PW_1 })).rejects.toThrow(/the users list: \/api\/v1\/users answered 1001 rows/);
+    expect(wire(), 'no DED user is created on a list that proves nothing').toEqual([]);
+    await expect(deleteOwnUserOrRole(api, 'users', user, 'T', 'unit')).rejects.toThrow(/answered 1000 rows .*may be truncated/);
+    expect(readLedger().filter((l) => l.uuid === user.uuid).map((l) => l.event), 'no `deleted` line without a proof').toEqual(['created']);
+    core.roles.clear();
+    await expect(listAll(api, 'roles')).rejects.toThrow('the roles list: /api/v1/roles answered an empty list; it proves nothing');
 });
 
 test('applyFixture: the fixture role is built from its document, becomes DED\'s only role and the barrier sees it in force; the next fixture replaces it', async () => {

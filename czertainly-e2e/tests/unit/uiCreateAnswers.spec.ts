@@ -9,7 +9,7 @@ import { submitCreate } from '../../pages/ui/detailRoute';
 import { ledgerFile, readLedger } from '../../utils/regression/ledger/ledger';
 import { loopbackServer } from './helpers/loopbackServer';
 import { currentRunId } from '../../utils/regression/run/runId';
-import { lookupDiscovery, lookupKey, recordIfCreated, recordUiCreate, submitRecordingByNameOnFailure } from '../../utils/regression/ledger/uiCreates';
+import { lookupDiscovery, lookupInList, lookupKey, recordIfCreated, recordUiCreate, submitRecordingByNameOnFailure } from '../../utils/regression/ledger/uiCreates';
 
 const U1 = '0b1e8a52-4c3f-4d6e-9a7b-1c2d3e4f5a01';
 const U2 = '0b1e8a52-4c3f-4d6e-9a7b-1c2d3e4f5a02';
@@ -169,6 +169,22 @@ test('lookupKey and lookupDiscovery read every page and return every row of the 
         const discoveries = await lookupDiscovery(api as never)('wanted');
         expect(discoveries.rows.map((r) => r.uuid)).toEqual([U2, U3]);
         expect(discoveries.rows[0].createdAt).toBe('2026-10-22T10:01:00Z');
+    } finally {
+        await api.dispose();
+        await server.close();
+    }
+});
+
+test('lookupInList: a users or roles list at its cap or empty throws instead of finding nothing; other lists are read as they are', async () => {
+    const rows = (n: number) => Array.from({ length: n }, (_, i) => ({ uuid: `u-${i}`, name: `row-${i}`, username: `row-${i}` }));
+    const lists: Record<string, unknown[]> = { '/api/v1/users': rows(1000), '/api/v1/roles': [], '/api/v1/groups': rows(1000) };
+    const server = await loopbackServer((a) => (a.method === 'GET' && lists[a.url] ? { status: 200, body: lists[a.url] } : undefined));
+    const api = await request.newContext({ baseURL: server.origin });
+    try {
+        await expect(lookupInList(api, '/api/v1/users', 'username')('row-5'))
+            .rejects.toThrow('lookup by username: /api/v1/users answered 1000 rows (one page holds at most 1000); it may be truncated and proves nothing');
+        await expect(lookupInList(api, '/api/v1/roles')('row-5')).rejects.toThrow(/answered an empty list/);
+        expect((await lookupInList(api, '/api/v1/groups')('row-5')).rows).toEqual([{ uuid: 'u-5' }]);
     } finally {
         await api.dispose();
         await server.close();

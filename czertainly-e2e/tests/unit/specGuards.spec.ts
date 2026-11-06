@@ -279,6 +279,17 @@ test('the locator allow-list only names violations that still exist (it can only
 /** A source without its comments, so a rule never matches prose (a `//` inside a quoted URL is kept). */
 const stripComments = (src: string): string => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1');
 
+test('specs and regression helpers read the roles or users list only through the readers that refuse a list at its cap', () => {
+    const raw = /(?:apiJson\s*(?:<[^(]*>)?\s*\(\s*[\w.]+\s*,\s*['"`]GET['"`]\s*,|\.get\s*\(|readAnswer\s*\(\s*[\w.]+\s*,)\s*['"`]\/api\/v1\/(?:roles|users)['"`]/g;
+    const statusOnly: Record<string, number> = { 'tests/api/01-auth/permissions-by-role.api.spec.ts': 2 };
+    for (const old of ["apiJson<Array<{ uuid: string }>>(api, 'GET', '/api/v1/roles')", "(await api.get('/api/v1/users')).json()", "readAnswer(api, '/api/v1/roles')"]) {
+        expect(old.match(raw), `the rule matches ${old}`).toHaveLength(1);
+    }
+    expect("apiJson(api, 'GET', '/api/v1/roles/r-1')".match(raw), 'a detail read is not a list read').toBeNull();
+    const reads = [...specs, ...helpers].map((rel) => [rel, stripComments(source(rel)).match(raw)?.length ?? 0] as const);
+    expect(reads.filter(([rel, n]) => n !== (statusOnly[rel] ?? 0))).toEqual([]);
+});
+
 test('every row that needs the second identity or the local Keycloak CALLS its preflight, so it skips with a named reason instead of failing', () => {
     const offenders: string[] = [];
     let secondIdentity = 0;
