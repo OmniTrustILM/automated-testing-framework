@@ -20,16 +20,16 @@ const DEFAULT_SECRET_CONNECTOR_RE = /^Common-Credential-Connector[ -]v2$/i;
 export async function findConnectorWithInterface(api: APIRequestContext, code: RegExp, env: NodeJS.ProcessEnv = process.env): Promise<{ uuid: string; name: string; interfaceUuid: string } | undefined> {
     const rows = await apiJson<JsonObject[]>(api, 'GET', '/api/v1/connectors');
     const named = settings(env).secretConnector;
-    // Match the provider by what it IS, not one display name: the named one, the credential provider v2 by either spelling, any connector
-    // with a credentialProvider group, then the other connected ones.
+    // Connected ones only: the named one, the credential provider v2 (either spelling), any credentialProvider, then the rest.
+    const connected = rows.filter((r) => r.status === 'connected');
     const isCredentialProvider = (r: JsonObject): boolean => ((r.functionGroups ?? []) as JsonObject[]).some((g: JsonObject) => g.functionGroupCode === 'credentialProvider' || g.code === 'credentialProvider');
     const picked = new Set<string>();
     const ordered: JsonObject[] = [];
-    const take = (pred: (r: JsonObject) => boolean): void => { for (const r of rows) if (pred(r) && !picked.has(String(r.uuid))) { picked.add(String(r.uuid)); ordered.push(r); } };
+    const take = (pred: (r: JsonObject) => boolean): void => { for (const r of connected) if (pred(r) && !picked.has(String(r.uuid))) { picked.add(String(r.uuid)); ordered.push(r); } };
     if (named) take((r) => r.name === named);
     take((r) => DEFAULT_SECRET_CONNECTOR_RE.test(String(r.name)));
-    take((r) => r.status === 'connected' && isCredentialProvider(r));
-    take((r) => r.status === 'connected');
+    take(isCredentialProvider);
+    take(() => true);
     for (const r of ordered) {
         const res = await api.get(`/api/v2/connectors/${r.uuid}`);
         if (!res.ok()) continue;
