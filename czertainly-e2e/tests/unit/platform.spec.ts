@@ -18,7 +18,7 @@ import { findConnectorWithInterface } from '../../utils/regression/platform/conn
 import { secretAttributesFor, secretContentFor, stringValues, waitForSecretState } from '../../utils/regression/platform/secretsAndVaults';
 import { composeArgs, coreStartLogFacts, PlatformStack, stackConfig, stackProblem, restartCore, restartPlan } from '../../utils/regression/platform/localStack';
 import { isFireTime, nextFireUtc, parseQuartzCron, SYSTEM_JOBS, systemJobProblems, JOBS_URL, teardownHandlers } from '../../utils/regression/platform/schedulerApi';
-import { diffSnapshots, parseSchemaHistory, schemaHistoryProblems, Snapshot, upgradeDirectionProblem } from '../../utils/regression/platform/upgradeRunner';
+import { diffSnapshots, parseSchemaHistory, schemaHistoryProblems, Snapshot, takeSnapshot, upgradeDirectionProblem } from '../../utils/regression/platform/upgradeRunner';
 import { randomUUID } from 'node:crypto';
 import type { JsonObject } from '../../utils/regression/json';
 import { handlerOf, TeardownContext } from '../../utils/regression/teardown/runTeardown';
@@ -155,6 +155,14 @@ test('diffSnapshots: kept objects pass; a lost or renamed object, a new non-syst
         'roles: rA renamed qa-reg-role → qa-reg-role-x', 'roles: rB (admin) is gone', 'roles: unexpected new someone (rX)', 'groups: g1 (g) is gone',
         'audit log total 100 → 5 (the 2.14 reset must not be crossed)', 'connector A: connected → offline',
     ]));
+});
+
+test('takeSnapshot refuses a users list at its cap instead of comparing a partial list', async () => {
+    const users = (n: number) => Array.from({ length: n }, (_, i) => ({ uuid: `u${i}`, username: `user-${i}` }));
+    const listing = (n: number) => fakeApi((c) => ({ status: 200, body: c.url === '/api/v1/users' ? users(n) : c.url === '/api/v1/roles' ? [{ uuid: 'r1', name: 'admin' }] : [] }));
+    expect((await takeSnapshot(partialOf<APIRequestContext>(listing(999).api))).types.users.count).toBe(999);
+    await expect(takeSnapshot(partialOf<APIRequestContext>(listing(1000).api)))
+        .rejects.toThrow('users: /api/v1/users answered 1000 rows (one page holds at most 1000); it may be truncated and proves nothing');
 });
 
 test('schemaHistoryProblems: rows kept with the same checksum, new rows success, out-of-order detected; parse of psql rows; one-way guard', () => {
