@@ -4,6 +4,7 @@
  */
 import type { APIRequestContext } from '@playwright/test';
 import { apiJson } from '../apiReads';
+import { assertFullList } from '../ledger/ownership';
 import { PlatformStack } from './localStack';
 import type { JsonObject } from '../json';
 
@@ -131,6 +132,7 @@ export async function takeSnapshot(api: APIRequestContext, stack?: PlatformStack
     const types: Record<string, TypeSnapshot> = {};
     for (const type of SNAPSHOT_TYPES) {
         const rows = await apiJson<JsonObject[] | JsonObject>(api, 'GET', LIST_URLS[type]);
+        assertFullList(LIST_URLS[type], rows, type);
         const list: JsonObject[] = Array.isArray(rows) ? rows : ((rows.items ?? []) as JsonObject[]);
         types[type] = { count: list.length, objects: Object.fromEntries(list.map((r) => [String(r.uuid), nameOf(r)])) };
     }
