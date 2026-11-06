@@ -20,18 +20,16 @@ function matches(call: ApiCall, response: Response): boolean {
     return call.path instanceof RegExp ? call.path.test(pathname) : call.path(pathname);
 }
 
+/** Marked handled at once: a wait that fails before anyone awaits it (the action still running or thrown) is no unhandled rejection. */
 export function watchApiCall(page: Page, call: ApiCall): Promise<Response> {
-    return page.waitForResponse((r) => matches(call, r), call.timeout === undefined ? undefined : { timeout: call.timeout });
+    const wait = page.waitForResponse((r) => matches(call, r), call.timeout === undefined ? undefined : { timeout: call.timeout });
+    wait.catch(() => undefined);
+    return wait;
 }
 
 export async function actAndWaitForApi(page: Page, call: ApiCall, act: () => Promise<unknown>): Promise<Response> {
     const answer = watchApiCall(page, call);
-    try {
-        await act();
-    } catch (error) {
-        answer.catch(() => undefined); // the wait is abandoned with the failed action
-        throw error;
-    }
+    await act();
     return answer;
 }
 

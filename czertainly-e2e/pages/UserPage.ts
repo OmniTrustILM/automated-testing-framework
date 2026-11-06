@@ -170,7 +170,6 @@ export class UserPage {
         const rolesCall = (fields.roleNames ?? []).length
             ? watchApiCall(this.page, { method: 'PATCH', path: new RegExp(`/api/v1/users/${UUID}/roles$`) })
             : undefined;
-        rolesCall?.catch(() => undefined); // an unawaited wait that times out must not become an unhandled rejection
         const startedAt = Date.now();
         await this.createButton.click();
         const answer = await createAnswerOf(await createCall, startedAt);
