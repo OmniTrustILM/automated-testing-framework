@@ -1,12 +1,9 @@
 /**
- * Unit tests for the parts of env.ts that compute a value rather than read one.
- *
- * SMK-005 derives the domain its HTTP-01 solver answers on from BASE_URL, and chooses how the
- * solver is routed. A wrong value in either fails the smoke run minutes later as an unreachable
- * challenge — far from the cause. Pinning them here keeps that failure next to the code.
+ * Unit tests for the parts of env.ts that compute a value rather than read one. SMK-005 derives the domain its HTTP-01
+ * solver answers on from BASE_URL, and chooses how the solver is routed.
  */
 import { test, expect } from '@playwright/test';
-import { acmeSolverFrom, parentDomainOf } from '../../utils/env';
+import { acmeSolverFrom, loadEnv, parentDomainOf } from '../../utils/env';
 import { http01Solver } from '../../utils/certManagerUtils';
 
 test('the solver domain is BASE_URL\'s host without its first label', () => {
@@ -16,6 +13,21 @@ test('the solver domain is BASE_URL\'s host without its first label', () => {
 
 test('port and path do not leak into the solver domain', () => {
     expect(parentDomainOf('https://env.example.com:8443/administrator/')).toBe('example.com');
+});
+
+test('AUTH_MODE=header is refused for a BASE_URL that is not loopback / TIER_LOCAL_HOSTS', () => {
+  const saved = { AUTH_MODE: process.env.AUTH_MODE, BASE_URL: process.env.BASE_URL, TIER_LOCAL_HOSTS: process.env.TIER_LOCAL_HOSTS };
+  try {
+    delete process.env.TIER_LOCAL_HOSTS;
+    process.env.AUTH_MODE = 'header';
+    process.env.BASE_URL = 'https://qa.example.com';
+    expect(() => loadEnv()).toThrow(/AUTH_MODE=header .* loopback/);
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
 });
 
 test('without a gateway the solver is an Ingress of the given class, nginx by default', () => {

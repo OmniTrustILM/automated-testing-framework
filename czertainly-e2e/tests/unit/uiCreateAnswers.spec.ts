@@ -1,0 +1,192 @@
+/**
+ * uiCreateAnswers — unit tests: what a UI create reads from the answer, and how the object reaches the ledger. A refusal
+ * gives no uuid and keeps the answer text; an error answer that carries a uuid keeps it; only a canonical uuid is taken.
+ */
+import { expect, request, test } from '@playwright/test';
+import type { Browser, Page } from '@playwright/test';
+import * as fs from 'fs';
+import { submitCreate } from '../../pages/ui/detailRoute';
+import { ledgerFile, readLedger } from '../../utils/regression/ledger/ledger';
+import { loopbackServer } from './helpers/loopbackServer';
+import { currentRunId } from '../../utils/regression/run/runId';
+import { lookupDiscovery, lookupInList, lookupKey, recordIfCreated, recordUiCreate, submitRecordingByNameOnFailure } from '../../utils/regression/ledger/uiCreates';
+
+const U1 = '0b1e8a52-4c3f-4d6e-9a7b-1c2d3e4f5a01';
+const U2 = '0b1e8a52-4c3f-4d6e-9a7b-1c2d3e4f5a02';
+const U3 = '0b1e8a52-4c3f-4d6e-9a7b-1c2d3e4f5a03';
+const U4 = '0b1e8a52-4c3f-4d6e-9a7b-1c2d3e4f5a04';
+const SPEC = 'UNIT-UI-CREATE';
+/** Ledger names carry the run prefix, or the line does not prove ownership. */
+const own = (suffix: string): string => `${currentRunId()}-${suffix}`;
+
+interface Answer {
+    status: number;
+    body: unknown;
+}
+
+const createForm = (caption: string, path: string) => `<!doctype html><html><body><main><div role="dialog" aria-label="${caption}">
+  <button data-testid="progress-button" onclick="fetch('${path}', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'qa-reg-x' }) })">Create</button>
+  </div></main></body></html>`;
+
+const createToken = (page: Page) => submitCreate(page, page.getByRole('dialog', { name: 'Create Token', exact: true }).getByTestId('progress-button').last(), { endpoint: '/v1/tokens' });
+
+async function withAnswers(browser: Browser, html: string, answer: Answer, body: (page: Page) => Promise<void>): Promise<void> {
+    const context = await browser.newContext({ baseURL: 'http://127.0.0.1:9/' });
+    try {
+        await context.route('**/*', (route) => {
+            if (route.request().method() === 'POST') {
+                return route.fulfill({ status: answer.status, contentType: 'application/json', body: JSON.stringify(answer.body) });
+            }
+            return route.fulfill({ contentType: 'text/html', body: html });
+        });
+        const page = await context.newPage();
+        await body(page);
+    } finally {
+        await context.close();
+    }
+}
+
+test('a refused create has no uuid and keeps the answer text; an error answer that carries a uuid keeps it', async ({ browser }) => {
+    await withAnswers(browser, createForm('Create Token', '/api/v1/tokens'), { status: 422, body: ['Name must be unique'] }, async (page) => {
+        await page.goto('/administrator/#/tokens');
+        const answer = await createToken(page);
+        expect(answer.status).toBe(422);
+        expect(answer.uuid).toBeUndefined();
+        expect(answer.text).toContain('Name must be unique');
+    });
+    await withAnswers(browser, createForm('Create Token', '/api/v1/tokens'), { status: 500, body: { uuid: U2, message: 'created, then failed' } }, async (page) => {
+        await page.goto('/administrator/#/tokens');
+        const answer = await createToken(page);
+        expect(answer).toMatchObject({ status: 500, uuid: U2 });
+    });
+    await withAnswers(browser, createForm('Create Token', '/api/v1/tokens'), { status: 201, body: { uuid: 'not-a-uuid' } }, async (page) => {
+        await page.goto('/administrator/#/tokens');
+        expect((await createToken(page)).uuid, 'only a canonical uuid is taken from the answer').toBeUndefined();
+    });
+});
+
+test('recordUiCreate writes the ledger line before it fails a refusal; recordIfCreated records an accepted duplicate and never throws', ({}, testInfo) => {
+    const saved = process.env.REG_STATE_DIR;
+    process.env.REG_STATE_DIR = testInfo.outputPath('state');
+    try {
+        // A success: recorded once, returned as an own reference (a second call does not add a second line).
+        const ok = recordUiCreate('tokens', { status: 201, uuid: U1, text: '{}' }, own('tok'), SPEC, 'own token');
+        expect(ok).toEqual({ uuid: U1, name: own('tok'), kind: 'own' });
+        recordUiCreate('tokens', { status: 201, uuid: U1, text: '{}' }, own('tok'), SPEC);
+        expect(readLedger().filter((l) => l.uuid === U1)).toHaveLength(1);
+        expect(() => recordUiCreate('groups', { status: 500, uuid: U2, text: 'Internal server error.' }, own('grp'), SPEC)).toThrow(/groups create was answered 500.*recorded.*Internal server error/);
+        expect(readLedger().map((l) => l.uuid)).toContain(U2);
+        expect(() => recordUiCreate('groups', { status: 422, text: 'already exists' }, own('grp2'), SPEC)).toThrow(/answered 422: already exists/);
+        expect(() => recordUiCreate('groups', { status: 201, text: '' }, own('grp3'), SPEC)).toThrow(/without an id.*-grp3/);
+        expect(readLedger()).toHaveLength(2);
+        // A probe that expects a refusal: nothing for a plain refusal, a line for an accepted duplicate, never a throw.
+        expect(recordIfCreated('roles', { status: 409, text: 'exists' }, own('role'), SPEC)).toBeUndefined();
+        expect(recordIfCreated('roles', { status: 201, uuid: U3, text: '{}' }, own('role'), SPEC, 'duplicate accepted')?.uuid).toBe(U3);
+        expect(readLedger().map((l) => l.type)).toEqual(['tokens', 'groups', 'roles']);
+        expect(fs.existsSync(ledgerFile())).toBe(true);
+    } finally {
+        if (saved === undefined) delete process.env.REG_STATE_DIR;
+        else process.env.REG_STATE_DIR = saved;
+    }
+});
+
+test('submitRecordingByNameOnFailure: an answer that never arrives, or a 2xx without a uuid, is adopted by the run\'s own name; a refusal, a foreign name and a failing lookup are not', async ({}, testInfo) => {
+    const saved = process.env.REG_STATE_DIR;
+    process.env.REG_STATE_DIR = testInfo.outputPath('state');
+    try {
+        const name = own('named');
+        const base = { type: 'groups', name, spec: SPEC, note: 'own group' };
+        const found = (...uuids: string[]) => async () => ({ rows: uuids.map((uuid) => ({ uuid })) });
+        await expect(submitRecordingByNameOnFailure({ ...base, lookup: found(U1, U2) }, async () => { throw new Error('no answer within 60 s'); })).rejects.toThrow(/no answer/);
+        expect(readLedger().map((l) => l.uuid)).toEqual([U1, U2]);
+        // A 2xx without a uuid: adopted by name, and the answer carries
+        // the recorded uuid instead of failing "without an id" later.
+        const answer = await submitRecordingByNameOnFailure({ ...base, name: own('named2'), lookup: found(U3) }, async () => ({ status: 201, text: '{}' }));
+        expect(answer).toMatchObject({ status: 201, uuid: U3, recordedByName: [U3] });
+        expect(readLedger().map((l) => l.uuid)).toEqual([U1, U2, U3]);
+        expect(recordUiCreate('groups', answer, own('named2'), SPEC).uuid, 'the normal recording path goes on with the by-name record').toBe(U3);
+        let lookups = 0;
+        const counting = async () => { lookups += 1; return { rows: [{ uuid: U4 }] }; };
+        await submitRecordingByNameOnFailure({ ...base, lookup: counting }, async () => ({ status: 422, text: 'refused' }));
+        await submitRecordingByNameOnFailure({ ...base, lookup: counting }, async () => ({ status: 201, uuid: U1, text: '{}' }));
+        expect(lookups).toBe(0);
+        // A name that does not start with THIS run's id is never
+        // adopted, not even one of another run of the same family.
+        for (const foreign of ['somebody-elses', 'qa-reg-20200101-000000-zzzz-group', 'qa-api-adhoc-group']) {
+            await expect(submitRecordingByNameOnFailure({ ...base, name: foreign, lookup: counting }, async () => { throw new Error('boom'); })).rejects.toThrow(/boom/);
+        }
+        expect(lookups).toBe(0);
+        // A failing lookup never masks the original error.
+        await expect(submitRecordingByNameOnFailure({ ...base, lookup: async () => { throw new Error('list unreadable'); } }, async () => { throw new Error('boom'); })).rejects.toThrow(/boom/);
+        expect(readLedger().map((l) => l.uuid)).toEqual([U1, U2, U3]);
+    } finally {
+        if (saved === undefined) delete process.env.REG_STATE_DIR;
+        else process.env.REG_STATE_DIR = saved;
+    }
+});
+
+test('by-name adoption checks the creation time against the server clock when the listing shows one, and says so when it cannot', async ({}, testInfo) => {
+    const saved = process.env.REG_STATE_DIR;
+    process.env.REG_STATE_DIR = testInfo.outputPath('state');
+    try {
+        const base = { type: 'keys', spec: SPEC };
+        const serverNow = new Date(Date.now() + 3_600_000); // the server clock runs an hour ahead of the runner
+        const iso = (msFromServerNow: number) => new Date(serverNow.getTime() + msFromServerNow).toISOString();
+        await expect(submitRecordingByNameOnFailure({ ...base, name: own('old'), lookup: async () => ({ rows: [{ uuid: U1, createdAt: iso(-60_000) }], serverNow, readAt: Date.now() }) }, async () => { throw new Error('boom'); })).rejects.toThrow(/boom/);
+        expect(readLedger()).toHaveLength(0);
+        // Created just now on the server clock: adopted (the skew between the clocks is measured, not guessed).
+        await expect(submitRecordingByNameOnFailure({ ...base, name: own('new'), lookup: async () => ({ rows: [{ uuid: U2, createdAt: iso(-500) }, { uuid: U3, createdAt: iso(-60_000) }], serverNow, readAt: Date.now() }) }, async () => { throw new Error('boom'); })).rejects.toThrow(/boom/);
+        expect(readLedger().map((l) => l.uuid)).toEqual([U2]);
+        // No server clock: the creation time is not compared with the runner's clock; the run's own name decides.
+        await expect(submitRecordingByNameOnFailure({ ...base, name: own('noclock'), lookup: async () => ({ rows: [{ uuid: U4, createdAt: '2020-01-01T00:00:00Z' }] }) }, async () => { throw new Error('boom'); })).rejects.toThrow(/boom/);
+        expect(readLedger().map((l) => l.uuid)).toEqual([U2, U4]);
+    } finally {
+        if (saved === undefined) delete process.env.REG_STATE_DIR;
+        else process.env.REG_STATE_DIR = saved;
+    }
+});
+
+test('lookupKey and lookupDiscovery read every page and return every row of the exact name, with its creation time', async () => {
+    const pages: Record<number, unknown[]> = {
+        1: [{ uuid: U1, name: 'other', creationTime: '2026-10-22T10:00:00Z' }, { uuid: U2, name: 'wanted', creationTime: '2026-10-22T10:01:00Z' }],
+        2: [{ uuid: U3, name: 'wanted', creationTime: '2026-10-22T10:02:00Z' }],
+    };
+    const server = await loopbackServer((a) => {
+        if (a.method !== 'POST') return undefined;
+        const { pageNumber } = JSON.parse(a.body) as { pageNumber: number };
+        const rows = pages[pageNumber] ?? [];
+        const body = a.url === '/api/v1/keys'
+            ? { cryptographicKeys: rows, pageNumber, totalPages: 2 }
+            : { discoveries: rows.map((r) => ({ ...(r as object), startTime: (r as { creationTime: string }).creationTime })), pageNumber, totalPages: 2 };
+        return { status: 200, body };
+    });
+    const api = await request.newContext({ baseURL: server.origin });
+    try {
+        const keys = await lookupKey(api as never)('wanted');
+        expect(keys.rows).toEqual([{ uuid: U2, createdAt: '2026-10-22T10:01:00Z' }, { uuid: U3, createdAt: '2026-10-22T10:02:00Z' }]);
+        expect(keys.serverNow, 'the Date header of the listing is the server clock').toBeInstanceOf(Date);
+        expect(server.arrived.filter((x) => x.url === '/api/v1/keys').map((x) => (JSON.parse(x.body) as { pageNumber: number }).pageNumber), 'both pages were read').toEqual([1, 2]);
+        const discoveries = await lookupDiscovery(api as never)('wanted');
+        expect(discoveries.rows.map((r) => r.uuid)).toEqual([U2, U3]);
+        expect(discoveries.rows[0].createdAt).toBe('2026-10-22T10:01:00Z');
+    } finally {
+        await api.dispose();
+        await server.close();
+    }
+});
+
+test('lookupInList: a users or roles list at its cap or empty throws instead of finding nothing; other lists are read as they are', async () => {
+    const rows = (n: number) => Array.from({ length: n }, (_, i) => ({ uuid: `u-${i}`, name: `row-${i}`, username: `row-${i}` }));
+    const lists: Record<string, unknown[]> = { '/api/v1/users': rows(1000), '/api/v1/roles': [], '/api/v1/groups': rows(1000) };
+    const server = await loopbackServer((a) => (a.method === 'GET' && lists[a.url] ? { status: 200, body: lists[a.url] } : undefined));
+    const api = await request.newContext({ baseURL: server.origin });
+    try {
+        await expect(lookupInList(api, '/api/v1/users', 'username')('row-5'))
+            .rejects.toThrow('lookup by username: /api/v1/users answered 1000 rows (one page holds at most 1000); it may be truncated and proves nothing');
+        await expect(lookupInList(api, '/api/v1/roles')('row-5')).rejects.toThrow(/answered an empty list/);
+        expect((await lookupInList(api, '/api/v1/groups')('row-5')).rows).toEqual([{ uuid: 'u-5' }]);
+    } finally {
+        await api.dispose();
+        await server.close();
+    }
+});

@@ -1,5 +1,10 @@
+/**
+ * TablePage — the smoke suite's generic list table (SMK-003, 007, 008).
+ * `bulkDelete` refuses a page that shows anything but the expected rows, so a wrong filter never deletes a foreign object.
+ */
 import { Page, Locator, expect } from '@playwright/test';
 import { Logger } from '../utils/Logger';
+import { chooseOption } from './ui/select';
 
 const logger = new Logger('TablePage');
 
@@ -59,38 +64,18 @@ export class TablePage {
         return true;
     }
 
-    /**
-     * Apply a Filter row (Group → Field → Condition → Value) to surface a row
-     * in a large/paginated list. Filter dropdowns are sequentially gated — each
-     * becomes enabled only after the previous is set. The Value input is readonly
-     * until clicked, so we click before fill.
-     */
+    /** The filter dropdowns are gated in sequence; the Value input is readonly until clicked. */
     async applyFilter(opts: { group: string; field: string; condition: string; value: string }): Promise<void> {
-        const pickOption = async (trigger: Locator, label: string, optionLabel: string) => {
-            await expect(trigger, `Filter ${label} trigger should be enabled`).toBeEnabled();
-            await trigger.click();
-            const option = this.page.getByRole('option', { name: optionLabel, exact: true });
-            await option.waitFor({ state: 'visible' });
-            await option.click();
-        };
-        await pickOption(this.filterGroupTrigger, 'Group', opts.group);
-        await pickOption(this.filterFieldTrigger, 'Field', opts.field);
-        await pickOption(this.filterConditionsTrigger, 'Condition', opts.condition);
+        await chooseOption(this.page, this.filterGroupTrigger, opts.group);
+        await chooseOption(this.page, this.filterFieldTrigger, opts.field);
+        await chooseOption(this.page, this.filterConditionsTrigger, opts.condition);
 
         await this.filterValueInput.click();  // focus first — FE removes readonly on focus
         await this.filterValueInput.fill(opts.value);
         await this.addFilterButton.click();
     }
 
-    /**
-     * Deletes every row on the current page through "select all".
-     *
-     * "Select all" takes whatever the page shows, so the caller has to say what it expects to
-     * delete: the exact number of rows, and text that each of them must contain (the test's own
-     * name prefix, say). If the page shows anything else, this throws before ticking the box and
-     * nothing is deleted. A cleanup that forgot to filter used to remove other tests' objects this
-     * way (atf#99).
-     */
+    /** "Select all" takes whatever the page shows, so this throws before ticking unless the rows match `expected`. */
     async bulkDelete(logName: string, expected: { rows: number; eachRowContains: string }) {
         logger.info(`Attempting bulk delete for ${logName}: ${expected.rows} row(s) containing "${expected.eachRowContains}"`);
 
