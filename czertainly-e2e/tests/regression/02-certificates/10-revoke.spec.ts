@@ -16,7 +16,7 @@ import { waitRevoked } from '../../../utils/regression/ownCertificates';
 test.describe('Revoke in the web UI', { tag: tags.regression }, () => {
     test('the Revoke dialog offers the nine reasons and Key compromise revokes the certificate',
         testMeta({
-            id: 'REG-CERT-10', prio: 'P1', issue: 'ilm#429',
+            id: 'REG-CERT-10', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'the nine CertificateRevocationReason labels; revoke of an ISSUED certificate: 204, completion through the authority',
                 'history "Certificate revoked. Reason: Key compromise"; REVOKED is terminal; Revoke is enabled only for Issued',

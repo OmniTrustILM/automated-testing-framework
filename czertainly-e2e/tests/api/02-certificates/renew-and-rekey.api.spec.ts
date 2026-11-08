@@ -14,7 +14,7 @@ import { LIFECYCLE_MS } from '../../../utils/regression/timeouts';
 test.describe('Certificate renew and rekey through the v2 API', { tag: tags.api }, () => {
     test('renewing with a CSR on the same key issues a successor related as renewal',
         testMeta({
-            id: 'API-CERT-04', prio: 'P1', issue: 'ilm#429',
+            id: 'API-CERT-04', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'renew keeps the key; the original stays ISSUED; the successor is issued asynchronously; a supplied CSR must carry the certificate\'s key',
                 'PENDING → RENEWAL on issuance: same DN, issuer and key fingerprint; one successor per call; history "Renewed using RA Profile <name>" / "Issued using RA Profile <name>"',
@@ -68,7 +68,7 @@ test.describe('Certificate renew and rekey through the v2 API', { tag: tags.api 
 
     test('rekeying with a new key and the same subject issues a successor related as rekey',
         testMeta({
-            id: 'API-CERT-05', prio: 'P1', issue: 'ilm#429',
+            id: 'API-CERT-05', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'a rekey CSR carries a different public key and the same subject; PENDING → REKEY: same DN and issuer, different key',
                 'history "Rekeyed using RA Profile <name>"; the original stays ISSUED',

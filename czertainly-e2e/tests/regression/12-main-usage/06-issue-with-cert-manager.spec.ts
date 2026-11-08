@@ -15,7 +15,7 @@ import { uniqueSuffix } from '../../../utils/regression/text';
 test.describe('Certificate issue through cert-manager', { tag: tags.regression }, () => {
     test('an issuer driven by the RA profile uuid is Ready and its Certificate is issued by the run RA profile',
         testMeta({
-            id: 'REG-USE-06.1', prio: 'P1', issue: 'ilm#430', needs: 'cluster',
+            id: 'REG-USE-06.1', prio: 'P1', issue: 'ilm#430', needs: ['cluster', 'ca'],
             rule: [
                 'the CRD requires apiUrl, authSecretName, raProfileUuid; raProfileName is optional and never read',
                 'signing: GET /v1/raProfiles/{raProfileUuid}, v2 issue, annotation certificate-uuid',

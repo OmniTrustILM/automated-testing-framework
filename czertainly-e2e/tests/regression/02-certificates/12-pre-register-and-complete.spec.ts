@@ -22,7 +22,7 @@ import { waitForCertificateState } from '../../../utils/regression/wait/certific
 test.describe('Pre-register and complete in the web UI', { tag: tags.regression }, () => {
     test('a pre-registration with a challenge is Registered with an Active registration and hides the secret',
         testMeta({
-            id: 'REG-CERT-12', prio: 'P1', issue: 'ilm#429',
+            id: 'REG-CERT-12', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'fe#1693 / fe#1944 (Pre-register hides key and CSR, shows the optional Challenge and Issuance window; Complete enabled for REGISTERED with an ACTIVE registration; the action is called "Pre-register", not "Request later")',
                 'the secret is stored encrypted and never returned; expiresAt = now + defaultIssuanceWindowDays; the authorization row exists only with a secret; platform-level: registered at once',
@@ -79,7 +79,7 @@ test.describe('Pre-register and complete in the web UI', { tag: tags.regression 
 
     test('a pre-registration without a challenge is Registered and shows no Registration widget',
         testMeta({
-            id: 'REG-CERT-12', row: 'without a challenge', prio: 'P1', issue: 'ilm#429',
+            id: 'REG-CERT-12', row: 'without a challenge', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'the authorization row exists only with a secret: a registration without a challenge has no Registration widget (fe#1693 / fe#1944)',
             ],
@@ -110,7 +110,7 @@ test.describe('Pre-register and complete in the web UI', { tag: tags.regression 
 
     test('the Complete dialog counts a wrong secret and issues with the right secret and a CSR',
         testMeta({
-            id: 'REG-CERT-13', prio: 'P2', issue: 'ilm#429',
+            id: 'REG-CERT-13', prio: 'P2', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'wrong secret: 422 "The certificate registration challenge is invalid.", failedAttempts + 1, state stays REGISTERED; a verified secret resets the counter (Complete dialog)',
                 'complete = issue with the operator\'s CSR and the secret; after the first issuance the authorization is retained, attempts 0',

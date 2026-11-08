@@ -21,7 +21,7 @@ import { escapeRegExp } from '../../../utils/regression/text';
 test.describe('Certificate issue in the web UI with an external key', { tag: tags.regression }, () => {
     test('requesting now with an uploaded CSR issues the certificate with its key and its tabs open',
         testMeta({
-            id: 'REG-USE-04', prio: 'P1', issue: 'ilm#429',
+            id: 'REG-USE-04', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: ['release checklist Usage 4: Add Certificate, Request now, the RA profile, Key Source External, a pasted CSR; the issued certificate carries the CSR key and its tabs open'],
         }),
         async ({ signedIn: page, api, own, live, ownRaProfile }, testInfo) => {
@@ -80,7 +80,7 @@ test.describe('Certificate issue in the web UI with an external key', { tag: tag
 
     test('a garbage CSR in the Add Certificate form shows the validation and creates no certificate',
         testMeta({
-            id: 'REG-USE-04', row: 'garbage-csr', prio: 'P1', issue: 'ilm#429',
+            id: 'REG-USE-04', row: 'garbage-csr', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: ['Add Certificate, Request now, Key Source External: a pasted garbage CSR is refused inline and by the create answer (4xx) and the page stays on the form'],
         }),
         async ({ signedIn: page, live, ownRaProfile }) => {
@@ -108,7 +108,7 @@ test.describe('Certificate issue in the web UI with an external key', { tag: tag
 
     test('a garbage CSR in the Add Certificate form shows the inline message under File content',
         testMeta({
-            id: 'REG-USE-04', row: 'inline-csr-message', prio: 'P1', issue: 'ilm#429', needs: 'utils-service',
+            id: 'REG-USE-04', row: 'inline-csr-message', prio: 'P1', issue: 'ilm#429', needs: ['utils-service', 'ca'],
             rule: ['Add Certificate, Request now, Key Source External: a pasted garbage CSR shows the inline "issue with certification request" message under File content'],
         }),
         async ({ signedIn: page, live, ownRaProfile }) => {
@@ -130,13 +130,13 @@ test.describe('Certificate issue in the web UI with an external key', { tag: tag
             });
         });
 
-    test('requesting now with a CSR carrying DNS and IP SANs issues them and shows them in Details and History',
+    test('requesting now with DNS and IP SANs issues the SANs the CA keeps, shown in Details and History',
         testMeta({
-            id: 'REG-USE-04.1', prio: 'P1', issue: 'ilm#429',
+            id: 'REG-USE-04.1', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'Request now + External: v2 issue, redirect to the detail, Issued after reload, CSR key',
                 'history "Issued using RA Profile <name>"; SAN content reaches the CA (what it accepts is the CA\'s decision)',
-                'the issued certificate carries the requested SANs',
+                'the issued certificate carries the requested SANs: the exact set (IP too) on a connector listed for exact SANs, else the DNS names only; the san-oracle annotation names the mode',
             ],
         }),
         async ({ signedIn: page, api, own, live, ownRaProfile }, testInfo) => {

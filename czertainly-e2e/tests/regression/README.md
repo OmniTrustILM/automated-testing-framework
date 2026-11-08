@@ -60,7 +60,9 @@ lock file in the state directory refuses a second live run with the same id.
    AND a live name that carries the run prefix. The prefix alone is never enough.
 4. **Objects the platform makes for the run** (the key of an issued certificate, certificates a discovery onboarded)
    are `derived` lines with a creation time from the server's clock. They are deleted only when they were made after
-   that time and nobody adopted them (owner, group, location, RA profile); otherwise they are kept and reported.
+   that time and nobody adopted them (owner, group, location, RA profile); otherwise they are kept and reported. A CA
+   certificate among them without the run prefix is always kept and reported: core links other certificates, foreign ones
+   too, to it.
 5. **Children under a pre-existing parent** (an RA profile under an existing authority, a key in an existing token) are
    own objects; the parent is never changed.
 6. **Kubernetes objects** (`k8s:<kind>` lines) are recorded before `kubectl apply` and removed by the spec itself; a
@@ -322,7 +324,7 @@ bug exists and turn red ("expected to fail, but passed") once it is fixed; remov
   An event association is recorded before it is sent and cleared by the teardown on an own scope. Nothing is associated at
   platform level on a shared tier: those rows are `@local`.
 - Discovery targets are only the run's own TLS target or the documentation ranges of RFC 5737; the certificates a run
-  onboards are `derived` lines and deleted by uuid.
+  onboards are `derived` lines and deleted by uuid; a CA certificate among them without the run prefix is kept and reported.
 - Delivery is asserted only in a local notification setup; on a shared tier the rows use internal-only profiles or
   check the stored state.
 - A row that asserts an exact firing reads the platform event settings first and skips with a named reason when a
@@ -372,7 +374,7 @@ bug exists and turn red ("expected to fail, but passed") once it is fixed; remov
 - `utils/regression/teardown/`: `runTeardown.ts` and `teardownHandlers.ts` (the run-end deletion), `nonInterference.ts`
   (the snapshot and the comparison).
 - `utils/regression/tags.ts` (`testMeta()`, the tag builders), `specLint/` (`parseSpec.ts`: test blocks and tag rules;
-  `rawMutations.ts`: the deny-by-default lint), `publicText.ts`, `coreBuild.ts` (the core build marker),
+  `rawMutations.ts`: the deny-by-default lint), `publicText.ts`, `coreBuild.ts` (the core build of the run),
   `requireTool.ts` (external tools, the one docker binary reader), `needs.ts` (the resolver of each `Needs` value), `ownObjects.ts` (what the `own` fixture
   offers), `ledger/liveOwn.ts` (the `LiveOwn` handle), `run/runObjects.ts` (the objects of the `run-setup` project).
 - The area helpers (`lifecycle/`, `platform/`, `protocols/`, `events/`, `discovery/`, `rbac/`, `inventory/`,

@@ -70,8 +70,8 @@ test.describe('certificate search filters', { tag: tags.api }, () => {
                 async ({ api, own }, testInfo) => {
                     const m = await certificateSeedPlan(api, testInfo, own.spec);
                     const p = (await searchSeedCertificates(api, m, [propertyFilter('NOT_AFTER', 'EQUALS', r.value(m))])).probe;
+                    expect(p.status, `${r.row}: a date that does not parse must not be accepted: ${p.text.slice(0, 200)}`).toBeGreaterThanOrEqual(400);
                     test.fail(true, `${r.bug}: ${p.status} today (500 expected to become a 4xx)`);
-                    expect(p.status, `${r.row}: ${p.text.slice(0, 200)}`).toBeGreaterThanOrEqual(400);
                     expect(p.status, `${r.row}: never a 5xx`).toBeLessThan(500);
                 });
         }

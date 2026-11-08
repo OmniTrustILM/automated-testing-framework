@@ -4,7 +4,7 @@ Goal: the `timestamping` block runs create-only on a shared tier (develop-01, Te
 (timestamp-formatting connector, time-quality monitor + NTP, `messaging.timeQuality` on core, an EJBCA authority with the TSA
 profiles), with the suite's safety model untouched: every write goes through the guarded API, every created object is
 run-prefixed and in the ledger before any assertion, ownership = ledger line + live run-prefixed name, teardown deletes only
-own objects with read-back, nothing pre-existing is changed, no platform-wide setting is touched. Core read: `integration/spring-boot-4.1`.
+own objects with read-back, nothing pre-existing is changed, no platform-wide setting is touched. Core read: `integration/spring-boot-4.1` (on `main` since core#2540).
 
 ## Per object
 
@@ -20,7 +20,7 @@ own objects with read-back, nothing pre-existing is changed, no platform-wide se
 | role + grants | created own; grants are object-scoped on own objects; `keys/sign` is resource-wide on the OWN role only (auth refuses object-scoped `keys`); nothing on another role | existing (`PATCH users/{own}/roles`, `POST roles/{own}/permissions`, own object uuids) | `roles` |
 | RA profile | created own under the pre-existing authority | existing | `raProfiles` |
 | TSA certificate | created own (issued at EJBCA; the end entity stays at the CA as for every issuance) | existing create | `certificates` |
-| issuer CA certificates | read; one Core adds while building the chain is a derived line (existing rule) | `GET …/chain` on the own certificate (existing) | derived `certificates` |
+| issuer CA certificates | read; one Core adds while building the chain is a derived line, kept and reported at teardown (core links other certificates to it) | `GET …/chain` on the own certificate (existing) | derived `certificates`, kept |
 | trusting the issuing root (`PATCH /v1/certificates/{root}`) | **changes a pre-existing object: forbidden.** Avoided: on a shared tier the root must already be trusted, else the block is `unavailable` with the reason (DevOps task). Stays for the proven local stack, through a separate `localStack` guard used for that one request | none (the strict guard refuses it) | – |
 | signing profile | created own | **new:** `POST /v1/signingProfiles` in `POST_CREATE`; path type `signingProfiles`; the connector uuid `workflow.signatureFormattingConnectorUuid` is a route-scoped reference waiver (core stores the FK and attribute values on the own profile, the connector is not written); certificate and time-quality uuids must be own | `signingProfiles` (existing handler: deactivates TSP, empties its signing records, deletes) |
 | TSP profile | created own | **new:** `POST /v1/tspProfiles` in `POST_CREATE`; path type `tspProfiles`; `defaultSigningProfileUuid` typed `signingProfiles` (was probes only) | `tspProfiles` (existing handler) |

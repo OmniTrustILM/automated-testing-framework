@@ -25,7 +25,7 @@ import { escapeRegExp } from '../../../utils/regression/text';
 test.describe('Renew and rekey in the web UI', { tag: tags.regression }, () => {
     test('the Renew dialog issues a same-key successor related as Renewal',
         testMeta({
-            id: 'REG-CERT-07', row: 'renew', prio: 'P1', issue: 'ilm#429',
+            id: 'REG-CERT-07', row: 'renew', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'fe#1857 (Renew dialog, CSR optional only with a platform private key: an externally keyed certificate uploads one; same key)',
                 'successor related as Renewal once issued (history "Renewed using RA Profile <name>")',
@@ -82,7 +82,7 @@ test.describe('Renew and rekey in the web UI', { tag: tags.regression }, () => {
 
     test('after a challenged registration the Renew dialog requires the challenge',
         testMeta({
-            id: 'REG-CERT-07', row: 'challenge', prio: 'P1', issue: 'ilm#429',
+            id: 'REG-CERT-07', row: 'challenge', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'fe#1857 (challenge-gated renew: the dialog shows a required Challenge field while the registration authorization is ACTIVE; the renew path verifies the secret)',
                 'after the first issuance the authorization is retained for renew / rekey',
@@ -135,7 +135,7 @@ test.describe('Renew and rekey in the web UI', { tag: tags.regression }, () => {
 
     test('the Rekey dialog refuses a same-key CSR and issues a new-key successor related as Rekey',
         testMeta({
-            id: 'REG-CERT-08', prio: 'P2', issue: 'ilm#429',
+            id: 'REG-CERT-08', prio: 'P2', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'a rekey CSR must carry a different key and the same subject: 422 "…Public key of certificate and CSR are same"; fe#2264 (Rekey dialog, Key Source External)',
                 'successor related as Rekey, different key fingerprint, same SAN set (history "Rekeyed using RA Profile <name>")',

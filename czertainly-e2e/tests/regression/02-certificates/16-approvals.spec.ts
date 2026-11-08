@@ -24,7 +24,7 @@ import { escapeRegExp } from '../../../utils/regression/text';
 test.describe('Approvals in the web UI', { tag: tags.regression }, () => {
     test('a gated issue waits for approval and the override Approve in the Approvals list issues it',
         testMeta({
-            id: 'REG-CERT-16', prio: 'P1', issue: 'ilm#429',
+            id: 'REG-CERT-16', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'an approval is raised and the certificate waits in PENDING_APPROVAL; Approvals list and detail; override approve (recipient comment "Approval flow overridden")',
                 'approved issue → ISSUED; core#1449 (history "Approval for action issue with approval profile <name> closed with status Approved"), core#1453 (the comment is shown)',
@@ -95,7 +95,7 @@ test.describe('Approvals in the web UI', { tag: tags.regression }, () => {
 
     test('the override Reject leaves the certificate Rejected with every lifecycle action disabled',
         testMeta({
-            id: 'REG-CERT-17', prio: 'P2', issue: 'ilm#429',
+            id: 'REG-CERT-17', prio: 'P2', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'rejected issue: PENDING_APPROVAL → REJECTED, the request stays; history "… closed with status Rejected"; override reject',
                 'Issue only for Requested; Renew / Rekey / Revoke only for Issued; REJECTED is terminal',

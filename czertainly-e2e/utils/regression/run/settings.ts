@@ -41,7 +41,6 @@ export function settings(env: NodeJS.ProcessEnv = process.env) {
         get keptStrict(): string | undefined { return env.REG_KEPT_STRICT; },
         get netTolerance(): string | undefined { return env.REG_NET_TOLERANCE; },
         get phase(): string | undefined { return env.REG_PHASE; },
-        get build(): string | undefined { return env.REG_BUILD; },
         /**
          * REG_UNIT_NO_DOCKER=1 (unit config): the real docker CLI is never run;
          * the process value counts too, so an injected `env` cannot lift it.

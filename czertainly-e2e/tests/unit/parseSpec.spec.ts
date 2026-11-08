@@ -25,7 +25,7 @@ test('testBlocks finds each test call with its whole body', () => {
 test('a @bug tag without test.fail() is found, with test.fail() it passes', () => {
     const src = `
 test('API-GEN-07: refused method answers 400', testMeta({ id: 'API-GEN-07', prio: 'P1', issue: 'ilm#428', bug: 'core#2502' }), async () => {
-    test.fail(await isMigratedBuild(api), '@bug:core#2502 on the migrated build');
+    test.fail(true, '@bug:core#2502');
     expect(1).toBe(1);
 });
 test('API-GEN-08: tag literal, no fail', { tag: ['@bug:core#1'] }, async () => {

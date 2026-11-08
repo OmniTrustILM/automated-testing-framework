@@ -18,7 +18,10 @@ const logger = new Logger('DevBlockTeardown');
 export interface DevBlock {
     prefix: string;
     teardownSpec: string;
-    /** Removes what the block made outside the platform; runs after the ledger objects are gone. Returns a short report for the annotation. */
+    /**
+     * Removes what the block made outside the platform; runs after the ledger objects are gone, so any kept object (a derived key that
+     * holds a token pair, a foreign CA certificate) stops it. Returns a short report for the annotation.
+     */
     after?: (env: NodeJS.ProcessEnv, runId: string) => Promise<string>;
 }
 

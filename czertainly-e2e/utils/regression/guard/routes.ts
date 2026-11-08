@@ -358,7 +358,8 @@ export function listBodyRoute(method: string, apiPath: string): ListBodyRoute | 
 /**
  * GET endpoints that persist something (validation results, chain downloads, token refresh, approval expiry, session
  * rows, …). Sent only for own objects or probes, unless `localStack`. Connector health and attribute-definition
- * reads are deliberately not listed: they change no object.
+ * reads are deliberately not listed: they change no object. Not own-scoped: any request to `/v1/approvals/*` makes core
+ * expire every overdue approval of the platform (`ApprovalExpirationFilter`); accepted, core's hourly status task does the same.
  */
 export const SIDE_EFFECT_GETS: readonly string[] = [
     '/v1/certificates/{id}/validate', '/v1/certificates/{id}/chain', '/v1/certificates/{id}/chain/{seg}',

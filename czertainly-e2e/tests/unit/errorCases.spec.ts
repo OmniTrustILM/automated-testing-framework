@@ -395,7 +395,7 @@ test('the method tables: TRACE rows, GET-on-POST-only rows, the guard-refused ro
     expect(checkResponse(wrongMethodExpectation('GET'), answer(500, { message: ERROR_MESSAGES.internal }))[0]).toMatch(/status 500/);
     expect(checkResponse(wrongMethodExpectation('GET'), answer(400, { message: 'other' }))[0]).toMatch(/message is "other"/);
     expect(checkResponse({ status: 400, empty: true }, answer(400, ''))).toEqual([]);
-    expect(checkResponse({ status: 400, empty: true }, answer(401, ''))[0], 'the migrated build answers 401 (core#2502)').toMatch(/status 401, expected 400/);
+    expect(checkResponse({ status: 400, empty: true }, answer(401, ''))[0], 'a 401 where 400 is expected').toMatch(/status 401, expected 400/);
 });
 
 test('the protected endpoints: at least 20 distinct read-only paths across resources', () => {

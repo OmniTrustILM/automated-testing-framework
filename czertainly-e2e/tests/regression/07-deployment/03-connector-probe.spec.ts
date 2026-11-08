@@ -5,7 +5,7 @@
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { blockedConnectors, connectorVersion, describeHealth, findConnector, healthByVersion, listConnectors, requiredConnectors } from '../../../utils/regression/platform/connectorApi';
-import { detailShapeProblems, featuresByInterface, infoShapeProblems, inventoryLine } from '../../../utils/regression/platform/connectorKinds';
+import { detailShapeProblems, infoShapeProblems, inventoryLine } from '../../../utils/regression/platform/connectorKinds';
 import { answerOf } from '../../../utils/regression/apiReads';
 import { testMeta, tags } from '../../../utils/regression/tags';
 import { CONNECTOR_READ_TEST_MS } from '../../../utils/regression/timeouts';
@@ -19,10 +19,11 @@ test.describe('Connector probe (read-only)', { tag: tags.regression }, () => {
                 id: 'REG-DEP-01.e', row: name, prio: 'P1', issue: 'ilm#425',
                 rule: [
                     'health by version: v1 HealthDto status ok, v2 HealthInfo status UP; a v2 connector offers the info and health interfaces',
-                    'GET /v2/connectors/{uuid}/info answers the connector document (name, version); the metrics interface is listed with openMetrics on it only',
+                    'GET /v2/connectors/{uuid}/info answers the connector document (name, version)',
+                    'the detail has the shape of its version: v1 function groups with kinds; v2 the base interfaces, each with a version, features as a list, openMetrics (informational) on the metrics interface only',
                 ],
             }),
-            async ({ api }, testInfo) => {
+            async ({ api }) => {
                 test.setTimeout(CONNECTOR_READ_TEST_MS);
                 const blocked = blockedConnectors().get(name);
                 test.skip(!!blocked, `environment blocker (REG_BLOCKED_CONNECTORS): ${blocked}`);
@@ -46,14 +47,6 @@ test.describe('Connector probe (read-only)', { tag: tags.regression }, () => {
                         const answer = await answerOf(await api.get(`/api/v2/connectors/${connector!.uuid}/info`), Date.now());
                         expect(answer.status, answer.text.slice(0, 200)).toBe(200);
                         expect(infoShapeProblems(answer.json), `connector ${name}: info`).toEqual([]);
-                    });
-                    await test.step('The metrics interface, where offered', async () => {
-                        const features = featuresByInterface(detailRead.detail!);
-                        if (features.metrics === undefined) {
-                            testInfo.annotations.push({ type: 'metrics', description: `${name}: the connector offers no metrics interface` });
-                            return;
-                        }
-                        testInfo.annotations.push({ type: 'metrics', description: `${name}: metrics interface listed${features.metrics.includes('openMetrics') ? ' (openMetrics)' : ''}` });
                     });
                 }
             });

@@ -1,10 +1,9 @@
 /**
  * API-AUTH-30, 31, 32, 33 — The RBAC decision table through the API as the dedicated second identity (ilm#427). The 403
- * body's `statusCode` is 403 (interfaces#887 on builds without the fix, test.fail there).
+ * body's `statusCode` is 403 (interfaces#887).
  */
 import { BATTERY_TEST_MS, ISSUING_MATRIX_ROW_TEST_MS, LIFECYCLE_MS, LONG_TEST_MS } from '../../../utils/regression/timeouts';
 import { expect, test } from '../../../fixtures/regressionFixtures';
-import { getBuildInfo, isMigratedBuild } from '../../../utils/regression/coreBuild';
 import { callAs, isNotGrantableAction, replicaBlocker } from '../../../utils/regression/rbac/identities';
 import { accessDeniedProblems, Cell, cellPair, cellStatus, CERT_KEYS, CertKey, DENY_NUANCES, Fixture, FIXTURES, MATRIX_A_DETAIL, MATRIX_A_LIST, MATRIX_A_PROFILE, MATRIX_B_ISSUE_P1, MATRIX_B_ISSUE_P2, MATRIX_B_RA_CREATE, MATRIX_B_RA_DETAIL_P1, MATRIX_B_RA_DETAIL_P2, MATRIX_B_RA_LIST, MATRIX_B_ROLE_CREATE, MATRIX_B_ROLES_LIST, MATRIX_B_USER_PERMISSIONS, MATRIX_B_USERS_LIST, NESTED_GATE_FIXTURES } from '../../../utils/regression/rbac/permissionMatrix';
 import { applyFixture, auditorDocument, ensureRbacObjects, raProfileCreateBody, RbacObjects, restrictedRoleSwitch, RoleSwitch } from '../../../utils/regression/rbac/permissionObjects';
@@ -113,18 +112,13 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
 
     test(`the 403 body's statusCode is 403`,
         testMeta({
-            id: 'API-AUTH-30', row: 'statusCode', prio: 'P1', issue: 'ilm#427', needs: ['second-identity', 'ca'], bug: 'interfaces#887',
-            rule: ['the body field `statusCode` was forced to 400 by the DTO getter until interfaces#887, fixed on the migrated build; a body difference between the main and the migrated build is a fix, not a regression', 'expected to fail only on builds without the interfaces#887 fix (conditional test.fail); needs the second identity'],
+            id: 'API-AUTH-30', row: 'statusCode', prio: 'P1', issue: 'ilm#427', needs: ['second-identity', 'ca'],
+            rule: ['the body field `statusCode` of a 403 is 403 (interfaces#887: the DTO getter forced it to 400 before the fix)', 'needs the second identity'],
         }),
-        async ({ api, env, own, restrictedToken }, testInfo) => {
+        async ({ api, env, own, restrictedToken }) => {
             test.setTimeout(BATTERY_TEST_MS);
             const m = await prepare({ api, env, own, restrictedToken: restrictedToken?.bearer() });
             await applyFixture(m.api, m.sw, 'F0', m.refs, m.spec);
-            const build = await getBuildInfo(m.api);
-            testInfo.annotations.push({ type: 'build', description: `core ${build.version ?? '?'} branch ${build.branch ?? '?'}` });
-            // A separate test so the other 403 assertions are never
-            // masked: only a build WITHOUT the fix carries the bug.
-            test.fail(!(await isMigratedBuild(m.api, testInfo)), 'interfaces#887: a build without the fix reports statusCode 400 inside a 403 body');
             const res = await callAs(m.api, m.token, 'GET', '/api/v1/roles');
             expect(res.status).toBe(403);
             expect(res.json?.statusCode, 'the body field statusCode').toBe(403);

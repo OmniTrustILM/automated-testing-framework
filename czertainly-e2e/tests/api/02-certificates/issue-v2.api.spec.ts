@@ -36,7 +36,7 @@ const pemOfRaw = (body: string): string => {
 test.describe('Certificate issue through the v2 API', { tag: tags.api }, () => {
     test('an external CSR is issued with the contract answer, the state walk, and the CSR key and SANs',
         testMeta({
-            id: 'API-CERT-01', prio: 'P1', issue: 'ilm#429',
+            id: 'API-CERT-01', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'issue returns (200 {certificateData:"", uuid, requestAttributeWarnings}; issuance is asynchronous, tracked through the state)',
                 'requested → pending_issue → issued on a synchronous CA (history "Issued using RA Profile <name>")',
@@ -108,7 +108,7 @@ test.describe('Certificate issue through the v2 API', { tag: tags.api }, () => {
 
     test('lifecycle endpoints answer 400 or 404 with a message, and malformed input never gives a 5xx',
         testMeta({
-            id: 'API-CERT-02', prio: 'P1', issue: 'ilm#429',
+            id: 'API-CERT-02', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'unknown RA profile → 404 "Object of type \'RaProfile\' identified by <uuid> is not found."; neither CSR nor key, or an unparseable CSR → 400 "Failed to submit certificate request…"',
                 'ValidationException = 422 string array; CertificateOperationException = 400 {message} (core exception handler); type mismatch → 400 {message}',
@@ -176,7 +176,7 @@ test.describe('Certificate issue through the v2 API', { tag: tags.api }, () => {
 
     test('a wrong content type (text/plain) on the issue operation is a 4xx, never a 5xx',
         testMeta({
-            id: 'API-CERT-02', row: 'text-plain-5xx', prio: 'P1', issue: 'ilm#429', bug: 'core#2140',
+            id: 'API-CERT-02', row: 'text-plain-5xx', prio: 'P1', issue: 'ilm#429', needs: 'ca', bug: 'core#2140',
             rule: ['the v2 issue operation declares 200 / 400 / 422 / 500 only: a 415 is undeclared (spec gap), so the oracle is a 4xx and never a 5xx; no stack trace, class name or SQL state in the body'],
         }),
         async ({ api, own, ownRaProfile }, testInfo) => {
@@ -194,7 +194,7 @@ test.describe('Certificate issue through the v2 API', { tag: tags.api }, () => {
 
     test('lifecycle endpoints answer 401 to an invalid bearer token',
         testMeta({
-            id: 'API-CERT-02', row: 'no-credentials', prio: 'P1', issue: 'ilm#429',
+            id: 'API-CERT-02', row: 'no-credentials', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'no valid credentials → 401 on issue, issue-existing, renew, rekey, revoke, approve and reject, with no stack trace, class name or SQL state in the body',
                 'not asserted on a local stack, where the dev proxy (AUTH_MODE=header) or the localhost identity may authenticate the call',

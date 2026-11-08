@@ -26,7 +26,7 @@ let BASE_URL: string;
 
 registerGuardRig(
     {
-        // TRACE answers 400 with an empty body, like core's firewall on main; a redirect is offered for the hop rule.
+        // TRACE answers 400 with an empty body (any refusal serves the guard checks); a redirect is offered for the hop rule.
         answer: (a) => (a.url === '/api/v1/redirect-me' ? { status: 302, headers: { location: '/api/v1/info' } } : a.method === 'TRACE' ? { status: 400 } : undefined),
     },
     (rig) => {

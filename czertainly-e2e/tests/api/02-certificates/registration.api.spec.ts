@@ -32,7 +32,7 @@ const FIRING_WAIT = { timeoutMs: EVENT_FIRING_WAIT_MS };
 test.describe('Certificate pre-registration through the v2 API', { tag: tags.api }, () => {
     test('registering with a CN and a challenge gives a registered certificate and never echoes the secret',
         testMeta({
-            id: 'API-CERT-21', prio: 'P1', issue: 'ilm#429', needs: 'registration-settings',
+            id: 'API-CERT-21', prio: 'P1', issue: 'ilm#429', needs: ['registration-settings', 'ca'],
             rule: [
                 'REGISTERED placeholder; the secret is stored encrypted and never returned; expiresAt defaults to defaultIssuanceWindowDays; core#1820 (platform-level on EJBCA-NG and MS ADCS NG)',
                 'requested → pending_registration → registered; the "Certificate Registered" event fires only with a challenge; requestAttributeWarnings always empty; expiresAt only with a secret',
@@ -138,7 +138,7 @@ test.describe('Certificate pre-registration through the v2 API', { tag: tags.api
 
     test('register refuses an invalid bearer token with 401',
         testMeta({
-            id: 'API-CERT-21', row: 'no-credentials', prio: 'P1', issue: 'ilm#429',
+            id: 'API-CERT-21', row: 'no-credentials', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: ['no valid credentials → 401 on register; not asserted on a local stack, where the dev proxy (AUTH_MODE=header) or the localhost identity may authenticate the call'],
         }),
         async ({ api, own, ownRaProfile }) => {
@@ -151,15 +151,16 @@ test.describe('Certificate pre-registration through the v2 API', { tag: tags.api
 
     test('a CN with RFC 4514 special characters registers with an escaped subject DN',
         testMeta({
-            id: 'API-CERT-21', row: 'rfc4514', prio: 'P1', issue: 'ilm#429', bug: ['core#2258', 'core#2509'],
-            rule: ['core#2258 / core#2509 (the subject DN built from request attributes must be well-formed and RFC 4514 escaped; open bugs, marked with test.fail)', 'csrAttributes project to the subject'],
+            id: 'API-CERT-21', row: 'rfc4514', prio: 'P1', issue: 'ilm#429', needs: 'ca', bug: ['core#2258', 'core#2509'],
+            rule: ['core#2258 / core#2509 (the subject DN built from request attributes must be well-formed and RFC 4514 escaped; open bugs, marked with test.fail)', 'csrAttributes project to the subject', 'a refusal is never a 5xx (asserted before the marker; today core refuses the unescaped DN with a 4xx)'],
         }),
         async ({ api, own, ownRaProfile }) => {
             test.setTimeout(MANY_STEPS_TEST_MS);
             const ra = ownRaProfile;
             const cn = checkedCommonName(specialCharCn(ownName('c21dn')));
-            test.fail(true, 'core#2258 / core#2509: the subject DN built from request attributes is malformed and not RFC 4514 escaped (open)');
             const r = await registerOwnCertificate(api, ra, own.spec, { suffix: 'c21dn', cn, secret: newChallenge(), note: 'API-CERT-21 special-character CN (core#2258 / core#2509)' });
+            expect(r.answer.status, `never a 5xx: ${r.answer.text.slice(0, 300)}`).toBeLessThan(500);
+            test.fail(true, 'core#2258 / core#2509: the subject DN built from request attributes is malformed and not RFC 4514 escaped (open)');
             expect(r.answer.status, r.answer.text.slice(0, 300)).toBe(200);
             await waitForCertificateState(api, r.cert!.uuid, 'registered', QUICK_STATE_WAIT_MS, { failOn: ['failed', 'rejected', 'issued'] });
             const detail = await getCertificate(api, r.cert!.uuid);
@@ -168,7 +169,7 @@ test.describe('Certificate pre-registration through the v2 API', { tag: tags.api
 
     test('completing a registered certificate with the right secret and a CSR issues it with the CSR key',
         testMeta({
-            id: 'API-CERT-22', prio: 'P1', issue: 'ilm#429',
+            id: 'API-CERT-22', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'complete = POST …/{c}/issue with request, format, authorizationSecret; the registered identity is preserved',
                 'after the first issuance the window is cleared and the authorization is retained ACTIVE for renew / rekey; a verified secret resets the counter',
@@ -212,7 +213,7 @@ test.describe('Certificate pre-registration through the v2 API', { tag: tags.api
 
     test('completion refuses a wrong secret, a missing secret, no CSR and an issued certificate',
         testMeta({
-            id: 'API-CERT-23', prio: 'P1', issue: 'ilm#429',
+            id: 'API-CERT-23', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'wrong secret: 422 "The certificate registration challenge is invalid.", failedAttempts + 1 committed before the rejection, history "Certificate registration challenge verification failed (attempt N)"; missing / blank: 422 "…challenge is required." with no attempt; a verified secret resets the counter',
                 'no CSR: "A certificate signing request is required to issue a registered certificate. Certificate: …"; a secret against no active authorization: "An authorization secret was presented but the certificate has no active registration authorization to verify it against."; an issued certificate: "Cannot issue certificate with state Issued."',

@@ -39,7 +39,7 @@ async function expectWalkRows(api: Parameters<typeof historyOf>[0], uuid: string
 
 test.describe('Certificate state transition audit trail', { tag: tags.api }, () => {
     test('issuing a certificate audits ISSUE SUCCESS',
-        testMeta({ id: 'API-CERT-34', row: 'issue', prio: 'P1', issue: 'ilm#429', rule: RULES }),
+        testMeta({ id: 'API-CERT-34', row: 'issue', prio: 'P1', issue: 'ilm#429', needs: 'ca', rule: RULES }),
         async ({ api, own, ownRaProfile }) => {
             test.setTimeout(ISSUE_MS);
             const ra = ownRaProfile;
@@ -48,7 +48,7 @@ test.describe('Certificate state transition audit trail', { tag: tags.api }, () 
         });
 
     test('revoking an issued certificate audits ISSUE SUCCESS then REVOKE SUCCESS',
-        testMeta({ id: 'API-CERT-34', row: 'revoke', prio: 'P1', issue: 'ilm#429', rule: RULES }),
+        testMeta({ id: 'API-CERT-34', row: 'revoke', prio: 'P1', issue: 'ilm#429', needs: 'ca', rule: RULES }),
         async ({ api, own, ownRaProfile }) => {
             test.setTimeout(LIFECYCLE_MS);
             const ra = ownRaProfile;
@@ -126,7 +126,7 @@ test.describe('Certificate state transition audit trail', { tag: tags.api }, () 
         });
 
     test('registering then completing a certificate audits the update and the issue',
-        testMeta({ id: 'API-CERT-34', row: 'register-then-complete', prio: 'P1', issue: 'ilm#429', rule: RULES }),
+        testMeta({ id: 'API-CERT-34', row: 'register-then-complete', prio: 'P1', issue: 'ilm#429', needs: 'ca', rule: RULES }),
         async ({ api, own, ownRaProfile }) => {
             test.setTimeout(LONG_TEST_MS);
             const ra = ownRaProfile;

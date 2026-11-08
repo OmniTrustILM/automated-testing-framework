@@ -126,6 +126,17 @@ export function adoptionOf(cert: JsonObject, own?: OwnAttachments): string[] {
     return why;
 }
 
+const CA_SUBJECT_TYPES = new Set(['rootCa', 'intermediateCa']);
+
+/**
+ * A CA certificate by the detail's `subjectType`; without one, by a `trustedCa` mark (core sets it on CA and self-signed
+ * certificates only).
+ */
+export function isCaCertificate(cert: JsonObject): boolean {
+    if (typeof cert.subjectType === 'string' && cert.subjectType) return CA_SUBJECT_TYPES.has(cert.subjectType);
+    return cert.trustedCa !== undefined && cert.trustedCa !== null;
+}
+
 export async function certificateCreationTime(api: APIRequestContext, uuid: string): Promise<string | undefined> {
     const resp = await api.get(`/api/v1/certificates/${uuid}/history`);
     if (!resp.ok()) return undefined;
@@ -247,10 +258,16 @@ export const keyAssociationsOf = (key: JsonObject): unknown[] => {
 };
 
 const certificates: TeardownHandler = {
-    action: 'derived: keep unless made after createdAfter and not adopted; issued with an RA profile: revoke (v2) → wait revoked → delete; else delete',
+    action: 'derived: keep a CA certificate, else keep unless made after createdAfter and not adopted; issued with an RA profile: revoke (v2) → wait revoked → delete; else delete',
     async remove(ctx, line) {
         const cert = ctx.live!;
         if (line.derived) {
+            // Core links later certificates, foreign ones too, to a CA in the inventory, and its delete clears the CRL, SCEP and CMP
+            // references to it. A run-named CA (a discovery target's) signs only the run's own certificates.
+            if (isCaCertificate(cert) && !carriesRunPrefix(String(cert.commonName ?? ''), ctx.runId, 'certificates')) {
+                ctx.warn(`kept derived certificate ${line.uuid}: a CA certificate (subjectType ${String(cert.subjectType ?? 'unknown')}); other certificates may name it as their issuer`);
+                return 'kept';
+            }
             // Deleted only when nobody adopted it AND the platform created it at or after createdAfter (server clock); an own group / user
             // / RA profile is no adoption.
             const adopted = adoptionOf(cert, { groups: liveOwnUuids(ctx, 'groups'), users: liveOwnUuids(ctx, 'users'), raProfiles: liveOwnUuids(ctx, 'raProfiles') });

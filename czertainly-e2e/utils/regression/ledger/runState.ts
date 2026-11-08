@@ -56,7 +56,6 @@ export interface BuildInfo {
     version?: string;
     branch?: string;
     commitId?: string;
-    markerReadable: boolean;
 }
 
 export interface RunState {

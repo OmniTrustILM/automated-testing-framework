@@ -125,22 +125,24 @@ const PROXY_SERVER = /\b(nginx|envoy|haproxy|traefik|istio|cloudflare|openresty|
 
 export type RefusedMethodResult =
     | { outcome: 'skip'; why: string }
-    | { outcome: 'core'; problems: string[] };
+    | { outcome: 'judged'; answeredBy: string; problems: string[] };
 
 /**
- * Judge the answer to a refused method: a 405, a proxy `Server` header or a body that is neither empty nor JSON is the ingress's (skip);
- * for core's answer only numbers go into a message, never the body (it could echo the bearer token).
+ * Judge the answer to TRACE: refused with 405 by whoever answers (an nginx-based gateway refuses TRACE itself; core answers 405 with an
+ * `Allow` header since core#2502). A 2xx or a 5xx is a problem from anyone; another answer is the gateway's (a proxy `Server` header or a
+ * non-JSON body: skip) or core's (a problem). Only numbers and the proxy's name go into a verdict, never the body.
  */
 export function checkRefusedMethod(answer: RefusedMethodAnswer): RefusedMethodResult {
-    if (answer.status === 405) return { outcome: 'skip', why: 'HTTP 405' };
-    const proxy = PROXY_SERVER.exec(answer.headers.server ?? '');
-    if (proxy) return { outcome: 'skip', why: `server header names a proxy (${proxy[1].toLowerCase()})` };
+    const proxy = PROXY_SERVER.exec(answer.headers.server ?? '')?.[1].toLowerCase();
     const bytes = Buffer.byteLength(answer.bodyText.trim());
-    if (bytes > 0 && !isJson(answer.bodyText)) return { outcome: 'skip', why: `non-JSON body (${bytes} bytes)` };
-    const problems: string[] = [];
-    if (answer.status !== 400) problems.push(`status ${answer.status}, expected 400`);
-    if (bytes > 0) problems.push(`body is not empty (${bytes} bytes), expected an empty body`);
-    return { outcome: 'core', problems };
+    const answeredBy = proxy ? `a proxy (${proxy})` : bytes > 0 && !isJson(answer.bodyText) ? `a gateway (non-JSON body, ${bytes} bytes)` : 'core';
+    if (answer.status === 405) {
+        const problems = answeredBy === 'core' && !answer.headers.allow ? ['405 without an Allow header'] : [];
+        return { outcome: 'judged', answeredBy, problems };
+    }
+    if (answer.status < 300) return { outcome: 'judged', answeredBy, problems: [`status ${answer.status}: the method was accepted`] };
+    if (answeredBy !== 'core' && answer.status < 500) return { outcome: 'skip', why: `${answeredBy} answered ${answer.status}` };
+    return { outcome: 'judged', answeredBy, problems: [`status ${answer.status}, expected 405`] };
 }
 
 function isJson(text: string): boolean {

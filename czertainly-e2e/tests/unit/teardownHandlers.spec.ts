@@ -237,6 +237,25 @@ test('a discovered certificate created before createdAfter is kept; one created 
     expect(coreNone.mutations()).toEqual([]);
 });
 
+test('a derived CA certificate is kept and reported, even when made in the run and not adopted; an end entity or a run-named CA is still deleted', async () => {
+    const made = '2026-10-13T12:05:00.000Z';
+    for (const detail of [{ subjectType: 'rootCa', trustedCa: true }, { subjectType: 'intermediateCa', trustedCa: false }, { trustedCa: false }]) {
+        const l = derivedCert();
+        const core = certCore(l, { state: 'revoked', ...detail }, made);
+        const r = await run(core, l);
+        expect(r.result, JSON.stringify(detail)).toBe('kept');
+        expect(r.warnings[0]).toMatch(/kept derived certificate .*: a CA certificate/);
+        expect(core.mutations()).toEqual([]);
+    }
+    for (const detail of [{ subjectType: 'selfSignedEndEntity', trustedCa: false }, { subjectType: 'endEntity' }, {}, { subjectType: 'intermediateCa', trustedCa: false, commonName: `${RUN}-scan-ca.example.test` }]) {
+        const l = derivedCert();
+        const core = certCore(l, { state: 'revoked', ...detail }, made);
+        const r = await run(core, l);
+        expect(r.error, JSON.stringify(detail)).toBeUndefined();
+        expect(core.mutations()).toEqual([`DELETE /api/v1/certificates/${l.uuid}`]);
+    }
+});
+
 test('a derived key without a creation time fails instead of being kept', async () => {
     const l = line('keys', { name: 'certKey_x', derived: true, createdAfter: '2026-10-13T12:00:00.000Z' });
     const core = new FakeCore().set(`/api/v1/keys/${l.uuid}`, { uuid: l.uuid, name: 'certKey_x', associations: [] });

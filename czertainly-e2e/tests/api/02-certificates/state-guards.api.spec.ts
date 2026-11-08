@@ -111,7 +111,7 @@ test.describe('Certificate state and operation refusal matrix', { tag: tags.api 
         });
 
     test('every operation on a revoked certificate is refused',
-        testMeta({ id: 'API-CERT-08', row: 'revoked', prio: 'P1', issue: 'ilm#429', rule: RULES }),
+        testMeta({ id: 'API-CERT-08', row: 'revoked', prio: 'P1', issue: 'ilm#429', needs: 'ca', rule: RULES }),
         async ({ api, own, ownRaProfile }) => {
             test.setTimeout(LIFECYCLE_MS);
             const ra = ownRaProfile;
@@ -126,7 +126,7 @@ test.describe('Certificate state and operation refusal matrix', { tag: tags.api 
         });
 
     test('every operation on a failed certificate is refused',
-        testMeta({ id: 'API-CERT-08', row: 'failed', prio: 'P1', issue: 'ilm#429', needs: 'ejbca-ng', rule: [...RULES, 'EJBCA-NG end-entity profile refuses an e-mail SAN: the only shared-tier producer of failed'] }),
+        testMeta({ id: 'API-CERT-08', row: 'failed', prio: 'P1', issue: 'ilm#429', needs: ['ejbca-ng', 'ca'], rule: [...RULES, 'EJBCA-NG end-entity profile refuses an e-mail SAN: the only shared-tier producer of failed'] }),
         async ({ api, own, ownRaProfile }) => {
             test.setTimeout(ISSUE_MS);
             const ra = ownRaProfile;
@@ -150,7 +150,7 @@ test.describe('Certificate state and operation refusal matrix', { tag: tags.api 
         });
 
     test('every operation on a registered certificate is refused',
-        testMeta({ id: 'API-CERT-08', row: 'registered', prio: 'P1', issue: 'ilm#429', rule: RULES }),
+        testMeta({ id: 'API-CERT-08', row: 'registered', prio: 'P1', issue: 'ilm#429', needs: 'ca', rule: RULES }),
         async ({ api, own, ownRaProfile }) => {
             test.setTimeout(MANY_STEPS_TEST_MS);
             const ra = ownRaProfile;

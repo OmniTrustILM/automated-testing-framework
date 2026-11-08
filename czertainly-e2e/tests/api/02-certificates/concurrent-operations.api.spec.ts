@@ -16,7 +16,7 @@ import { waitForCertificateState } from '../../../utils/regression/wait/certific
 test.describe('Concurrent certificate operations', { tag: tags.api }, () => {
     test('two simultaneous identical renews give two issued successors and no 5xx',
         testMeta({
-            id: 'API-CERT-36', row: 'renew', prio: 'P1', issue: 'ilm#429',
+            id: 'API-CERT-36', row: 'renew', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'no predecessor lock, one successor per call: two parallel renews create two issued successors (ilm#429 closing comment); asserted: no 5xx, two successors, both consistent',
                 'ilm#424 (Hibernate 7.4.8+ lock, HHH-20744: the migration must not turn the parallel path into a 5xx), core#2435 (duplicate delivery is another race; not asserted here)',
@@ -56,7 +56,7 @@ test.describe('Concurrent certificate operations', { tag: tags.api }, () => {
 
     test('two simultaneous completions give one issued certificate and no 5xx',
         testMeta({
-            id: 'API-CERT-36', row: 'complete', prio: 'P1', issue: 'ilm#429',
+            id: 'API-CERT-36', row: 'complete', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'the ISSUE action claims the certificate under a pessimistic lock; a second claim commits and returns: one serial, one issue event (HHH-20744 lock)',
                 'completion = issue-existing with the CSR and the challenge',

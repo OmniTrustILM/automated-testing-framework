@@ -1,11 +1,11 @@
 /**
  * API-AUTH-01, 02, 03, 06 — Who may call the API: no credentials, valid, tampered and forged bearers, a disabled user
- * (ilm#426). core#2502: the refused-method row is wrong on the migrated build (test.fail there).
+ * (ilm#426).
  */
 import { FEW_CALLS_TEST_MS, MANY_STEPS_TEST_MS, SEVERAL_STEPS_TEST_MS } from '../../../utils/regression/timeouts';
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { INGRESS_SKIP_MESSAGE, checkRefusedMethod } from '../../../utils/regression/errorContract';
-import { getBuildInfo, isMigratedBuild } from '../../../utils/regression/coreBuild';
+import { getBuildInfo } from '../../../utils/regression/coreBuild';
 import { expectHealthGroupUp, PROBE_PATHS } from '../../../utils/regression/platform/connectorApi';
 import { anonymousTarget, callAs, callWithAuthorization, coreReplicas, isNotGrantableAction, leaksInternals, parseProfile, readProfile, replicaBlocker, restrictedIdentity } from '../../../utils/regression/rbac/identities';
 import { ANONYMOUS_VARIANTS, buildVariant, claimOf, echoesToken, TOKEN_VARIANTS, TOKENLESS_VARIANTS, TokenVariant } from '../../../utils/regression/rbac/jwtTools';
@@ -139,33 +139,28 @@ test.describe('Authentication of API callers', { tag: tags.api }, () => {
             expect(String(claimOf(adminToken!.bearer(), 'username')).toLowerCase()).toBe(profile.username.toLowerCase());
         });
 
-    test('a refused HTTP method with valid credentials answers 400 on the main build',
+    test('TRACE with valid credentials is refused with 405',
         testMeta({
-            id: 'API-AUTH-02', row: 'method', prio: 'P1', issue: 'ilm#426', bug: 'core#2502',
+            id: 'API-AUTH-02', row: 'method', prio: 'P1', issue: 'ilm#426',
             rule: [
-                'TRACE or any method outside the firewall allow list: 400 baseline, 401 migrated (core#2502, open); ilm#424 "status codes stay the same"',
-                'the credential state decides the status; only meaningful where the ingress lets the method reach core (otherwise the test skips)',
-                'core#2502: the migrated build answers 401 to a refused method',
+                'TRACE with valid credentials is refused with 405, never 401 (core#2502, fixed); ilm#424 "status codes stay the same"',
+                'an nginx-based gateway refuses TRACE itself with 405, so on a tier the row checks what a client gets; core\'s own answer is checked only where the answered-by annotation names core',
             ],
         }),
         async ({ api }, testInfo) => {
             test.setTimeout(FEW_CALLS_TEST_MS);
             const build = await getBuildInfo(api);
             testInfo.annotations.push({ type: 'build', description: `core ${build.version ?? '?'} branch ${build.branch ?? '?'}` });
-            const migrated = await isMigratedBuild(api, testInfo);
             const res = await api.fetch('/api/v1/auth/profile', { method: 'TRACE' });
-            // Whose answer is it (as in API-GEN-32[method])? An ingress that refuses TRACE before core (405, a proxy
-            // `Server` header, a non-JSON body) says nothing about core: skip with the named reason. The body is never printed (a proxy
-            // could echo the bearer).
+            // As in API-GEN-32[method]; the body is never printed (a proxy could echo the bearer).
             const verdict = checkRefusedMethod({ status: res.status(), headers: res.headers(), bodyText: await res.text() });
             if (verdict.outcome === 'skip') {
                 testInfo.annotations.push({ type: 'ingress-answer', description: verdict.why });
                 test.skip(true, INGRESS_SKIP_MESSAGE);
                 return;
             }
-            // The known bug only on the migrated build (the build marker from /v1/info; REG_BUILD overrides it)
-            test.fail(migrated, 'core#2502: the migrated build answers 401 to a refused method');
-            expect(verdict.problems, 'a refused method with valid credentials answers 400 with an empty body (core, not the ingress)').toEqual([]);
+            testInfo.annotations.push({ type: 'answered-by', description: verdict.answeredBy });
+            expect(verdict.problems, 'TRACE with valid credentials is refused with 405').toEqual([]);
         });
 
     for (const variant of TOKENLESS_VARIANTS) {

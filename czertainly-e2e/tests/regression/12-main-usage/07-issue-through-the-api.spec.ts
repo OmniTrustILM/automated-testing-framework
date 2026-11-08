@@ -20,7 +20,7 @@ import { isLocalTier } from '../../../utils/regression/tier/kind';
 test.describe('Certificate issue through the API', { tag: tags.regression }, () => {
     test('an external CSR issued through the v2 API reaches issued with the CSR key and its history',
         testMeta({
-            id: 'REG-USE-07', prio: 'P1', issue: 'ilm#429',
+            id: 'REG-USE-07', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: ['release checklist Usage 7: issue a certificate with the v2 operations API from an external CSR; detail, history and download match the CSR'],
         }),
         async ({ api, own, ownRaProfile }) => {
@@ -76,7 +76,7 @@ test.describe('Certificate issue through the API', { tag: tags.regression }, () 
 
     test('the v2 issue answers the exact contract and issues the certificate with the CSR SANs',
         testMeta({
-            id: 'REG-USE-07.1', prio: 'P1', issue: 'ilm#429',
+            id: 'REG-USE-07.1', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: [
                 '200 {certificateData:"", uuid, requestAttributeWarnings}; never the signed certificate; lenient: accepted with warnings',
                 'history "Issued using RA Profile <name>"; SANs: the CA decides, exact on EJBCA-NG',
@@ -130,7 +130,7 @@ test.describe('Certificate issue through the API', { tag: tags.regression }, () 
 
     test('a garbage CSR is refused with 400 and a message that says the request could not be submitted',
         testMeta({
-            id: 'REG-USE-07.1', row: 'garbage-csr-refused', prio: 'P1', issue: 'ilm#429',
+            id: 'REG-USE-07.1', row: 'garbage-csr-refused', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: ['an unparseable CSR: 400 "Failed to submit certificate request…"; a 400 body is {message}'],
         }),
         async ({ api, own, ownRaProfile }) => {
@@ -146,7 +146,7 @@ test.describe('Certificate issue through the API', { tag: tags.regression }, () 
 
     test('a read of an own certificate without credentials is refused with 401 and no certificate data',
         testMeta({
-            id: 'REG-USE-07.1', row: 'no-credentials', prio: 'P1', issue: 'ilm#429',
+            id: 'REG-USE-07.1', row: 'no-credentials', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: ['no credentials → 401 and a body that carries neither the common name nor the certificate content; not asserted on a local stack, where the dev proxy (AUTH_MODE=header) or the localhost identity may authenticate the call'],
         }),
         async ({ api, request, own, ownRaProfile }) => {

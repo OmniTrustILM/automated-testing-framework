@@ -23,7 +23,7 @@ function chainNotValid(result: Record<string, any>): string | undefined {
 test.describe('Certificate revoke through the v2 API', { tag: tags.api }, () => {
     test('a revoke with keyCompromise gives 204 and a revoked certificate, and a second revoke is refused',
         testMeta({
-            id: 'API-CERT-11', prio: 'P1', issue: 'ilm#429',
+            id: 'API-CERT-11', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'revoke of an ISSUED certificate: 204, completion through the authority; wire code keyCompromise',
                 'history "Certificate revoked. Reason: Key compromise"; REVOKED is terminal and the validation status becomes revoked',
@@ -55,7 +55,7 @@ test.describe('Certificate revoke through the v2 API', { tag: tags.api }, () => 
 
     test('a revoked certificate reports validation status revoked',
         testMeta({
-            id: 'API-CERT-11', row: 'validation-status', prio: 'P1', issue: 'ilm#429',
+            id: 'API-CERT-11', row: 'validation-status', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: ['REVOKED is terminal; the validation status also becomes revoked (product documentation, certificate validation table)'],
         }),
         async ({ api, own, ownRaProfile }) => {

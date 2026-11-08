@@ -315,13 +315,22 @@ test('every row that needs the second identity or the local Keycloak CALLS its p
     expect(offenders).toEqual([]);
 });
 
+test('every row that takes the run RA profile declares @needs:ca, so a tier without a CA skips it for a declared reason', () => {
+    const offenders: string[] = [];
+    let rows = 0;
+    for (const rel of specs) {
+        for (const b of testBlocks(source(rel), rel)) {
+            if (!/\bownRaProfile\b/.test(stripComments(b.body))) continue;
+            rows += 1;
+            if (!b.tags.includes('@needs:ca')) offenders.push(`${rel}:${b.line} ${b.title.slice(0, 60)}`);
+        }
+    }
+    // not vacuous: 42 rows take it today
+    expect(rows, 'rows that take ownRaProfile').toBeGreaterThanOrEqual(30);
+    expect(offenders).toEqual([]);
+});
+
 const MARKER_BEFORE_ASSERTION = new Set([
-    'tests/api/01-auth/authentication.api.spec.ts: a refused HTTP method with valid credentials answers 400 on',
-    "tests/api/01-auth/permissions-by-role.api.spec.ts: the 403 body's statusCode is 403",
-    'tests/api/02-certificates/registration.api.spec.ts: a CN with RFC 4514 special characters registers with an esca',
-    "tests/api/02-certificates/search-filters.api.spec.ts: ${r.title} should answer a 4xx, not today\\'s 500",
-    'tests/api/03-contract/errors.api.spec.ts: TRACE ${r.url} is refused with 400 and an empty body',
-    'tests/api/03-contract/migration-checks.api.spec.ts: a refused HTTP method (TRACE) answers 400 with an empty body',
     'tests/api/07-keys/create.api.spec.ts: the algorithm list offers no unknown or deprecated entry',
     'tests/api/07-keys/create.api.spec.ts: an algorithm the connector cannot create is refused with a 4',
     "tests/api/07-keys/edge-cases.api.spec.ts: a certificate issued for a token key carries that key's publ",
@@ -353,7 +362,7 @@ test('a known-bug test keeps a hard assertion BEFORE its unconditional test.fail
     // holds the marker (the main-flow branch lacks some specs).
     const inTree = (k: string): boolean => fs.existsSync(path.join(ROOT, k.slice(0, k.indexOf(':'))));
     expect([...MARKER_BEFORE_ASSERTION].filter((k) => inTree(k) && !found.has(k)), 'stale entries: lower the list').toEqual([]);
-    expect(MARKER_BEFORE_ASSERTION.size, 'the list can only shrink').toBeLessThanOrEqual(12);
+    expect(MARKER_BEFORE_ASSERTION.size, 'the list can only shrink').toBeLessThanOrEqual(6);
 });
 
 test('no spec or helper holds a literal password or secret value (a generated one, or the empty string of a pin)', () => {

@@ -349,7 +349,7 @@ class TeardownRun {
                 this.result.failed.push(item);
                 if (isRetryableFailure(this.lastFailureOf(item)?.message)) this.retryable.push(item);
             } else if (kept) {
-                this.keep(item, `kept ${item.type} ${item.uuid}: provably older than the run, or adopted (see the handler's reason above)`);
+                this.keep(item, `kept ${item.type} ${item.uuid}: provably older than the run, adopted, or a foreign CA (see the handler's reason above)`);
             } else {
                 this.onDeleted(item);
                 this.result.deleted.push({ type: item.type, uuid: item.uuid });
@@ -393,7 +393,7 @@ class TeardownRun {
             assertOwn(item.line, `runTeardown.finalPass.${item.type}`, { lines, runId: this.opts.runId, ...(this.tier ? { tier: this.tier } : {}) });
             const kept = (await h.remove(ctx, item.line)) === 'kept';
             if (kept) {
-                this.keep(item, `kept ${item.type} ${item.uuid} in the final pass: provably older than the run, or adopted (see the handler's reason above)`);
+                this.keep(item, `kept ${item.type} ${item.uuid} in the final pass: provably older than the run, adopted, or a foreign CA (see the handler's reason above)`);
             } else if (!this.recordFinalPassDeletion(item)) {
                 return;
             }

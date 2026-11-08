@@ -7,6 +7,7 @@ import { DashboardCounts, DashboardPage, DashboardStatistics } from '../../../pa
 import { addInventoryTextFilter, filterBadges, waitForListRows } from '../../../pages/ui/list';
 import { ownName } from '../../../utils/regression/ledger/runState';
 import { revalidate } from '../../../utils/regression/lifecycle/preRegistration';
+import { patchOwnCertificateOk } from '../../../utils/regression/inventory/seedOwnedObjects';
 import { selfSignedPem } from '../../../utils/regression/pkiBuilders';
 import { testMeta, tags } from '../../../utils/regression/tags';
 
@@ -18,8 +19,10 @@ const DRILL_DOWNS: ReadonlyArray<{ chart: string; item: string; counts: (s: Dash
 
 const DAY_MS = 24 * 3600 * 1000;
 
-const legendsWithoutData = (stats: DashboardStatistics): typeof DRILL_DOWNS[number][] =>
-    DRILL_DOWNS.filter((d) => !Object.entries(d.counts(stats) ?? {}).some(([key, n]) => d.key.test(key) && n > 0));
+const legendsWithoutData = (stats: DashboardStatistics, legends: typeof DRILL_DOWNS): string[] =>
+    legends
+        .filter((d) => !Object.entries(d.counts(stats) ?? {}).some(([key, n]) => d.key.test(key) && n > 0))
+        .map((d) => `"${d.item}" of "${d.chart}" (statistics: ${Object.keys(d.counts(stats) ?? {}).join('/') || 'none'})`);
 
 test.describe('Certificates dashboard', { tag: tags.regression }, () => {
     test('the count tiles equal the statistics the page loaded and the charts render',
@@ -51,9 +54,12 @@ test.describe('Certificates dashboard', { tag: tags.regression }, () => {
     test('a chart legend click opens the inventory with the matching filter',
         testMeta({
             id: 'REG-USE-01', row: 'legend opens the filtered inventory', prio: 'P1', issue: 'ilm#428',
-            rule: ['release checklist Usage 1: a legend item opens the inventory filtered on it (State, Validation status, an Expires At window for the expiration buckets)'],
+            rule: [
+                'release checklist Usage 1: a legend item opens the inventory filtered on it (State, Validation status, an Expires At window for the expiration buckets)',
+                'the statistics are counted live, so after the uploads "Issued" and "30" always have a legend; "Expired" only while validation is on',
+            ],
         }),
-        async ({ signedIn: page, api, own }) => {
+        async ({ signedIn: page, api, own }, testInfo) => {
             const dashboard = new DashboardPage(page);
             const drillDown = async (chart: string, item: string): Promise<void> => {
                 await dashboard.goToCertificatesDashboard();
@@ -73,24 +79,28 @@ test.describe('Certificates dashboard', { tag: tags.regression }, () => {
                 own.certificate.upload(selfSignedPem(expiredCn, 10, new Date(now.getTime() - 40 * DAY_MS)).pem, expiredCn, 'uploaded already expired (dashboard legend)'));
             const soon = await test.step('Data: upload an own certificate that expires in 25 days', async () =>
                 own.certificate.upload(selfSignedPem(soonCn, 25, now).pem, soonCn, 'uploaded expiring in 25 days (dashboard legend)'));
-            await test.step('Re-validate both so the validation status is stored', async () => {
-                await revalidate(api, expired);
+            const validation = await test.step('Mark the expired certificate trusted and re-validate both', async () => {
+                // Self-signed and untrusted, it validates as invalid: core checks the chain before the validity.
+                await patchOwnCertificateOk(api, expired, { trustedCa: true });
                 await revalidate(api, soon);
+                return revalidate(api, expired);
             });
-            // A legend item exists only for a non-zero count: a tier still without
-            // data for one is a named skip; data without a legend fails below.
-            let stats = await dashboard.goToCertificatesDashboard();
-            await expect.poll(async () => {
-                stats = await dashboard.goToCertificatesDashboard();
-                return legendsWithoutData(stats).length;
-            }, { timeout: 60_000, intervals: [5_000] }).toBe(0).catch(() => undefined);
-            const noData = legendsWithoutData(stats);
-            test.skip(noData.length > 0, `no certificates behind the legend ${noData.map((d) => `"${d.item}" of "${d.chart}"`).join(', ')} on this tier after the upload of an expired and a 25-day certificate (statistics: ${noData.map((d) => Object.keys(d.counts(stats) ?? {}).join('/') || 'none').join('; ')})`);
+            const validationOff = validation.resultStatus === 'not_checked';
+            if (validationOff) {
+                testInfo.annotations.push({ type: 'skipped-step', description: `Validation 'Expired': ${String(validation.message ?? 'validation is off on this tier')}` });
+            } else {
+                expect(validation.resultStatus, 'the own expired certificate, marked trusted, validates as expired').toBe('expired');
+            }
+            const wanted = DRILL_DOWNS.filter((d) => !(validationOff && d.item === 'Expired'));
+            await expect.poll(async () => legendsWithoutData(await dashboard.goToCertificatesDashboard(), wanted), {
+                message: 'a legend for each own upload (a legend exists only for a non-zero count)', timeout: 60_000, intervals: [5_000],
+            }).toEqual([]);
             await test.step("State 'Issued'", async () => {
                 await drillDown('Certificates by State', 'Issued');
                 await expect.poll(() => filterBadges(page)).toContain("Property 'State' equals 'Issued'");
             });
-            await test.step("Validation 'Expired'", async () => {
+            await test.step("Validation 'Expired'", async (step) => {
+                step.skip(validationOff, 'validation is off on this tier');
                 await drillDown('Certificates by Validation', 'Expired');
                 await expect.poll(() => filterBadges(page)).toContain("Property 'Validation status' equals 'Expired'");
                 await showsOwn("Property 'Validation status' equals 'Expired'", expiredCn);
