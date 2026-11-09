@@ -152,8 +152,10 @@ export async function kubectlAvailable(kubectl: KubectlRunner): Promise<boolean>
     return (await kubectl(['version', '--client'])).code === 0;
 }
 
+// `can-i create pods/exec` would ask for the pod named "exec"; a subresource goes in --subresource.
 export async function canIAnswer(kubectl: KubectlRunner, verb: string, resource: string, namespace: string): Promise<'yes' | 'no' | 'unknown'> {
-    const r = await kubectl(['auth', 'can-i', verb, resource, '-n', namespace]);
+    const [kind, sub] = resource.split('/');
+    const r = await kubectl(['auth', 'can-i', verb, kind, ...(sub ? [`--subresource=${sub}`] : []), '-n', namespace]);
     const answer = r.stdout.trim();
     if (r.code === 0 && answer === 'yes') return 'yes';
     if (r.code === 1 && answer === 'no') return 'no';

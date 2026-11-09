@@ -10,7 +10,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { keyOnboardingConfig, summaryFile } from '../../utils/keyOnboarding/config';
 import { defaultDockerRunner, type DockerResult, type DockerRunner } from '../../utils/keyOnboarding/provision/docker';
-import { clusterPin, connectorTargetProblem, execArgs as execArgsOf, KILLED_EXIT, KubectlRunner, pinnedKubectl, removeKubeconfigs, scriptStdin, shellQuote, sidecarPods, spawnTool } from '../../utils/keyOnboarding/provision/kubectl';
+import { canIAnswer, clusterPin, connectorTargetProblem, execArgs as execArgsOf, KILLED_EXIT, KubectlRunner, pinnedKubectl, removeKubeconfigs, scriptStdin, shellQuote, sidecarPods, spawnTool } from '../../utils/keyOnboarding/provision/kubectl';
 import { keyOnboardingBlock, teardownBlock as koTeardownBlock } from '../../utils/keyOnboarding/blockTeardown';
 import { scrubError, scrubSecrets, secretForms, TierError } from '../../utils/devBlocks/provision/transport';
 import { uuidOf as uuidOfShared } from '../../utils/devBlocks/provision/names';
@@ -729,7 +729,10 @@ function fakeKubectl(dir: string, opts: KubectlOptions = {}) {
         const sub = subcommand(args);
         if (sub[0] === 'version') return opts.noClient ? { code: 127, stdout: '', stderr: 'kubectl: not found' } : ok('Client Version: v1.34.1\n');
         if (sub[0] === 'auth') {
-            const answer = opts.canI?.[`${sub[2]} ${sub[3]}`] ?? 'yes';
+            // As kubectl does: `pods/exec` is pods named "exec", only --subresource names a subresource.
+            if (sub[3].includes('/')) return { code: 1, stdout: 'no\n', stderr: '' };
+            const subresource = sub.find((a) => a.startsWith('--subresource='))?.slice('--subresource='.length);
+            const answer = opts.canI?.[`${sub[2]} ${sub[3]}${subresource ? `/${subresource}` : ''}`] ?? 'yes';
             return { code: answer === 'yes' ? 0 : 1, stdout: `${answer}\n`, stderr: '' };
         }
         if (sub[0] === 'get') return ok(JSON.stringify({ items: opts.pods ?? [pod(POD)] }));
@@ -809,6 +812,8 @@ test('pinnedKubectl: --context on every call, --request-timeout on API calls, a 
     const inPod = pinnedKubectl(k.runner, pin, {});
     await inPod(['auth', 'can-i', 'get', 'pods', '-n', NS]);
     expect(k.calls[2].args).toEqual(['--request-timeout=30s', 'auth', 'can-i', 'get', 'pods', '-n', NS]);
+    expect(await canIAnswer(k.runner, 'create', 'pods/exec', NS)).toBe('yes');
+    expect(k.calls.at(-1)!.args).toEqual(['auth', 'can-i', 'create', 'pods', '--subresource=exec', '-n', NS]);
     expect(k.calls[2].env?.KUBERNETES_MASTER).toBe('');
     const config = fs.readFileSync(k.calls[2].env!.KUBECONFIG, 'utf8');
     expect(config).toContain('server: "https://10.43.0.1:443"');
@@ -1012,7 +1017,7 @@ test('a shared tier: with the marker a permanent block fails at once, transient 
     stateDir = testInfo.outputPath('state');
     const env = sharedEnv(stateDir);
     fs.mkdirSync(stateDir, { recursive: true });
-    const execChecks = (k: ReturnType<typeof fakeKubectl>) => k.calls.filter((c) => subcommand(c.args)[0] === 'auth' && c.args.includes('create') && c.args.includes('pods/exec')).length;
+    const execChecks = (k: ReturnType<typeof fakeKubectl>) => k.calls.filter((c) => subcommand(c.args)[0] === 'auth' && c.args.includes('create') && c.args.includes('--subresource=exec')).length;
     writeMarkerFile(env);
     const noExec = fakeKubectl(testInfo.outputPath('k1'), { canI: { 'create pods/exec': 'no' } });
     const error = await unplantRunKeys(env, RUN, { kubectl: noExec.runner, retryDelayMs: 0 }).then(() => undefined, (e: Error) => e);
