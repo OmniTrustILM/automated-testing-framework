@@ -308,8 +308,15 @@ const certificates: TeardownHandler = {
 const bulkKeyCall = (ctx: TeardownContext, method: 'patch' | 'delete', path: string, uuid: string): Promise<APIResponse> =>
     method === 'patch' ? ctx.api.patch(path, { data: [uuid] }) : ctx.api.delete(path, { data: [uuid] });
 
+const ownTokenProfile = (ctx: TeardownContext, uuid: string | undefined): boolean => {
+    if (!uuid) return false;
+    const own = checkOwnership({ uuid }, { lines: ctx.ledger, runId: ctx.runId });
+    return own.own && own.line?.type === 'tokenProfiles' && !own.line.derived;
+};
+
 /**
- * The one handler for every own (non-derived) token key: without it core refuses to delete the token profile and token.
+ * The one handler for every own token key (and a derived key merged into an own token profile): without it core refuses to delete
+ * the token profile and token.
  * `DELETE /v1/keys` answers 204 even for an unknown uuid, so absence is proven by GET; if refused, the items are deactivated and destroyed
  * first and the delete is sent once more.
  */
@@ -335,7 +342,7 @@ async function removeOwnTokenKey(ctx: TeardownContext, line: LedgerLine): Promis
 }
 
 const keys: TeardownHandler = {
-    action: 'derived certKey_*: delete when not in a token, made after createdAfter and unused; own token key: bulk DELETE /v1/keys (items deactivated + destroyed first when refused), absence by GET',
+    action: 'derived certKey_*: delete when not in a token, made after createdAfter and unused (merged into an own token profile: as an own token key); own token key: bulk DELETE /v1/keys (items deactivated + destroyed first when refused), absence by GET',
     async remove(ctx, line) {
         if (!line.derived) return removeOwnTokenKey(ctx, line);
         const key = ctx.live!;
@@ -347,6 +354,8 @@ const keys: TeardownHandler = {
         const createdByUs = derivedDeletable(line, stringOf(key.creationTime));
         const associationCount = keyAssociationsOf(key).length;
         const used = associationCount > 0;
+        // Merged into an own token profile (key onboarding into the key a certificate brought in): it holds only the run's token object.
+        if (inToken && createdByUs && !used && ownTokenProfile(ctx, stringOf(key.tokenProfileUuid))) return removeOwnTokenKey(ctx, line);
         if (inToken || !createdByUs || used) {
             ctx.warn(`kept derived key ${line.uuid}: token=${inToken ? 'yes' : 'no'} created=${key.creationTime ?? '-'} (after ${line.createdAfter}) ` +
                 `associations=${associationCount}`);

@@ -1,8 +1,8 @@
 # Key onboarding block (`@dev-tests`)
 
 The developers' suite for ilm#409 (list the key pairs on a PKCS#11 token, onboard them, sign with them, remove them from the
-inventory), ported from `feat/409-list-and-adopt-keys` at fec5cbe. Four specs: `10-listing`, `20-onboarding`, `25-merge`
-(local stack only), `30-removal`. The setup plants 11 key pairs on the SoftHSM token and creates the token, profile and PIN
+inventory), ported from `feat/409-list-and-adopt-keys` at fec5cbe. Four specs: `10-listing`, `20-onboarding`, `25-merge`,
+`30-removal`. The setup plants 11 key pairs on the SoftHSM token and creates the token, profile and PIN
 secret; the teardown deletes them and then removes the run's pairs from the token. If it cannot prove the pairs are gone it
 fails and writes the manual removal command to `<REG_STATE_DIR>/<run id>.key-onboarding.removal.sh`.
 

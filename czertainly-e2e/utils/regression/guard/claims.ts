@@ -2,7 +2,8 @@
  * claims — the objects one request names, and the proof that each is the run's own: a probe uuid, or a ledger `created`
  * line of this run of exactly the type the route acts on plus a live read.
  */
-import { assertOwn, assertOwnLive, isIdNamed } from '../ledger/ownership';
+import { assertOwn, assertOwnLive, checkOwnership, derivedDeletable, isIdNamed } from '../ledger/ownership';
+import type { LedgerLine } from '../ledger/ledger';
 import { approvalLiveProblem } from './approvals';
 import { isCanonicalUuid } from './uuids';
 import { PathTarget } from './targets';
@@ -89,8 +90,10 @@ export async function assertOwnAll(state: GuardState, claims: Claims, helper: st
     for (const [uuid, claim] of claims.entries()) {
         if (state.probes.has(uuid)) continue;
         const line = assertOwn({ uuid }, helper, ledgerOpts);
-        if (line.derived) {
-            refuse('a derived object (made by the platform for the run) is removed only by the run-end teardown, after its creation-time and adoption checks', 'derived', { uuid });
+        const merged = line.derived ? await mergedKeyProblem(state, line, helper) : undefined;
+        if (merged) {
+            refuse('a derived object (made by the platform for the run) is removed only by the run-end teardown, after its creation-time ' +
+                `and adoption checks (${merged})`, 'derived', { uuid });
         }
         if (claim.type !== undefined && line.type !== claim.type) {
             refuse(`the ledger records it as ${line.type}, but ${claim.why} (an ownership claim counts only for the ` +
@@ -102,6 +105,28 @@ export async function assertOwnAll(state: GuardState, claims: Claims, helper: st
         }
         await assertOwnLive(state.api, line.type, { uuid }, helper, live);
     }
+}
+
+/**
+ * Why a derived key (or an item of one) is not a key core merged a planted private key into, or undefined when it is: its live token
+ * profile is an own token profile of the run and core made it at or after the line's createdAfter, so it holds only the run's token object.
+ */
+async function mergedKeyProblem(state: GuardState, line: LedgerLine, helper: string): Promise<string | undefined> {
+    const live = state.liveOptions();
+    const { tier: _tier, ...ledgerOpts } = live;
+    const keyUuid = line.type === 'keyItems' ? line.parents?.key : line.type === 'keys' ? line.uuid : undefined;
+    if (typeof keyUuid !== 'string') return 'not a key or a key item';
+    const keyLine = assertOwn({ uuid: keyUuid }, helper, ledgerOpts);
+    if (keyLine.type !== 'keys' || !keyLine.derived) return 'its key is no derived key of the run';
+    const body = (await assertOwnLive(state.api, 'keys', { uuid: keyUuid }, helper, live)).body ?? {};
+    const profile = typeof body.tokenProfileUuid === 'string' ? body.tokenProfileUuid : undefined;
+    const profileLine = profile ? checkOwnership({ uuid: profile }, ledgerOpts) : undefined;
+    const ownProfile = profileLine?.own && profileLine.line?.type === 'tokenProfiles' && !profileLine.line.derived;
+    if (!ownProfile) return 'its key is in no token profile of the run';
+    await assertOwnLive(state.api, 'tokenProfiles', { uuid: profile! }, helper, live);
+    const created = typeof body.creationTime === 'string' ? body.creationTime : undefined;
+    if (!derivedDeletable(keyLine, created)) return `core made its key at ${created ?? 'an unknown time'}, not after ${keyLine.createdAfter}`;
+    return undefined;
 }
 
 /** The approval's line names an own certificate and an own approval profile (read live), and its live detail names exactly those two. */

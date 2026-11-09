@@ -190,6 +190,45 @@ test('a derived object is refused: only the run-end teardown removes it', async 
     expect(r.sent).toEqual([]);
 });
 
+const MERGED_KEY = U(17);
+const MERGED_ITEM = U(18);
+const OLD_KEY = U(19);
+const FOREIGN_PROFILE_KEY = U(20);
+const UNMERGED_ITEM = U(21);
+const OWN_TOKEN = U(22);
+const OWN_PROFILE = U(23);
+const FOREIGN_PROFILE = U(24);
+const derived = (type: string, uuid: string, parents?: Record<string, string>): LedgerLine =>
+    ({ at: 'a', runId: RUN, type, name: 'certKey_y', uuid, spec: 'T', derived: true, createdAfter: '2026-10-13T00:00:00Z', event: 'created', parents });
+const mergeLines: LedgerLine[] = [
+    ...lines,
+    { at: 'a', runId: RUN, type: 'tokenProfiles', name: `${RUN}-tp`, uuid: OWN_PROFILE, spec: 'T', event: 'created', parents: { token: OWN_TOKEN } },
+    derived('keys', MERGED_KEY), derived('keyItems', MERGED_ITEM, { key: MERGED_KEY }), derived('keys', OLD_KEY),
+    derived('keys', FOREIGN_PROFILE_KEY), derived('keyItems', UNMERGED_ITEM, { key: DERIVED_KEY }),
+];
+Object.assign(live, {
+    [`/api/v1/tokens/${OWN_TOKEN}/tokenProfiles/${OWN_PROFILE}`]: { name: `${RUN}-tp`, tokenInstanceUuid: OWN_TOKEN },
+    [`/api/v1/keys/${MERGED_KEY}`]: { name: 'certKey_y', tokenProfileUuid: OWN_PROFILE, creationTime: '2026-10-13T01:00:00Z' },
+    [`/api/v1/keys/${MERGED_KEY}/items/${MERGED_ITEM}`]: { name: 'certKey_y' },
+    [`/api/v1/keys/${OLD_KEY}`]: { name: 'certKey_y', tokenProfileUuid: OWN_PROFILE, creationTime: '2026-10-12T23:59:00Z' },
+    [`/api/v1/keys/${FOREIGN_PROFILE_KEY}`]: { name: 'certKey_y', tokenProfileUuid: FOREIGN_PROFILE, creationTime: '2026-10-13T01:00:00Z' },
+    [`/api/v1/keys/${DERIVED_KEY}/items/${UNMERGED_ITEM}`]: { name: 'certKey_x' },
+});
+
+test('a derived key merged into an own token profile, and its items, may be written; any other derived key is refused', async () => {
+    const r = raw();
+    const g = guardApiWithSeams(r.api, { ...seams, lines: mergeLines });
+    await g.patch(`/api/v1/keys/${MERGED_KEY}/enable`, { data: [] });
+    await g.patch(`/api/v1/keys/${MERGED_KEY}/removeFromInventory`);
+    await g.patch('/api/v1/keys/items/enable', { data: [MERGED_ITEM] });
+    expect(r.sent).toHaveLength(3);
+    await expect(g.patch(`/api/v1/keys/${OLD_KEY}/enable`, { data: [] }), 'core made it before the upload').rejects.toThrow(/derived object.*not after/);
+    await expect(g.patch(`/api/v1/keys/${FOREIGN_PROFILE_KEY}/enable`, { data: [] })).rejects.toThrow(/derived object.*no token profile of the run/);
+    await expect(g.patch(`/api/v1/keys/${DERIVED_KEY}/enable`, { data: [] }), 'not merged: in no token profile').rejects.toThrow(/derived object/);
+    await expect(g.patch('/api/v1/keys/items/enable', { data: [UNMERGED_ITEM] }), 'an item of an unmerged key').rejects.toThrow(/derived object/);
+    expect(r.sent).toHaveLength(3);
+});
+
 test('ownership is judged before the dry run: a foreign DELETE is a violation, an own one a refusal', async () => {
     const r = raw();
     const g = guardApiWithSeams(r.api, { ...seams, env: { API_TEARDOWN_DRY_RUN: '1' } });

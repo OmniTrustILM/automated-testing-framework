@@ -79,18 +79,18 @@ test('devTests(): a row carries the need, the setup and teardown tests do not; @
     }
 });
 
-test('a shared tier selects every row but 25-merge\'s; a local stack selects 25-merge too', () => {
+test('a shared tier leaves out @local rows, a local stack selects them; no spec of the block is @local', () => {
     const title = (opts: Parameters<typeof devTests>[0] = {}) => `a row ${devTests(opts).tag.join(' ')}`;
     const rows = (env: NodeJS.ProcessEnv) => resolveProjectFilters({ projects: devBlockProjects('key-onboarding', env) }).find((p) => p.name === 'key-onboarding')!;
     const shared = rows({});
-    expect(selectsTest(shared, title()), 'a row of 10 / 20 / 30').toBe(true);
-    expect(selectsTest(shared, title({ local: true })), 'a row of 25-merge').toBe(false);
+    expect(selectsTest(shared, title())).toBe(true);
+    expect(selectsTest(shared, title({ local: true }))).toBe(false);
     const local = rows({ TIER_KIND: 'local' });
     expect(selectsTest(local, title({ local: true }))).toBe(true);
     expect(selectsTest(local, title())).toBe(true);
     for (const spec of specs) {
         const src = fs.readFileSync(path.join(DIR, spec), 'utf8');
-        expect(src.includes('devTests({ local: true })'), spec).toBe(spec.startsWith('25-'));
+        expect(src.includes('devTests({ local: true })'), spec).toBe(false);
     }
 });
 
@@ -106,19 +106,11 @@ function bodyEnd(src: string, at: number): number {
 for (const spec of specs) {
     const src = fs.readFileSync(path.join(DIR, spec), 'utf8');
 
-    const local = spec.startsWith('25-');
-    const details = local ? 'devTests({ local: true })' : 'devTests()';
+    const details = 'devTests()';
 
-    test(`${spec}: ${local ? 'local-only: describeLocalOnly(test) before any test, the local-stack admin' : 'not local-only (no describeLocalOnly, no localAdmin)'}`, () => {
-        const at = src.indexOf('describeLocalOnly(test)');
-        if (local) {
-            expect(at, 'describeLocalOnly(test) is called').toBeGreaterThan(-1);
-            expect(at, 'before the first test or describe').toBeLessThan(src.search(/(?<![.\w])test(\.describe)?\(/));
-            expect(src.includes('{ admin'), 'every row takes localAdmin').toBe(false);
-        } else {
-            expect(src.includes('describeLocalOnly'), 'describeLocalOnly is not used').toBe(false);
-            expect(src.includes('localAdmin'), 'the strict guard only').toBe(false);
-        }
+    test(`${spec}: not local-only (no describeLocalOnly, no localApi): the strict guard only`, () => {
+        expect(src.includes('describeLocalOnly'), 'describeLocalOnly is not used').toBe(false);
+        expect(/\blocal(Api|Admin)\b/.test(src), 'the strict guard only').toBe(false);
     });
 
     test(`${spec}: every test and describe carries ${details}`, () => {

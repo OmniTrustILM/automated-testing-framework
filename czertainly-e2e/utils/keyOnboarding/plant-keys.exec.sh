@@ -2,8 +2,8 @@
 # Plants key pairs on a SoftHSM token from inside its sidecar (kubectl exec, `sh -s`), the cluster twin of plant-keys.sh.
 # It runs as the sidecar's own user, who owns the token files, with nothing installed and nothing written outside the
 # token: the sidecar's root filesystem is read-only. pkcs11-tool reads the PIN from TOKEN_PIN itself (`--pin env:`).
-# It ends with the line `PLANTED` (set -e: only after every pair). The certified pair gets no certificate here: only
-# 25-merge, which runs on a local stack, uploads one.
+# It prints the certified pair's public key (SPKI DER, hex; the runner certifies it, the sidecar has no openssl), then
+# the line `PLANTED` (set -e: only after every pair).
 set -eu
 tool() {
     pkcs11-tool --module "$PKCS11_MODULE" --token-label "$TOKEN_LABEL" --login --pin env:TOKEN_PIN "$@" </dev/null
@@ -21,4 +21,7 @@ quiet --keypairgen --key-type EC:prime256v1 --id "$BULK_REMOVABLE_FIRST_ID" --la
 quiet --keypairgen --key-type EC:prime256v1 --id "$BULK_REMOVABLE_SECOND_ID" --label "$BULK_REMOVABLE_SECOND_LABEL"
 quiet --keypairgen --key-type EC:prime256v1 --id "$COMPROMISED_ID" --label "$COMPROMISED_LABEL"
 quiet --keypairgen --key-type EC:prime256v1 --id "$CERTIFIED_ID" --label "$CERTIFIED_LABEL"
+printf 'CERTIFIED_PUBKEY '
+tool --read-object --type pubkey --label "$CERTIFIED_LABEL" | od -An -v -tx1 | tr -d ' \n'
+echo
 echo PLANTED

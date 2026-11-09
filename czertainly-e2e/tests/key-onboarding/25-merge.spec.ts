@@ -1,19 +1,16 @@
-import { describeLocalOnly } from '../../utils/regression/tier/localProof';
 import { CertificateDetail, KeyDetail } from '../../utils/keyOnboarding/adminApi';
 import { expect, keyPairMetaOf, labelled, onboardedKey, test } from '../../utils/keyOnboarding/fixtures';
 import { signThroughCore, verifiesWithRecordedPublicKey } from '../../utils/keyOnboarding/signing';
 import { ledgerSpec } from '../../utils/keyOnboarding/provisioning';
 import { devTests } from '../../utils/keyOnboarding/tags';
-import { recordCreated, recordDeleted } from '../../utils/regression/ledger/ledger';
+import { recordCreated, recordDeleted, recordDerived } from '../../utils/regression/ledger/ledger';
+import { checkOwnership } from '../../utils/regression/ledger/ownership';
 
-// Local only: the merge changes a key core derived from the uploaded certificate, which the strict guard refuses on a shared tier.
-describeLocalOnly(test);
-
-test.describe.serial('Onboarding a key pair into the key holding its public key', devTests({ local: true }), () => {
+test.describe.serial('Onboarding a key pair into the key holding its public key', devTests(), () => {
   let certificate: CertificateDetail;
   let record: KeyDetail;
 
-  test('lists a pair whose public key a certificate brought in as onboardable into that key', devTests({ local: true }), async ({ localAdmin: admin, provisioned }, testInfo) => {
+  test('lists a pair whose public key a certificate brought in as onboardable into that key', devTests(), async ({ admin, provisioned }, testInfo) => {
     certificate = await admin.uploadCertificate(provisioned.certifiedCertificate, provisioned.planted.certified, ledgerSpec(testInfo));
     expect(certificate.privateKeyAvailability).toBe(false);
     record = await admin.get<KeyDetail>(`/v1/keys/${certificate.key?.uuid}`);
@@ -28,7 +25,7 @@ test.describe.serial('Onboarding a key pair into the key holding its public key'
     });
   });
 
-  test('adds the private key disabled to that key, which keeps its identity and its certificate', devTests({ local: true }), async ({ localAdmin: admin, provisioned }) => {
+  test('adds the private key disabled to that key, which keeps its identity and its certificate', devTests(), async ({ admin, provisioned }, testInfo) => {
     const keys = await admin.allTokenKeys(provisioned.token.uuid, provisioned.tokenProfile.uuid);
 
     const [result] = (
@@ -39,6 +36,14 @@ test.describe.serial('Onboarding a key pair into the key holding its public key'
 
     expect(result).toMatchObject({ onboarded: true, intoExistingKey: true, keyUuid: record.uuid, keyName: record.name });
     const merged = await admin.get<KeyDetail>(`/v1/keys/${record.uuid}`);
+    // Children of the derived key: the guard lets the run sign with them once the key is in the run's token profile.
+    const createdAfter = checkOwnership({ uuid: record.uuid }).line?.createdAfter;
+    expect(createdAfter, 'the upload recorded the derived key with its creation bound').toBeTruthy();
+    for (const item of merged.items) {
+      recordDerived('keyItems', { uuid: item.uuid, name: record.name }, {
+        spec: ledgerSpec(testInfo), createdAfter: createdAfter!, note: 'item of the merged key', parents: { key: record.uuid },
+      });
+    }
     expect(merged).toMatchObject({ name: record.name, tokenProfileUuid: provisioned.tokenProfile.uuid });
     expect(merged.items.map((item) => item.type).sort()).toEqual(['Private', 'Public']);
     expect(merged.items.find((item) => item.type === 'Private')).toMatchObject({ enabled: false });
@@ -46,7 +51,7 @@ test.describe.serial('Onboarding a key pair into the key holding its public key'
     expect(reread).toMatchObject({ privateKeyAvailability: true, key: { uuid: record.uuid } });
   });
 
-  test('signs through Core with the merged key once it is enabled', devTests({ local: true }), async ({ localAdmin: admin, provisioned }) => {
+  test('signs through Core with the merged key once it is enabled', devTests(), async ({ admin, provisioned }) => {
     await admin.enableKey(record.uuid);
     const key = await admin.get<KeyDetail>(`/v1/keys/${record.uuid}`);
     const data = Buffer.from(`signed by ${key.name}`);
@@ -56,13 +61,13 @@ test.describe.serial('Onboarding a key pair into the key holding its public key'
     expect(verifiesWithRecordedPublicKey(key, data, signature)).toBe(true);
   });
 
-  test('lists the pair as held by the merged key', devTests({ local: true }), async ({ localAdmin: admin, provisioned }) => {
+  test('lists the pair as held by the merged key', devTests(), async ({ admin, provisioned }) => {
     const keys = await admin.allTokenKeys(provisioned.token.uuid, provisioned.tokenProfile.uuid);
 
     expect(labelled(keys, provisioned.planted.certified)).toMatchObject({ status: 'inInventory', inventoryKeyUuid: record.uuid });
   });
 
-  test('removes the whole merged key from the inventory and keeps the certificate', devTests({ local: true }), async ({ localAdmin: admin, provisioned }, testInfo) => {
+  test('removes the whole merged key from the inventory and keeps the certificate', devTests(), async ({ admin, provisioned }, testInfo) => {
     const removal = await admin.removeKeyFromInventory(record.uuid);
 
     expect(removal.status()).toBe(204);
@@ -73,7 +78,7 @@ test.describe.serial('Onboarding a key pair into the key holding its public key'
     expect(labelled(keys, provisioned.planted.certified).status).toBe('onboardable');
   });
 
-  test('onboards the pair again as a new key, which the certificate links to', devTests({ local: true }), async ({ localAdmin: admin, provisioned }, testInfo) => {
+  test('onboards the pair again as a new key, which the certificate links to', devTests(), async ({ admin, provisioned }, testInfo) => {
     const keys = await admin.allTokenKeys(provisioned.token.uuid, provisioned.tokenProfile.uuid);
 
     const [result] = (

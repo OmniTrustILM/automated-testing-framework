@@ -10,6 +10,7 @@ import { DEFAULT_RUN_IDS, RUN_ID_FORMAT, regressionStateDir } from '../../regres
 import { scrubSecrets, TierError } from '../../devBlocks/provision/transport';
 import { KeyOnboardingConfig, keyOnboardingConfig, plantingMarkerFile } from '../config';
 import type { PlantedKeys } from '../types';
+import { certificateForPublicKey } from './certify';
 import { defaultDockerRunner, DockerRunner, dockerAvailable, scriptRunArgs, sidecarEnvironment, sidecarFacts, sidecarRunning } from './docker';
 import { canIAnswer, clusterKubectl, clusterPin, execLineResolvingPod, execScriptIn, KubectlRunner, kubectlAvailable, shellQuote, sidecarPod, theSidecarPod } from './kubectl';
 
@@ -199,7 +200,7 @@ export async function plantKeys(input: PlantInput): Promise<Planting> {
             throw new TierError('plant-keys.exec.sh did not report that it planted every pair');
         }
         markCertain(marker, input.stamp);
-        return { planted, certifiedCertificate: '' };
+        return { planted, certifiedCertificate: await certifyPrinted(r.stdout, planted.certified, pin) };
     }
     const docker = dockerOf(input.runners, input.env);
     const facts = await sidecarFacts(docker, cfg.sidecarContainer);
@@ -222,6 +223,25 @@ export async function plantKeys(input: PlantInput): Promise<Planting> {
     }
     markCertain(marker, input.stamp);
     return { planted, certifiedCertificate };
+}
+
+// The DER header of every P-256 SubjectPublicKeyInfo (91 bytes): found in the dump, so a status line pkcs11-tool prints cannot shift it.
+const P256_SPKI_HEADER = '3059301306072a8648ce3d020106082a8648ce3d030107034200';
+const P256_SPKI_HEX_LENGTH = 182;
+
+async function certifyPrinted(stdout: string, label: string, pin: string): Promise<string> {
+    const dump = /^CERTIFIED_PUBKEY ([0-9a-f]*)$/m.exec(stdout)?.[1] ?? '';
+    const at = dump.indexOf(P256_SPKI_HEADER);
+    const hex = at >= 0 && at % 2 === 0 ? dump.slice(at, at + P256_SPKI_HEX_LENGTH) : '';
+    if (hex.length !== P256_SPKI_HEX_LENGTH) {
+        logger.warn(`plant-keys.exec.sh printed no public key for the certified pair: ${head(stdout, pin)}`);
+        throw new TierError('plant-keys.exec.sh printed no public key for the certified pair');
+    }
+    try {
+        return await certificateForPublicKey(Buffer.from(hex, 'hex'), label);
+    } catch (e) {
+        throw new TierError(`the certified pair's public key is no P-256 key the runner can certify (${String(e).slice(0, 120)})`);
+    }
 }
 
 /**

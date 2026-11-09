@@ -1,7 +1,6 @@
 /**
  * tags — the tags of the key onboarding block: `@dev-tests`, `@key-onboarding`, `@issue:ilm#409`, and `@needs:key-onboarding`
- * on every row except setup and teardown (`infrastructure`). `@local` only on 25-merge: the strict guard refuses its change of
- * the key core derives from an uploaded certificate, so it needs a proven local stack.
+ * on every row except setup and teardown (`infrastructure`); `@local` for a row a shared tier cannot run (none today).
  */
 export const DEV_TESTS = '@dev-tests';
 export const KEY_ONBOARDING = '@key-onboarding';

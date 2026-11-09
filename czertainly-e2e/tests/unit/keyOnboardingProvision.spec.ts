@@ -5,7 +5,7 @@
  */
 import { APIRequestContext, expect, test } from '@playwright/test';
 import { spawnSync } from 'child_process';
-import { randomBytes } from 'crypto';
+import { generateKeyPairSync, randomBytes, X509Certificate } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { keyOnboardingConfig, summaryFile } from '../../utils/keyOnboarding/config';
@@ -702,13 +702,14 @@ function fakePkcs11Tool(bin: string): void {
         '[ "$TOKEN_PIN" = "$FAKE_EXPECTED_PIN" ] || { echo "fake pkcs11-tool: wrong PIN" >&2; exit 5; }',
         'op=""; type=""; label=""',
         'while [ $# -gt 0 ]; do case "$1" in',
-        '  --keypairgen) op=gen ;; --delete-object) op=del ;; --list-objects) op=list ;;',
+        '  --keypairgen) op=gen ;; --delete-object) op=del ;; --list-objects) op=list ;; --read-object) op=read ;;',
         '  --type) type="$2"; shift ;; --label) label="$2"; shift ;;',
         'esac; shift; done',
         'tab=$(printf "\\t")',
         'case "$op" in',
         '  gen) printf "privkey\\t%s\\npubkey\\t%s\\n" "$label" "$label" >>"$FAKE_TOKEN"; echo "Key pair generated:" ;;',
         '  del) grep -v -x -F "$type$tab$label" "$FAKE_TOKEN" >"$FAKE_TOKEN.next" || true; mv "$FAKE_TOKEN.next" "$FAKE_TOKEN" ;;',
+        '  read) grep -q -x -F "$type$tab$label" "$FAKE_TOKEN" && cat "$FAKE_PUBKEY_DER" ;;',
         '  list) while IFS="$tab" read -r t l; do',
         '      case "$t" in privkey) echo "Private Key Object; EC" ;; pubkey) echo "Public Key Object; EC  EC_POINT 256 bits" ;; cert) echo "Certificate Object; type = X.509 cert" ;;',
         '        secrkey) echo "Secret Key Object; AES length 32" ;; data) echo "Data object 4711" ;; esac',
@@ -723,6 +724,8 @@ function fakeKubectl(dir: string, opts: KubectlOptions = {}) {
     const token = path.join(dir, 'token.txt');
     fakePkcs11Tool(bin);
     if (!fs.existsSync(token)) fs.writeFileSync(token, '');
+    const pubkey = path.join(dir, 'pubkey.der');
+    if (!fs.existsSync(pubkey)) fs.writeFileSync(pubkey, generateKeyPairSync('ec', { namedCurve: 'P-256' }).publicKey.export({ type: 'spki', format: 'der' }));
     const ok = (stdout: string) => ({ code: 0, stdout, stderr: '' });
     const runner: KubectlRunner = async (args, o = {}) => {
         calls.push({ args: [...args], ...(o.stdin !== undefined ? { stdin: o.stdin } : {}), ...(o.env ? { env: o.env } : {}), ...(o.timeoutMs ? { timeoutMs: o.timeoutMs } : {}) });
@@ -740,7 +743,7 @@ function fakeKubectl(dir: string, opts: KubectlOptions = {}) {
             if (opts.execAnswer) return opts.execAnswer;
             const r = spawnSync('/bin/sh', ['-s'], {
                 input: o.stdin ?? '', encoding: 'utf8', timeout: 20_000,
-                env: { PATH: `${bin}:/usr/bin:/bin`, FAKE_TOKEN: token, FAKE_EXPECTED_PIN: PIN, ...(opts.procDir ? { KO_PROC_DIR: opts.procDir } : { KO_PROC_DIR: path.join(dir, 'no-proc') }) },
+                env: { PATH: `${bin}:/usr/bin:/bin`, FAKE_TOKEN: token, FAKE_PUBKEY_DER: pubkey, FAKE_EXPECTED_PIN: PIN, ...(opts.procDir ? { KO_PROC_DIR: opts.procDir } : { KO_PROC_DIR: path.join(dir, 'no-proc') }) },
             });
             return { code: r.status ?? 1, stdout: r.stdout, stderr: r.stderr };
         }
@@ -921,7 +924,10 @@ test('a shared tier: the setup plants through kubectl exec into the one sidecar,
     const s = ready(run.summary);
     expect(run.docker, 'no docker on a shared tier').toEqual([]);
     expect(run.ledger.map((l) => l.type)).toEqual(['vaultInstances', 'vaultProfiles', 'secrets', 'tokens', 'tokenProfiles']);
-    expect(s.provisioning.certifiedCertificate, 'no certificate on a shared tier (only the local-only 25-merge uploads one)').toBe('');
+    const certified = new X509Certificate(Buffer.from(s.provisioning.certifiedCertificate, 'base64'));
+    expect(certified.subject, 'the runner certified the pair the exec planted').toBe(`CN=${s.provisioning.planted.certified}`);
+    expect(certified.publicKey.export({ type: 'spki', format: 'der' }).equals(fs.readFileSync(testInfo.outputPath('k', 'pubkey.der'))),
+        'the certificate carries the public key the token dumped (past the slot line)').toBe(true);
 
     const execs = kubectl.calls.filter((c) => subcommand(c.args)[0] === 'exec');
     expect(execs).toHaveLength(1);

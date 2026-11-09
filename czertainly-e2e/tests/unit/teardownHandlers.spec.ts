@@ -287,6 +287,32 @@ test('a derived key in a token, made before createdAfter or still used is kept; 
     expect(core.mutations()).toEqual(['DELETE /api/v1/keys']);
 });
 
+test('a derived key merged into an own token profile goes as an own token key; in a foreign or derived profile, or used, it is kept', async () => {
+    const profile = line('tokenProfiles');
+    const derivedProfile = line('tokenProfiles', { derived: true, createdAfter: '2026-10-13T12:00:00.000Z' });
+    const mk = (body: Json) => {
+        const l = line('keys', { name: 'certKey_x', derived: true, createdAfter: '2026-10-13T12:00:00.000Z' });
+        const core = new FakeCore().set(`/api/v1/keys/${l.uuid}`,
+            { uuid: l.uuid, name: 'certKey_x', creationTime: '2026-10-13T12:10:00.000Z', associations: [], tokenInstanceUuid: 't-1', ...body });
+        core.route('DELETE', /^\/api\/v1\/keys$/, (_p, data) => {
+            for (const u of data as string[]) core.store.delete(`/api/v1/keys/${u}`);
+            return { status: 204 };
+        });
+        return { l, core };
+    };
+    for (const body of [{ tokenProfileUuid: 'tokenProfiles-foreign' }, { tokenProfileUuid: derivedProfile.uuid },
+        { tokenProfileUuid: profile.uuid, associations: [{ uuid: 'c' }] }, { tokenProfileUuid: profile.uuid, creationTime: '2026-10-13T11:00:00.000Z' }]) {
+        const { l, core } = mk(body);
+        const r = await run(core, l, [profile, derivedProfile, l]);
+        expect(r.result, JSON.stringify(body)).toBe('kept');
+        expect(core.mutations()).toEqual([]);
+    }
+    const { l, core } = mk({ tokenProfileUuid: profile.uuid });
+    const r = await run(core, l, [profile, derivedProfile, l]);
+    expect(r.error).toBeUndefined();
+    expect(core.mutations()).toEqual(['DELETE /api/v1/keys']);
+});
+
 test('keyAssociationsOf: a list as it is, nothing for absent or null, one unreadable element for any other value', () => {
     expect(keyAssociationsOf({ associations: [{ uuid: 'a' }, 'b'] })).toEqual([{ uuid: 'a' }, 'b']);
     expect(keyAssociationsOf({ associations: [] })).toEqual([]);
