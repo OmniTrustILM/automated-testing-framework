@@ -8,14 +8,15 @@ export type Prio = 'P1' | 'P2' | 'P3';
 
 /**
  * What a row may need from the tier or the runner (`@needs:<x>`); an unmet need skips the test with the named reason.
- * Groups: runner tools, local-stack services, connectors and identities, a runner TLS
- * listener, tier settings and data, and `timestamping` (utils/timestamping/need.ts).
+ * Groups: runner tools, local-stack services, connectors and identities, a runner TLS listener, tier settings and data,
+ * `timestamping` (utils/timestamping/need.ts) and `key-onboarding` (utils/keyOnboarding/need.ts).
  */
 export const NEEDS = [
     'ca', 'ejbca-ng', 'pkcs11', 'second-identity', 'keycloak-local', 'v1-discovery', 'v2-discovery', 'email-provider', 'webhook-provider',
     'smtp-catcher', 'webhook-receiver', 'scan-target', 'connector-online', 'openssl', 'sscep', 'docker', 'cluster',
     'crypto-v2', 'platform-triggers-free', 'metadata-field', 'scep-https', 'registration-settings', 'required-attributes-fillable',
     'bearer-token', 'openapi-document', 'utils-service', 'crypto-v1', 'vault-connector', 'ejbca-connector', 'adcs-connector', 'timestamping',
+    'key-onboarding',
 ] as const;
 
 export type Needs = (typeof NEEDS)[number];

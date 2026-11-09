@@ -6,13 +6,14 @@ import { ledgerSpec } from '../../utils/keyOnboarding/provisioning';
 import { devTests } from '../../utils/keyOnboarding/tags';
 import { recordCreated, recordDeleted } from '../../utils/regression/ledger/ledger';
 
+// Local only: the merge changes a key core derived from the uploaded certificate, which the strict guard refuses on a shared tier.
 describeLocalOnly(test);
 
-test.describe.serial('Onboarding a key pair into the key holding its public key', devTests(), () => {
+test.describe.serial('Onboarding a key pair into the key holding its public key', devTests({ local: true }), () => {
   let certificate: CertificateDetail;
   let record: KeyDetail;
 
-  test('lists a pair whose public key a certificate brought in as onboardable into that key', devTests(), async ({ admin, provisioned }, testInfo) => {
+  test('lists a pair whose public key a certificate brought in as onboardable into that key', devTests({ local: true }), async ({ localAdmin: admin, provisioned }, testInfo) => {
     certificate = await admin.uploadCertificate(provisioned.certifiedCertificate, provisioned.planted.certified, ledgerSpec(testInfo));
     expect(certificate.privateKeyAvailability).toBe(false);
     record = await admin.get<KeyDetail>(`/v1/keys/${certificate.key?.uuid}`);
@@ -27,7 +28,7 @@ test.describe.serial('Onboarding a key pair into the key holding its public key'
     });
   });
 
-  test('adds the private key to that key, which keeps its identity and its certificate', devTests(), async ({ admin, provisioned }) => {
+  test('adds the private key to that key, which keeps its identity and its certificate', devTests({ local: true }), async ({ localAdmin: admin, provisioned }) => {
     const keys = await admin.allTokenKeys(provisioned.token.uuid, provisioned.tokenProfile.uuid);
 
     const [result] = (
@@ -44,7 +45,7 @@ test.describe.serial('Onboarding a key pair into the key holding its public key'
     expect(reread).toMatchObject({ privateKeyAvailability: true, key: { uuid: record.uuid } });
   });
 
-  test('signs through Core with the merged key', devTests(), async ({ admin, provisioned }) => {
+  test('signs through Core with the merged key', devTests({ local: true }), async ({ localAdmin: admin, provisioned }) => {
     const key = await admin.get<KeyDetail>(`/v1/keys/${record.uuid}`);
     const data = Buffer.from(`signed by ${key.name}`);
 
@@ -53,13 +54,13 @@ test.describe.serial('Onboarding a key pair into the key holding its public key'
     expect(verifiesWithRecordedPublicKey(key, data, signature)).toBe(true);
   });
 
-  test('lists the pair as held by the merged key', devTests(), async ({ admin, provisioned }) => {
+  test('lists the pair as held by the merged key', devTests({ local: true }), async ({ localAdmin: admin, provisioned }) => {
     const keys = await admin.allTokenKeys(provisioned.token.uuid, provisioned.tokenProfile.uuid);
 
     expect(labelled(keys, provisioned.planted.certified)).toMatchObject({ status: 'inInventory', inventoryKeyUuid: record.uuid });
   });
 
-  test('removes the whole merged key from the inventory and keeps the certificate', devTests(), async ({ admin, provisioned }, testInfo) => {
+  test('removes the whole merged key from the inventory and keeps the certificate', devTests({ local: true }), async ({ localAdmin: admin, provisioned }, testInfo) => {
     const removal = await admin.removeKeyFromInventory(record.uuid);
 
     expect(removal.status()).toBe(204);
@@ -70,7 +71,7 @@ test.describe.serial('Onboarding a key pair into the key holding its public key'
     expect(labelled(keys, provisioned.planted.certified).status).toBe('onboardable');
   });
 
-  test('onboards the pair again as a new key, which the certificate links to', devTests(), async ({ admin, provisioned }, testInfo) => {
+  test('onboards the pair again as a new key, which the certificate links to', devTests({ local: true }), async ({ localAdmin: admin, provisioned }, testInfo) => {
     const keys = await admin.allTokenKeys(provisioned.token.uuid, provisioned.tokenProfile.uuid);
 
     const [result] = (

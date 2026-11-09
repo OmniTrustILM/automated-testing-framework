@@ -23,6 +23,11 @@ export interface DevBlock {
      * holds a token pair, a foreign CA certificate) stops it. Returns a short report for the annotation.
      */
     after?: (env: NodeJS.ProcessEnv, runId: string) => Promise<string>;
+    mustRunAfter?: (env: NodeJS.ProcessEnv, runId: string) => string | undefined;
+}
+
+function afterNotRun(block: DevBlock, why: string, leftover: string): Error {
+    return new Error(`The ${block.prefix} block's teardown did not remove what it made outside the platform (${why}): ${leftover}`);
 }
 
 /**
@@ -60,12 +65,17 @@ export async function teardownBlock(block: DevBlock, deps: BlockTeardownDeps = {
     const handler = deps.handler ?? handlerOf;
     const plan = planTeardown(readLines(), runId, handler, { tier });
 
+    const leftover = () => block.mustRunAfter?.(env, runId);
     if (isDryRun(env)) {
         if (plan.length) logger.info(`API_TEARDOWN_DRY_RUN — the ${block.prefix} block's objects (nothing is deleted):\n${formatPlan(plan)}`);
+        const must = leftover();
+        if (must) throw afterNotRun(block, 'API_TEARDOWN_DRY_RUN is on', must);
         return plan.length || block.after ? { status: 'skipped', reason: 'API_TEARDOWN_DRY_RUN is on' } : { status: 'done', deleted: 0, kept: 0 };
     }
     if (!mayDeleteOwn(env)) {
         logger.info(`API_DELETE_OWN off — keeping the ${block.prefix} block's ${plan.length} object(s); the run-end teardown lists them`);
+        const must = leftover();
+        if (must) throw afterNotRun(block, 'API_DELETE_OWN is off', must);
         return plan.length || block.after ? { status: 'skipped', reason: 'API_DELETE_OWN is off' } : { status: 'done', deleted: 0, kept: 0 };
     }
     if (!plan.length) {
@@ -95,13 +105,20 @@ export async function teardownBlock(block: DevBlock, deps: BlockTeardownDeps = {
             ...(deps.pollMs !== undefined ? { pollMs: deps.pollMs } : {}),
             onDeleted: (item, note) => recordDeleted(item.type, { uuid: item.uuid, name: item.name }, block.teardownSpec, note),
         });
+    } catch (e) {
+        // A failing sign-in, local proof or engine: the token step does not run either, so it must say what stays behind.
+        const must = leftover();
+        if (must && e instanceof Error) e.message = `${e.message}; the ${block.prefix} block's teardown did not remove what it made outside the platform: ${must}`;
+        throw e;
     } finally {
         for (const dispose of disposers) await dispose().catch(() => undefined);
     }
     if (result.warnings.length) logger.warn(`${block.prefix} block teardown warnings:\n  ${result.warnings.join('\n  ')}`);
     if (result.failed.length) {
+        const must = leftover();
         throw new Error(`The ${block.prefix} block's teardown could not delete ${result.failed.length} object(s) (the run-end teardown retries ` +
-            `them${block.after ? '; what the block made outside the platform stays until then' : ''}): ${result.failed.map((f) => `${f.type} ${f.uuid}`).join(', ')}`);
+            `them${block.after ? '; what the block made outside the platform stays until then' : ''}): ${result.failed.map((f) => `${f.type} ${f.uuid}`).join(', ')}` +
+            (must ? `; ${must}` : ''));
     }
     if (block.after && result.kept.length) {
         // A kept object is still in the platform (for example a derived key that holds a token's key pair): do not remove what the block
@@ -109,6 +126,8 @@ export async function teardownBlock(block: DevBlock, deps: BlockTeardownDeps = {
         const skipped = `skipped: ${result.kept.length} object(s) kept (${result.kept.map((k) => `${k.type} ${k.uuid}`).join(', ')}); ` +
             'what the block made outside the platform stays until they are gone';
         logger.warn(`${block.prefix} block: ${skipped}`);
+        const must = leftover();
+        if (must) throw afterNotRun(block, `${result.kept.length} object(s) kept: ${result.kept.map((k) => `${k.type} ${k.uuid}`).join(', ')}`, must);
         return { status: 'done', deleted: result.deleted.length, kept: result.kept.length, result, after: skipped };
     }
     const after = block.after ? await block.after(env, runId) : undefined;

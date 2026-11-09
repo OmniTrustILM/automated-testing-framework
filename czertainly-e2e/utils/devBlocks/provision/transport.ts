@@ -35,6 +35,60 @@ export interface Answer<T> {
 export interface AdminOptions {
     loggerName: string;
     guardLabel: string;
+    secrets?: readonly string[];
+}
+
+export function secretForms(secret: string): string[] {
+    const shellInner = secret.replace(/'/g, `'\\''`);
+    return [secret, `'${shellInner}'`, shellInner, JSON.stringify(secret).slice(1, -1)];
+}
+
+export function scrubSecrets(text: string, secrets: readonly (string | undefined)[] = []): string {
+    const forms = [...new Set(secrets.filter((x): x is string => !!x).flatMap(secretForms))].filter((f) => f.length > 0).sort((a, b) => b.length - a.length);
+    return forms.reduce((t, f) => t.split(f).join('<secret>'), text);
+}
+
+function trySet(obj: object, key: string, value: unknown): boolean {
+    try {
+        (obj as Record<string, unknown>)[key] = value;
+        return (obj as Record<string, unknown>)[key] === value;
+    } catch {
+        return false;
+    }
+}
+
+export function scrubError<E>(e: E, secrets: readonly (string | undefined)[], seen: Set<unknown> = new Set()): E {
+    try {
+        if (typeof e === 'string') return scrubSecrets(e, secrets) as unknown as E;
+        if (!e || typeof e !== 'object' || seen.has(e)) return e;
+        seen.add(e);
+        if (e instanceof Error) {
+            const message = scrubSecrets(String(e.message), secrets);
+            const stack = e.stack === undefined ? undefined : scrubSecrets(String(e.stack), secrets);
+            const holder = e as { cause?: unknown };
+            const hasCause = 'cause' in holder;
+            const cause = hasCause ? scrubError(holder.cause, secrets, seen) : undefined;
+            const errors = e instanceof AggregateError ? e.errors.map((inner) => scrubError(inner, secrets, seen)) : undefined;
+            const updated = trySet(e, 'message', message) && (stack === undefined || trySet(e, 'stack', stack))
+                && (!hasCause || trySet(e, 'cause', cause)) && (errors === undefined || trySet(e, 'errors', errors));
+            if (updated) return e;
+            const rebuilt = errors ? new AggregateError(errors, message, hasCause ? { cause } : undefined) : new Error(message, hasCause ? { cause } : undefined);
+            rebuilt.name = scrubSecrets(String(e.name), secrets);
+            if (stack !== undefined) trySet(rebuilt, 'stack', stack);
+            return rebuilt as unknown as E;
+        }
+        if (Array.isArray(e)) {
+            e.forEach((v, i) => { trySet(e, String(i), scrubError(v, secrets, seen)); });
+            return e;
+        }
+        if (Object.getPrototypeOf(e) === Object.prototype) {
+            for (const k of Object.keys(e)) trySet(e, k, scrubError((e as Record<string, unknown>)[k], secrets, seen));
+        }
+        return e;
+    } catch {
+        // Never throw out of the scrubber: a value it cannot even read is replaced by a plain, scrubbed error.
+        return new Error('an error the block could not read safely (it may have carried a secret)') as unknown as E;
+    }
 }
 
 const UUID_ANYWHERE = /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/g;
@@ -53,10 +107,12 @@ export class Admin {
     private readonly logger: Logger;
     private provisioning = false;
     private firstServerAt?: Date;
+    readonly secrets: readonly string[];
 
     constructor(api: GuardedApi, options: AdminOptions) {
         this.api = assertGuarded(api, options.guardLabel);
         this.logger = new Logger(options.loggerName);
+        this.secrets = options.secrets ?? [];
     }
 
     markProvisioningStart(): void {
@@ -77,14 +133,14 @@ export class Admin {
         if (this.provisioning && !this.firstServerAt && at) this.firstServerAt = at;
         if (!res.ok()) {
             const failure = failureOf(method, path, res.status());
-            this.logger.warn(`${failure.message}; answer: ${text.slice(0, 600)}`);
+            this.logger.warn(`${failure.message}; answer: ${scrubSecrets(text, this.secrets).slice(0, 600)}`);
             throw failure;
         }
         let body: unknown;
         try {
             body = text ? JSON.parse(text) : undefined;
         } catch {
-            this.logger.warn(`${method} ${pathPattern(path)}: the answer is not JSON: ${text.slice(0, 300)}`);
+            this.logger.warn(`${method} ${pathPattern(path)}: the answer is not JSON: ${scrubSecrets(text, this.secrets).slice(0, 300)}`);
             throw new TierError(`${method} ${pathPattern(path)} answered a body that is not JSON`);
         }
         return { body: body as T, serverAt: at };

@@ -9,7 +9,8 @@ import * as path from 'path';
 import { currentRunId } from '../regression/run/runId';
 import { summaryFile } from './config';
 import type { KeyOnboardingSummary, NamedUuid, PlantedKeys, Provisioning } from './types';
-import type { OnboardingResult } from './adminApi';
+import type { KeyDetail, OnboardingResult } from './adminApi';
+import { recordCreated } from '../regression/ledger/ledger';
 
 export type { NamedUuid, PlantedKeys, Provisioning };
 
@@ -44,4 +45,8 @@ export function onboardedKey(result: OnboardingResult): { uuid: string; name: st
         throw new Error(`The onboarding of ${result.keyHandle} reports onboarded without ${result.keyUuid ? 'a key name' : 'a key uuid'}; it cannot be recorded`);
     }
     return { uuid: result.keyUuid, name: result.keyName };
+}
+
+export function recordOwnKeyItems(key: KeyDetail, spec: string, note: string): void {
+    for (const item of key.items) recordCreated('keyItems', { uuid: item.uuid, name: key.name }, { spec, note, parents: { key: key.uuid } });
 }

@@ -48,7 +48,7 @@ const REQUEST_OPTIONS = new Set(['data', 'params', 'headers', 'timeout', 'failOn
 const REQUEST_CALLS = new Set(['get', 'post', 'put', 'patch', 'delete', 'fetch']);
 /** The guard's inner modules: they read, check, claim and send, and only the guard may compose them (createGuard.ts). */
 const GUARD_INTERNAL = /(^|\/)utils\/regression\/guard\/(sendRequest|guardState|readRequest|checkRequest|claims)(\.ts|\.js)?$/;
-const CALLBACK_TARGET_ALLOWED = /^(utils\/regression\/guard\/|utils\/regression\/specLint\/|tests\/unit\/|utils\/timestamping\/provision\/preflight\.ts$)/;
+const CALLBACK_TARGET_ALLOWED = /^(utils\/regression\/guard\/|utils\/regression\/specLint\/|tests\/unit\/|utils\/(timestamping|keyOnboarding)\/provision\/preflight\.ts$)/;
 const CALLBACK_TARGET_TEXT = /^registerCallbackTarget$|(^|\/)callbackTargets(\.ts|\.js)?$/;
 
 /** `registerCallbackTarget` in any form and any string naming it or its module, outside the files that may register a callback parent. */

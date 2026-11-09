@@ -1,6 +1,6 @@
 /**
  * registry — the developers' test blocks (`@dev-tests`) as data, and the four Playwright projects of one block.
- * On a shared tier the `@local` rows are left out, so all four projects of `key-onboarding` stay empty.
+ * On a shared tier the `@local` rows are left out (the proof project stays empty there).
  */
 import type { PlaywrightTestProject } from '@playwright/test';
 import { withTierFilters } from '../regression/projectFilters';

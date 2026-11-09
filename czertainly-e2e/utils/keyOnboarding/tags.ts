@@ -1,12 +1,14 @@
 /**
- * tags — the tags of the key onboarding block: `@dev-tests`, `@key-onboarding`, `@local` (a proven local stack only; `describeLocalOnly` is
- * the second guard) and `@issue:ilm#409`.
+ * tags — the tags of the key onboarding block: `@dev-tests`, `@key-onboarding`, `@issue:ilm#409`, and `@needs:key-onboarding`
+ * on every row except setup and teardown (`infrastructure`). `@local` only on 25-merge: the strict guard refuses its change of
+ * the key core derives from an uploaded certificate, so it needs a proven local stack.
  */
 export const DEV_TESTS = '@dev-tests';
 export const KEY_ONBOARDING = '@key-onboarding';
+export const NEEDS_KEY_ONBOARDING = '@needs:key-onboarding';
 
-const BLOCK = [DEV_TESTS, KEY_ONBOARDING, '@local', '@issue:ilm#409'] as const;
+const BLOCK = [DEV_TESTS, KEY_ONBOARDING, '@issue:ilm#409'] as const;
 
-export function devTests(): { tag: string[] } {
-    return { tag: [...BLOCK] };
+export function devTests(opts: { infrastructure?: boolean; local?: boolean } = {}): { tag: string[] } {
+    return { tag: [...BLOCK, ...(opts.infrastructure ? [] : [NEEDS_KEY_ONBOARDING]), ...(opts.local ? ['@local'] : [])] };
 }

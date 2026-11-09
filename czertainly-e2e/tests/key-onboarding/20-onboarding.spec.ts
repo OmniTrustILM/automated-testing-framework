@@ -1,14 +1,11 @@
-import { describeLocalOnly } from '../../utils/regression/tier/localProof';
 import { KeyDetail, OnboardingResult } from '../../utils/keyOnboarding/adminApi';
 import { requestAttribute } from '../../utils/keyOnboarding/attributes';
 import { expect, handleOf, labelled, onboardedKey, test } from '../../utils/keyOnboarding/fixtures';
 import { signThroughCore, verifiesWithRecordedPublicKey } from '../../utils/keyOnboarding/signing';
-import { ledgerSpec } from '../../utils/keyOnboarding/provisioning';
+import { ledgerSpec, recordOwnKeyItems } from '../../utils/keyOnboarding/provisioning';
 import { devTests } from '../../utils/keyOnboarding/tags';
 import { recordCreated } from '../../utils/regression/ledger/ledger';
 import { runName } from '../../utils/regression/ledger/runState';
-
-describeLocalOnly(test);
 
 const COST_CENTER = { attribute: runName('cost-center'), value: 'Payments' };
 
@@ -37,11 +34,14 @@ test.describe.serial('Onboarding key pairs from a token', devTests(), () => {
     ).results;
     for (const result of results) {
       if (result.onboarded) {
-        recordCreated('keys', onboardedKey(result), {
+        const key = onboardedKey(result);
+        recordCreated('keys', key, {
           spec: ledgerSpec(testInfo),
           note: 'onboarded token key',
           parents: { token: provisioned.token.uuid, tokenProfile: provisioned.tokenProfile.uuid },
         });
+        // The signing rows name the private item: the guard lets them through only for an item with its own line.
+        recordOwnKeyItems(await admin.get<KeyDetail>(`/v1/keys/${key.uuid}`), ledgerSpec(testInfo), 'item of an onboarded token key');
       }
     }
 

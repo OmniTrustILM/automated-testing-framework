@@ -10,6 +10,7 @@ export interface DockerResult {
     code: number;
     stdout: string;
     stderr: string;
+    notStarted?: boolean;
 }
 
 export type DockerRunner = (args: string[], opts?: { env?: Record<string, string> }) => Promise<DockerResult>;
@@ -21,15 +22,17 @@ export function defaultDockerRunner(processEnv: NodeJS.ProcessEnv = process.env)
     return (args, opts = {}) => new Promise((resolve) => {
         const bin = dockerBin(processEnv);
         if (typeof bin !== 'string') {
-            resolve({ code: 127, stdout: '', stderr: bin.error });
+            resolve({ code: 127, stdout: '', stderr: bin.error, notStarted: true });
             return;
         }
         let stdout = '';
         let stderr = '';
+        let started = false;
         const child = spawn(bin, args, { env: { ...processEnv, ...opts.env }, stdio: ['ignore', 'pipe', 'pipe'] });
+        child.on('spawn', () => { started = true; });
         child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString('utf8'); });
         child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString('utf8'); });
-        child.on('error', (e) => resolve({ code: 127, stdout, stderr: `${stderr}${String(e)}` }));
+        child.on('error', (e) => resolve({ code: 127, stdout, stderr: `${stderr}${String(e)}`, ...(started ? {} : { notStarted: true }) }));
         child.on('close', (code) => resolve({ code: code ?? 1, stdout, stderr }));
     });
 }

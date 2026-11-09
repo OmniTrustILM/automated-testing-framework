@@ -1,12 +1,9 @@
-import { describeLocalOnly } from '../../utils/regression/tier/localProof';
 import { KeyDetail, TokenKey } from '../../utils/keyOnboarding/adminApi';
 import { expect, handleOf, labelled, onboardedKey, test } from '../../utils/keyOnboarding/fixtures';
 import { ledgerSpec, provisioningOrSkip } from '../../utils/keyOnboarding/provisioning';
 import { devTests } from '../../utils/keyOnboarding/tags';
 import { recordCreated, recordDeleted } from '../../utils/regression/ledger/ledger';
 import { runName } from '../../utils/regression/ledger/runState';
-
-describeLocalOnly(test);
 
 test.describe.serial('Removing an onboarded key from the inventory', devTests(), () => {
   let keyUuid: string;

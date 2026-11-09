@@ -413,6 +413,7 @@ DELETE /v2/complianceProfiles array complianceProfiles | DELETE /v2/compliancePr
 DELETE /v1/connectors array connectors | DELETE /v1/connectors/force array connectors | DELETE /v2/connectors array connectors
 POST /v2/connectors/forceDelete array connectors | DELETE /v1/credentials array credentials | DELETE /v1/discoveries array discoveries
 DELETE /v1/groups array groups | DELETE /v1/keys array keys | PATCH /v1/keys/destroy array keys | PATCH /v1/keys/disable array keys
+PATCH /v1/keys/removeFromInventory array keys
 PATCH /v1/keys/enable array keys | PATCH /v1/keys/compromise uuids keys | PUT /v1/keys/usages uuids keys
 DELETE /v1/keys/items array keyItems | PATCH /v1/keys/items/destroy array keyItems | PATCH /v1/keys/items/disable array keyItems | PATCH /v1/keys/items/enable array keyItems
 PATCH /v1/keys/items/compromise uuids keyItems | PUT /v1/keys/items/usages uuids keyItems | DELETE /v1/notifications array -
@@ -429,7 +430,7 @@ DELETE /v1/tspProfiles array - | PATCH /v1/tspProfiles/disable array - | PATCH /
 });
 
 test('safety list: BULK_ROUTES with list and ledger type; wrong type or untyped route refused', async () => {
-    expect(EXPECTED_BULK).toHaveLength(63);
+    expect(EXPECTED_BULK).toHaveLength(64);
     expect(BULK_ROUTES.map((r) => `${r.method} ${r.path}`).sort()).toEqual(EXPECTED_BULK.map((r) => `${r.method} ${r.path}`).sort());
     const g = looseApi(guard());
     const wrong: string[] = [];

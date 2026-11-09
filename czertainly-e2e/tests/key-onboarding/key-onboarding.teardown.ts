@@ -4,13 +4,10 @@
  * planted on the token (utils/keyOnboarding/blockTeardown.ts).
  */
 import { test as teardown } from '../../fixtures/testFixtures';
-import { describeLocalOnly } from '../../utils/regression/tier/localProof';
 import { devTests } from '../../utils/keyOnboarding/tags';
 import { teardownBlock } from '../../utils/keyOnboarding/blockTeardown';
 
-describeLocalOnly(teardown);
-
-teardown('the block deletes everything its setup and specs created, then its key pairs on the token', devTests(), async ({}, testInfo) => {
+teardown('the block deletes everything its setup and specs created, then its key pairs on the token', devTests({ infrastructure: true }), async ({}, testInfo) => {
     const outcome = await teardownBlock();
     testInfo.annotations.push({
         type: 'teardown',

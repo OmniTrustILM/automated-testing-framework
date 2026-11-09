@@ -4,7 +4,7 @@
 import * as crypto from 'crypto';
 import { Logger } from '../../Logger';
 import { runName } from '../../regression/ledger/runState';
-import { SetupError, TierError } from './transport';
+import { scrubSecrets, SetupError, TierError } from './transport';
 
 export function newStamp(): string {
     let s = '';
@@ -25,10 +25,10 @@ export async function step<T>(name: string, fn: () => Promise<T>): Promise<T> {
     }
 }
 
-export function uuidOf(body: unknown, what: string, loggerName: string): string {
+export function uuidOf(body: unknown, what: string, loggerName: string, secrets: readonly string[] = []): string {
     const uuid = (body as { uuid?: unknown } | undefined)?.uuid;
     if (typeof uuid !== 'string' || !uuid) {
-        new Logger(loggerName).warn(`no uuid returned for ${what}; answer: ${JSON.stringify(body)?.slice(0, 300)}`);
+        new Logger(loggerName).warn(`no uuid returned for ${what}; answer: ${scrubSecrets(JSON.stringify(body) ?? '', secrets).slice(0, 300)}`);
         throw new TierError(`no uuid returned for ${what}`);
     }
     return uuid;

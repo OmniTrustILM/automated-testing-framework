@@ -1,22 +1,18 @@
 /**
- * fixtures — the fixtures of the key onboarding specs: `admin`, `adminWorker` (for hooks) and `provisioned`.
- * `adminWorker` is not the framework's `workerApi`: this block's calls pass only under the guard's `localStack` option.
+ * fixtures — the fixtures of the key onboarding specs: `admin` (the framework's strict guarded `api`), `localAdmin` (`localApi`,
+ * for the `@local` rows of 25-merge only), `adminWorker` (the worker-scoped guard, for hooks) and `provisioned`.
  */
 import { test as base, expect, withWorkerApi } from '../../fixtures/regressionFixtures';
 import { loadEnv } from '../env';
 import { AdminApi, TokenKey } from './adminApi';
 import { Provisioning, readSummary } from './provisioning';
 
-export const test = base.extend<{ admin: AdminApi; provisioned: Provisioning }, { adminWorker: AdminApi }>({
-    // The block runs on a proven local stack: `localApi` lifts the ownership rule there.
-    api: async ({ localApi }, use) => {
-        await use(localApi);
-    },
+export const test = base.extend<{ admin: AdminApi; localAdmin: AdminApi; provisioned: Provisioning }, { adminWorker: AdminApi }>({
     adminWorker: [
         async ({ playwright }, use) => {
             const grantContext = await playwright.request.newContext({ ignoreHTTPSErrors: true });
             try {
-                await withWorkerApi(grantContext, loadEnv(), (api) => use(new AdminApi(api)), { localStack: true });
+                await withWorkerApi(grantContext, loadEnv(), (api) => use(new AdminApi(api)));
             } finally {
                 await grantContext.dispose();
             }
@@ -25,6 +21,10 @@ export const test = base.extend<{ admin: AdminApi; provisioned: Provisioning }, 
     ],
     admin: async ({ api }, use) => {
         await use(new AdminApi(api));
+    },
+    // `localApi` refuses unless the test is `@local` on a proven local stack.
+    localAdmin: async ({ localApi }, use) => {
+        await use(new AdminApi(localApi));
     },
     provisioned: async ({}, use, testInfo) => {
         const summary = readSummary();

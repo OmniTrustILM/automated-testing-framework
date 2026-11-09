@@ -1,9 +1,6 @@
-import { describeLocalOnly } from '../../utils/regression/tier/localProof';
 import { MAX_TOKEN_KEYS_PER_PAGE } from '../../utils/keyOnboarding/adminApi';
 import { expect, labelled, test } from '../../utils/keyOnboarding/fixtures';
 import { devTests } from '../../utils/keyOnboarding/tags';
-
-describeLocalOnly(test);
 
 test.describe('Listing the key pairs on a token', devTests(), () => {
   test('the token profile offers key listing', devTests(), async ({ admin, provisioned }) => {

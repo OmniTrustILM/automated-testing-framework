@@ -635,10 +635,12 @@ test('API-AUTH-02: claim', async ({ api, adminToken, restrictedToken }, testInfo
             expect(only(bad, 'utils/timestamping/x.ts', false), `a helper: ${bad}`).toEqual(['callback-target']);
         }
         const use = "import { registerCallbackTarget } from '../../regression/guard/callbackTargets';\nregisterCallbackTarget(api, 'connector', uuid);";
-        for (const file of ['utils/timestamping/provision/preflight.ts', 'utils/regression/guard/callbackTargets.ts', 'utils/regression/guard/createGuard.ts', 'tests/unit/guardedApiTimestamping.spec.ts']) {
+        for (const file of ['utils/timestamping/provision/preflight.ts', 'utils/keyOnboarding/provision/preflight.ts', 'utils/regression/guard/callbackTargets.ts', 'utils/regression/guard/createGuard.ts', 'tests/unit/guardedApiTimestamping.spec.ts']) {
             expect(only(use, file, false), file).toEqual([]);
         }
         expect(only(use, 'utils/timestamping/provision/provision.ts', false), 'not the other files of the same folder').toEqual(['callback-target']);
+        expect(only(use, 'utils/keyOnboarding/provision/plant.ts', false), 'nor of the key onboarding folder').toEqual(['callback-target']);
+        expect(only(use, 'utils/keyOnboarding/preflight.ts', false), 'nor a preflight.ts outside provision/').toEqual(['callback-target']);
         for (const fine of ["const registerCallbackTargets = [];", "const s = 'callbackTargetsList';", "import { x } from './myCallbackTargets';", "const o = { registerCallback: 1 };"]) {
             expect(only(fine, SPEC), fine).toEqual([]);
         }

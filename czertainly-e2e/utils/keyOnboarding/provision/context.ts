@@ -7,7 +7,6 @@ import type { Logger } from '../../Logger';
 import { LedgerLine, OwnRef, recordCreated, Ref } from '../../regression/ledger/ledger';
 import type { Admin } from '../../devBlocks/provision/transport';
 import type { KeyOnboardingConfig } from '../config';
-import type { DockerRunner } from './docker';
 
 export const SETUP_LEDGER_SPEC = 'key-onboarding/setup';
 
@@ -24,7 +23,6 @@ export interface SetupContext {
     cfg: KeyOnboardingConfig;
     env: NodeJS.ProcessEnv;
     poll: PollSettings;
-    docker: DockerRunner;
     stamp: string;
     log: Logger;
 }
@@ -34,4 +32,4 @@ export function recordOwn(type: string, ref: Ref, note: string, parents?: Ledger
     return recordCreated(type, ref, { spec: SETUP_LEDGER_SPEC, note, ...(parents ? { parents } : {}), ...(serverAt ? { serverAt } : {}) });
 }
 
-export const uuidOf = (body: unknown, what: string): string => sharedUuidOf(body, what, 'KeyOnboardingSetup');
+export const uuidOf = (ctx: Pick<SetupContext, 'admin'>, body: unknown, what: string): string => sharedUuidOf(body, what, 'KeyOnboardingSetup', ctx.admin.secrets);

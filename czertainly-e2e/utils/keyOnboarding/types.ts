@@ -24,6 +24,7 @@ export interface Provisioning {
     token: NamedUuid;
     tokenProfile: NamedUuid;
     planted: PlantedKeys;
+    /** Base64 DER; empty on a shared tier (only the local-only 25-merge uploads it). */
     certifiedCertificate: string;
 }
 

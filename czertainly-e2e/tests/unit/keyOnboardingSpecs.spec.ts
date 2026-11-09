@@ -1,10 +1,14 @@
 /**
  * keyOnboardingSpecs — static checks over tests/key-onboarding/*.spec.ts (the `@dev-tests` block).
+ * Only 25-merge is local-only; every test and describe carries devTests() of a row.
  */
 import { expect, test } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { onboardedKey } from '../../utils/keyOnboarding/provisioning';
+import { devTests, NEEDS_KEY_ONBOARDING } from '../../utils/keyOnboarding/tags';
+import { devBlockProjects } from '../../utils/devBlocks/registry';
+import { resolveProjectFilters, selectsTest } from '../../utils/regression/projectFilters';
 
 const DIR = path.join(__dirname, '..', 'key-onboarding');
 const specs = fs.readdirSync(DIR).filter((f) => f.endsWith('.spec.ts')).sort();
@@ -64,6 +68,32 @@ function bodySpans(src: string): Array<[number, number]> {
     return spans;
 }
 
+test('devTests(): a row carries the need, the setup and teardown tests do not; @local only when asked', () => {
+    expect(devTests().tag).toEqual(['@dev-tests', '@key-onboarding', '@issue:ilm#409', NEEDS_KEY_ONBOARDING]);
+    expect(devTests({ infrastructure: true }).tag).toEqual(['@dev-tests', '@key-onboarding', '@issue:ilm#409']);
+    expect(devTests({ local: true }).tag).toEqual(['@dev-tests', '@key-onboarding', '@issue:ilm#409', NEEDS_KEY_ONBOARDING, '@local']);
+    for (const f of ['key-onboarding.setup.ts', 'key-onboarding.teardown.ts']) {
+        const src = fs.readFileSync(path.join(DIR, f), 'utf8');
+        expect(src, `${f}: infrastructure`).toContain('devTests({ infrastructure: true })');
+        expect(src.includes('describeLocalOnly'), `${f}: not local-only`).toBe(false);
+    }
+});
+
+test('a shared tier selects every row but 25-merge\'s; a local stack selects 25-merge too', () => {
+    const title = (opts: Parameters<typeof devTests>[0] = {}) => `a row ${devTests(opts).tag.join(' ')}`;
+    const rows = (env: NodeJS.ProcessEnv) => resolveProjectFilters({ projects: devBlockProjects('key-onboarding', env) }).find((p) => p.name === 'key-onboarding')!;
+    const shared = rows({});
+    expect(selectsTest(shared, title()), 'a row of 10 / 20 / 30').toBe(true);
+    expect(selectsTest(shared, title({ local: true })), 'a row of 25-merge').toBe(false);
+    const local = rows({ TIER_KIND: 'local' });
+    expect(selectsTest(local, title({ local: true }))).toBe(true);
+    expect(selectsTest(local, title())).toBe(true);
+    for (const spec of specs) {
+        const src = fs.readFileSync(path.join(DIR, spec), 'utf8');
+        expect(src.includes('devTests({ local: true })'), spec).toBe(spec.startsWith('25-'));
+    }
+});
+
 test('the block has its four specs, in file order', () => {
     expect(specs.map((s) => s.slice(0, 2))).toEqual(['10', '20', '25', '30']);
 });
@@ -76,16 +106,25 @@ function bodyEnd(src: string, at: number): number {
 for (const spec of specs) {
     const src = fs.readFileSync(path.join(DIR, spec), 'utf8');
 
-    test(`${spec}: calls describeLocalOnly(test) before any test`, () => {
+    const local = spec.startsWith('25-');
+    const details = local ? 'devTests({ local: true })' : 'devTests()';
+
+    test(`${spec}: ${local ? 'local-only: describeLocalOnly(test) before any test, the local-stack admin' : 'not local-only (no describeLocalOnly, no localAdmin)'}`, () => {
         const at = src.indexOf('describeLocalOnly(test)');
-        expect(at, 'describeLocalOnly(test) is called').toBeGreaterThan(-1);
-        expect(at, 'before the first test or describe').toBeLessThan(src.search(/(?<![.\w])test(\.describe)?\(/));
+        if (local) {
+            expect(at, 'describeLocalOnly(test) is called').toBeGreaterThan(-1);
+            expect(at, 'before the first test or describe').toBeLessThan(src.search(/(?<![.\w])test(\.describe)?\(/));
+            expect(src.includes('{ admin'), 'every row takes localAdmin').toBe(false);
+        } else {
+            expect(src.includes('describeLocalOnly'), 'describeLocalOnly is not used').toBe(false);
+            expect(src.includes('localAdmin'), 'the strict guard only').toBe(false);
+        }
     });
 
-    test(`${spec}: every test and describe carries devTests(…)`, () => {
+    test(`${spec}: every test and describe carries ${details}`, () => {
         const tests = calls(src, TEST_CALLS);
         expect(tests.length, 'the spec declares tests').toBeGreaterThan(0);
-        const untagged = tests.filter((c) => !HEADER(c).includes('devTests(')).map((c) => src.slice(c.start, c.start + 80).split('\n')[0]);
+        const untagged = tests.filter((c) => !HEADER(c).includes(details)).map((c) => src.slice(c.start, c.start + 80).split('\n')[0]);
         expect(untagged).toEqual([]);
     });
 

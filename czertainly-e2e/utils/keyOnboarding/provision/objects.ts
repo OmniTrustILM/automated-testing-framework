@@ -15,12 +15,12 @@ export async function createVaultInstance(ctx: SetupContext, connector: Connecto
     const created = await ctx.admin.request('POST', '/v1/vaults', {
         connectorUuid: connector.uuid, interfaceUuid: connector.interfaceUuid, name, attributes: [], customAttributes: [],
     });
-    return recordOwn('vaultInstances', { uuid: uuidOf(created.body, `vault instance '${name}'`), name }, `key onboarding vault instance on ${connector.name}`, undefined, created.serverAt);
+    return recordOwn('vaultInstances', { uuid: uuidOf(ctx, created.body, `vault instance '${name}'`), name }, `key onboarding vault instance on ${connector.name}`, undefined, created.serverAt);
 }
 
 export async function createVaultProfile(ctx: SetupContext, vault: Ref, name: string): Promise<OwnRef> {
     const created = await ctx.admin.request('POST', `/v1/vaults/${vault.uuid}/vaultProfiles`, { name, description: '', attributes: [], customAttributes: [] });
-    const ref = recordOwn('vaultProfiles', { uuid: uuidOf(created.body, `vault profile '${name}'`), name }, `key onboarding vault profile under vault ${vault.name}`, { vault: vault.uuid }, created.serverAt);
+    const ref = recordOwn('vaultProfiles', { uuid: uuidOf(ctx, created.body, `vault profile '${name}'`), name }, `key onboarding vault profile under vault ${vault.name}`, { vault: vault.uuid }, created.serverAt);
     await ctx.admin.request('PATCH', `/v1/vaults/${vault.uuid}/vaultProfiles/${ref.uuid}/enable`);
     return ref;
 }
@@ -36,7 +36,7 @@ export async function createPinSecret(ctx: SetupContext, vault: Ref, vaultProfil
         attributes: [],
         customAttributes: [],
     });
-    const ref = recordOwn('secrets', { uuid: uuidOf(created.body, `PIN secret '${name}'`), name }, 'key onboarding token PIN secret', { vaultProfile: vaultProfile.uuid }, created.serverAt);
+    const ref = recordOwn('secrets', { uuid: uuidOf(ctx, created.body, `PIN secret '${name}'`), name }, 'key onboarding token PIN secret', { vaultProfile: vaultProfile.uuid }, created.serverAt);
     let last: Json | undefined;
     for (let attempt = 0; attempt < ctx.poll.secretAttempts; attempt++) {
         last = await ctx.admin.get<Json>(`/v1/secrets/${ref.uuid}`);
@@ -55,14 +55,14 @@ export async function createToken(ctx: SetupContext, pre: Prerequisites, pin: Ow
     const created = await ctx.admin.request('POST', '/v1/tokens', {
         name, connectorUuid: pre.pkcs11.uuid, attributes: [profile, token, pinAttribute], customAttributes: [],
     });
-    return recordOwn('tokens', { uuid: uuidOf(created.body, `token '${name}'`), name }, `key onboarding token on ${pre.pkcs11.name}`, undefined, created.serverAt);
+    return recordOwn('tokens', { uuid: uuidOf(ctx, created.body, `token '${name}'`), name }, `key onboarding token on ${pre.pkcs11.name}`, undefined, created.serverAt);
 }
 
 export async function createTokenProfile(ctx: SetupContext, token: OwnRef, name: string): Promise<OwnRef> {
     const created = await ctx.admin.request('POST', `/v1/tokens/${token.uuid}/tokenProfiles`, {
         name, description: '', attributes: [], customAttributes: [], usage: ['sign', 'verify', 'encrypt', 'decrypt'],
     });
-    const ref = recordOwn('tokenProfiles', { uuid: uuidOf(created.body, `token profile '${name}'`), name }, 'key onboarding token profile', { token: token.uuid }, created.serverAt);
+    const ref = recordOwn('tokenProfiles', { uuid: uuidOf(ctx, created.body, `token profile '${name}'`), name }, 'key onboarding token profile', { token: token.uuid }, created.serverAt);
     await ctx.admin.request('PATCH', `/v1/tokens/${token.uuid}/tokenProfiles/${ref.uuid}/enable`);
     return ref;
 }

@@ -14,7 +14,8 @@ import { Admin, TierError } from '../../devBlocks/provision/transport';
 import { KeyOnboardingConfig, keyOnboardingConfig, summaryFile } from '../config';
 import type { KeyOnboardingSummary } from '../types';
 import { DEFAULT_POLL, PollSettings, SETUP_LEDGER_SPEC, SetupContext } from './context';
-import { defaultDockerRunner, DockerRunner } from './docker';
+import type { DockerRunner } from './docker';
+import type { KubectlRunner } from './kubectl';
 import { createPinSecret, createToken, createTokenProfile, createVaultInstance, createVaultProfile } from './objects';
 import { plantKeys } from './plant';
 import { preflight } from './preflight';
@@ -22,8 +23,8 @@ import { preflight } from './preflight';
 export { SETUP_LEDGER_SPEC };
 export { offlineBlocker, runnerBlocker } from './preflight';
 export { unplantRunKeys } from './plant';
-export { defaultDockerRunner } from './docker';
 export type { DockerRunner } from './docker';
+export type { KubectlRunner } from './kubectl';
 
 const logger = new Logger('KeyOnboardingSetup');
 
@@ -32,7 +33,9 @@ export interface ProvisionOptions {
     env?: NodeJS.ProcessEnv;
     poll?: Partial<PollSettings>;
     docker?: DockerRunner;
+    kubectl?: KubectlRunner;
     stamp?: string;
+    runId?: string;
 }
 
 /** The summary while a setup attempt runs, so a killed or retried attempt never leaves an older `ready` file behind. */
@@ -45,15 +48,16 @@ export function unavailableSummary(reason: string): KeyOnboardingSummary {
 export async function provisionKeyOnboarding(api: GuardedApi, opts: ProvisionOptions = {}): Promise<KeyOnboardingSummary> {
     const env = opts.env ?? process.env;
     const cfg = opts.cfg ?? keyOnboardingConfig(env);
-    const docker = opts.docker ?? defaultDockerRunner(env);
-    const admin = new Admin(api, { loggerName: 'KeyOnboardingSetup', guardLabel: 'key onboarding setup' });
-    const found = await preflight(admin, cfg, docker, env);
+    const runners = { ...(opts.docker ? { docker: opts.docker } : {}), ...(opts.kubectl ? { kubectl: opts.kubectl } : {}) };
+    // The PIN goes to the vault in the secret's body: an answer that echoes it is scrubbed before it is logged.
+    const admin = new Admin(api, { loggerName: 'KeyOnboardingSetup', guardLabel: 'key onboarding setup', secrets: cfg.tokenPin ? [cfg.tokenPin] : [] });
+    const found = await preflight(admin, cfg, runners, env, api, opts.runId ?? runId());
     if (found.status === 'unavailable') {
         logger.warn(`key onboarding unavailable: ${found.reason}`);
         return unavailableSummary(found.reason);
     }
     const pre = found.prerequisites;
-    const ctx: SetupContext = { admin, cfg, env, poll: { ...DEFAULT_POLL, ...opts.poll }, docker, stamp: opts.stamp ?? newStamp(), log: logger };
+    const ctx: SetupContext = { admin, cfg, env, poll: { ...DEFAULT_POLL, ...opts.poll }, stamp: opts.stamp ?? newStamp(), log: logger };
 
     admin.markProvisioningStart();
     try {
@@ -62,7 +66,7 @@ export async function provisionKeyOnboarding(api: GuardedApi, opts: ProvisionOpt
         const pin = await step('PIN secret', () => createPinSecret(ctx, vault, vaultProfile, objectName(ctx, 'ko-token-pin')));
         const token = await step('token', () => createToken(ctx, pre, pin, objectName(ctx, 'ko-token')));
         const tokenProfile = await step('token profile', () => createTokenProfile(ctx, token, objectName(ctx, 'ko-token-profile')));
-        const planting = await step('planting', () => plantKeys({ docker, sidecarContainer: cfg.sidecarContainer, tokenLabel: cfg.pkcs11Token, pin: cfg.tokenPin ?? '', stamp: ctx.stamp }));
+        const planting = await step('planting', () => plantKeys({ cfg, env, runners, pin: cfg.tokenPin ?? '', stamp: ctx.stamp, runId: opts.runId ?? runId() }));
 
         const serverAt = admin.provisionedAt();
         if (!serverAt) logger.warn('no Date header on the provisioning answers: provisionedAt falls back to the runner clock');
