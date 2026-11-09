@@ -854,8 +854,8 @@ test('offlineBlocker: a run that could not remove its pairs plants none (a refus
 });
 
 test('a shared tier: no pinned cluster, a connector of another Deployment, no client, no rights, no pod and two pods are unavailable before any platform request', async ({}, testInfo) => {
-    const exec = 'the runner may not exec into pods in the namespace KO_KUBE_NAMESPACE names (kubectl auth can-i create / get pods/exec: no; gitops#56 grants it on develop-01)';
-    const pods = 'the runner may not get and list pods in the namespace KO_KUBE_NAMESPACE names (gitops#56 grants it on develop-01)';
+    const exec = 'the runner may not exec into pods in the namespace KO_KUBE_NAMESPACE names (kubectl auth can-i create / get pods/exec: no)';
+    const pods = 'the runner may not get and list pods in the namespace KO_KUBE_NAMESPACE names';
     const cases: Array<[string, KubectlOptions, NodeJS.ProcessEnv, string | RegExp]> = [
         ['no pin', {}, { KO_KUBE_CONTEXT: '' }, /^no cluster is pinned/],
         ['other deployment', {}, { KO_PKCS11_CONNECTOR_URL: `http://other.${NS}.svc.cluster.local:8080` }, /^the connector KO_PKCS11_CONNECTOR_URL names is not the Service of the Deployment/],

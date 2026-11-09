@@ -15,7 +15,7 @@ REG_ENV_FILE=<local-stack env file> TIER_KIND=local DEV_BLOCK=key-onboarding \
   npx playwright test -c playwright.devblock.config.ts
 ```
 
-Shared tier (kubectl exec plants into the sidecar; on the develop-01 Testkube runner the pod's service account is used):
+Shared tier (kubectl exec plants into the sidecar):
 
 ```
 REG_ENV_FILE=<tier env file> DEV_BLOCK=key-onboarding KO_TOKEN_PIN=<SoftHSM user PIN> \
@@ -23,8 +23,8 @@ REG_ENV_FILE=<tier env file> DEV_BLOCK=key-onboarding KO_TOKEN_PIN=<SoftHSM user
   npx playwright test -c playwright.devblock.config.ts --pass-with-no-tests
 ```
 
-A shared tier needs kubectl, `get`/`list` on pods and `create`/`get` on `pods/exec` in KO_KUBE_NAMESPACE (gitops#56 on
-develop-01), exactly one running connector pod, and KO_PKCS11_CONNECTOR_URL naming that Deployment's Service
+A shared tier needs kubectl, `get`/`list` on pods and `create`/`get` on `pods/exec` in KO_KUBE_NAMESPACE,
+exactly one running connector pod, and KO_PKCS11_CONNECTOR_URL naming that Deployment's Service
 (`<deployment>.<namespace>.svc…`). Without any of it the rows skip with the reason. A teardown run by hand needs the
 planting run's REG_RUN_ID and REG_STATE_DIR.
 

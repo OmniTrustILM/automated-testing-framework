@@ -76,10 +76,10 @@ export async function runnerBlocker(cfg: KeyOnboardingConfig, tools: RunnerTools
         const ns = cfg.kube.namespace;
         if (!(await kubectlAvailable(kubectl))) return 'kubectl is not available on the runner (planting key pairs on a shared tier execs into the SoftHSM sidecar)';
         if (!(await canI(kubectl, 'get', 'pods', ns)) || !(await canI(kubectl, 'list', 'pods', ns))) {
-            return 'the runner may not get and list pods in the namespace KO_KUBE_NAMESPACE names (gitops#56 grants it on develop-01)';
+            return 'the runner may not get and list pods in the namespace KO_KUBE_NAMESPACE names';
         }
         if (!(await canI(kubectl, 'create', 'pods/exec', ns)) || !(await canI(kubectl, 'get', 'pods/exec', ns))) {
-            return 'the runner may not exec into pods in the namespace KO_KUBE_NAMESPACE names (kubectl auth can-i create / get pods/exec: no; gitops#56 grants it on develop-01)';
+            return 'the runner may not exec into pods in the namespace KO_KUBE_NAMESPACE names (kubectl auth can-i create / get pods/exec: no)';
         }
         const found = await sidecarPod(kubectl, cfg.kube);
         return 'reason' in found ? found.reason : undefined;
