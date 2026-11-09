@@ -1,7 +1,7 @@
 # Key onboarding block (`@dev-tests`)
 
 The developers' suite for ilm#409 (list the key pairs on a PKCS#11 token, onboard them, sign with them, remove them from the
-inventory), ported from `feat/409-list-and-adopt-keys` at 93d8fa0. Four specs: `10-listing`, `20-onboarding`, `25-merge`
+inventory), ported from `feat/409-list-and-adopt-keys` at fec5cbe. Four specs: `10-listing`, `20-onboarding`, `25-merge`
 (local stack only), `30-removal`. The setup plants 11 key pairs on the SoftHSM token and creates the token, profile and PIN
 secret; the teardown deletes them and then removes the run's pairs from the token. If it cannot prove the pairs are gone it
 fails and writes the manual removal command to `<REG_STATE_DIR>/<run id>.key-onboarding.removal.sh`.
@@ -27,6 +27,9 @@ A shared tier needs kubectl, `get`/`list` on pods and `create`/`get` on `pods/ex
 develop-01), exactly one running connector pod, and KO_PKCS11_CONNECTOR_URL naming that Deployment's Service
 (`<deployment>.<namespace>.svc…`). Without any of it the rows skip with the reason. A teardown run by hand needs the
 planting run's REG_RUN_ID and REG_STATE_DIR.
+
+The onboard request names a pair by its listed `keyPairMeta`; the guard waives only `keys[].keyPairMeta[].uuid` on that route
+(the connector's metadata definition, not an object).
 
 ## Environment
 

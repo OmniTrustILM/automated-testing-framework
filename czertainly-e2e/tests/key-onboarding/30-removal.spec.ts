@@ -1,5 +1,5 @@
 import { KeyDetail, TokenKey } from '../../utils/keyOnboarding/adminApi';
-import { expect, handleOf, labelled, onboardedKey, test } from '../../utils/keyOnboarding/fixtures';
+import { expect, identityOf, keyPairMetaOf, labelled, onboardedKey, test } from '../../utils/keyOnboarding/fixtures';
 import { ledgerSpec, provisioningOrSkip } from '../../utils/keyOnboarding/provisioning';
 import { devTests } from '../../utils/keyOnboarding/tags';
 import { recordCreated, recordDeleted } from '../../utils/regression/ledger/ledger';
@@ -12,7 +12,7 @@ test.describe.serial('Removing an onboarded key from the inventory', devTests(),
     const keys = await admin.allTokenKeys(provisioned.token.uuid, provisioned.tokenProfile.uuid);
     const [onboarded] = (
       await admin.onboardTokenKeys(provisioned.token.uuid, provisioned.tokenProfile.uuid, [
-        { keyHandle: handleOf(keys, provisioned.planted.removable) },
+        { keyPairMeta: keyPairMetaOf(keys, provisioned.planted.removable) },
       ])
     ).results;
     if (onboarded.onboarded) {
@@ -39,7 +39,7 @@ test.describe.serial('Removing an onboarded key from the inventory', devTests(),
 
     const [again] = (
       await admin.onboardTokenKeys(provisioned.token.uuid, provisioned.tokenProfile.uuid, [
-        { keyHandle: handleOf(keys, provisioned.planted.removable) },
+        { keyPairMeta: keyPairMetaOf(keys, provisioned.planted.removable) },
       ])
     ).results;
     if (again.onboarded) {
@@ -69,7 +69,7 @@ function heldBy(keys: TokenKey[], keyUuid: string): TokenKey {
 
 test.describe.serial('Removing keys from the inventory in bulk', devTests(), () => {
   let createdKey: KeyDetail;
-  let createdPairHandle: string;
+  let createdPair: string | undefined;
   let onboardedUuids: string[];
   let compromisedUuid: string;
 
@@ -83,11 +83,11 @@ test.describe.serial('Removing keys from the inventory in bulk', devTests(), () 
     recordCreated('keys', { uuid: createdKey.uuid, name: createdKey.name }, { spec: ledgerSpec(testInfo), note: 'key pair created through Core', parents });
     keyNames.set(createdKey.uuid, createdKey.name);
     const keys = await admin.allTokenKeys(token.uuid, tokenProfile.uuid);
-    createdPairHandle = heldBy(keys, createdKey.uuid).keyHandle ?? '';
+    createdPair = identityOf(heldBy(keys, createdKey.uuid));
     const { results } = await admin.onboardTokenKeys(
       token.uuid,
       tokenProfile.uuid,
-      [...planted.bulkRemovable, planted.compromised].map((label) => ({ keyHandle: handleOf(keys, label) })),
+      [...planted.bulkRemovable, planted.compromised].map((label) => ({ keyPairMeta: keyPairMetaOf(keys, label) })),
     );
     for (const result of results) {
       if (result.onboarded) {
@@ -100,6 +100,23 @@ test.describe.serial('Removing keys from the inventory in bulk', devTests(), () 
     onboardedUuids = results.slice(0, planted.bulkRemovable.length).map((result) => result.keyUuid ?? '');
     compromisedUuid = results[planted.bulkRemovable.length].keyUuid ?? '';
     await admin.compromiseKey(compromisedUuid);
+  });
+
+  test('reports in each key detail whether the key can be removed', devTests(), async ({ admin }) => {
+    const details = await Promise.all([...onboardedUuids, compromisedUuid].map((uuid) => admin.get<KeyDetail>(`/v1/keys/${uuid}`)));
+
+    expect(createdKey.removableFromInventory).toBe(true);
+    expect(details.map((key) => key.removableFromInventory)).toEqual([...onboardedUuids.map(() => true), false]);
+  });
+
+  test('marks each row of the key listing with whether its key can be removed', devTests(), async ({ admin }) => {
+    const rows = await admin.allKeyItems();
+
+    const flagsOf = (keyUuid: string) => rows.filter((row) => row.keyWrapperUuid === keyUuid).map((row) => row.removableFromInventory);
+    for (const keyUuid of [...onboardedUuids, createdKey.uuid]) {
+      expect(flagsOf(keyUuid)).toEqual([true, true]);
+    }
+    expect(flagsOf(compromisedUuid)).toEqual([false, false]);
   });
 
   test('refuses to remove a compromised key', devTests(), async ({ admin }) => {
@@ -127,7 +144,8 @@ test.describe.serial('Removing keys from the inventory in bulk', devTests(), () 
     for (const label of provisioned.planted.bulkRemovable) {
       expect(labelled(keys, label).status).toBe('onboardable');
     }
-    expect(keys.find((key) => key.keyHandle === createdPairHandle)?.status).toBe('onboardable');
+    expect(createdPair).toBeDefined();
+    expect(keys.find((key) => identityOf(key) === createdPair)?.status).toBe('onboardable');
   });
 
   test('destroys the compromised key, as the refusal advises', devTests(), async ({ admin, provisioned }) => {

@@ -2,7 +2,7 @@ import { isCanonicalUuid, isUuidField, merge, findUuidsInString, FoundUuids } fr
 import { NO_BASE } from './urls';
 import { REFERENCE_FIELDS } from './allowLists';
 import { ATTRIBUTE_KEY, isPlainObject } from './targets';
-import { BODY_FIELD_TYPES, ledgerTypeOfResource, SIBLING_TYPED_FIELDS } from './routes';
+import { BODY_FIELD_TYPES, ledgerTypeOfResource, LIST_ELEMENT, SIBLING_TYPED_FIELDS } from './routes';
 
 const KEY_DESTINATION = /^keydestination$/i;
 const ENTRY_REFERENCE = /^[0-9a-f]{64}$/;
@@ -89,7 +89,7 @@ export interface AssociationOptions {
     scanAttributes?: boolean;
 }
 
-export const LIST_ELEMENT = '\u0000list';
+export { LIST_ELEMENT } from './routes';
 
 /**
  * The uuids a JSON body names: canonical ones must be own, uuid-like non-canonical ones are refused; with `references`, top-level

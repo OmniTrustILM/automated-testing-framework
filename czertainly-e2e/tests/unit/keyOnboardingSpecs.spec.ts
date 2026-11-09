@@ -175,7 +175,7 @@ test('the scanner understands the shapes the specs use', () => {
 
 test('onboardedKey: the uuid and name of an onboarded result, or a clear failure when the answer lacks either', () => {
     const uuid = '55555555-5555-4555-8555-555555555555';
-    expect(onboardedKey({ keyHandle: 'h1', onboarded: true, intoExistingKey: false, keyUuid: uuid, keyName: 'qa-reg-x-ko-rsa' })).toEqual({ uuid, name: 'qa-reg-x-ko-rsa' });
-    expect(() => onboardedKey({ keyHandle: 'h2', onboarded: true, intoExistingKey: false, keyName: 'n' })).toThrow(/h2 reports onboarded without a key uuid/);
-    expect(() => onboardedKey({ keyHandle: 'h3', onboarded: true, intoExistingKey: false, keyUuid: uuid })).toThrow(/h3 reports onboarded without a key name/);
+    expect(onboardedKey({ keyPairMeta: [{ uuid: 'm', name: 'label', content: [{ data: 'h1' }] }], onboarded: true, intoExistingKey: false, keyUuid: uuid, keyName: 'qa-reg-x-ko-rsa' })).toEqual({ uuid, name: 'qa-reg-x-ko-rsa' });
+    expect(() => onboardedKey({ keyPairMeta: [{ uuid: 'm', name: 'label', content: [{ data: 'h2' }] }], onboarded: true, intoExistingKey: false, keyName: 'n' })).toThrow(/h2 reports onboarded without a key uuid/);
+    expect(() => onboardedKey({ keyPairMeta: [{ uuid: 'm', name: 'label', content: [{ data: 'h3' }] }], onboarded: true, intoExistingKey: false, keyUuid: uuid })).toThrow(/h3 reports onboarded without a key name/);
 });

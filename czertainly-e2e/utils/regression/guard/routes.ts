@@ -321,6 +321,8 @@ export function routeFieldWaivers(method: string, apiPath: string, body: unknown
     return out;
 }
 
+export const LIST_ELEMENT = '\u0000list';
+
 export interface RoutePathWaiver {
     method: BulkMethod;
     path: string;
@@ -339,7 +341,14 @@ export const ROUTE_PATH_WAIVERS: readonly RoutePathWaiver[] = [
         when: (body) => isPlainObject(body.workflow) && (body.workflow.type === 'timestamping' || body.workflow.type === 'content_signing'),
         proof: 'SigningProfileServiceImpl: reads the connector entity, stores a reference and attribute values on the new profile only',
     },
+    {
+        method: 'POST', path: '/v1/tokens/{id}/tokenProfiles/{id}/tokenKeys/onboard', keyPath: ['keys', LIST_ELEMENT, 'keyPairMeta', LIST_ELEMENT, 'uuid'],
+        when: (body) => Array.isArray(body.keys),
+        proof: 'TokenKeyOnboardingServiceImpl: keyPairMeta is the connector metadata of a listed pair, sent back to the connector; core resolves no object by its uuid',
+    },
 ];
+
+const PATH_WAIVER_RES = ROUTE_PATH_WAIVERS.map((w) => ({ w, re: new RegExp(`^${w.path.replace(/\{id\}/g, '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}')}$`) }));
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
     return !!v && typeof v === 'object' && !Array.isArray(v);
@@ -347,7 +356,7 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 
 export function routePathWaivers(method: string, apiPath: string, body: unknown): ReadonlyArray<readonly string[]> {
     if (!isPlainObject(body)) return [];
-    return ROUTE_PATH_WAIVERS.filter((w) => w.method === method && w.path === apiPath && w.when(body)).map((w) => w.keyPath);
+    return PATH_WAIVER_RES.filter(({ w, re }) => w.method === method && re.test(apiPath) && w.when(body)).map(({ w }) => w.keyPath);
 }
 
 const LIST_BODY_RES = LIST_BODY_TYPES.map((r) => ({ r, re: new RegExp(`^${r.path.replace(/\{id\}/g, '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}')}$`) }));

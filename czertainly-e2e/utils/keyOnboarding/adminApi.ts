@@ -5,7 +5,7 @@
 import type { APIResponse } from '@playwright/test';
 import type { GuardedApi } from '../regression/guard/types';
 import { uploadOwnCertificate } from '../regression/ownCertificates';
-import { AttributeDefinition, definitionNamed, offered, requestAttribute } from './attributes';
+import { AttributeDefinition, definitionNamed, MetadataAttribute, offered, requestAttribute } from './attributes';
 
 type Method = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
 
@@ -121,6 +121,20 @@ export class AdminApi {
     await this.json<void>('DELETE', `/v1/keys/${keyUuid}`, WHOLE_KEY);
   }
 
+  /** Enables every item of the key: an onboarded key starts disabled. */
+  async enableKey(keyUuid: string): Promise<void> {
+    await this.patch<void>(`/v1/keys/${keyUuid}/enable`, WHOLE_KEY);
+  }
+
+  async allKeyItems(): Promise<KeyItemSummary[]> {
+    const items: KeyItemSummary[] = [];
+    for (let pageNumber = 1; ; pageNumber++) {
+      const page = await this.post<KeyItemPage>('/v1/keys', { itemsPerPage: LIST_PAGE_SIZE, pageNumber, filters: [] });
+      items.push(...page.cryptographicKeys);
+      if (pageNumber >= page.totalPages) return items;
+    }
+  }
+
   removeKeyFromInventory(keyUuid: string): Promise<APIResponse> {
     return this.raw('PATCH', `/v1/keys/${keyUuid}/removeFromInventory`);
   }
@@ -158,7 +172,7 @@ export class AdminApi {
 }
 
 export interface TokenKey {
-  keyHandle?: string;
+  keyPairMeta?: MetadataAttribute[];
   label?: string;
   keyAlgorithm: string;
   length?: number | null;
@@ -169,7 +183,10 @@ export interface TokenKey {
     | 'inInventoryWithoutToken'
     | 'importInProgress'
     | 'noPublicKey'
-    | 'noUniqueId';
+    | 'noUsableId'
+    | 'unsupportedKeyType'
+    | 'unreadable'
+    | 'gone';
   fingerprint?: string;
   suggestedName?: string;
   inventoryKeyUuid?: string;
@@ -186,12 +203,12 @@ export interface TokenKeyPage {
 }
 
 export interface TokenKeySelection {
-  keyHandle: string;
+  keyPairMeta: MetadataAttribute[];
   name?: string;
 }
 
 export interface OnboardingResult {
-  keyHandle: string;
+  keyPairMeta: MetadataAttribute[];
   onboarded: boolean;
   intoExistingKey: boolean;
   keyUuid?: string;
@@ -221,6 +238,18 @@ export interface KeyDetail {
   tokenProfileUuid?: string;
   items: KeyItem[];
   customAttributes?: Array<{ name: string; content?: Array<{ data: unknown }> }>;
+  removableFromInventory: boolean;
+}
+
+export interface KeyItemSummary {
+  uuid: string;
+  keyWrapperUuid: string;
+  removableFromInventory: boolean;
+}
+
+export interface KeyItemPage {
+  cryptographicKeys: KeyItemSummary[];
+  totalPages: number;
 }
 
 export interface CertificateDetail {

@@ -4,7 +4,7 @@
 import { APIRequestContext, expect, test } from '@playwright/test';
 import { guardApiWithSeams } from '../../utils/regression/guard/createGuard';
 import { registerCallbackTarget } from '../../utils/regression/guard/callbackTargets';
-import { API_WORDS, bulkRoute } from '../../utils/regression/guard/routes';
+import { API_WORDS, bulkRoute, LIST_ELEMENT, routePathWaivers } from '../../utils/regression/guard/routes';
 import { LedgerLine } from '../../utils/regression/ledger/ledger';
 import { OwnObjectViolation, RefusalKind } from '../../utils/regression/ledger/ownership';
 import { LoopbackServer } from './helpers/loopbackServer';
@@ -14,7 +14,7 @@ const RUN = 'qa-reg-20261102-120000-ko01';
 const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
 const O = { token: U(1), tokenProfile: U(2), key: U(3), item: U(4), attribute: U(5) };
-const F = { connector: U(21), tokenProfile: U(22), key: U(23), item: U(24) };
+const F = { connector: U(21), tokenProfile: U(22), key: U(23), item: U(24), metadata: U(30) };
 
 const mk = (type: string, uuid: string, name = `${RUN}-${type}`, parents?: LedgerLine['parents']): LedgerLine =>
     ({ at: 'a', runId: RUN, type, name, uuid, spec: 'key-onboarding/setup', event: 'created', ...(parents ? { parents } : {}) });
@@ -54,11 +54,18 @@ async function kind(call: Promise<unknown>): Promise<RefusalKind | 'sent' | stri
 }
 const sentMutations = () => A.mutations().map((a) => `${a.method} ${a.url.replace(/^\/api/, '')}`);
 
-const onboardBody = { keys: [{ keyHandle: 'aGFuZGxl', name: `${RUN}-ko-ec-edge-signer` }], customAttributes: [{ uuid: O.attribute, name: `${RUN}-customAttributes`, content: [{ data: 'Payments' }] }] };
+// keyPairMeta's uuid is the connector's metadata definition, not an object: the onboard route waives it.
+const meta = (uuid = F.metadata, data: unknown = 'aGFuZGxl') => [{ uuid, name: 'keyId', content: [{ data }] }];
+const onboardBody = { keys: [{ keyPairMeta: meta(), name: `${RUN}-ko-ec-edge-signer` }], customAttributes: [{ uuid: O.attribute, name: `${RUN}-customAttributes`, content: [{ data: 'Payments' }] }] };
 
-test('the token-key words are API words, and the bulk removal is a bulk route over keys', () => {
+test('the token-key words are API words, the bulk removal is a bulk route over keys, and the onboard route waives keyPairMeta uuids', () => {
     for (const word of ['tokenKeys', 'onboard', 'removeFromInventory']) expect(API_WORDS.has(word), word).toBe(true);
     expect(bulkRoute('PATCH', '/v1/keys/removeFromInventory')).toMatchObject({ list: 'array', type: 'keys' });
+    const path = `/v1/tokens/${O.token}/tokenProfiles/${O.tokenProfile}/tokenKeys/onboard`;
+    expect(routePathWaivers('POST', path, onboardBody)).toEqual([['keys', LIST_ELEMENT, 'keyPairMeta', LIST_ELEMENT, 'uuid']]);
+    expect(routePathWaivers('POST', `${path}x`, onboardBody)).toEqual([]);
+    expect(routePathWaivers('PUT', path, onboardBody)).toEqual([]);
+    expect(routePathWaivers('POST', path, { keys: 'x' })).toEqual([]);
 });
 
 test('onboarding: under an own token profile it is sent with own attribute uuids; a foreign profile or a foreign uuid in the body is refused', async () => {
@@ -69,7 +76,11 @@ test('onboarding: under an own token profile it is sent with own attribute uuids
     expect(sentMutations()).toEqual([`POST /v1/tokens/${O.token}/tokenProfiles/${O.tokenProfile}/tokenKeys/onboard`]);
     A.reset();
     expect(await kind(g.post(onboard(F.tokenProfile), { data: onboardBody })), 'a pre-existing token profile').toBe('ownership');
-    expect(await kind(g.post(onboard(O.tokenProfile), { data: { ...onboardBody, keys: [{ keyHandle: 'aGFuZGxl', keyUuid: F.key }] } })), 'a foreign key named in the body').toBe('ownership');
+    expect(await kind(g.post(onboard(O.tokenProfile), { data: { ...onboardBody, keys: [{ keyPairMeta: meta(), keyUuid: F.key }] } })), 'a foreign key named in the body').toBe('ownership');
+    expect(await kind(g.post(onboard(O.tokenProfile), { data: { ...onboardBody, keys: [{ keyPairMeta: meta(F.metadata, F.key) }] } })), 'a foreign uuid as metadata content').toBe('ownership');
+    expect(await kind(g.post(onboard(O.tokenProfile), { data: { ...onboardBody, keys: [{ keyPairMeta: meta(`urn:uuid:${F.metadata}`) }] } })), 'a non-canonical metadata uuid').toBe('request');
+    expect(await kind(g.post(onboard(O.tokenProfile), { data: { ...onboardBody, keys: [{ keyPairMeta: [{ ...meta()[0], ref: F.key }] }] } })), 'a foreign uuid in another metadata field').toBe('ownership');
+    expect(await kind(g.post(`/api/v1/tokens/${O.token}/tokenProfiles/${O.tokenProfile}/keys/keyPair`, { data: { name: `${RUN}-k`, keyPairMeta: meta() } })), 'the waiver is the onboard route\'s only').toBe('ownership');
     expect(await kind(g.post(onboard(O.tokenProfile), { data: { ...onboardBody, ownerUuid: F.key } })), 'a foreign uuid elsewhere in the body').toBe('ownership');
     expect(await kind(g.post(`/api/v1/tokens/${O.token}/tokenProfiles/${O.key}/tokenKeys/onboard`, { data: onboardBody })), 'an own key in the profile position (typed)').toBe('ownership');
     expect(A.mutations()).toEqual([]);

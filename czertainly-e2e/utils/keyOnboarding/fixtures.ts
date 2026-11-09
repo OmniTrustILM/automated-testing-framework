@@ -5,6 +5,7 @@
 import { test as base, expect, withWorkerApi } from '../../fixtures/regressionFixtures';
 import { loadEnv } from '../env';
 import { AdminApi, TokenKey } from './adminApi';
+import type { MetadataAttribute } from './attributes';
 import { Provisioning, readSummary } from './provisioning';
 
 export const test = base.extend<{ admin: AdminApi; localAdmin: AdminApi; provisioned: Provisioning }, { adminWorker: AdminApi }>({
@@ -46,12 +47,16 @@ export function labelled(keys: TokenKey[], label: string): TokenKey {
     return found;
 }
 
-export function handleOf(keys: TokenKey[], label: string): string {
-    const { keyHandle } = labelled(keys, label);
-    if (!keyHandle) {
-        throw new Error(`The token lists the key pair labelled ${label} without a handle`);
+export function keyPairMetaOf(keys: TokenKey[], label: string): MetadataAttribute[] {
+    const { keyPairMeta } = labelled(keys, label);
+    if (!keyPairMeta) {
+        throw new Error(`The token lists the key pair labelled ${label} without metadata`);
     }
-    return keyHandle;
+    return keyPairMeta;
+}
+
+export function identityOf(key: TokenKey): string | undefined {
+    return key.keyPairMeta && JSON.stringify(key.keyPairMeta);
 }
 
 export { onboardedKey } from './provisioning';

@@ -40,9 +40,15 @@ export function ledgerSpec(testInfo: { file: string }): string {
     return `key-onboarding/${path.basename(testInfo.file).replace(/\.spec\.ts$/, '')}`;
 }
 
+function pairName(result: OnboardingResult): string {
+    const meta = result.keyPairMeta ?? [];
+    const named = meta.find((a) => /label/i.test(a.name)) ?? meta[0];
+    return String(named?.content?.[0]?.data ?? 'a key pair');
+}
+
 export function onboardedKey(result: OnboardingResult): { uuid: string; name: string } {
     if (!result.keyUuid || !result.keyName) {
-        throw new Error(`The onboarding of ${result.keyHandle} reports onboarded without ${result.keyUuid ? 'a key name' : 'a key uuid'}; it cannot be recorded`);
+        throw new Error(`The onboarding of ${pairName(result)} reports onboarded without ${result.keyUuid ? 'a key name' : 'a key uuid'}; it cannot be recorded`);
     }
     return { uuid: result.keyUuid, name: result.keyName };
 }

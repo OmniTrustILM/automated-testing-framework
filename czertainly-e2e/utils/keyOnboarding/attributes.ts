@@ -11,6 +11,12 @@ export interface AttributeDefinition {
   content?: Array<{ data: unknown; reference?: string }>;
 }
 
+export interface MetadataAttribute {
+  uuid: string;
+  name: string;
+  content?: Array<{ data: unknown; reference?: string }>;
+}
+
 export function definitionNamed(definitions: AttributeDefinition[], name: string): AttributeDefinition {
   const definition = definitions.find((candidate) => candidate.name === name);
   if (!definition) {

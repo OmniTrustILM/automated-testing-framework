@@ -133,7 +133,10 @@ test('the connector waiver is exact: one key path, one route, a string, the righ
     expect(await kind(g.post('/api/v1/tspProfiles', { data: { name: `${RUN}-t`, vaultProfileUuid: O.vaultProfile, signatureFormattingConnectorUuid: F.connector } })), 'another route').toBe('ownership');
     expect(await kind(g.post('/api/v1/signingProfiles', { data: JSON.stringify(signingProfileBody()) })), 'a text body is judged as written: no waiver').toBe('ownership');
     expect(A.mutations()).toEqual([]);
-    expect(ROUTE_PATH_WAIVERS.map((w) => `${w.method} ${w.path} ${w.keyPath.join('.')}`)).toEqual(['POST /v1/signingProfiles workflow.signatureFormattingConnectorUuid']);
+    expect(ROUTE_PATH_WAIVERS.map((w) => `${w.method} ${w.path} ${w.keyPath.join('.')}`)).toEqual([
+        'POST /v1/signingProfiles workflow.signatureFormattingConnectorUuid',
+        'POST /v1/tokens/{id}/tokenProfiles/{id}/tokenKeys/onboard keys.\u0000list.keyPairMeta.\u0000list.uuid',
+    ]);
     expect(routePathWaivers('POST', '/v1/signingProfiles', signingProfileBody())).toEqual([['workflow', 'signatureFormattingConnectorUuid']]);
     expect(routePathWaivers('POST', '/v1/signingProfiles', [])).toEqual([]);
     expect(routePathWaivers('PUT', '/v1/signingProfiles', signingProfileBody())).toEqual([]);
