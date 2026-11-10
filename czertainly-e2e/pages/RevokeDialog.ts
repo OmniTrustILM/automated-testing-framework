@@ -15,8 +15,8 @@ const PLACEHOLDER_OPTION = /^choose\b/i;
 export class RevokeDialog {
     readonly page: Page;
 
-    // Certificate detail toolbar
-    readonly revokeButton: Locator;
+    // Certificate detail page
+    readonly detail: CertificateDetailPage;
 
     // Revoke Certificate dialog
     readonly dialog: Locator;
@@ -26,7 +26,7 @@ export class RevokeDialog {
     constructor(page: Page) {
         this.page = page;
 
-        this.revokeButton = new CertificateDetailPage(page).revokeButton;
+        this.detail = new CertificateDetailPage(page);
 
         this.dialog = page.getByRole('dialog', { name: 'Revoke Certificate' });
         this.reasonTrigger = this.dialog.getByTestId('select-revokeReason-trigger');
@@ -35,7 +35,7 @@ export class RevokeDialog {
 
     async open(): Promise<void> {
         logger.info('Opening the Revoke Certificate dialog');
-        await this.revokeButton.click();
+        await this.detail.clickAction('revoke');
         await expect(this.dialog).toBeVisible();
     }
 

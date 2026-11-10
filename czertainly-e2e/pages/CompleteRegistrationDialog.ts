@@ -13,8 +13,8 @@ const logger = new Logger('CompleteRegistrationDialog');
 export class CompleteRegistrationDialog {
     readonly page: Page;
 
-    // Certificate detail toolbar
-    readonly completeButton: Locator;
+    // Certificate detail page
+    readonly detail: CertificateDetailPage;
 
     // Complete Certificate Registration dialog
     readonly dialog: Locator;
@@ -27,7 +27,7 @@ export class CompleteRegistrationDialog {
     constructor(page: Page) {
         this.page = page;
 
-        this.completeButton = new CertificateDetailPage(page).completeButton;
+        this.detail = new CertificateDetailPage(page);
 
         this.dialog = page.getByRole('dialog', { name: 'Complete Certificate Registration' });
         this.challengeInput = this.dialog.getByTestId('completeAuthorizationSecret');
@@ -39,7 +39,7 @@ export class CompleteRegistrationDialog {
 
     async open(): Promise<void> {
         logger.info('Opening the Complete Certificate Registration dialog');
-        await this.completeButton.click();
+        await this.detail.clickAction('complete');
         await expect(this.dialog).toBeVisible();
     }
 

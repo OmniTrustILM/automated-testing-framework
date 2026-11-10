@@ -13,8 +13,8 @@ const logger = new Logger('RenewDialog');
 export class RenewDialog {
     readonly page: Page;
 
-    // Certificate detail toolbar
-    readonly renewButton: Locator;
+    // Certificate detail page
+    readonly detail: CertificateDetailPage;
 
     // Renew Certificate dialog
     readonly dialog: Locator;
@@ -29,7 +29,7 @@ export class RenewDialog {
     constructor(page: Page) {
         this.page = page;
 
-        this.renewButton = new CertificateDetailPage(page).renewButton;
+        this.detail = new CertificateDetailPage(page);
 
         this.dialog = page.getByRole('dialog', { name: 'Renew Certificate' });
         this.registerInsteadSwitch = this.dialog.getByTestId('switch-registerSuccessor-input');
@@ -42,7 +42,7 @@ export class RenewDialog {
 
     async open(): Promise<void> {
         logger.info('Opening the Renew Certificate dialog');
-        await this.renewButton.click();
+        await this.detail.clickAction('renew');
         await expect(this.dialog).toBeVisible();
     }
 

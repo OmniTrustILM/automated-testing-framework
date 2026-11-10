@@ -9,6 +9,7 @@ import { SanSet, sameSans } from '../utils/regression/pkiBuilders';
 import { Navigation } from './Navigation';
 import { CertificateAddPage } from './CertificateAddPage';
 import { ImportCertificatesDialog } from './ImportCertificatesDialog';
+import { PageHeader } from './ui/pageHeader';
 import { chooseOption } from './ui/select';
 import { widgetTitled } from './ui/widget';
 
@@ -17,6 +18,9 @@ const logger = new Logger('CertificatePage');
 export class CertificatePage {
     readonly page: Page;
     private readonly navigation: Navigation;
+
+    // Page header (fe-administrator#2426): Create, and Import / Delete in its menu; the widget buttons on older builds
+    readonly header: PageHeader;
 
     // List page
     readonly main: Locator;
@@ -58,9 +62,10 @@ export class CertificatePage {
         this.navigation = new Navigation(page);
 
         this.main = page.locator('main');
-        this.addCertificateButton = this.main.getByTestId('add-certificate-button');
+        this.header = new PageHeader(page);
+        this.addCertificateButton = this.header.action('create', this.main.getByTestId('add-certificate-button'));
 
-        this.uploadButton = this.main.getByTestId('upload-button');
+        this.uploadButton = this.header.action('import', this.main.getByTestId('upload-button'));
         this.importModal = page.getByRole('dialog', { name: 'Import certificates and keys' });
         this.importFileContent = this.importModal.getByRole('textbox', { name: 'File content' });
         this.importDetectedContent = this.importModal.getByRole('region', { name: /Detected content/ });
@@ -69,7 +74,7 @@ export class CertificatePage {
         this.importDoneButton = this.importModal.getByRole('button', { name: 'Done', exact: true });
         this.importDialog = new ImportCertificatesDialog(page);
 
-        this.deleteButton = this.main.getByTestId('trash-button');
+        this.deleteButton = this.header.action('delete', this.main.getByTestId('trash-button'));
         this.deleteConfirmDialog = page.getByRole('dialog').filter({ hasText: 'Delete Certificate' });
         this.deleteConfirmButton = this.deleteConfirmDialog.getByRole('button', { name: 'Delete', exact: true });
 
@@ -102,13 +107,13 @@ export class CertificatePage {
 
     async openIssuePage(): Promise<void> {
         logger.info('Navigating to Issue Certificate page');
-        await this.addCertificateButton.click();
+        await this.header.click(this.addCertificateButton);
         await expect(this.page).toHaveURL(/\/certificates\/add/);
     }
 
     async openImportModal(): Promise<void> {
         logger.info('Opening Import certificates and keys');
-        await this.uploadButton.click();
+        await this.header.click(this.uploadButton);
         await expect(this.importModal).toBeVisible();
     }
 
@@ -166,7 +171,7 @@ export class CertificatePage {
 
     async deleteFromDetail(): Promise<void> {
         logger.info('Deleting certificate from details page');
-        await this.deleteButton.click();
+        await this.header.click(this.deleteButton);
         await expect(this.deleteConfirmDialog).toBeVisible();
         await this.deleteConfirmButton.click();
         await expect(this.deleteConfirmDialog).not.toBeVisible();

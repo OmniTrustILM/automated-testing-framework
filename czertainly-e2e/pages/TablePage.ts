@@ -4,6 +4,7 @@
  */
 import { Page, Locator, expect } from '@playwright/test';
 import { Logger } from '../utils/Logger';
+import { PageHeader } from './ui/pageHeader';
 import { chooseOption } from './ui/select';
 
 const logger = new Logger('TablePage');
@@ -13,6 +14,8 @@ export class TablePage {
     readonly table: Locator;
     readonly rows: Locator;
     readonly selectAllCheckbox: Locator;
+    /** Delete: the page header's menu entry (fe-administrator#2426), else the trash button of the list toolbar. */
+    readonly header: PageHeader;
     readonly deleteButton: Locator;
     readonly confirmModal: Locator;
     readonly confirmDeleteButton: Locator;
@@ -29,7 +32,9 @@ export class TablePage {
         this.table = page.locator('table');
         this.rows = this.table.locator('tbody tr');
         this.selectAllCheckbox = this.table.locator('thead input[type="checkbox"]').first();
-        this.deleteButton = page.locator('button').filter({ has: page.locator('svg.lucide-trash-2') }).first();
+        this.header = new PageHeader(page);
+        const trashButton = page.locator('button').filter({ has: page.locator('svg.lucide-trash-2') }).first();
+        this.deleteButton = this.header.action('delete', trashButton);
         this.confirmModal = page.locator('div[role="dialog"]');
         this.confirmDeleteButton = this.confirmModal.locator('button').filter({ hasText: /delete|confirm|yes/i }).first();
 
@@ -88,8 +93,7 @@ export class TablePage {
         await this.selectAllCheckbox.check();
         logger.info(`Selected all items for ${logName}`);
 
-        await expect(this.deleteButton).toBeVisible();
-        await this.deleteButton.click();
+        await this.header.click(this.deleteButton);
         logger.info(`Clicked delete button for ${logName}`);
 
         await expect(this.confirmModal).toBeVisible();

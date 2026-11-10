@@ -4,6 +4,7 @@
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { Logger } from '../utils/Logger';
+import { PageHeader } from './ui/pageHeader';
 import { ButtonState, expectButtons } from './ui/toolbar';
 import { widgetTitled } from './ui/widget';
 
@@ -22,6 +23,9 @@ export class CertificateDetailPage {
 
     // Tabs
     readonly tabs: Locator;
+
+    // Page header (fe-administrator#2426): the lifecycle actions; the toolbar of Certificate Properties on older builds
+    readonly header: PageHeader;
 
     // Details tab: Certificate Properties (CSR Properties before issuance), its toolbar and the state badge
     readonly certificateProperties: Locator;
@@ -44,15 +48,17 @@ export class CertificateDetailPage {
 
         this.tabs = page.getByRole('tablist');
 
+        this.header = new PageHeader(page);
+
         this.certificateProperties = widgetTitled(this.main, /^(Certificate|CSR) Properties$/);
-        this.issueButton = this.certificateProperties.getByTestId('cubes-button');
-        this.renewButton = this.certificateProperties.getByTestId('retweet-button');
-        this.rekeyButton = this.certificateProperties.getByTestId('rekey-button');
-        this.revokeButton = this.certificateProperties.getByTestId('minus-square-button');
-        this.completeButton = this.certificateProperties.getByTestId('check-button');
-        this.deleteButton = this.certificateProperties.getByTestId('trash-button');
-        this.archiveButton = this.certificateProperties.getByTestId('archive-button');
-        this.unarchiveButton = this.certificateProperties.getByTestId('unarchive-button');
+        this.issueButton = this.header.action('issue', this.certificateProperties.getByTestId('cubes-button'));
+        this.renewButton = this.header.action('renew', this.certificateProperties.getByTestId('retweet-button'));
+        this.rekeyButton = this.header.action('rekey', this.certificateProperties.getByTestId('rekey-button'));
+        this.revokeButton = this.header.action('revoke', this.certificateProperties.getByTestId('minus-square-button'));
+        this.completeButton = this.header.action('complete', this.certificateProperties.getByTestId('check-button'));
+        this.deleteButton = this.header.action('delete', this.certificateProperties.getByTestId('trash-button'));
+        this.archiveButton = this.header.action('archive', this.certificateProperties.getByTestId('archive-button'));
+        this.unarchiveButton = this.header.action('unarchive', this.certificateProperties.getByTestId('unarchive-button'));
         this.stateBadge = this.main.locator('tr[data-id="certState"] [data-testid="certificate-status"]');
 
         this.registrationWidget = widgetTitled(this.main, 'Registration');
@@ -103,8 +109,20 @@ export class CertificateDetailPage {
         await this.tab(tab).click();
     }
 
+    /** Starts a lifecycle action: the toolbar button, or the page header's menu entry. */
+    async clickAction(action: CertificateAction): Promise<void> {
+        await this.header.click(this.toolbarButton(action));
+    }
+
+    /** The header lists every action and disables those that do not apply, so `absent` never holds there. */
     async assertToolbar(expected: Partial<Record<CertificateAction, ButtonState>>): Promise<void> {
-        await expectButtons((action: CertificateAction) => this.toolbarButton(action), expected, 'toolbar');
+        await expect(this.certificateProperties, 'the certificate loaded').toBeVisible();
+        await this.header.openMenu();
+        try {
+            await expectButtons((action: CertificateAction) => this.toolbarButton(action), expected, 'toolbar');
+        } finally {
+            await this.header.closeMenu();
+        }
     }
 
     async assertState(label: string): Promise<void> {

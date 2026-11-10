@@ -12,8 +12,8 @@ const logger = new Logger('RekeyDialog');
 export class RekeyDialog {
     readonly page: Page;
 
-    // Certificate detail toolbar
-    readonly rekeyButton: Locator;
+    // Certificate detail page
+    readonly detail: CertificateDetailPage;
 
     // Rekey Certificate dialog
     readonly dialog: Locator;
@@ -26,7 +26,7 @@ export class RekeyDialog {
     constructor(page: Page) {
         this.page = page;
 
-        this.rekeyButton = new CertificateDetailPage(page).rekeyButton;
+        this.detail = new CertificateDetailPage(page);
 
         this.dialog = page.getByRole('dialog', { name: 'Rekey Certificate' });
         this.keySourceTrigger = this.dialog.getByTestId('select-uploadCsr-trigger');
@@ -38,7 +38,7 @@ export class RekeyDialog {
 
     async open(): Promise<void> {
         logger.info('Opening the Rekey Certificate dialog');
-        await this.rekeyButton.click();
+        await this.detail.clickAction('rekey');
         await expect(this.dialog).toBeVisible();
     }
 
