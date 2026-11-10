@@ -141,7 +141,9 @@ export class Admin {
             body = text ? JSON.parse(text) : undefined;
         } catch {
             this.logger.warn(`${method} ${pathPattern(path)}: the answer is not JSON: ${scrubSecrets(text, this.secrets).slice(0, 300)}`);
-            throw new TierError(`${method} ${pathPattern(path)} answered a body that is not JSON`);
+            // A write that succeeded may have made something: a body that cannot be read fails the setup instead of passing as a tier gap.
+            const Failure = method === 'GET' ? TierError : SetupError;
+            throw new Failure(`${method} ${pathPattern(path)} answered a body that is not JSON`);
         }
         return { body: body as T, serverAt: at };
     }

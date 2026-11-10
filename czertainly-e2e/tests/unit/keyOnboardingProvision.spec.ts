@@ -1289,6 +1289,11 @@ test('scrubSecrets: the raw, the sh-quoted and the JSON-escaped forms of every s
     expect(e.stack).not.toContain(odd);
 });
 
+test('uuidOf: a create answered without a uuid fails the setup (SetupError), it is never a tier gap', () => {
+    expect(() => uuidOfShared({ name: 'x' }, 'role', 'KeyOnboardingSetup')).toThrow(SetupError);
+    expect(uuidOfShared({ uuid: 'u-1' }, 'role', 'KeyOnboardingSetup')).toBe('u-1');
+});
+
 test('uuidOf scrubs the Admin\'s secrets from the answer it logs', async () => {
     const { log } = await logged(async () => {
         try {

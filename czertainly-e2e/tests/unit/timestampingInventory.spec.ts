@@ -8,7 +8,7 @@ import { guardApiWithSeams } from '../../utils/regression/guard/createGuard';
 import { recordCreated } from '../../utils/regression/ledger/ledger';
 import { runId } from '../../utils/regression/ledger/runState';
 import { clearBaseline, compareBaseline, digestOf, inventoryFile, readBaseline, takeBaseline } from '../../utils/timestamping/inventory';
-import { Admin, SetupError } from '../../utils/timestamping/provision/transport';
+import { Admin, SetupError, TierError } from '../../utils/timestamping/provision/transport';
 import { withProcessEnv } from './helpers/guardRig';
 
 type Row = Record<string, unknown>;
@@ -145,3 +145,14 @@ test('digestOf: order and key order do not matter, content does', () => {
     expect(digestOf([{ uuid: U(1), x: [1, { y: 2, z: 2 }] }, { uuid: U(2), b: 1, a: 2 }], new Set()).hash).not.toBe(a.hash);
     expect(digestOf([{ uuid: U(1) }, { uuid: U(2) }], new Set([U(2)])).count).toBe(1);
 });
+
+test('a 2xx answer that is not JSON: a GET is a tier gap (TierError), a write or a search fails the setup (SetupError)', () => inState(async () => {
+    const html = { status: () => 200, ok: () => true, text: async () => '<html>a proxy page</html>', headers: () => ({}) };
+    const raw = {
+        get: async () => html, head: async () => html, fetch: async () => html,
+        dispose: async () => undefined, storageState: async () => ({ cookies: [], origins: [] }),
+    } as unknown as APIRequestContext;
+    const a = new Admin(guardApiWithSeams(raw, { env: env(), runId: runId(), tier: null }));
+    await expect(a.get('/v1/signingProfiles')).rejects.toThrow(TierError);
+    await expect(a.listItems('/v1/signingProfiles/list')).rejects.toThrow(SetupError);
+}));
