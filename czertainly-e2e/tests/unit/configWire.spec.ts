@@ -8,7 +8,8 @@ import * as forge from 'node-forge';
 import { connectorsAlive, findConnector, healthByVersion, probeAttributes, waitForHealthy } from '../../utils/regression/platform/connectorApi';
 import { GuardedApi } from '../../utils/regression/guard/types';
 import { buildSeedSubset, manifestProblems, planSeedSubset } from '../../utils/regression/inventory/seedMinimal';
-import { derivedDeletable, OwnObjectViolation } from '../../utils/regression/ledger/ownership';
+import { carriesRunPrefix, derivedDeletable, OwnObjectViolation } from '../../utils/regression/ledger/ownership';
+import { hasRunFamilyPrefix } from '../../utils/regression/run/runId';
 import { adcsBlocker, isCredentialLogonRefusal } from '../../utils/regression/config/authorities';
 import { issueWithCsr, uploadOwnCertificate } from '../../utils/regression/ownCertificates';
 import {
@@ -26,6 +27,7 @@ import { createOwnRaProfileLike, enableOwnRaProfile, ensureAcmeOnRaProfile, ensu
 import { rowsNamed } from '../../utils/regression/listReads';
 import { issueOnly, OwnRef, readLedger, recordCreated } from '../../utils/regression/ledger/ledger';
 import { readRunState, runName, runId, updateRunState } from '../../utils/regression/ledger/runState';
+import { acmeOrderName, invalidOrderReason } from '../../utils/regression/lifecycle/acmeOrders';
 import { selfSignedPem } from '../../utils/regression/pkiBuilders';
 import { Answer, Arrived, LoopbackServer } from './helpers/loopbackServer';
 import { FakeCore as BaseCore } from './helpers/fakeCore';
@@ -466,12 +468,35 @@ test('ensureAcmeOnRaProfile: activation on the own RA profile, and a profile tha
     const ok = await ensureAcmeOnRaProfile(api, 'T');
     expect(ok.directoryUrl).toBe('https://acme.example.test/directory');
     expect(wire()).toEqual(expect.arrayContaining([`PATCH /api/v1/authorities/${A_EJBCA}/raProfiles/${ok.raProfile.uuid}/protocols/acme/activate/${ok.acmeProfile.uuid}`]));
+    expect(bodyOf('POST', '/api/v1/acmeProfiles').preauthorizedIdentifiers, 'the identifier and the names under it').toEqual([
+        { type: 'dns', value: ok.acmeProfile.identifier, matchType: 'exact', allowWildcard: false },
+        { type: 'dns', value: 'example.test', matchType: 'subdomain', allowWildcard: false },
+    ]);
     // Activated per the run state, but the platform reports ACME as not available.
     core.acmeAvailable = false;
     server.reset();
     await expect(ensureAcmeOnRaProfile(api, 'T')).rejects.toThrow(/ACME should be available on the run RA profile/);
     expect(wire(), 'no mutating request arrived').toEqual([]);
     expect(server.arrived.map((a) => `${a.method} ${a.url}`)).toContain(`GET /api/v1/authorities/${A_EJBCA}/raProfiles/${ok.raProfile.uuid}/protocols/acme`);
+});
+
+test('acmeOrderName: a unique run-prefixed name under example.test per order, so the ledger records it and the teardown deletes it', () => {
+    const names = ['rsa', 'rsa', 'fin2'].map((label) => acmeOrderName(label));
+    expect(new Set(names).size, 'one name per order').toBe(3);
+    for (const n of names) {
+        expect(n.endsWith('.example.test') && carriesRunPrefix(n) && hasRunFamilyPrefix(n), n).toBe(true);
+        expect(n.length, n).toBeLessThanOrEqual(64);
+    }
+});
+
+test('invalidOrderReason: the order error and the FAILED history messages of its certificates, SUCCESS rows left out', async () => {
+    core.seed('/api/v1/certificates/c-1/history', [
+        { event: 'Request Certificate', status: 'SUCCESS', message: 'Certificate request created' },
+        { event: 'Issue Certificate', status: 'FAILED', message: 'End Entity x already exists' },
+    ] as unknown as Json);
+    expect(await invalidOrderReason(api, { error: { detail: 'issuance failed' } }, ['c-1']))
+        .toBe('issuance failed | End Entity x already exists');
+    expect(await invalidOrderReason(api, undefined, [])).toBe('');
 });
 
 const certSpec = 'T';

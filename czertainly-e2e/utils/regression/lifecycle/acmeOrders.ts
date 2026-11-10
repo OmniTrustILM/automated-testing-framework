@@ -12,7 +12,8 @@ import { sanOracleFor } from '../ownCertificates';
 import { ensureAcmeOnRaProfile } from '../ownRaProfiles';
 import { ecRefusalWording, GeneratedCsr } from '../pkiBuilders';
 import { createdAfterMarker, OwnRef } from '../ledger/ledger';
-import { runName } from '../ledger/runState';
+import { ownCommonName, runName } from '../ledger/runState';
+import { ACME_ORDER_DOMAIN } from '../config/acmeProfiles';
 
 export type AcmeOrder = Awaited<ReturnType<AcmeClient['waitForOrder']>>;
 
@@ -45,9 +46,13 @@ async function certificatesNamed(api: GuardedApi, commonName: string): Promise<s
     return rows.map((r) => String(r.uuid));
 }
 
+/** A unique run-prefixed name the run's ACME profile pre-authorizes, for one order (`label` says which). */
+export const acmeOrderName = (label: string): string => ownCommonName('acme-' + label, ACME_ORDER_DOMAIN);
+
 /** Order → finalize → settle, ledger first; `mine` are the certificates THIS order made. */
-export async function orderAndFinalize(api: GuardedApi, run: AcmeRun, csr: GeneratedCsr, spec: string) {
-    const identifier = run.acmeProfile.identifier;
+export async function orderAndFinalize(
+    api: GuardedApi, run: AcmeRun, csr: GeneratedCsr, spec: string, identifier: string = run.acmeProfile.identifier,
+) {
     const before = new Set(await certificatesNamed(api, identifier));
     const order = await run.client.newOrder([identifier]);
     expect(order.status, JSON.stringify(order.body)).toBe(201);
@@ -60,6 +65,16 @@ export async function orderAndFinalize(api: GuardedApi, run: AcmeRun, csr: Gener
         return { fin: f, done: d };
     });
     return { order, fin, done, uuids, mine: uuids.filter((u) => !before.has(u)) };
+}
+
+/** Why an order ended invalid: its `error` and the failed history events of the certificates it made. */
+export async function invalidOrderReason(api: GuardedApi, done: AcmeOrder | undefined, mine: string[]): Promise<string> {
+    const parts = done?.error ? [String(done.error.detail ?? '')] : [];
+    for (const u of mine) {
+        const h = await apiJson<Array<{ status?: string; message?: string }>>(api, 'GET', `/api/v1/certificates/${u}/history`);
+        parts.push(...h.filter((x) => x.status === 'FAILED').map((x) => String(x.message ?? '')));
+    }
+    return parts.filter(Boolean).join(' | ');
 }
 
 /**

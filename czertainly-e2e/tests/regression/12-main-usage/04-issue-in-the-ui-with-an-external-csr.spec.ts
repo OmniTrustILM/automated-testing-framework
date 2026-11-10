@@ -7,7 +7,7 @@ import { CertificateAddPage } from '../../../pages/CertificateAddPage';
 import { CertificatePage } from '../../../pages/CertificatePage';
 import { dismissToasts } from '../../../pages/ui/toast';
 import { CERTIFICATE_DETAILS_TABS } from '../../../utils/constants';
-import { csrWithSan, parseCertificate, publicKeyPemOf, sameSans, sansOfDetail } from '../../../utils/regression/pkiBuilders';
+import { csrWithSan, decodedIpSan, parseCertificate, publicKeyPemOf, sameSans, sansOfDetail } from '../../../utils/regression/pkiBuilders';
 import { getCertificate, serverCreatedAfter } from '../../../utils/regression/apiReads';
 import { authorityConnectorName } from '../../../utils/regression/config/authorities';
 import { recordingIssued } from '../../../utils/regression/issuedRecords';
@@ -137,6 +137,7 @@ test.describe('Certificate issue in the web UI with an external key', { tag: tag
                 'Request now + External: v2 issue, redirect to the detail, Issued after reload, CSR key',
                 'history "Issued using RA Profile <name>"; SAN content reaches the CA (what it accepts is the CA\'s decision)',
                 'the issued certificate carries the requested SANs: the exact set (IP too) on a connector listed for exact SANs, else the DNS names only; the san-oracle annotation names the mode',
+                'the stored request\'s IP SANs are compared by address: core renders a CSR IP SAN as octet hex (its own registration matcher compares them so too); the request-san-rendering annotation records it',
             ],
         }),
         async ({ signedIn: page, api, own, live, ownRaProfile }, testInfo) => {
@@ -177,7 +178,11 @@ test.describe('Certificate issue in the web UI with an external key', { tag: tag
             await test.step('API: the issued certificate carries the CSR\'s SANs and key; the stored request keeps the CSR\'s SANs', async () => {
                 const cert = await getCertificate(api, uuid);
                 san.expectIssued(cert, sans);
-                const stored = sansOfDetail(cert.certificateRequest?.subjectAlternativeNames);
+                const asStored = sansOfDetail(cert.certificateRequest?.subjectAlternativeNames);
+                if (asStored.ip.some((ip) => ip.startsWith('#'))) {
+                    testInfo.annotations.push({ type: 'request-san-rendering', description: `the stored request shows its IP SANs as octet hex: ${JSON.stringify(asStored.ip)}` });
+                }
+                const stored = { ...asStored, ip: asStored.ip.map(decodedIpSan) };
                 san.expectSans(stored, sans);
                 if (!sameSans(stored, sans)) testInfo.annotations.push({ type: 'san-oracle-request', description: `stored request SANs ${JSON.stringify(stored)} differ from the CSR's ${JSON.stringify(sans)}: the request-attribute set of the profile decides` });
                 expect(publicKeyPemOf(parseCertificate(cert.certificateContent)), 'public key = CSR key').toBe(csr.publicKeyPem);

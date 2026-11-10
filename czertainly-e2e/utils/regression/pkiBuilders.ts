@@ -291,6 +291,9 @@ export function sameSans(a: SanSet, b: SanSet): boolean {
 }
 
 /** The SAN set of an ILM certificate or request detail: DNS names and IP addresses only. */
+/** An IPv4 SAN in the octet hex core stores for a CSR (`#c000020a`) as its address text; any other value unchanged. */
+export const decodedIpSan = (value: string): string => (/^#[0-9a-f]{8}$/i.test(value) ? [...Buffer.from(value.slice(1), 'hex')].join('.') : value);
+
 export function sansOfDetail(subjectAlternativeNames: Record<string, unknown> | undefined | null): SanSet {
     const list = (k: string): string[] => {
         const v = subjectAlternativeNames?.[k];

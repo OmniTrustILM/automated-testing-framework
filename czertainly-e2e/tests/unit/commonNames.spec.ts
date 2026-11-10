@@ -143,6 +143,7 @@ const BUILDERS: Builder[] = [
     { label: 'buildRig', find: /\bbuildRig\(\s*[^,]+,\s*[^,]+,\s*(['"`])(.*?)\1/g, build: (s) => `${LONGEST_RUN_ID}-${rigCertificateSuffix(s)}-${UNIQUE_PART}.example.test` },
     { label: 'certificate options', find: /\b(?:issue|submit|register)OwnCertificate\([^\n;]*?\bsuffix: (['"`])(.*?)\1/g, build: (s) => `${LONGEST_RUN_ID}-${s}-${UNIQUE_PART}.example.test` },
     { label: 'runCommonName', find: /\brunCommonName\(\s*(['"`])(.*?)\1/g, build: (s) => `${LONGEST_RUN_ID}-${s}.example.test` },
+    { label: 'acmeOrderName', find: /\bacmeOrderName\(\s*(['"`])(.*?)\1/g, build: (s) => `${LONGEST_RUN_ID}-acme-${s}-${UNIQUE_PART}.example.test` },
     { label: 'importCn', find: /\bimportCn\(\s*(['"`])(.*?)\1/g, build: (s) => `${LONGEST_RUN_ID}-imp-${s}-${UNIQUE_PART}` },
 ];
 

@@ -5,7 +5,7 @@
  */
 import { expect, test } from '@playwright/test';
 import * as forge from 'node-forge';
-import { certificateInfo, chainProblems, csrFromKey, csrInfo, csrWithSan, ecCsrWithSan, ecRefusalWording, parseCertificate, pemBlocks, sameSans, sansOfDetail, selfSignedPem, sha256Fingerprint, sha256FingerprintOfPem, csrFromKeyWithSubject, newKeyPair, subjectAttributesOf } from '../../utils/regression/pkiBuilders';
+import { certificateInfo, chainProblems, csrFromKey, csrInfo, csrWithSan, decodedIpSan, ecCsrWithSan, ecRefusalWording, parseCertificate, pemBlocks, sameSans, sansOfDetail, selfSignedPem, sha256Fingerprint, sha256FingerprintOfPem, csrFromKeyWithSubject, newKeyPair, subjectAttributesOf } from '../../utils/regression/pkiBuilders';
 
 test('csrWithSan: DNS and IP SANs, CN and the key are in the request; the private key is returned', () => {
     const csr = csrWithSan('qa-reg-x-ui.example.test', ['qa-reg-x-ui.example.test', 'alt.qa-reg-x-ui.example.test'], { ip: ['192.0.2.10'] });
@@ -129,6 +129,12 @@ test('sameSans is set equality (order and DNS case ignored, no extras); sansOfDe
     expect(sansOfDetail({ dNSName: ['a.example.test'], iPAddress: ['192.0.2.1'], rfc822Name: ['x@example.test'] })).toEqual({ dns: ['a.example.test'], ip: ['192.0.2.1'] });
     expect(sansOfDetail(undefined)).toEqual({ dns: [], ip: [] });
     expect(sansOfDetail({ dNSName: [] })).toEqual({ dns: [], ip: [] });
+});
+
+test('decodedIpSan turns the octet hex of a CSR IPv4 SAN into the address, and leaves everything else alone', () => {
+    expect(decodedIpSan('#c000020a')).toBe('192.0.2.10');
+    expect(decodedIpSan('#C000020A')).toBe('192.0.2.10');
+    for (const v of ['192.0.2.10', '#c00002', '#20010db8000000000000000000000001', 'c000020a', '']) expect(decodedIpSan(v), v).toBe(v);
 });
 
 test('subjectAttributesOf / csrFromKeyWithSubject: the issued subject DN (several RDNs, escaped characters) becomes the CSR subject, in order', () => {

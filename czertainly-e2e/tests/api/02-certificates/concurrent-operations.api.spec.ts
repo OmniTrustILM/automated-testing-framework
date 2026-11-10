@@ -1,6 +1,6 @@
 /**
  * API-CERT-36 — Two simultaneous operations on one own certificate (ilm#429). Renew takes no predecessor lock, so two
- * renews are two successors (ilm#429 closing comment).
+ * renews are two successors; the CA may refuse the second one for the same end entity.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { EVENT_CODES, historyOf, relationsOf } from '../../../utils/regression/lifecycle/certificateHistory';
@@ -12,17 +12,23 @@ import { getCertificate } from '../../../utils/regression/apiReads';
 import { testMeta, tags } from '../../../utils/regression/tags';
 import { LONG_TEST_MS, QUICK_STATE_WAIT_MS, SLOW_LIFECYCLE_MS } from '../../../utils/regression/timeouts';
 import { waitForCertificateState } from '../../../utils/regression/wait/certificateState';
+import { authorityConnectorName } from '../../../utils/regression/config/authorities';
+import { DEFAULT_EJBCA_CONNECTOR } from '../../../utils/regression/run/settings';
+
+/** EJBCA's answer when two operations edit one end entity at once: the second transaction is rolled back. */
+const EJBCA_END_ENTITY_RACE = /EjbcaException.*Could not commit transaction/;
 
 test.describe('Concurrent certificate operations', { tag: tags.api }, () => {
-    test('two simultaneous identical renews give two issued successors and no 5xx',
+    test('two simultaneous identical renews give two successors, at least one issued, and no 5xx',
         testMeta({
             id: 'API-CERT-36', row: 'renew', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: [
-                'no predecessor lock, one successor per call: two parallel renews create two issued successors (ilm#429 closing comment); asserted: no 5xx, two successors, both consistent',
+                'no predecessor lock, one successor per call: two parallel renews create two successors (ilm#429 step 6: "the same outcome as on the baseline"); asserted: no 5xx, two renewal successors, at least one issued, the other issued too',
+                'EJBCA-NG only: the second may fail with EJBCA\'s rollback of the shared end entity in its history (the CA\'s answer, not a stuck or lost successor); any other failure fails the test',
                 'ilm#424 (Hibernate 7.4.8+ lock, HHH-20744: the migration must not turn the parallel path into a 5xx), core#2435 (duplicate delivery is another race; not asserted here)',
             ],
         }),
-        async ({ api, own, ownRaProfile }) => {
+        async ({ api, own, ownRaProfile }, testInfo) => {
             test.setTimeout(SLOW_LIFECYCLE_MS);
             const ra = ownRaProfile;
             const a = await test.step('Fixture: an own issued certificate A', async () => own.certificate.issue(ra, { suffix: 'c36' }));
@@ -42,11 +48,30 @@ test.describe('Concurrent certificate operations', { tag: tags.api }, () => {
                 return both;
             });
 
-            await test.step('Both successors reach issued with different serials; both relations are renewal; exactly two successors; A stays issued', async () => {
-                await Promise.all([r1, r2].map((r) => waitIssued(api, r.successor!.uuid)));
+            await test.step('Both successors settle, at least one issued, a failed one only as EJBCA\'s rollback; two renewal successors; A stays issued', async () => {
+                const outcomes = await Promise.all([r1, r2].map(async (r) => {
+                    try {
+                        await waitIssued(api, r.successor!.uuid);
+                        return 'issued';
+                    } catch (e) {
+                        if (/reached "failed"/.test(String(e))) return 'failed';
+                        throw e;
+                    }
+                }));
                 for (const r of [r1, r2]) await own.derivedKey(r.successor!.uuid, r.createdAfter);
-                const [d1, d2] = await Promise.all([getCertificate(api, r1.successor!.uuid), getCertificate(api, r2.successor!.uuid)]);
-                expect(d1.serialNumber).not.toBe(d2.serialNumber);
+                expect(outcomes, 'at least one renew issues its successor').toContain('issued');
+                const failedAt = outcomes.indexOf('failed');
+                if (failedAt >= 0) {
+                    const connector = await authorityConnectorName(api, ra.authorityUuid);
+                    const reasons = (await historyOf(api, [r1, r2][failedAt].successor!.uuid))
+                        .filter((h) => h.event === EVENT_CODES.ISSUE && h.status === 'FAILED').map((h) => String(h.message ?? ''));
+                    expect(connector === DEFAULT_EJBCA_CONNECTOR && reasons.some((m) => EJBCA_END_ENTITY_RACE.test(m)),
+                        `only EJBCA-NG may refuse the second renew, with its end-entity rollback; ${connector}: ${JSON.stringify(reasons).slice(0, 300)}`).toBe(true);
+                    testInfo.annotations.push({ type: 'ca-refused-parallel-renew', description: 'partial: EJBCA rolled back the second renew of the shared end entity' });
+                } else {
+                    const [d1, d2] = await Promise.all([getCertificate(api, r1.successor!.uuid), getCertificate(api, r2.successor!.uuid)]);
+                    expect(d1.serialNumber).not.toBe(d2.serialNumber);
+                }
                 const rel = await relationsOf(api, a.uuid);
                 expect(rel.successors.map((s) => s.uuid).sort()).toEqual([r1.successor!.uuid, r2.successor!.uuid].sort());
                 expect(rel.successors.map((s) => s.relationType)).toEqual(['renewal', 'renewal']);

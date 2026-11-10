@@ -1,7 +1,7 @@
 /**
  * REG-USE-05 — A certificate issued over ACME (release checklist: Usage 5; ilm#430). An RFC 8555 client orders the
  * pre-authorized identifier of the run's ACME profile on an own RA profile, finalizes and downloads the chain; the
- * inventory lists it under protocol ACME.
+ * inventory lists it under protocol ACME. Every further order uses its own run-prefixed name, also pre-authorized.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { AcmeAccountPage } from '../../../pages/AcmeAccountPage';
@@ -14,7 +14,7 @@ import { sanOracle } from '../../../utils/regression/ownCertificates';
 import { ensureAcmeOnRaProfile } from '../../../utils/regression/ownRaProfiles';
 import { createdAfterMarker } from '../../../utils/regression/ledger/ledger';
 import { runName } from '../../../utils/regression/ledger/runState';
-import { ecRefusal, orderAndFinalize, startAcmeRun } from '../../../utils/regression/lifecycle/acmeOrders';
+import { acmeOrderName, ecRefusal, invalidOrderReason, orderAndFinalize, startAcmeRun } from '../../../utils/regression/lifecycle/acmeOrders';
 import { testMeta, tags } from '../../../utils/regression/tags';
 import { ACME_EXPIRY_TOLERANCE_SECONDS, ACME_ORDER_MS } from '../../../utils/regression/timeouts';
 
@@ -105,13 +105,13 @@ test.describe('Certificate issue over ACME', { tag: tags.regression }, () => {
     test('an order for a name that is not pre-authorized gets http-01 and dns-01 challenges only',
         testMeta({
             id: 'REG-USE-05', row: 'not-pre-authorized-name', prio: 'P1', issue: 'ilm#430', needs: 'ca',
-            rule: ['the pre-authorization skips challenges only for the exact identifier: any other name is pending with the http-01 and dns-01 challenges only (RFC 8555 §7.1.6)'],
+            rule: ['the pre-authorization skips challenges only for the names the profile lists (the run identifier, names under example.test): any other name is pending with the http-01 and dns-01 challenges only (RFC 8555 §7.1.6)'],
         }),
         async ({ api, own }) => {
             const run = await test.step('Prerequisite: ACME profile on an own RA profile of the run and a new account', async () => startAcmeRun(api, own.spec));
 
             await test.step('A name that is not pre-authorized gets http-01 / dns-01 challenges only', async () => {
-                const other = `other-${run.acmeProfile.identifier}`;
+                const other = `${runName('other')}.example.org`;
                 const res = await run.client.newOrder([other]);
                 expect(res.status, JSON.stringify(res.body)).toBe(201);
                 expect(res.body.status).toBe('pending');
@@ -137,7 +137,7 @@ test.describe('Certificate issue over ACME', { tag: tags.regression }, () => {
                 // One order: finalize, settle (180 s order wait of the client), download.
                 test.setTimeout(ACME_ORDER_MS);
                 const run = await test.step('Prerequisite: ACME on an own RA profile, the profile settings and a new account', async () => startAcmeRun(api, own.spec));
-                const identifier = run.acmeProfile.identifier;
+                const identifier = keyType === 'rsa-2048' ? acmeOrderName('rsa') : acmeOrderName('ec');
                 const retry = run.profile.retryInterval;
                 const validity = run.profile.validity;
                 const san = sanOracle(run.connector);
@@ -154,7 +154,7 @@ test.describe('Certificate issue over ACME', { tag: tags.regression }, () => {
 
                 const csr = keyType === 'rsa-2048' ? csrWithSan(identifier, [identifier]) : await ecCsrWithSan(identifier, [identifier]);
                 const { order, fin, done, uuids, mine } = await test.step(`new-order for ${identifier} → finalize with a ${keyType} CSR → settled`, async () =>
-                    orderAndFinalize(api, run, csr, own.spec));
+                    orderAndFinalize(api, run, csr, own.spec, identifier));
 
                 await test.step('new-order: 201, ready, Retry-After, expires = server now + validity (± 300 s)', async () => {
                     expect(order.body.status).toBe('ready');
@@ -173,7 +173,8 @@ test.describe('Certificate issue over ACME', { tag: tags.regression }, () => {
                 await test.step('finalize: accepted with Retry-After; the order is valid', async () => {
                     expect(fin.status, JSON.stringify(fin.body)).toBeLessThan(300);
                     expect(fin.retryAfter, 'Retry-After on finalize').toBe(String(retry));
-                    expect(done?.status, JSON.stringify(done)).toBe('valid');
+                    const why = done?.status === 'invalid' ? await invalidOrderReason(api, done, mine) : '';
+                    expect(done?.status, `${JSON.stringify(done)} ${why}`).toBe('valid');
                 });
 
                 const chain = await test.step('download: 200, application/pem-certificate-chain', async () => {
@@ -218,12 +219,14 @@ test.describe('Certificate issue over ACME', { tag: tags.regression }, () => {
         async ({ api, own }) => {
             test.setTimeout(ACME_ORDER_MS);
             const run = await test.step('Prerequisite: ACME on an own RA profile and a new account', async () => startAcmeRun(api, own.spec));
-            const csr = csrWithSan(run.acmeProfile.identifier, [run.acmeProfile.identifier]);
-            const { order, fin, done } = await test.step('An order finalized to valid', async () => orderAndFinalize(api, run, csr, own.spec));
+            const name = acmeOrderName('fin2');
+            const csr = csrWithSan(name, [name]);
+            const { order, fin, done, mine } = await test.step('An order finalized to valid', async () => orderAndFinalize(api, run, csr, own.spec, name));
 
             await test.step('The first finalize settled the order as valid', async () => {
                 expect(fin.status, JSON.stringify(fin.body)).toBeLessThan(300);
-                expect(done?.status, JSON.stringify(done)).toBe('valid');
+                const why = done?.status === 'invalid' ? await invalidOrderReason(api, done, mine) : '';
+                expect(done?.status, `${JSON.stringify(done)} ${why}`).toBe('valid');
             });
 
             await test.step('Second finalize on the same order → 403 problem+json …:orderNotReady', async () => {
