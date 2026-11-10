@@ -5,6 +5,8 @@
 # It prints the certified pair's public key (SPKI DER, hex; the runner certifies it, the sidecar has no openssl), then
 # the line `PLANTED` (set -e: only after every pair).
 set -eu
+# A failed pkcs11-tool in the public-key dump pipeline then stops the script before PLANTED (busybox ash has pipefail).
+if (set -o pipefail) 2>/dev/null; then set -o pipefail; fi
 tool() {
     pkcs11-tool --module "$PKCS11_MODULE" --token-label "$TOKEN_LABEL" --login --pin env:TOKEN_PIN "$@" </dev/null
 }

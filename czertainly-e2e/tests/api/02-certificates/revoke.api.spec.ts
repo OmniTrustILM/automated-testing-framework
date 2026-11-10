@@ -1,6 +1,7 @@
 /**
  * API-CERT-11 — Revoke of an own issued certificate through the v2 API (ilm#429). The validation row is judged only
- * where validation is enabled and the issuer certificate is in the inventory; otherwise it skips with the named reason.
+ * where validation is enabled, the issuer certificate is in the inventory and the certificate names a CRL or OCSP source;
+ * otherwise it skips with the named reason.
  */
 import { ISSUE_AND_REVOKE_TEST_MS, STATE_CHANGE_WAIT_MS } from '../../../utils/regression/timeouts';
 import { expect, test } from '../../../fixtures/regressionFixtures';
@@ -18,6 +19,15 @@ function chainNotValid(result: Record<string, any>): string | undefined {
     const chain = checks.certificate_chain ?? checks.CERTIFICATE_CHAIN;
     if (!chain || String(chain.status).toLowerCase() === 'valid') return undefined;
     return `the certificate chain check is ${String(chain.status)} (${String(chain.message ?? 'no message')}): the issuer certificate is not available in the inventory, so the validation status can never become revoked`;
+}
+
+// Core derives the revoked validation status only from the OCSP or CRL check (X509CertificateValidator), never from the revoke itself.
+function revocationNotVisible(result: Record<string, any>): string | undefined {
+    const checks = (result?.validationChecks ?? {}) as Record<string, { status?: string; message?: string }>;
+    const notChecked = (c?: { status?: string }) => String(c?.status).toLowerCase() === 'not_checked';
+    if (!notChecked(checks.crl_verification) || !notChecked(checks.ocsp_verification)) return undefined;
+    return `the CA puts no usable CRL distribution point or OCSP URL in its certificates (CRL: ${String(checks.crl_verification?.message ?? '')}; ` +
+        `OCSP: ${String(checks.ocsp_verification?.message ?? '')}), and core reads revocation only from them, so the validation status cannot become revoked`;
 }
 
 test.describe('Certificate revoke through the v2 API', { tag: tags.api }, () => {
@@ -66,7 +76,8 @@ test.describe('Certificate revoke through the v2 API', { tag: tags.api }, () => 
             const cert = await test.step('Fixture: an own certificate, revoked', async () => {
                 const c = await own.certificate.issue(ra, { suffix: 'c11v' });
                 // An incomplete chain reads invalid before CRL / OCSP is looked at, so the chain check is read first.
-                const problem = chainNotValid(await revalidate(api, c));
+                const validation = await revalidate(api, c);
+                const problem = chainNotValid(validation) ?? revocationNotVisible(validation);
                 test.skip(problem !== undefined, problem);
                 const a = await revokeOwnCertificate(api, c, ra, { reason: 'keyCompromise', destroyKey: false });
                 expect(a.status, a.text.slice(0, 300)).toBe(204);

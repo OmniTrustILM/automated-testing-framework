@@ -119,6 +119,9 @@ async function mergedKeyProblem(state: GuardState, line: LedgerLine, helper: str
     const keyLine = assertOwn({ uuid: keyUuid }, helper, ledgerOpts);
     if (keyLine.type !== 'keys' || !keyLine.derived) return 'its key is no derived key of the run';
     const body = (await assertOwnLive(state.api, 'keys', { uuid: keyUuid }, helper, live)).body ?? {};
+    if (line.type === 'keyItems' && !(Array.isArray(body.items) && body.items.some((i: { uuid?: unknown }) => i?.uuid === line.uuid))) {
+        return 'its live key does not hold this item';
+    }
     const profile = typeof body.tokenProfileUuid === 'string' ? body.tokenProfileUuid : undefined;
     const profileLine = profile ? checkOwnership({ uuid: profile }, ledgerOpts) : undefined;
     const ownProfile = profileLine?.own && profileLine.line?.type === 'tokenProfiles' && !profileLine.line.derived;

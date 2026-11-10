@@ -344,7 +344,8 @@ export const ROUTE_PATH_WAIVERS: readonly RoutePathWaiver[] = [
     {
         method: 'POST', path: '/v1/tokens/{id}/tokenProfiles/{id}/tokenKeys/onboard', keyPath: ['keys', LIST_ELEMENT, 'keyPairMeta', LIST_ELEMENT, 'uuid'],
         when: (body) => Array.isArray(body.keys),
-        proof: 'TokenKeyOnboardingServiceImpl: keyPairMeta is the connector metadata of a listed pair, sent back to the connector; core resolves no object by its uuid',
+        proof: 'TokenKeyOnboardingServiceImpl: keyPairMeta is the connector metadata of a listed pair, sent back to the connector; core resolves no object by its uuid. ' +
+            'An onboard into an existing key is matched by public-key fingerprint; the run onboards only pairs it generated on its own token moments before',
     },
 ];
 
