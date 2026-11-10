@@ -1,8 +1,13 @@
+/**
+ * DiscoveryPage — the discovery list and its Create Discovery dialog (SMK-003).
+ */
 import { Page, Locator, expect } from '@playwright/test';
 import { Logger } from '../utils/Logger';
 import { DEF_CERTIFICATE_TABLE_HEADERS, CERTIFICATE_DETAILS_TABS } from '../utils/constants';
 
 import { Navigation } from './Navigation';
+import { waitForDetailRoute } from './ui/detailRoute';
+import { chooseOption } from './ui/select';
 const logger = new Logger('DiscoveryPage');
 
 export class DiscoveryPage {
@@ -60,17 +65,11 @@ export class DiscoveryPage {
         await this.nameInput.click({ force: true });
         await this.nameInput.fill(name);
 
-        await this.providerTrigger.click();
-        const providerOption = this.page
-            .locator('#discoveryProviderSelect-listbox')
-            // Exact: a connector registered as v1 and v2 is listed as "<name>" and "<name>-v2".
-            .getByRole('option', { name: provider, exact: true });
-        await providerOption.waitFor({ state: 'visible' });
-        await providerOption.click();
+        // Exact (chooseOption matches a plain name exactly): a connector registered as v1 and v2 is listed as "<name>" and "<name>-v2".
+        await chooseOption(this.page, this.providerTrigger, provider);
 
         await expect(this.modal.getByTestId('label-storeKindSelect')).toBeVisible();
-        await this.kindTrigger.click();
-        await this.page.getByRole('option', { name: kind }).click();
+        await chooseOption(this.page, this.kindTrigger, kind);
 
         await this.targetInput.scrollIntoViewIfNeeded();
         await expect(this.targetInput).toBeVisible();
@@ -84,13 +83,7 @@ export class DiscoveryPage {
         }
 
         await this.createButton.click();
-        await expect(this.page).toHaveURL(/\/discoveries\/detail\/[a-f0-9-]+/);
-        const url = this.page.url();
-        const match = url.match(/\/discoveries\/detail\/([a-f0-9-]+)/);
-        if (!match) {
-            throw new Error(`Could not extract discovery UUID from URL: ${url}`);
-        }
-        return match[1];
+        return waitForDetailRoute(this.page, 'discoveries');
     }
 
     async assertCompletedStatusBadges(): Promise<void> {
@@ -101,7 +94,6 @@ export class DiscoveryPage {
         await expect(statusBadge).toHaveText('Completed');
     }
 
-    // Discovered certificates live on the Results tab, not on Details.
     async openResultsTab(): Promise<void> {
         logger.info('Opening Results tab');
         await this.resultsTab.click();

@@ -1,26 +1,26 @@
 /**
- * CertificatePage — Page Object Model for the Certificates UI flow (SMK-004).
- *
- * Encapsulates:
- *   - Navigation to the Certificates list and detail pages
- *   - The "Issue New Certificate" modal flow (RA Profile + External CSR)
- *   - Tab assertions on the detail page (deep on Details/Request/History,
- *     shallow on the other 7 tabs)
- *
- * Locators that proved stable in SMK-003 (testids, ARIA roles) are reused;
- * unknowns are semantic getByRole/getByLabel — will be tightened up after
- * the first end-to-end run (Task 11) if any locator misses.
+ * CertificatePage — the Certificates UI flow of the smoke suite (SMK-004), also used by SMK-007, SMK-008 and the regression suite.
+ * The import and submit-issue methods delegate to ImportCertificatesDialog and CertificateAddPage.
  */
 
-import { Page, Locator, expect } from '@playwright/test';
+import { Page, Locator, Response, expect } from '@playwright/test';
 import { Logger } from '../utils/Logger';
+import { SanSet, sameSans } from '../utils/regression/pkiBuilders';
 import { Navigation } from './Navigation';
+import { CertificateAddPage } from './CertificateAddPage';
+import { ImportCertificatesDialog } from './ImportCertificatesDialog';
+import { PageHeader } from './ui/pageHeader';
+import { chooseOption } from './ui/select';
+import { widgetTitled } from './ui/widget';
 
 const logger = new Logger('CertificatePage');
 
 export class CertificatePage {
     readonly page: Page;
     private readonly navigation: Navigation;
+
+    // Page header (fe-administrator#2426): Create, and Import / Delete in its menu; the widget buttons on older builds
+    readonly header: PageHeader;
 
     // List page
     readonly main: Locator;
@@ -33,6 +33,7 @@ export class CertificatePage {
     readonly importSubmitButton: Locator;
     readonly importResults: Locator;
     readonly importDoneButton: Locator;
+    readonly importDialog: ImportCertificatesDialog;
 
     // Delete certificate from Details page
     readonly deleteButton: Locator;
@@ -48,31 +49,34 @@ export class CertificatePage {
 
     // Details page
     readonly tablist: Locator;
+    readonly commonNameRow: Locator;
+    readonly stateBadge: Locator;
+    readonly subjectAlternativeNames: Locator;
 
     // Attributes tab
     readonly customAttributeSelectTrigger: Locator;
     readonly saveCustomValueButton: Locator;
-
 
     constructor(page: Page) {
         this.page = page;
         this.navigation = new Navigation(page);
 
         this.main = page.locator('main');
-        this.addCertificateButton = this.main.getByTestId('add-certificate-button');
+        this.header = new PageHeader(page);
+        this.addCertificateButton = this.header.action('create', this.main.getByTestId('add-certificate-button'));
 
-        this.uploadButton = this.main.getByTestId('upload-button');
+        this.uploadButton = this.header.action('import', this.main.getByTestId('upload-button'));
         this.importModal = page.getByRole('dialog', { name: 'Import certificates and keys' });
         this.importFileContent = this.importModal.getByRole('textbox', { name: 'File content' });
         this.importDetectedContent = this.importModal.getByRole('region', { name: /Detected content/ });
         this.importSubmitButton = this.importModal.getByRole('button', { name: /Import \d+ entr/ });
         this.importResults = this.importModal.getByRole('region', { name: 'Import results' });
         this.importDoneButton = this.importModal.getByRole('button', { name: 'Done', exact: true });
+        this.importDialog = new ImportCertificatesDialog(page);
 
-        this.deleteButton = this.main.getByTestId('trash-button');
+        this.deleteButton = this.header.action('delete', this.main.getByTestId('trash-button'));
         this.deleteConfirmDialog = page.getByRole('dialog').filter({ hasText: 'Delete Certificate' });
         this.deleteConfirmButton = this.deleteConfirmDialog.getByRole('button', { name: 'Delete', exact: true });
-
 
         this.requestTypeIssue = this.main.getByTestId('requestType-issue');
         this.raProfileTrigger = this.main.getByTestId('select-raProfile-trigger');
@@ -81,6 +85,9 @@ export class CertificatePage {
         this.submitButton = this.main.getByTestId('progress-button');
 
         this.tablist = page.getByRole('tablist');
+        this.commonNameRow = this.main.locator('tr[data-id="commonName"]');
+        this.stateBadge = this.main.locator('tr[data-id="certState"] [data-testid="certificate-status"]');
+        this.subjectAlternativeNames = widgetTitled(this.main, 'Subject Alternative Names');
 
         this.customAttributeSelectTrigger = this.main.getByTestId('select-selectCustomAttribute-trigger');
         this.saveCustomValueButton = this.main.getByTestId('save-custom-value');
@@ -100,13 +107,13 @@ export class CertificatePage {
 
     async openIssuePage(): Promise<void> {
         logger.info('Navigating to Issue Certificate page');
-        await this.addCertificateButton.click();
+        await this.header.click(this.addCertificateButton);
         await expect(this.page).toHaveURL(/\/certificates\/add/);
     }
 
     async openImportModal(): Promise<void> {
         logger.info('Opening Import certificates and keys');
-        await this.uploadButton.click();
+        await this.header.click(this.uploadButton);
         await expect(this.importModal).toBeVisible();
     }
 
@@ -123,8 +130,17 @@ export class CertificatePage {
         await expect(this.importSubmitButton).toBeEnabled();
         await this.importSubmitButton.click();
         await expect(this.importResults).toBeVisible();
-        // The result badge has its own test id since fe-administrator#2274; it used to be the generic 'badge'.
         await expect(this.importResults.getByTestId('import-result-badge')).toHaveText('Imported');
+    }
+
+    /** Clicks Import and returns the answer of the import call, so a spec can record what it created before asserting. */
+    async submitImport(): Promise<Response> {
+        logger.info('Submitting the import');
+        return this.importDialog.submitForResponse();
+    }
+
+    async assertImportResult(text: string): Promise<void> {
+        await this.importDialog.assertResults([text]);
     }
 
     async closeImportModal(): Promise<void> {
@@ -155,7 +171,7 @@ export class CertificatePage {
 
     async deleteFromDetail(): Promise<void> {
         logger.info('Deleting certificate from details page');
-        await this.deleteButton.click();
+        await this.header.click(this.deleteButton);
         await expect(this.deleteConfirmDialog).toBeVisible();
         await this.deleteConfirmButton.click();
         await expect(this.deleteConfirmDialog).not.toBeVisible();
@@ -168,18 +184,12 @@ export class CertificatePage {
 
     async selectRaProfile(raProfileName: string): Promise<void> {
         logger.info(`Selecting RA Profile: ${raProfileName}`);
-        await this.raProfileTrigger.click();
-        const option = this.page.getByRole('option', { name: raProfileName, exact: true });
-        await option.waitFor({ state: 'visible' });
-        await option.click();
+        await chooseOption(this.page, this.raProfileTrigger, raProfileName);
     }
 
     async selectKeySourceExternal(): Promise<void> {
         logger.info('Selecting Key Source: External key');
-        await this.keySourceTrigger.click();
-        const option = this.page.getByRole('option', { name: /external/i });
-        await option.waitFor({ state: 'visible' });
-        await option.click();
+        await chooseOption(this.page, this.keySourceTrigger, /external/i);
     }
 
     async pasteCsr(csrPem: string): Promise<void> {
@@ -188,18 +198,12 @@ export class CertificatePage {
         await this.csrTextarea.fill(csrPem);
     }
 
-    async submitIssue(): Promise<string> {
-        logger.info('Submitting Issue Certificate');
-        await this.submitButton.click();
-        await expect(this.page).toHaveURL(/\/certificates\/detail\/[a-f0-9-]+/);
-        const url = this.page.url();
-        const match = url.match(/\/certificates\/detail\/([a-f0-9-]+)/);
-        if (!match) {
-            throw new Error(`Could not extract certificate UUID from URL: ${url}`);
-        }
-        const certUuid = match[1];
-        logger.info(`Issued certificate UUID: ${certUuid}`);
-        return certUuid;
+    /**
+     * Create on the Add Certificate form: waits for the detail page and
+     * fails on the "accepted with warnings" panel unless `acceptWarnings`.
+     */
+    async submitIssue(options: { acceptWarnings?: boolean } = {}): Promise<string> {
+        return (await new CertificateAddPage(this.page).submitIssueFailingOnWarnings(options)).uuid;
     }
 
     async openTab(tabName: string): Promise<void> {
@@ -247,6 +251,36 @@ export class CertificatePage {
         await expect(formatRow).toContainText('pkcs10');
     }
 
+    /** The common name row, the state `Issued` and the RA profile name. The caller reloads first: the page opened by Create does not poll. */
+    async assertIssuedDetails(expected: { commonName: string; raProfileName: string }): Promise<void> {
+        logger.info('Asserting the Details tab of an issued certificate');
+        await this.openTab('Details');
+        await expect(this.commonNameRow).toContainText(expected.commonName);
+        await expect(this.stateBadge).toHaveText('Issued');
+        await expect(this.main).toContainText(expected.raProfileName);
+    }
+
+    /** The DNS names and IP addresses of the `Subject Alternative Names` widget. */
+    async sanValues(): Promise<SanSet> {
+        await this.openTab('Details');
+        await expect(this.subjectAlternativeNames).toBeVisible();
+        const valuesOf = async (type: string): Promise<string[]> => {
+            const row = this.subjectAlternativeNames.locator(`tr[data-id="${type}"]`);
+            if (!(await row.count())) return [];
+            const text = (await row.locator('td').last().innerText()).trim();
+            return text ? text.split(/,\s*/).map((v) => v.trim()).filter(Boolean) : [];
+        };
+        return { dns: await valuesOf('dNSName'), ip: await valuesOf('iPAddress') };
+    }
+
+    /** `exact`: DNS and IP sets are equal; `dns`: every expected DNS name is shown (for a CA whose template rewrites the SAN extension). */
+    async assertSans(expected: SanSet, mode: 'exact' | 'dns' = 'exact'): Promise<void> {
+        const shown = await this.sanValues();
+        logger.info(`SANs shown: ${shown.dns.length} DNS, ${shown.ip.length} IP (${mode})`);
+        if (mode === 'exact') expect(sameSans(shown, expected), `Details SANs ${JSON.stringify(shown)} = ${JSON.stringify(expected)}`).toBe(true);
+        else for (const d of expected.dns) expect(shown.dns.map((x) => x.toLowerCase()), `Details SANs include ${d}`).toContain(d.toLowerCase());
+    }
+
     async assertHistoryTabHasEntry(pattern: RegExp): Promise<void> {
         logger.info(`Asserting History tab has entry matching ${pattern}`);
         await this.openTab('History');
@@ -271,13 +305,11 @@ export class CertificatePage {
 
     async assignCustomAttributeValue(attributeName: string, value: string): Promise<void> {
         logger.info(`Assigning custom attribute "${attributeName}" with value "${value}"`);
-        await this.customAttributeSelectTrigger.click();
-        await this.page.getByRole('option', { name: attributeName, exact: true }).click();
+        await chooseOption(this.page, this.customAttributeSelectTrigger, attributeName);
         const valueInput = this.main.getByTestId(`text-input-${attributeName}`);
         await valueInput.click();
         await valueInput.fill(value);
         await this.saveCustomValueButton.click();
-        // Wait for the row to appear in the Custom Attributes table
         const row = this.main.locator('tr').filter({ hasText: attributeName });
         await expect(row).toBeVisible();
     }

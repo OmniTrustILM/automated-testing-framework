@@ -1,0 +1,93 @@
+/**
+ * acmeOrders — one ACME order of an own certificate through the RA-profile directory (new account, new-order → finalize → settled); every
+ * certificate the order makes and its linked key are recorded, also when finalize or the wait throws.
+ */
+import { expect } from '@playwright/test';
+import { AcmeClient, AcmeResponse } from '../protocols/acmeClient';
+import { apiJson, searchCertificates, serverCreatedAfter } from '../apiReads';
+import { authorityConnectorName } from '../config/authorities';
+import type { GuardedApi } from '../guard/types';
+import { recordAcmeAccount, recordingIssued } from '../issuedRecords';
+import { sanOracleFor } from '../ownCertificates';
+import { ensureAcmeOnRaProfile } from '../ownRaProfiles';
+import { ecRefusalWording, GeneratedCsr } from '../pkiBuilders';
+import { createdAfterMarker, OwnRef } from '../ledger/ledger';
+import { ownCommonName, runName } from '../ledger/runState';
+import { ACME_ORDER_DOMAIN } from '../config/acmeProfiles';
+
+export type AcmeOrder = Awaited<ReturnType<AcmeClient['waitForOrder']>>;
+
+export interface AcmeRun {
+    client: AcmeClient;
+    acmeProfile: OwnRef & { identifier: string };
+    profile: { retryInterval?: number; validity?: number };
+    account: AcmeResponse;
+    sanMode: 'exact' | 'dns';
+    connector: string;
+}
+/**
+ * The ACME profile on an own RA profile, its settings and one new account;
+ * without a CA the RA-profile helper throws `RaProfileSourceMissing`.
+ */
+export async function startAcmeRun(api: GuardedApi, spec: string): Promise<AcmeRun> {
+    const { raProfile, acmeProfile, directoryUrl } = await ensureAcmeOnRaProfile(api, spec);
+    const profile = await apiJson<{ retryInterval?: number; validity?: number }>(api, 'GET', `/api/v1/acmeProfiles/${acmeProfile.uuid}`);
+    const connector = await authorityConnectorName(api, raProfile.authorityUuid);
+    const client = new AcmeClient(directoryUrl);
+    await client.init();
+    const account = await client.newAccount(`${runName('acme-b1')}@example.test`);
+    expect(account.location, 'new-account answers the account URL').toBeTruthy();
+    await recordAcmeAccount(api, account.location!, acmeProfile, spec);
+    return { client, acmeProfile, profile, account, sanMode: sanOracleFor(connector), connector };
+}
+
+async function certificatesNamed(api: GuardedApi, commonName: string): Promise<string[]> {
+    const rows = await searchCertificates(api, [{ fieldSource: 'property', fieldIdentifier: 'COMMON_NAME', condition: 'EQUALS', value: commonName }], 100);
+    return rows.map((r) => String(r.uuid));
+}
+
+/** A unique run-prefixed name the run's ACME profile pre-authorizes, for one order (`label` says which). */
+export const acmeOrderName = (label: string): string => ownCommonName('acme-' + label, ACME_ORDER_DOMAIN);
+
+/** Order → finalize → settle, ledger first; `mine` are the certificates THIS order made. */
+export async function orderAndFinalize(
+    api: GuardedApi, run: AcmeRun, csr: GeneratedCsr, spec: string, identifier: string = run.acmeProfile.identifier,
+) {
+    const before = new Set(await certificatesNamed(api, identifier));
+    const order = await run.client.newOrder([identifier]);
+    expect(order.status, JSON.stringify(order.body)).toBe(201);
+    const createdAfter = order.date ? createdAfterMarker(order.date) : await serverCreatedAfter(api);
+    // Inside the recording: a finalize that throws after the server issued,
+    // or a timed-out wait, still leaves the certificate and key in the ledger.
+    const { result: { fin, done }, uuids } = await recordingIssued(api, identifier, createdAfter, spec, 'issued via ACME (REG-USE-05.1 / 05.2)', async () => {
+        const f = await run.client.finalize(order.body.finalize, csr.derBase64Url);
+        const d = f.status < 300 ? await run.client.waitForOrder(order.location!) : undefined;
+        return { fin: f, done: d };
+    });
+    return { order, fin, done, uuids, mine: uuids.filter((u) => !before.has(u)) };
+}
+
+/** Why an order ended invalid: its `error` and the failed history events of the certificates it made. */
+export async function invalidOrderReason(api: GuardedApi, done: AcmeOrder | undefined, mine: string[]): Promise<string> {
+    const parts = done?.error ? [String(done.error.detail ?? '')] : [];
+    for (const u of mine) {
+        const h = await apiJson<Array<{ status?: string; message?: string }>>(api, 'GET', `/api/v1/certificates/${u}/history`);
+        parts.push(...h.filter((x) => x.status === 'FAILED').map((x) => String(x.message ?? '')));
+    }
+    return parts.filter(Boolean).join(' | ');
+}
+
+/**
+ * Why THIS order's issuance was refused, in CA-policy words about the key: the finalize detail, the order's `error` and the history of the
+ * certificates this order made.
+ */
+export async function ecRefusal(api: GuardedApi, fin: AcmeResponse, done: AcmeOrder | undefined, mine: string[]): Promise<string | undefined> {
+    const parts: string[] = [];
+    if (fin.status >= 300) parts.push(String(fin.body?.detail ?? ''));
+    if (done?.error) parts.push(String(done.error.detail ?? ''));
+    for (const u of mine) {
+        const h = await apiJson<Array<{ message?: string }>>(api, 'GET', `/api/v1/certificates/${u}/history`);
+        parts.push(...h.map((x) => String(x.message ?? '')));
+    }
+    return parts.find((t) => ecRefusalWording(t));
+}

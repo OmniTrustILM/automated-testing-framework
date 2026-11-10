@@ -1,20 +1,14 @@
 /// <reference types="node" />
 
 import { defineConfig, devices } from '@playwright/test';
-import * as dotenv from 'dotenv';
-import * as path from 'path';
+import { loadDotenv } from './utils/envFile';
 
-// Load environment variables from .env file
-dotenv.config({ path: path.resolve(__dirname, '.env') });
+// A variable that is already set is never overwritten, so loading .env first would win over REG_ENV_FILE.
+loadDotenv(process.env, __dirname, { requireExplicit: true });
 
 export default defineConfig({
-  testDir: './tests',
-
-  // Only the smoke suite belongs to this config. The visual baselines need reference images that
-  // are captured per environment and deliberately not committed, and the unit tests need no
-  // environment at all - both have their own config, and a bare `playwright test` here must not
-  // sweep them up along with the suite it is meant to run.
-  testIgnore: ['**/visual/**', '**/unit/**'],
+  // Only the smoke suite: a bare `playwright test` must not sweep up the other suites.
+  testDir: './tests/smoke',
 
   globalSetup: require.resolve('./global-setup'),
   globalTeardown: require.resolve('./global-teardown'),

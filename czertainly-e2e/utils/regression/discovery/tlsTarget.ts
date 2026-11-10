@@ -1,0 +1,189 @@
+/**
+ * tlsTarget — a TLS scan target the run controls: runner-hosted listeners on random ports serving per-run, run-prefixed
+ * certificates, so every certificate a discovery onboards is recognisable. REG_SCAN_HOST is the name the connector reaches.
+ */
+import * as forge from 'node-forge';
+import * as net from 'net';
+import * as tls from 'tls';
+import { newKeyMaterial, sha256Hex } from '../pkiBuilders';
+import { checkedCommonName, runCommonName, runId } from '../ledger/runState';
+import { uniqueSuffix } from '../text';
+import { settings } from '../run/settings';
+
+export interface TlsTargetOptions {
+    listeners?: number;
+    distinctLeaves?: number;
+    withIntermediate?: boolean;
+    stem?: string;
+    leafStems?: string[];
+    env?: NodeJS.ProcessEnv;
+}
+
+interface ServedCertificate {
+    pem: string;
+    commonName: string;
+    fingerprint: string;
+    role: 'leaf' | 'intermediate';
+}
+
+export interface TlsTarget {
+    host: string;
+    ports: number[];
+    served: ServedCertificate[][];
+    rootPem: string;
+    intermediatePem: string;
+    distinct(): ServedCertificate[];
+    servedFingerprints(): string[];
+    ipAttribute(): string;
+    portsAttribute(): string;
+    close(): Promise<void>;
+}
+
+export function scanTargetProblem(env: NodeJS.ProcessEnv = process.env): string | undefined {
+    const host = settings(env).scanHost;
+    if (!host) {
+        return 'deploy gate: no scan target (REG_SCAN_HOST unset): a TLS endpoint the run controls and the tier\'s discovery connector can reach; DevOps item 5 on the shared tiers, a dotted host alias of the runner on a local stack';
+    }
+    if (!/^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$/.test(host) && !net.isIP(host)) {
+        return `deploy gate: REG_SCAN_HOST "${host}" is neither a dotted host name nor an IP address (the discovery form accepts dotted names only)`;
+    }
+    return undefined;
+}
+
+export const scanHost = (env: NodeJS.ProcessEnv = process.env): string => settings(env).scanHost;
+
+interface Issued {
+    cert: forge.pki.Certificate;
+    pem: string;
+    key: forge.pki.rsa.PrivateKey;
+}
+
+const SERIAL = (): string => `01${forge.util.bytesToHex(forge.random.getBytesSync(15))}`;
+
+function issue(opts: {
+    commonName: string;
+    publicKey: forge.pki.rsa.PublicKey;
+    signerKey: forge.pki.rsa.PrivateKey;
+    signerName: forge.pki.CertificateField[];
+    ca: boolean;
+    dns?: string[];
+    days?: number;
+}): forge.pki.Certificate {
+    const cert = forge.pki.createCertificate();
+    cert.publicKey = opts.publicKey;
+    cert.serialNumber = SERIAL();
+    const now = new Date(Date.now() - 60_000);
+    cert.validity.notBefore = now;
+    cert.validity.notAfter = new Date(now.getTime() + (opts.days ?? 30) * 24 * 3600 * 1000);
+    const subject = [{ name: 'commonName', value: opts.commonName }];
+    cert.setSubject(subject);
+    cert.setIssuer(opts.signerName);
+    const extensions: Array<Record<string, unknown>> = [{ name: 'basicConstraints', cA: opts.ca }];
+    if (opts.dns?.length) extensions.push({ name: 'subjectAltName', altNames: opts.dns.map((d) => ({ type: 2, value: d })) });
+    cert.setExtensions(extensions);
+    cert.sign(opts.signerKey, forge.md.sha256.create());
+    return cert;
+}
+
+const fingerprintOf = (cert: forge.pki.Certificate): string => sha256Hex(Buffer.from(forge.asn1.toDer(forge.pki.certificateToAsn1(cert)).getBytes(), 'binary'));
+
+const LEAF_DOMAIN = 'example.test';
+
+/** The common name of leaf number `index`: `<run id>-<stem>-<unique>-<index>.example.test`, refused when longer than 64 characters. */
+export function leafCommonName(stem: string, unique: string, index: number, id: string = runId()): string {
+    return checkedCommonName(`${id}-${stem}-${unique}-${index}.${LEAF_DOMAIN}`);
+}
+
+/**
+ * Starts the listeners and returns the target; the caller closes it in `afterAll` (idempotent). Certificates are generated first, so a
+ * failure leaves no listener behind.
+ */
+export async function startTlsTarget(opts: TlsTargetOptions = {}): Promise<TlsTarget> {
+    const env = opts.env ?? process.env;
+    const problem = scanTargetProblem(env);
+    if (problem) throw new Error(problem);
+    const listeners = Math.max(1, opts.listeners ?? 1);
+    const distinct = Math.min(listeners, Math.max(1, opts.distinctLeaves ?? listeners));
+    const withIntermediate = opts.withIntermediate ?? true;
+    const stem = opts.stem ?? 'scan';
+
+    const rootKeys = newKeyMaterial().keys;
+    const rootName = [{ name: 'commonName', value: runCommonName('scan-root') }];
+    const root = issue({ commonName: runCommonName('scan-root'), publicKey: rootKeys.publicKey, signerKey: rootKeys.privateKey, signerName: rootName, ca: true, days: 60 });
+    const interKeys = newKeyMaterial().keys;
+    const intermediateCommonName = runCommonName('scan-ca');
+    const inter = issue({ commonName: intermediateCommonName, publicKey: interKeys.publicKey, signerKey: rootKeys.privateKey, signerName: root.subject.attributes as forge.pki.CertificateField[], ca: true, days: 45 });
+    const interName = inter.subject.attributes as forge.pki.CertificateField[];
+    const leafKeys = newKeyMaterial().keys;
+    const unique = uniqueSuffix();
+
+    const leaves: Issued[] = [];
+    for (let i = 0; i < distinct; i++) {
+        const cn = leafCommonName(opts.leafStems?.[i] ?? stem, unique, i + 1);
+        const cert = issue({ commonName: cn, publicKey: leafKeys.publicKey, signerKey: interKeys.privateKey, signerName: interName, ca: false, dns: [cn], days: 30 });
+        leaves.push({ cert, pem: forge.pki.certificateToPem(cert), key: leafKeys.privateKey });
+    }
+    const interPem = forge.pki.certificateToPem(inter);
+    const leafKeyPem = forge.pki.privateKeyToPem(leafKeys.privateKey);
+
+    const asServed = (leaf: Issued): ServedCertificate[] => {
+        const served: ServedCertificate[] = [{ pem: leaf.pem, commonName: String(leaf.cert.subject.getField('CN').value), fingerprint: fingerprintOf(leaf.cert), role: 'leaf' }];
+        if (withIntermediate) served.push({ pem: interPem, commonName: intermediateCommonName, fingerprint: fingerprintOf(inter), role: 'intermediate' });
+        return served;
+    };
+
+    const servers: tls.Server[] = [];
+    const ports: number[] = [];
+    const served: ServedCertificate[][] = [];
+    const bind = settings(env).scanBind;
+    try {
+        for (let i = 0; i < listeners; i++) {
+            const leaf = leaves[i < distinct ? i : 0];
+            const chain = withIntermediate ? `${leaf.pem}${interPem}` : leaf.pem;
+            const server = tls.createServer({ key: leafKeyPem, cert: chain, minVersion: 'TLSv1.2' }, (socket) => {
+                socket.on('error', () => undefined);
+                socket.end();
+            });
+            server.on('tlsClientError', () => undefined);
+            await new Promise<void>((resolve, reject) => {
+                server.once('error', reject);
+                server.listen(0, bind, () => resolve());
+            });
+            servers.push(server);
+            ports.push((server.address() as net.AddressInfo).port);
+            served.push(asServed(leaf));
+        }
+    } catch (e) {
+        await Promise.all(servers.map((s) => new Promise<void>((r) => s.close(() => r()))));
+        throw e;
+    }
+
+    const distinctServed = (): ServedCertificate[] => {
+        const seen = new Map<string, ServedCertificate>();
+        for (const chain of served) for (const c of chain) seen.set(c.fingerprint, c);
+        return [...seen.values()];
+    };
+    let closed = false;
+    return {
+        host: scanHost(env),
+        ports,
+        served,
+        rootPem: forge.pki.certificateToPem(root),
+        intermediatePem: interPem,
+        distinct: distinctServed,
+        servedFingerprints: () => distinctServed().map((c) => c.fingerprint).sort(),
+        ipAttribute: () => scanHost(env),
+        portsAttribute: () => ports.join(','),
+        close: async () => {
+            if (closed) return;
+            closed = true;
+            await Promise.all(servers.map((s) => new Promise<void>((r) => s.close(() => r()))));
+        },
+    };
+}
+
+export const DARK_SMALL = '192.0.2.8/29';
+/** Two dark documentation /24 ranges (508 targets = two chunks of 256 on the v2 connector). */
+export const DARK_TWO_RANGES = '192.0.2.0/24,198.51.100.0/24';
+/** Three dark documentation /24 ranges (762 targets, ~6 minutes at parallelism 1): held in progress while a state matrix is walked. */
+export const DARK_LARGE = '192.0.2.0/24,198.51.100.0/24,203.0.113.0/24';

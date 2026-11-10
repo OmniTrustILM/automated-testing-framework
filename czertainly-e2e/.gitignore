@@ -10,3 +10,4 @@ tests/visual/__baseline__/
 # Cleanup ledger and provisioning state, written per run.
 .smoke-cleanup.jsonl
 .smoke-state.json
+regression-state
