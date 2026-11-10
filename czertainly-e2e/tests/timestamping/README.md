@@ -102,7 +102,7 @@ unless `TSA_ALLOW_DISRUPTION=true`, and skip without a docker daemon (they are `
 ### Running on a shared tier
 
 Design and per-object verdicts: SHARED-TIER.md. In short: the rows without `@local` (everything but the docker rows of `00`, and `50` /
-`55`) carry `@needs:timestamping`, resolved from reads before the row creates anything (OpenSSL 3 on the runner; connected
+`55`) carry `@needs:timestamping`, resolved from reads before the row creates anything (OpenSSL 3 on the runner, 3.5 or newer when `TSA_FAMILIES` names an ML-DSA family: OpenSSL 3.0 cannot decode ML-DSA keys; connected
 credential-provider SoftKeyStore, EJBCA, software cryptography v2, timestamp-formatting and vault connectors; the authority and vault instance
 the `TSA_*` variables name). A tier without them skips each row with a `deploy gate` reason; the setup preflight then checks the EJBCA
 profiles and CAs and writes `unavailable` with the reason. What the tier needs (DevOps): `timestampFormattingConnector`,

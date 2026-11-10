@@ -12,7 +12,8 @@ One config, `playwright.devblock.config.ts`; `DEV_BLOCK` picks the block (unset 
 anything is listed).
 
 Shared tier. `timestamping` runs the rows without `@local`, `key-onboarding` all its rows (a tier or runner without the components
-skips each with a named reason, exit 0; `key-onboarding` needs KO_TOKEN_PIN, the KO_* connector URLs and kubectl with exec rights):
+skips each with a named reason, exit 0; `key-onboarding` needs KO_TOKEN_PIN, the KO_* connector URLs and kubectl with exec rights;
+`timestamping` with an ML-DSA family in `TSA_FAMILIES` needs OpenSSL 3.5 or newer on the runner, the Playwright image ships 3.0):
 
 ```
 REG_ENV_FILE=<tier env file> DEV_BLOCK=timestamping   npx playwright test -c playwright.devblock.config.ts
