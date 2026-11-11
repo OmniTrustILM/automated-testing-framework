@@ -7,10 +7,8 @@ import { loadDotenv } from './utils/envFile';
 loadDotenv(process.env, __dirname, { requireExplicit: true });
 
 export default defineConfig({
-  // Only the smoke suite and the Epic tests (selected by --grep @epic-<n> on the Epic workflow): a bare `playwright test`
-  // must not sweep up the other suites.
-  testDir: './tests',
-  testMatch: ['smoke/**/*.spec.ts', 'epic/**/*.spec.ts'],
+  // Only the smoke suite: a bare `playwright test` must not sweep up the other suites.
+  testDir: './tests/smoke',
 
   globalSetup: require.resolve('./global-setup'),
   globalTeardown: require.resolve('./global-teardown'),
