@@ -24,10 +24,11 @@ run switch are in [tests/regression/README.md](tests/regression/README.md).
 | API | `REG_ENV_FILE=<tier env file> npm run test:api` | `api-junit.xml` |
 | one developers' block | `REG_ENV_FILE=<tier env file> DEV_BLOCK=timestamping npx playwright test -c playwright.devblock.config.ts` (or `DEV_BLOCK=key-onboarding`) | `dev-<block>-junit.xml` |
 | smoke | `npm run test:smoke` (a dedicated deployment only) | `junit.xml` |
+| one Epic's tests (the QA test agent) | `npx playwright test -c playwright.epic.config.ts --grep @epic-<n>` (a dedicated deployment only) | `junit.xml` |
 | unit | `npm run test:unit`, `npm run typecheck` | none |
 
 Configs: `playwright.regression.config.ts`, `playwright.api.config.ts`, `playwright.devblock.config.ts`,
-`playwright.config.ts` (smoke), `playwright.unit.config.ts`, `playwright.visual.config.ts`. The config and report names are
+`playwright.config.ts` (smoke), `playwright.epic.config.ts` (Epic tests), `playwright.unit.config.ts`, `playwright.visual.config.ts`. The config and report names are
 fixed by the Testkube workflows.
 
 ## Safety in short
