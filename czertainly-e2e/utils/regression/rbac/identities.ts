@@ -16,8 +16,7 @@ export interface Credentials {
     password: string;
 }
 
-export const SECOND_IDENTITY_REQUEST =
-    'DevOps request 2 (a dedicated test account per tier: REG_RESTRICTED_USERNAME / REG_RESTRICTED_PASSWORD, plus the SYNC_POLICY / createUnknownUsers answers of request 4)';
+export const SECOND_IDENTITY_REQUEST = 'the identity-provider account of the tier\'s second test user: REG_RESTRICTED_USERNAME and REG_RESTRICTED_PASSWORD';
 
 export function restrictedIdentity(env: NodeJS.ProcessEnv = process.env): Credentials | undefined {
     const { restrictedUsername: username, restrictedPassword: password } = settings(env);
@@ -30,7 +29,11 @@ export function restrictedIdentity(env: NodeJS.ProcessEnv = process.env): Creden
  */
 export function secondIdentityBlocker(adminUsername: string, env: NodeJS.ProcessEnv = process.env): string | undefined {
     const dedicatedUser = restrictedIdentity(env);
-    if (!dedicatedUser) return `[blocked: second identity] ${SECOND_IDENTITY_REQUEST} — set both variables once the account exists`;
+    if (!dedicatedUser) {
+        const { restrictedUsername, restrictedPassword } = settings(env);
+        const missing = [!restrictedUsername && 'REG_RESTRICTED_USERNAME', !restrictedPassword && 'REG_RESTRICTED_PASSWORD'].filter(Boolean).join(' and ');
+        return `[blocked: second identity] ${missing} not set (${SECOND_IDENTITY_REQUEST}; the password as a secret variable)`;
+    }
     if (dedicatedUser.username.toLowerCase() === adminUsername.trim().toLowerCase()) {
         return 'REG_RESTRICTED_USERNAME equals the admin test user: the second identity must be a different account (the suite disables and re-roles it)';
     }
