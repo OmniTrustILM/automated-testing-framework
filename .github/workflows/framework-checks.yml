@@ -22,7 +22,8 @@ concurrency:
 jobs:
   checks:
     name: Unit tests and spec parsing
-    runs-on: ubuntu-latest
+    # Pinned: Playwright 1.58 cannot install Chromium on ubuntu-latest (26.04). Back to ubuntu-latest with #140.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     defaults:
       run:
