@@ -39,7 +39,8 @@ test.describe('@epic-369 notification profile', () => {
         await profiles.goToList();
         const uuid = await profiles.create({ name, recipientUser: env.username, internal: true, frequency: '1h', repetitions: 2 });
 
-        // 2. The detail shows the saved values ...
+        // 2. Open the detail afresh (reload: the values must come from the server, not from the form) ...
+        await page.reload();
         await expect(profiles.detailValue('Name')).toHaveText(name);
         await expect(profiles.detailValue('Internal Notification')).toHaveText('Yes');
         await expect(profiles.detailValue('Frequency')).toHaveText('1h');
@@ -51,6 +52,7 @@ test.describe('@epic-369 notification profile', () => {
             const profile = await getNotificationProfile(api, uuid);
             expect(profile.frequency).toBe('PT1H');
             expect(profile.repetitions).toBe(2);
+            expect(profile.recipients?.map((r) => r.name)).toEqual([env.username]);
         } finally {
             await api.dispose();
         }
