@@ -6,18 +6,19 @@
  *      objects by their `TIMELINE_ID` prefix and reads the outcome of the job run R<k>: the k-th run that started after T0.
  *      What "in run R<k>" means is the notifications and event firings that lie between the start of that run and the start of the next one.
  *      The last check removes the objects of the timeline; a seed first removes the leftovers of earlier timelines older than 6 hours.
- *      C6 and C7 are issued after the others, from the seed's RA profile with a long expiring threshold. That RA profile is removed with the seed's run;
- *      their status is expected to stay expiring, because a certificate is validated again only when its frequency is due (checked at R1 to R3).
+ *      C6 and C7 are uploaded self-signed certificates marked as trusted CA, valid for 10 days: no RA profile, which the seed's run removes at its end,
+ *      is needed to keep their status expiring.
  */
 
 import { APIRequestContext } from '@playwright/test';
 import { test, expect, getAuthenticatedApiContext } from '../../../fixtures/testFixtures';
 import { readSmokeState } from '../../../utils/smokeState';
+import { generateSelfSignedCert, uploadCertificate, findCertificateByFingerprint } from '../../../utils/certificateUtils';
 import {
     EXPIRING_EVENT, NOT_COMPLIANT_EVENT, ENVIRONMENT, Notification, associateComplianceProfile, archiveCertificate, assignRaProfile,
     attributeNameOf, call, cleanupStaleTimelines, cleanupTimeline, createComplianceSetup, createGroup, createNotificationProfile, createNotifyingTrigger,
     eventHistoryOf, findTimelineCertificates, getCertificate, isExpiring, isNotCompliant, issueCertificate, listMyNotifications, makeCompliance,
-    notificationsOf, prefixOf, runAfter, setExpiringThreshold, statusJobRuns, userUuidOf, within,
+    notificationsOf, prefixOf, runAfter, setGroup, statusJobRuns, userUuidOf, within,
 } from '../../../utils/epic369Utils';
 
 const SEED = 'seed';
@@ -104,11 +105,17 @@ test.describe('@epic-369 reminders timeline', () => {
                 await makeCompliance(api, compliant[name], compliance.attributeUuid, true);
             }
 
-            // S9, S10 set-up, after the other certificates: a threshold longer than the validity makes C6 and C7 expiring; they are in the groups of the expiring triggers.
-            await setExpiringThreshold(api, smoke.authorityUuid, smoke.raProfileUuid, 3650);
+            // S9, S10 set-up: self-signed certificates that live 10 days, shorter than the platform's expiring threshold, in the groups of the expiring triggers.
+            // The platform checks the chain before the validity, so each is marked as a trusted CA and validated again; then its status is expiring.
             const expiring: Record<string, string> = {};
             for (const [name, groupUuid] of [['c6', g4], ['c7', g5]] as const) {
-                expiring[name] = await issueCertificate(api, smoke.authorityUuid, smoke.raProfileUuid, `${prefix}${name}`, groupUuid);
+                const cert = generateSelfSignedCert(`${prefix}${name}`, 10);
+                await uploadCertificate(api, cert.pem);
+                await expect.poll(async () => (await findCertificateByFingerprint(api, cert.fingerprint))?.uuid, { message: `${name} appears after the upload`, timeout: 60_000 }).toBeTruthy();
+                expiring[name] = (await findCertificateByFingerprint(api, cert.fingerprint))!.uuid;
+                await setGroup(api, expiring[name], groupUuid);
+                await call(api, 'patch', `/v1/certificates/${expiring[name]}`, { trustedCa: true });
+                await call(api, 'get', `/v1/certificates/${expiring[name]}/validate`);
             }
 
             // T0: each certificate becomes not compliant, the compliance check runs on that certificate only.
