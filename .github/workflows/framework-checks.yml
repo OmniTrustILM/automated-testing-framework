@@ -22,7 +22,8 @@ concurrency:
 jobs:
   checks:
     name: Unit tests and spec parsing
-    runs-on: ubuntu-latest
+    # Pinned: Playwright 1.58 cannot install Chromium on ubuntu-latest (26.04). Back to ubuntu-latest with #140.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     defaults:
       run:
@@ -56,6 +57,10 @@ jobs:
       # Listing imports every spec (a broken import fails here) and never reaches a tier.
       - name: All specs parse (smoke)
         run: npx playwright test --list
+
+      # Epic tests live on the Epic branches until they are merged, so the list may be empty here.
+      - name: All specs parse (Epic tests)
+        run: npx playwright test -c playwright.epic.config.ts --list --pass-with-no-tests
 
       - name: All specs parse (REG-* regression)
         run: npx playwright test -c playwright.regression.config.ts --list
