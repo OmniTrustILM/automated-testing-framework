@@ -117,10 +117,19 @@ test.describe('@epic-369 reminders timeline', () => {
             // S2, S4, S5: the first notification of each, at once.
             const expectedAtT0: Record<string, number> = { c1: 1, c2: 1, c3: 1, c4: 1, c5: 1, c8: 2 };
             let notifications: Notification[] = [];
-            await expect.poll(async () => {
-                notifications = await listMyNotifications(api);
-                return Object.fromEntries(Object.keys(expectedAtT0).map((c) => [c, notificationsOf(notifications, compliant[c]).filter(isNotCompliant).length]));
-            }, { message: 'first notifications at T0 per certificate', timeout: 180_000, intervals: [5_000] }).toEqual(expectedAtT0);
+            try {
+                await expect.poll(async () => {
+                    notifications = await listMyNotifications(api);
+                    return Object.fromEntries(Object.keys(expectedAtT0).map((c) => [c, notificationsOf(notifications, compliant[c]).filter(isNotCompliant).length]));
+                }, { message: 'first notifications at T0 per certificate', timeout: 90_000, intervals: [5_000] }).toEqual(expectedAtT0);
+            } catch (e) {
+                for (const c of Object.keys(expectedAtT0)) {
+                    const sent = notificationsOf(notifications, compliant[c]).map((n) => `${new Date(n.sentAt).toISOString()} ${n.message.slice(-40)}`);
+                    const fired = (await eventHistoryOf(api, compliant[c])).map((f) => `${new Date(f.triggeredAt).toISOString()} ${f.event}`);
+                    console.log(`DIAGNOSTIC ${c}: notifications ${JSON.stringify(sent)}; firings ${JSON.stringify(fired)}`);
+                }
+                throw e;
+            }
             expect((await eventHistoryOf(api, compliant.c1)).filter((f) => f.event === NOT_COMPLIANT_EVENT).length, 'C1 event history shows the "Certificate not compliant" firing').toBe(1);
 
             // S6: C4 is compliant again at once, and the status job has not run in between: it has only the first notification.
