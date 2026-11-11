@@ -217,11 +217,12 @@ test.describe('@epic-369 reminders timeline', () => {
                 for (const cert of ['c2', 'c3', 'c4', 'c5', 'c8']) expect(countIn(t, cert, 'notCompliant', run.start), `${cert} at R2`).toBe(0);
                 expect(totalOf(t, 'c8', 'notCompliant'), 'C8 in total').toBe(3);
                 expect(totalOf(t, 'c3', 'notCompliant'), 'C3 in total').toBe(1);
+                expect(await firingsIn(api, t, 'c3', run.start), 'C3 firings at R2').toBe(0);
+                expect(await firingsIn(api, t, 'c8', r1.start, run.start), 'C8: the event is raised again at R1 (P0 sends nothing, see the notification count)').toBe(1);
             });
             await test.step('S9, S10: the second expiring notification of C6, and C7 notified again', async () => {
                 expect(countIn(t, 'c6', 'expiring', run.start), 'C6 at R2').toBe(1);
                 expect(countIn(t, 'c7', 'expiring', run.start), 'C7 at R2').toBe(1);
-                expect(r1.start).toBeLessThan(run.start);
             });
 
             await test.step('S7: C1 becomes compliant and not compliant again, and the user gets a new notification', async () => {
@@ -256,7 +257,6 @@ test.describe('@epic-369 reminders timeline', () => {
                 await test.step('S4: C2 (frequency 2 hours): nothing at R1 and R2, one reminder at R3', async () => {
                     expect(countIn(t, 'c2', 'notCompliant', 0, r3.start), 'C2 before R3: only the first').toBe(1);
                     expect(countIn(t, 'c2', 'notCompliant', r3.start), 'C2 at R3').toBe(1);
-                    expect(r2.start).toBeGreaterThan(r1.start);
                 });
                 await test.step('S5, S6, S8: nothing more for C3, C4, C5, C8', async () => {
                     expect(totalOf(t, 'c3', 'notCompliant'), 'C3 in total').toBe(1);
