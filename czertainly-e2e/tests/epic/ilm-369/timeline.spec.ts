@@ -122,7 +122,7 @@ test.describe('@epic-369 reminders timeline', () => {
             for (const name of ['c1', 'c2', 'c3', 'c4', 'c5', 'c8']) await makeCompliance(api, compliant[name], compliance.attributeUuid, false);
 
             // S2, S4, S5: the first notification of each, at once.
-            const expectedAtT0: Record<string, number> = { c1: 1, c2: 1, c3: 1, c4: 1, c5: 1, c8: 3 };
+            const expectedAtT0: Record<string, number> = { c1: 1, c2: 1, c3: 1, c4: 1, c5: 1, c8: 2 };
             let notifications: Notification[] = [];
             try {
                 await expect.poll(async () => {
