@@ -49,7 +49,7 @@ test.describe('@epic-369 notification profile', () => {
         const api = await getAuthenticatedApiContext(request, env);
         try {
             const profile = await getNotificationProfile(api, uuid);
-            expect(profile.frequency).toBe('PT2H');
+            expect(profile.frequency).toBe('PT1H');
             expect(profile.repetitions).toBe(2);
         } finally {
             await api.dispose();
