@@ -42,14 +42,14 @@ test.describe('@epic-369 notification profile', () => {
         // 2. The detail shows the saved values ...
         await expect(profiles.detailValue('Name')).toHaveText(name);
         await expect(profiles.detailValue('Internal Notification')).toHaveText('Yes');
-        await expect(profiles.detailValue('Frequency')).toHaveText('2h');
+        await expect(profiles.detailValue('Frequency')).toHaveText('1h');
         await expect(profiles.detailValue('Max Repetitions')).toHaveText('2');
 
         // ... and the API returns the ISO duration and the number.
         const api = await getAuthenticatedApiContext(request, env);
         try {
             const profile = await getNotificationProfile(api, uuid);
-            expect(profile.frequency).toBe('PT1H');
+            expect(profile.frequency).toBe('PT2H');
             expect(profile.repetitions).toBe(2);
         } finally {
             await api.dispose();
