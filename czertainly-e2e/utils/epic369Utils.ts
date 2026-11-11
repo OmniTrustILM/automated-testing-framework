@@ -157,6 +157,11 @@ export async function assignRaProfile(api: APIRequestContext, certUuid: string, 
     await call(api, 'patch', `/v1/certificates/${certUuid}`, { raProfileUuid });
 }
 
+/** The validation settings of an RA profile: a threshold longer than the certificate's validity makes its certificates expiring. */
+export async function setExpiringThreshold(api: APIRequestContext, authorityUuid: string, raProfileUuid: string, days: number): Promise<void> {
+    await call(api, 'patch', `/v1/authorities/${authorityUuid}/raProfiles/${raProfileUuid}/validation`, { enabled: true, frequency: 1, expiringThreshold: days });
+}
+
 export async function archiveCertificate(api: APIRequestContext, certUuid: string): Promise<void> {
     await call(api, 'patch', `/v1/certificates/${certUuid}/archive`);
 }
