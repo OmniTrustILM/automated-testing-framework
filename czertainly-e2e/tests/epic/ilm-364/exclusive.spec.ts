@@ -427,6 +427,10 @@ test.describe('access and security', () => {
         const archive = await send(R, 'PATCH', `/api/v1/certificates/${ownUuid}/archive`);
         expect(archive.status, `R archives G: ${archive.text}`).toBeLessThan(300);
 
+        const changed = await detail(admin, ownUuid);
+        expect((changed.groups as Json[]).map((g) => g.uuid), 'G has the group R set').toEqual([group.uuid]);
+        expect(changed.archived, 'G is archived').toBe(true);
+
         const foreignRegroup = await send(R, 'PATCH', `/api/v1/certificates/${foreignUuid}`, { groupUuids: [group.uuid] });
         expect(foreignRegroup.status, 'the group change on V\'s certificate is refused').toBe(403);
         const foreignArchive = await send(R, 'PATCH', `/api/v1/certificates/${foreignUuid}/archive`);
