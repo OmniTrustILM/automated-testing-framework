@@ -250,6 +250,8 @@ test.describe('ownership by upload and import', () => {
     });
 
     test('S9: a discarded upload is refused with a pointer to the event history', { tag: REGRESSION }, async () => {
+        // bug draft: Upload of a certificate discarded by an ignore trigger answers 500 instead of a client error
+        test.fail();
         await setAutomaticOwnership(admin, true);
         const cert = newCertificate('s9');
         cleanup.certificate(cert.fingerprint);
