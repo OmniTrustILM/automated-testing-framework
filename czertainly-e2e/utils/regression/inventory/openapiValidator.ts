@@ -1,0 +1,234 @@
+/**
+ * Validates API responses against the published OpenAPI document of the build under test (JSON Schema 2020-12 through
+ * Ajv), walks the members the document does not declare and checks the paging fields. The document is a local file named
+ * by `REG_OPENAPI_FILE`; without it `openapiSource()` gives a named skip reason, never a pass.
+ */
+import Ajv2020 from 'ajv/dist/2020';
+import type { ValidateFunction } from 'ajv/dist/2020';
+import addFormats from 'ajv-formats';
+import * as fs from 'fs';
+import { settings } from '../run/settings';
+import { isJsonObject, rowsOf } from '../json';
+import type { JsonObject } from '../json';
+
+export interface OpenApiDocument {
+    openapi: string;
+    paths: Record<string, JsonObject>;
+    components?: { schemas?: Record<string, JsonObject> } & JsonObject;
+}
+
+/** Parses an OpenAPI 3 document (JSON text); returns the problem instead of throwing. */
+export function parseOpenApi(text: string): { doc: OpenApiDocument } | { problem: string } {
+    let doc: unknown;
+    try {
+        doc = JSON.parse(text);
+    } catch {
+        return { problem: 'the file is not JSON (a YAML document must be converted; use the published *.json)' };
+    }
+    const d = doc as Partial<OpenApiDocument> | null;
+    if (!d || typeof d !== 'object' || typeof d.openapi !== 'string' || !/^3\./.test(d.openapi)) return { problem: 'the file is not an OpenAPI 3 document (no `openapi: 3.x`)' };
+    if (!d.paths || typeof d.paths !== 'object' || !Object.keys(d.paths).length) return { problem: 'the document has no paths' };
+    return { doc: d as OpenApiDocument };
+}
+
+let cached: { file: string; mtimeMs: number; doc: OpenApiDocument } | undefined;
+
+/** The document named by REG_OPENAPI_FILE, or the named reason to skip. Cached per file and modification time. */
+export function openapiSource(env: NodeJS.ProcessEnv = process.env): { doc: OpenApiDocument } | { skip: string } {
+    const file = settings(env).openapiFile;
+    if (!file) return { skip: 'REG_OPENAPI_FILE is not set: the core does not serve its OpenAPI document; point it at the published doc-openapi-ilm-core.json of the build under test (deploy / data gap, never a pass)' };
+    let stat: fs.Stats;
+    try {
+        stat = fs.statSync(file);
+    } catch {
+        return { skip: 'REG_OPENAPI_FILE names a file that cannot be read' };
+    }
+    if (cached && cached.file === file && cached.mtimeMs === stat.mtimeMs) return { doc: cached.doc };
+    const parsed = parseOpenApi(fs.readFileSync(file, 'utf8'));
+    if ('problem' in parsed) return { skip: `REG_OPENAPI_FILE: ${parsed.problem}` };
+    cached = { file, mtimeMs: stat.mtimeMs, doc: parsed.doc };
+    return { doc: parsed.doc };
+}
+
+// ------------------------------------------------------------------ validation
+
+/** A schema to validate against: a component by name, or the response schema of an operation. */
+export type SchemaUse = { kind: 'component'; name: string } | { kind: 'response'; path: string; method: 'get' | 'post'; status: string };
+
+export interface Violation {
+    instancePath: string;
+    schemaPath: string;
+    message: string;
+    value?: unknown;
+}
+
+const HEX_BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+
+function newAjv(): Ajv2020 {
+    const ajv = new Ajv2020({ allErrors: true, strict: false, validateSchema: false, validateFormats: true });
+    addFormats(ajv);
+    for (const f of ['int32', 'int64', 'float', 'double']) ajv.addFormat(f, { type: 'number', validate: () => true });
+    ajv.addFormat('byte', { type: 'string', validate: (s: string) => HEX_BASE64.test(s) });
+    for (const f of ['binary', 'password', 'uri-reference']) ajv.addFormat(f, true);
+    return ajv;
+}
+
+const lookup = (instance: unknown, pointer: string): unknown => {
+    let cur: any = instance;
+    for (const part of pointer.split('/').slice(1)) {
+        if (cur === null || cur === undefined) return undefined;
+        cur = cur[part.replace(/~1/g, '/').replace(/~0/g, '~')];
+    }
+    return cur;
+};
+
+/** The member reached by following `keys` from `value` (undefined as soon as a step is not an object). */
+const dig = (value: unknown, ...keys: string[]): unknown => keys.reduce<unknown>((cur, k) => (isJsonObject(cur) ? cur[k] : undefined), value);
+
+const short = (v: unknown): unknown => {
+    const text = JSON.stringify(v);
+    return text !== undefined && text.length > 120 ? `${text.slice(0, 117)}…` : v;
+};
+
+export class OpenApiValidator {
+    private readonly ajv = newAjv();
+    private readonly compiled = new Map<string, ValidateFunction>();
+
+    constructor(readonly doc: OpenApiDocument) {}
+
+    /** Does the document describe this response (component present, path / method / status with a JSON schema)? */
+    has(use: SchemaUse): boolean {
+        return this.rawSchema(use) !== undefined;
+    }
+
+    private rawSchema(use: SchemaUse): JsonObject | undefined {
+        if (use.kind === 'component') return this.doc.components?.schemas?.[use.name];
+        return dig(this.doc.paths, use.path, use.method, 'responses', String(use.status), 'content', 'application/json', 'schema') as JsonObject | undefined;
+    }
+
+    private key = (use: SchemaUse): string => (use.kind === 'component' ? `c:${use.name}` : `r:${use.method}:${use.path}:${use.status}`);
+
+    private compile(use: SchemaUse): ValidateFunction {
+        const k = this.key(use);
+        let fn = this.compiled.get(k);
+        if (!fn) {
+            const schema = this.rawSchema(use);
+            if (!schema) throw new Error(`the OpenAPI document has no ${k}`);
+            const wrapper: JsonObject = { $id: `urn:inventory-openapi:${this.compiled.size}`, components: this.doc.components ?? {}, ...(schema.$ref ? { $ref: schema.$ref } : schema) };
+            fn = this.ajv.compile(wrapper);
+            this.compiled.set(k, fn);
+        }
+        return fn;
+    }
+
+    /** The violations of `instance` (empty = it satisfies the schema). Each names where, which schema keyword and the offending value. */
+    validate(use: SchemaUse, instance: unknown): Violation[] {
+        const fn = this.compile(use);
+        if (fn(instance)) return [];
+        return (fn.errors ?? []).map((e) => ({
+            instancePath: e.instancePath || '/',
+            schemaPath: e.schemaPath,
+            message: `${e.message ?? 'invalid'}${e.params && Object.keys(e.params).length ? ` ${JSON.stringify(e.params)}` : ''}`,
+            value: short(lookup(instance, e.instancePath)),
+        }));
+    }
+
+    /** Members of `instance` the schema does not declare (objects with `properties` only), as JSON pointers. Reported, never failed. */
+    extraMembers(use: SchemaUse, instance: unknown): string[] {
+        const root = this.rawSchema(use);
+        if (!root) return [];
+        const out: string[] = [];
+        this.walk(root, instance, '', out, 0);
+        return out;
+    }
+
+    private resolve(schema: JsonObject | undefined): JsonObject | undefined {
+        let s = schema;
+        for (let i = 0; i < 20 && s?.$ref; i++) {
+            const m = /^#\/components\/schemas\/(.+)$/.exec(String(s.$ref));
+            if (!m) return undefined;
+            s = this.doc.components?.schemas?.[m[1]];
+        }
+        return s;
+    }
+
+    private properties(schema: JsonObject): Record<string, JsonObject> {
+        const merged: Record<string, JsonObject> = { ...(schema.properties ?? {}) };
+        for (const part of rowsOf(schema.allOf)) Object.assign(merged, this.properties(this.resolve(part) ?? {}));
+        return merged;
+    }
+
+    private walk(schema: JsonObject | undefined, value: unknown, at: string, out: string[], depth: number): void {
+        const s = this.resolve(schema);
+        if (!s || depth > 12 || value === null || value === undefined) return;
+        if (Array.isArray(value)) {
+            if (s.items) value.slice(0, 20).forEach((v, i) => this.walk(s.items as JsonObject, v, `${at}/${i}`, out, depth + 1));
+            return;
+        }
+        if (typeof value !== 'object') return;
+        const props = this.properties(s);
+        if (!Object.keys(props).length) return;
+        for (const [k, v] of Object.entries(value as JsonObject)) {
+            if (!(k in props)) {
+                if (s.additionalProperties === undefined || s.additionalProperties === false) out.push(`${at}/${k}`);
+                continue;
+            }
+            this.walk(props[k], v, `${at}/${k}`, out, depth + 1);
+        }
+    }
+}
+
+/** Formats the first violations for a failure message. */
+export function describeViolations(label: string, violations: Violation[], max = 8): string {
+    return violations.slice(0, max).map((v) => `${label} ${v.instancePath}: ${v.message} (schema ${v.schemaPath}; value ${JSON.stringify(v.value)})`).join('\n')
+        + (violations.length > max ? `\n… ${violations.length - max} more` : '');
+}
+
+// ------------------------------------------------------------------ list invariants (API-GEN-25)
+
+/** The array member of a page (the first member holding an array), its name and the rows. */
+export function pageRows(body: unknown): { member: string; rows: unknown[] } | undefined {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined;
+    for (const [k, v] of Object.entries(body as JsonObject)) if (Array.isArray(v)) return { member: k, rows: v };
+    return undefined;
+}
+
+/**
+ * The page invariants of a paged answer: totalPages = ceil(totalItems / itemsPerPage), no more rows than
+ * itemsPerPage, the echoed paging values are positive integers. A body without paging members is not a page: no problems.
+ */
+export function pageProblems(body: unknown): string[] {
+    const b = body as JsonObject | null;
+    if (!b || typeof b !== 'object' || Array.isArray(b) || !('totalItems' in b) || !('itemsPerPage' in b)) return [];
+    const problems: string[] = [];
+    const [total, per, pages, page] = [b.totalItems, b.itemsPerPage, b.totalPages, b.pageNumber];
+    for (const [name, v] of [['totalItems', total], ['itemsPerPage', per], ['totalPages', pages], ['pageNumber', page]] as const) {
+        if (!Number.isInteger(v) || (v as number) < 0) problems.push(`${name} is not a non-negative integer: ${JSON.stringify(v)}`);
+    }
+    if (problems.length) return problems;
+    if ((per as number) > 0 && pages !== Math.ceil((total as number) / (per as number))) problems.push(`totalPages ${String(pages)} ≠ ceil(totalItems ${String(total)} / itemsPerPage ${String(per)}) = ${Math.ceil((total as number) / (per as number))}`);
+    const rows = pageRows(body)?.rows ?? [];
+    if (rows.length > (per as number)) problems.push(`${rows.length} rows on a page of itemsPerPage ${String(per)}`);
+    return problems;
+}
+
+const ZONE = /(Z|[+-]\d{2}:?\d{2})$/;
+
+/**
+ * Every string that looks like a date-time (ISO date + `T` + time) must carry a zone designator; returns the offenders as `pointer: value`.
+ */
+export function dateTimeZoneProblems(body: unknown, max = 5): string[] {
+    const out: string[] = [];
+    const walk = (v: unknown, at: string): void => {
+        if (out.length >= max) return;
+        if (typeof v === 'string') {
+            if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v) && !ZONE.test(v)) out.push(`${at}: ${v}`);
+        } else if (Array.isArray(v)) v.slice(0, 200).forEach((x, i) => walk(x, `${at}/${i}`));
+        else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v as JsonObject)) walk(x, `${at}/${k}`);
+    };
+    walk(body, '');
+    return out;
+}
+
+/** Is a string base64 (the `content` of a certificate detail / download)? */
+export const isBase64 = (s: string): boolean => s.length % 4 === 0 && HEX_BASE64.test(s);

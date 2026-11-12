@@ -1,5 +1,17 @@
+/**
+ * TablePage — the smoke suite's generic list table.
+ *
+ * WHAT: the generic list table of the admin UI: the filter row (field, condition, value, Add), the rows, select-all and the
+ *       bulk delete with its confirmation.
+ * WHY: SMK-003 / 007 / 008 filter a list by the run's name and SMK-007 bulk-deletes its own rows; `bulkDelete` refuses a page
+ *      that shows anything but the expected rows (atf#99), so a wrong filter can never delete a foreign object. The smoke suite
+ *      calls these methods by name: they keep their names and their behaviour.
+ * HOW: filter selects go through the Select helper; the delete button is found by its icon (it should be the toolbar test id: FE
+ *      test-id request); never used by the regression suite, which has its own list widgets.
+ */
 import { Page, Locator, expect } from '@playwright/test';
 import { Logger } from '../utils/Logger';
+import { chooseOption } from './ui/select';
 
 const logger = new Logger('TablePage');
 
@@ -66,16 +78,9 @@ export class TablePage {
      * until clicked, so we click before fill.
      */
     async applyFilter(opts: { group: string; field: string; condition: string; value: string }): Promise<void> {
-        const pickOption = async (trigger: Locator, label: string, optionLabel: string) => {
-            await expect(trigger, `Filter ${label} trigger should be enabled`).toBeEnabled();
-            await trigger.click();
-            const option = this.page.getByRole('option', { name: optionLabel, exact: true });
-            await option.waitFor({ state: 'visible' });
-            await option.click();
-        };
-        await pickOption(this.filterGroupTrigger, 'Group', opts.group);
-        await pickOption(this.filterFieldTrigger, 'Field', opts.field);
-        await pickOption(this.filterConditionsTrigger, 'Condition', opts.condition);
+        await chooseOption(this.page, this.filterGroupTrigger, opts.group);
+        await chooseOption(this.page, this.filterFieldTrigger, opts.field);
+        await chooseOption(this.page, this.filterConditionsTrigger, opts.condition);
 
         await this.filterValueInput.click();  // focus first — FE removes readonly on focus
         await this.filterValueInput.fill(opts.value);

@@ -1,16 +1,18 @@
 /**
- * CustomAttributesPage — Page Object for Settings → Custom Attributes.
+ * CustomAttributesPage — the Custom Attributes list, its Create dialog and the delete-by-search flow.
  *
- * WHAT: encapsulates the Custom Attributes list page, the Create Custom Attribute
- *       modal, and the delete-by-search flow.
- * WHY: SMK-008 tests the full lifecycle (create → assign → unassign → delete);
- *      this POM keeps locators out of the spec file.
- * HOW: locators declared in constructor. Methods: goToList, openCreateModal,
- *      fillAndSubmitCreate, deleteByName.
+ * WHAT: the Custom Attributes list page under Settings, the Create Custom Attribute dialog (name, label, content type, resources)
+ *       and the search that finds an attribute by name so that it can be deleted.
+ * WHY: SMK-008 drives the whole lifecycle of a custom attribute (create, assign, unassign, delete); the locators stay here so
+ *      that the smoke spec reads as the steps of the flow. The smoke suite calls these methods by name: they keep their
+ *      names and their behaviour.
+ * HOW: locators are fields built in the constructor, by test id where the admin UI has one; the selects go through the Select
+ *      helper (their trigger buttons). Never used by the regression suite.
  */
 
 import { Page, Locator, expect } from '@playwright/test';
 import { Logger } from '../utils/Logger';
+import { chooseOption, chooseOptions, selectOfTrigger } from './ui/select';
 
 const logger = new Logger('CustomAttributesPage');
 
@@ -80,14 +82,10 @@ export class CustomAttributesPage {
         await this.nameInput.fill(opts.name);
         await this.labelInput.click();
         await this.labelInput.fill(opts.label);
-        await this.resourcesTrigger.click();
-        await this.page.getByRole('option', { name: opts.resource, exact: true }).click();
-        // Multi-select stays open after option click — press Escape to close it
-        await this.page.keyboard.press('Escape');
-        await this.contentTypeTrigger.click();
-        await this.page.getByRole('option', { name: opts.contentType, exact: true }).click();
-        await this.contentTypeTrigger.click();
-        await this.page.getByRole('option', { name: opts.contentType, exact: true }).click();
+        // Multi-select stays open after an option click: chooseOptions closes it with Escape
+        await chooseOptions(this.page, selectOfTrigger(this.page, this.resourcesTrigger), [opts.resource]);
+        await chooseOption(this.page, this.contentTypeTrigger, opts.contentType);
+        await chooseOption(this.page, this.contentTypeTrigger, opts.contentType);
         await this.submitButton.click();
         await expect(this.createModal).not.toBeVisible();
     }

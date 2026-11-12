@@ -1,0 +1,49 @@
+/**
+ * Run-end teardown handlers of the inventory types named by id: OID registry entries. runTeardown
+ * loads it through the registry's handler map; the handler proves the live object is this run's before it deletes it (through
+ * the guard) and proves it is gone afterwards. OID entries are removed on a proven local stack only.
+ */
+import { assertNotDryRun } from '../run/flags';
+import { guardApi } from '../guard/createGuard';
+import { carriesRunPrefix, LiveObjectMissing, OwnObjectViolation } from '../ledger/ownership';
+import { LedgerLine, ledgerKeyProblem } from '../ledger/ledger';
+import type { TeardownContext, TeardownHandler } from '../teardown/teardownTypes';
+import { hasLocalProof } from '../tier/localProof';
+import { isLocalTier } from '../tier/kind';
+import { pollUntil } from '../wait';
+import type { JsonObject } from '../json';
+
+/** The absence poll of the handler: five reads, `ctx.pollMs` apart (1 s), the first error raised. */
+const absencePoll = (ctx: TeardownContext) => ({ attempts: 5, intervalMs: ctx.pollMs ?? 1000, timeoutMs: 60_000, tolerateErrors: 0, onTimeout: 'return' as const });
+
+const oidEntries: TeardownHandler = {
+    action: 'local stack only: delete own OID entry (DELETE /api/v1/oids/{oid}) after its live run-prefixed displayName; absence proven by GET',
+    async remove(ctx: TeardownContext, line: LedgerLine) {
+        assertNotDryRun(`teardown.oidEntries ${line.uuid}`);
+        if (!isLocalTier() || !hasLocalProof()) {
+            throw new OwnObjectViolation('teardown.oidEntries', line, 'the OID registry is platform-level: an oidEntries line is removed on a proven local stack only', 'oidEntries', 'request');
+        }
+        const keyProblem = line.key === undefined ? 'the line carries no OID' : ledgerKeyProblem('oidEntries', line.uuid, line.key);
+        if (keyProblem) throw new OwnObjectViolation('teardown.oidEntries', line, keyProblem, 'oidEntries', 'request');
+        const url = `/api/v1/oids/${line.key}`;
+        const res = await ctx.api.get(url);
+        if (res.status() === 404) {
+            if (ctx.seen.has(line.uuid)) return;
+            throw new LiveObjectMissing('oidEntries', line.uuid, 'GET answered 404');
+        }
+        if (!res.ok()) throw new Error(`OID entry ${line.uuid}: GET answered ${res.status()}`);
+        const live = (await res.json()) as JsonObject;
+        if (typeof live?.displayName !== 'string' || !carriesRunPrefix(live.displayName, ctx.runId) || live.oid !== line.key) {
+            throw new OwnObjectViolation('teardown.oidEntries', line, `its live displayName does not start with ${ctx.runId}- (or the entry answers another OID)`, 'oidEntries');
+        }
+        ctx.seen.add(line.uuid);
+        const del = await guardApi(ctx.api, { localStack: true }).delete(url, { failOnStatusCode: false });
+        if (!del.ok() && del.status() !== 404) throw new Error(`OID entry ${line.uuid}: DELETE answered ${del.status()} - ${(await del.text()).slice(0, 300)}`);
+        const status = await pollUntil(async () => (await ctx.api.get(url)).status(), (s) => s === 404, absencePoll(ctx));
+        if (status === 404) return;
+        throw new Error(`OID entry ${line.uuid}: the delete was answered but the detail still answers: not deleted (absence not proven)`);
+    },
+};
+
+/** The raw handlers; runTeardown wraps each with wrapHandlerWithGuard when it loads this module. */
+export const teardownHandlers: Record<string, TeardownHandler> = { oidEntries };
