@@ -11,14 +11,16 @@
  *       Each certificate has a subject unique to the run; trigger conditions match that subject only.
  */
 
-import { test, expect, request as playwrightRequest, APIRequestContext } from '@playwright/test';
+import { test, expect, request as playwrightRequest, APIRequestContext, Browser, Page, TestInfo } from '@playwright/test';
 import { loadEnv, TestEnv } from '../../../utils/env';
 import { uniqueName } from '../../../utils/names';
 import { certificate, certificatesInOnePem, Identity } from '../../../utils/regression/inventory/importFixtures';
 import { newKeyMaterial } from '../../../utils/regression/pkiBuilders';
 import { readSmokeState } from '../../../utils/smokeState';
+import { LoginPage } from '../../../pages/LoginPage';
+import { CertificatePage } from '../../../pages/CertificatePage';
 import {
-    Cleanup, Json, accountCredentials, adminApi, apiAs, attributeValue, commonNameIs, createCustomAttribute, createGroup, createTeamUser,
+    Account, Cleanup, Json, accountCredentials, envFor, adminApi, apiAs, attributeValue, commonNameIs, createCustomAttribute, createGroup, createTeamUser,
     createUploadTrigger, customValue, detail, findByFingerprint, importEntries, importResults, inventoryRow, ownerChanges, pollUntil,
     readAutomaticOwnership, send, sendOk, setAutomaticOwnership, setOwner, subjectOf, upload, uploadAndFind, waitForCertificate,
 } from '../../../utils/epicOwnership';
@@ -43,6 +45,27 @@ let cleanup = new Cleanup();
 
 /** A new self-signed certificate with a subject unique to this run and scenario; every certificate shares one key pair (faster to make). */
 const newCertificate = (scenario: string): Identity => certificate(subjectOf(run, scenario), { keys });
+
+/** A browser signed in as the account (the login form, as the smoke user does); a failed test keeps its trace. */
+async function signedIn(browser: Browser, account: Account | 'admin', testInfo: TestInfo): Promise<{ page: Page; close: () => Promise<void> }> {
+    const context = await browser.newContext({ baseURL: env.baseUrl, ignoreHTTPSErrors: true, viewport: { width: 1440, height: 900 } });
+    await context.tracing.start({ screenshots: true, snapshots: true });
+    const page = await context.newPage();
+    const login = new LoginPage(page, account === 'admin' ? env : envFor(env, account));
+    await login.goto();
+    await login.login();
+    return {
+        page,
+        close: async () => {
+            const failed = testInfo.status !== testInfo.expectedStatus;
+            await context.tracing.stop(failed ? { path: testInfo.outputPath(`trace-${account}.zip`) } : undefined);
+            await context.close();
+        },
+    };
+}
+
+const ownerRow = (page: Page) => page.locator('tr[data-id="owner"]');
+const commonNameRow = (page: Page) => page.locator('tr[data-id="commonName"]');
 
 test.beforeAll(async () => {
     env = loadEnv();
@@ -393,5 +416,167 @@ test.describe('platform setting', () => {
         const emptyUpload = await send(admin, 'PUT', '/api/v1/settings/platform', { certificates: { upload: {} } });
         expect(emptyUpload.status, emptyUpload.text).toBeLessThan(300);
         await pollUntil(async () => (await readAutomaticOwnership(admin)) === false, 'the setting reads off after an empty upload part');
+    });
+});
+
+test.describe('import wizard (UI)', () => {
+    test('S10: import one certificate in the UI, open it in one click, see yourself as owner', { tag: REGRESSION }, async ({ browser }, testInfo) => {
+        await setAutomaticOwnership(admin, true);
+        const cert = newCertificate('s10');
+        cleanup.certificate(cert.fingerprint);
+        const { page, close } = await signedIn(browser, 'U', testInfo);
+        try {
+            const certificates = new CertificatePage(page);
+            await page.goto('/administrator/#/certificates');
+            await expect(certificates.main).toBeVisible();
+            await certificates.openImportModal();
+            await certificates.pasteCertificatePem(cert.pem);
+            await certificates.importPastedCertificate();
+
+            await certificates.importResults.getByTestId('import-open-certificate').click();
+
+            await expect(page, 'the detail opens in one click').toHaveURL(/\/certificates\/detail\//);
+            await expect(commonNameRow(page)).toContainText(cert.cn);
+            await expect(ownerRow(page), 'the detail shows U as owner').toContainText(nameOf('U'));
+
+            await page.goto('/administrator/#/certificates');
+            await page.reload();
+            const row = certificates.main.locator('tbody tr').filter({ hasText: cert.cn });
+            await expect(row, 'the inventory row shows U as owner').toContainText(nameOf('U'));
+        } finally {
+            await close();
+        }
+    });
+
+    test('S11: a discarded certificate in the import wizard is reported as not added', { tag: TAGS }, async ({ browser }, testInfo) => {
+        await setAutomaticOwnership(admin, true);
+        const cert = newCertificate('s11');
+        cleanup.certificate(cert.fingerprint);
+        await createUploadTrigger(admin, cleanup, { name: `${run}-s11-trigger`, conditions: [commonNameIs(cert.cn)], ignore: true });
+        const { page, close } = await signedIn(browser, 'U', testInfo);
+        try {
+            const certificates = new CertificatePage(page);
+            await page.goto('/administrator/#/certificates');
+            await expect(certificates.main).toBeVisible();
+            await certificates.openImportModal();
+            await certificates.importFileContent.fill(cert.pem);
+            await expect(certificates.importSubmitButton).toBeEnabled();
+            await certificates.importSubmitButton.click();
+
+            await expect(certificates.importResults).toBeVisible();
+            await expect(certificates.importResults.getByTestId('import-result-badge'), 'the entry shows Not imported').toHaveText('Not imported');
+            await expect(certificates.importResults.getByTestId('import-open-certificate'), 'no Open certificate link').toHaveCount(0);
+            await expect(certificates.importResults, 'the message says it was not uploaded').toContainText('was not uploaded');
+            await expect(certificates.importResults, 'the message points to the event history').toContainText('Certificate Uploaded Event History');
+        } finally {
+            await close();
+        }
+    });
+
+    test('S12: the import result lets the user open each created certificate', { tag: TAGS }, async ({ browser }, testInfo) => {
+        await setAutomaticOwnership(admin, true);
+        const { pem, certs } = certificatesInOnePem(3, `${run}-s12`);
+        certs.forEach((c) => cleanup.certificate(c.fingerprint));
+        const { page, close } = await signedIn(browser, 'U', testInfo);
+        try {
+            const certificates = new CertificatePage(page);
+            await page.goto('/administrator/#/certificates');
+            await expect(certificates.main).toBeVisible();
+            await certificates.openImportModal();
+            await certificates.importFileContent.fill(pem);
+            await expect(certificates.importSubmitButton).toHaveText(/Import 3 entr/);
+            await certificates.importSubmitButton.click();
+
+            const links = certificates.importResults.getByTestId('import-open-certificate');
+            await expect(links, 'each of the three entries has its own link').toHaveCount(3);
+            const hrefs = await links.evaluateAll((all) => all.map((a) => a.getAttribute('href') ?? ''));
+            expect(new Set(hrefs).size, 'three different details').toBe(3);
+
+            for (const href of hrefs) {
+                await page.goto(`/administrator/${href}`);
+                await expect(page).toHaveURL(/\/certificates\/detail\//);
+                await expect(ownerRow(page), `the detail ${href} shows U as owner`).toContainText(nameOf('U'));
+            }
+            const shownNames = [];
+            for (const href of hrefs) {
+                await page.goto(`/administrator/${href}`);
+                shownNames.push(await commonNameRow(page).innerText());
+            }
+            for (const c of certs) expect(shownNames.join('\n'), `the three details show ${c.cn}`).toContain(c.cn);
+        } finally {
+            await close();
+        }
+    });
+
+    test('S13: a user who may only upload opens the certificate they imported; others stay hidden', { tag: REGRESSION }, async ({ browser }, testInfo) => {
+        await setAutomaticOwnership(admin, true);
+        const ofU = newCertificate('s13-u');
+        const ofV = newCertificate('s13-v');
+        const ofR = newCertificate('s13-r');
+        [ofU, ofV, ofR].forEach((c) => cleanup.certificate(c.fingerprint));
+        await uploadAndFind(U, admin, ofU.pem, ofU.fingerprint);
+        await uploadAndFind(V, admin, ofV.pem, ofV.fingerprint);
+        const { page, close } = await signedIn(browser, 'R', testInfo);
+        try {
+            const certificates = new CertificatePage(page);
+            await page.goto('/administrator/#/certificates');
+            await expect(certificates.main).toBeVisible();
+            await certificates.openImportModal();
+            await certificates.pasteCertificatePem(ofR.pem);
+            await certificates.importPastedCertificate();
+            await certificates.importResults.getByTestId('import-open-certificate').click();
+
+            await expect(page).toHaveURL(/\/certificates\/detail\//);
+            await expect(commonNameRow(page), 'the detail opens without an access error').toContainText(ofR.cn);
+
+            await page.goto('/administrator/#/certificates');
+            await page.reload();
+            const rows = certificates.main.locator('tbody tr');
+            await expect(rows.filter({ hasText: ofR.cn }), 'R\'s certificate is in the inventory').toHaveCount(1);
+            await expect(rows.filter({ hasText: ofU.cn }), 'U\'s certificate is not shown').toHaveCount(0);
+            await expect(rows.filter({ hasText: ofV.cn }), 'V\'s certificate is not shown').toHaveCount(0);
+        } finally {
+            await close();
+        }
+    });
+});
+
+test.describe('platform setting (UI)', () => {
+    test('S18: the Automatic Ownership switch shows the saved value; turning it off keeps existing owners', { tag: TAGS }, async ({ browser }, testInfo) => {
+        await setAutomaticOwnership(admin, false);
+        const cert = newCertificate('s18');
+        cleanup.certificate(cert.fingerprint);
+        const { page, close } = await signedIn(browser, 'admin', testInfo);
+        const readOnlySwitch = page.getByTestId('switch-uploadAutomaticOwnership-input');
+        const editSwitch = page.getByRole('dialog', { name: 'Edit Platform Settings' }).getByTestId('switch-automaticOwnership-input');
+        const saveAs = async (on: boolean): Promise<void> => {
+            await page.goto('/administrator/#/settings?tab=certificates');
+            await page.getByTestId('pencil-button').click();
+            const dialog = page.getByRole('dialog', { name: 'Edit Platform Settings' });
+            await dialog.getByRole('tab', { name: 'Certificates' }).click();
+            await editSwitch.setChecked(on, { force: true });
+            await expect(editSwitch).toBeChecked({ checked: on });
+            await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+            await expect(dialog).toBeHidden();
+            await pollUntil(async () => (await readAutomaticOwnership(admin)) === on, `the platform setting reads ${on ? 'on' : 'off'}`);
+        };
+        try {
+            await saveAs(true);
+            await page.reload();
+            await page.getByRole('tab', { name: 'Certificates' }).click();
+            await expect(readOnlySwitch, 'after saving and reloading the switch shows on').toBeChecked();
+            expect(await readAutomaticOwnership(admin), 'the API returns on').toBe(true);
+
+            const uuid = await uploadAndFind(U, admin, cert.pem, cert.fingerprint);
+
+            await saveAs(false);
+            await page.reload();
+            await page.getByRole('tab', { name: 'Certificates' }).click();
+            await expect(readOnlySwitch, 'after the second save the read-only view shows off').not.toBeChecked();
+            expect(await readAutomaticOwnership(admin), 'the API returns off').toBe(false);
+            expect((await detail(admin, uuid)).owner, 'the certificate uploaded while the setting was on still has U as owner').toBe(nameOf('U'));
+        } finally {
+            await close();
+        }
     });
 });
