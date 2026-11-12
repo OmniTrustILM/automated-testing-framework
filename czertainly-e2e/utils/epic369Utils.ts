@@ -6,6 +6,7 @@
 import { APIRequestContext } from '@playwright/test';
 import { expect } from '@playwright/test';
 import { Logger } from './Logger';
+import { recordCleanupFailure } from './cleanupLedger';
 import { csrFromKey, newKeyMaterial } from './regression/pkiBuilders';
 import { waitForCertificateState } from './certificateUtils';
 
@@ -244,10 +245,20 @@ export async function cleanupTimeline(api: APIRequestContext, prefix: string): P
             failures.push(`${what}: ${String(e).slice(0, 300)}`);
         }
     };
+    // a failed list read is a failure of its own, never a reason to skip the rest
+    const listed = async <T>(what: string, read: () => Promise<T>, empty: T): Promise<T> => {
+        try {
+            return await read();
+        } catch (e) {
+            failures.push(`${what} list: ${String(e).slice(0, 300)}`);
+            return empty;
+        }
+    };
     const own = <T extends Named>(items: T[]): T[] => items.filter((i) => i.name.startsWith(prefix));
+    const ownList = async (what: string, path: string): Promise<Named[]> => own(await listed(what, async () => (await call(api, 'get', path)) as Named[], []));
 
-    const groups = own((await call(api, 'get', '/v1/groups')) as Named[]);
-    const certs = await findTimelineCertificates(api, prefix);
+    const groups = await ownList('groups', '/v1/groups');
+    const certs = await listed('certificates', () => findTimelineCertificates(api, prefix), {} as Record<string, string>);
     const certUuids = Object.values(certs);
 
     // The test user's notifications about these certificates.
@@ -258,21 +269,23 @@ export async function cleanupTimeline(api: APIRequestContext, prefix: string): P
     for (const group of groups) {
         for (const event of [NOT_COMPLIANT_EVENT, EXPIRING_EVENT]) await attempt(`association ${group.name}`, () => associateTriggers(api, event, group.uuid, []));
     }
-    for (const t of own((await call(api, 'get', '/v1/workflows/triggers')) as Named[])) await attempt(`trigger ${t.name}`, () => call(api, 'delete', `/v1/workflows/triggers/${t.uuid}`));
-    for (const a of own((await call(api, 'get', '/v1/workflows/actions')) as Named[])) await attempt(`action ${a.name}`, () => call(api, 'delete', `/v1/workflows/actions/${a.uuid}`));
-    for (const e of own((await call(api, 'get', '/v1/workflows/executions')) as Named[])) await attempt(`execution ${e.name}`, () => call(api, 'delete', `/v1/workflows/executions/${e.uuid}`));
-    const profiles: Named[] = [];
-    for (let page = 1; ; page++) {
-        const body = await call(api, 'get', `/v1/notificationProfiles?itemsPerPage=100&pageNumber=${page}`);
-        profiles.push(...((body?.notificationProfiles ?? []) as Named[]));
-        if (page >= Number(body?.totalPages ?? 0)) break;
-    }
+    for (const t of await ownList('triggers', '/v1/workflows/triggers')) await attempt(`trigger ${t.name}`, () => call(api, 'delete', `/v1/workflows/triggers/${t.uuid}`));
+    for (const a of await ownList('actions', '/v1/workflows/actions')) await attempt(`action ${a.name}`, () => call(api, 'delete', `/v1/workflows/actions/${a.uuid}`));
+    for (const e of await ownList('executions', '/v1/workflows/executions')) await attempt(`execution ${e.name}`, () => call(api, 'delete', `/v1/workflows/executions/${e.uuid}`));
+    const profiles = await listed('notification profiles', async () => {
+        const all: Named[] = [];
+        for (let page = 1; ; page++) {
+            const body = await call(api, 'get', `/v1/notificationProfiles?itemsPerPage=100&pageNumber=${page}`);
+            all.push(...((body?.notificationProfiles ?? []) as Named[]));
+            if (page >= Number(body?.totalPages ?? 0)) return all;
+        }
+    }, [] as Named[]);
     for (const p of own(profiles)) await attempt(`notification profile ${p.name}`, () => call(api, 'delete', `/v1/notificationProfiles/${p.uuid}`));
-    for (const p of own((await call(api, 'get', '/v2/complianceProfiles')) as Named[])) {
+    for (const p of await ownList('compliance profiles', '/v2/complianceProfiles')) {
         await attempt(`compliance profile ${p.name}`, () => call(api, 'delete', '/v2/complianceProfiles/force', [p.uuid]));
     }
-    for (const r of own((await call(api, 'get', '/v2/complianceProfiles/rules')) as Named[])) await attempt(`rule ${r.name}`, () => call(api, 'delete', `/v2/complianceProfiles/rules/${r.uuid}`));
-    const attributes = (await call(api, 'get', '/v1/attributes/custom')) as Named[];
+    for (const r of await ownList('compliance rules', '/v2/complianceProfiles/rules')) await attempt(`rule ${r.name}`, () => call(api, 'delete', `/v2/complianceProfiles/rules/${r.uuid}`));
+    const attributes = await listed('custom attributes', async () => (await call(api, 'get', '/v1/attributes/custom')) as Named[], []);
     for (const a of attributes.filter((x) => x.name === attributeNameOf(prefix))) await attempt(`custom attribute ${a.name}`, () => call(api, 'delete', `/v1/attributes/custom/${a.uuid}`));
     for (const [suffix, uuid] of Object.entries(certs)) await attempt(`certificate ${suffix}`, () => call(api, 'delete', `/v1/certificates/${uuid}`, undefined, [404]));
     for (const g of groups) await attempt(`group ${g.name}`, () => call(api, 'delete', `/v1/groups/${g.uuid}`));
@@ -291,7 +304,7 @@ export async function cleanupStaleTimelines(api: APIRequestContext, ownPrefix: s
     }
     for (const prefix of stale) {
         logger.info(`Removing the leftovers of the earlier timeline ${prefix}`);
-        await cleanupTimeline(api, prefix);
+        for (const message of await cleanupTimeline(api, prefix)) recordCleanupFailure({ resource: 'timeline', name: prefix, message });
     }
 }
 

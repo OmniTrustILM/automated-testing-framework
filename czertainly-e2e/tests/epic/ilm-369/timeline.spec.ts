@@ -3,6 +3,7 @@
  * A seed makes the certificates not compliant ("the start"); one check per later job run (run 1, 2, 3) finds them by TIMELINE_ID.
  */
 import { APIRequestContext } from '@playwright/test';
+import { minLifetimeForTest } from '../../../utils/auth/accessToken';
 import { test, expect, getAuthenticatedApiContext } from '../../../fixtures/testFixtures';
 import { recordCleanupFailure } from '../../../utils/cleanupLedger';
 import { generateSelfSignedCert, uploadCertificate, findCertificateByFingerprint } from '../../../utils/certificateUtils';
@@ -26,7 +27,7 @@ function requireSmokeState() {
 }
 
 async function withApi<T>(request: APIRequestContext, env: Parameters<typeof getAuthenticatedApiContext>[1], body: (api: APIRequestContext) => Promise<T>): Promise<T> {
-    const api = await getAuthenticatedApiContext(request, env);
+    const api = await getAuthenticatedApiContext(request, env, { minLifetimeMs: minLifetimeForTest(test.info().timeout) });
     try {
         return await body(api);
     } finally {
@@ -83,7 +84,8 @@ test.describe('@epic-369 reminders timeline', () => {
 
         await withApi(request, env, async (api) => {
             await cleanupStaleTimelines(api, prefix);
-            await cleanupTimeline(api, prefix);
+            const leftovers = await cleanupTimeline(api, prefix);
+            if (leftovers.length) throw new Error(`${ENVIRONMENT} objects of an earlier seed with this prefix could not be removed:\n${leftovers.join('\n')}`);
 
             const userUuid = await userUuidOf(api, env.username);
             const group = async (n: number) => createGroup(api, `${prefix}g${n}`);
