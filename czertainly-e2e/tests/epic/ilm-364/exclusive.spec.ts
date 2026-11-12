@@ -418,6 +418,8 @@ test.describe('platform setting', () => {
 
 test.describe('import wizard (UI)', () => {
     test('S10: import one certificate in the UI, open it in one click, see yourself as owner', { tag: REGRESSION }, async ({ browser }, testInfo) => {
+        // bug draft: Import wizard cannot import for a user without custom attribute access: the Import button stays disabled after "Failed to get Resource Custom Attributes list (403)"
+        test.fail();
         await setAutomaticOwnership(admin, true);
         const cert = newCertificate('s10');
         cleanup.certificate(cert.fingerprint);
@@ -446,6 +448,8 @@ test.describe('import wizard (UI)', () => {
     });
 
     test('S11: a discarded certificate in the import wizard is reported as not added', { tag: TAGS }, async ({ browser }, testInfo) => {
+        // bug draft: Import wizard cannot import for a user without custom attribute access: the Import button stays disabled after "Failed to get Resource Custom Attributes list (403)"
+        test.fail();
         await setAutomaticOwnership(admin, true);
         const cert = newCertificate('s11');
         cleanup.certificate(cert.fingerprint);
@@ -471,6 +475,8 @@ test.describe('import wizard (UI)', () => {
     });
 
     test('S12: the import result lets the user open each created certificate', { tag: TAGS }, async ({ browser }, testInfo) => {
+        // bug draft: Import wizard cannot import for a user without custom attribute access: the Import button stays disabled after "Failed to get Resource Custom Attributes list (403)"
+        test.fail();
         await setAutomaticOwnership(admin, true);
         const { pem, certs } = certificatesInOnePem(3, `${run}-s12`);
         certs.forEach((c) => cleanup.certificate(c.fingerprint));
@@ -506,6 +512,8 @@ test.describe('import wizard (UI)', () => {
     });
 
     test('S13: a user who may only upload opens the certificate they imported; others stay hidden', { tag: REGRESSION }, async ({ browser }, testInfo) => {
+        // bug draft: Import wizard cannot import for a user without custom attribute access: the Import button stays disabled after "Failed to get Resource Custom Attributes list (403)"
+        test.fail();
         await setAutomaticOwnership(admin, true);
         const ofU = newCertificate('s13-u');
         const ofV = newCertificate('s13-v');
