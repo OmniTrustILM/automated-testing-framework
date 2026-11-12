@@ -48,10 +48,11 @@ async function prepare(fx: Fixtures): Promise<Matrix> {
 const ISSUE_P1_400_BUG: ReadonlySet<Fixture> = new Set<Fixture>(['F4a', 'F4b', 'F4c', 'F6']);
 const ISSUE_P2_400_BUG: ReadonlySet<Fixture> = new Set<Fixture>(['F4b', 'F4c', 'F6']);
 
-/** A core#2842 cell, deferred to the marker step; only the known 400 or the correct 403 may wait there, anything else fails here. */
+/** A core#2842 cell: anything but the known 400 is checked in full here (a 403 with its deny body), so only the known 400 waits for the
+ * marker; the cell still goes there, so a row whose cells all answer 403 shows as an unexpected pass once core#2842 is fixed. */
 function knownIssueAnswer(fixture: Fixture, what: string, answer: ApiAnswer, cell: Cell): { what: string; answer: ApiAnswer; cell: Cell } {
     const known = answer.status === 400 && /Failed to submit certificate request/.test(answer.text);
-    expect(known || answer.status === 403, `${ROLE_WORDS[fixture]} ${what}, a role without certificate Create: ${answer.status} ${answer.text.slice(0, 200)}`).toBe(true);
+    if (!known) expectCell(`${ROLE_WORDS[fixture]} ${what}`, answer, cell);
     return { what, answer, cell };
 }
 
@@ -226,7 +227,7 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
                 const auditor = fixture === 'F6' ? await auditorDocument(m.api) : undefined;
                 await test.step(`${ROLE_WORDS[fixture]} is the second identity's only role and is in force`, async () => applyFixture(m.api, m.sw, fixture, m.refs, m.spec, auditor));
                 const { p1, p2, authorityUuid } = m.refs;
-                const knownIssueAnswers: Array<{ what: string; answer: ApiAnswer; cell: Cell }> = []; // asserted last, under the core#2842 marker
+                const knownIssueAnswers: Array<{ what: string; answer: ApiAnswer; cell: Cell }> = []; // re-asserted last, under the core#2842 marker
 
                 await test.step('GET /v1/raProfiles: the rows seen, or the refusal', async () => {
                     const cell = MATRIX_B_RA_LIST[fixture];
