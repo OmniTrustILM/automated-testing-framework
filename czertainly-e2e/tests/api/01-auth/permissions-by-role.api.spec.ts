@@ -44,6 +44,17 @@ async function prepare(fx: Fixtures): Promise<Matrix> {
     return { api: fx.api, spec, own: fx.own, refs, sw: restrictedRoleSwitch(fx.api, user, fx.restrictedToken!), token: fx.restrictedToken! };
 }
 
+/** Roles with RA profile Detail but no certificate Create: core answers the v2 issue 400 instead of 403 (core#2842), on P1, and on P2 where Detail is not denied. */
+const ISSUE_P1_400_BUG: ReadonlySet<Fixture> = new Set<Fixture>(['F4a', 'F4b', 'F4c', 'F6']);
+const ISSUE_P2_400_BUG: ReadonlySet<Fixture> = new Set<Fixture>(['F4b', 'F4c', 'F6']);
+
+/** A core#2842 cell, deferred to the marker step; only the known 400 or the correct 403 may wait there, anything else fails here. */
+function knownIssueAnswer(fixture: Fixture, what: string, answer: ApiAnswer, cell: Cell): { what: string; answer: ApiAnswer; cell: Cell } {
+    const known = answer.status === 400 && /Failed to submit certificate request/.test(answer.text);
+    expect(known || answer.status === 403, `${ROLE_WORDS[fixture]} ${what}, a role without certificate Create: ${answer.status} ${answer.text.slice(0, 200)}`).toBe(true);
+    return { what, answer, cell };
+}
+
 function expectCell(what: string, answer: ApiAnswer, cell: Cell): void {
     expect(answer.status, `${what}: ${answer.text.slice(0, 200)}`).toBe(cellStatus(cell));
     if (cellStatus(cell) === 403) expect(accessDeniedProblems(answer.contentType, answer.json, cellPair(cell)), `${what}: the 403 body`).toEqual([]);
@@ -199,9 +210,10 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
     }
 
     for (const fixture of FIXTURES) {
+        const issueBug = ISSUE_P1_400_BUG.has(fixture) ? 'core#2842' : undefined;
         test(`${GATE_WORDS[fixture]}`,
             testMeta({
-                id: 'API-AUTH-32', row: fixture, prio: 'P1', issue: 'ilm#427', needs: ['second-identity', 'ca'],
+                id: 'API-AUTH-32', row: fixture, prio: 'P1', issue: 'ilm#427', bug: issueBug, needs: ['second-identity', 'ca'],
                 rule: [
                     'issue = RA_PROFILE:DETAIL on the profile + AUTHORITY:DETAIL, then CERTIFICATE:CREATE, then the asynchronous CERTIFICATE:ISSUE; RA profile create = RA_PROFILE:CREATE + AUTHORITY:DETAIL; RA profile list = RA_PROFILE:LIST + AUTHORITY:LIST; core#2153; ilm#427 steps 4–6',
                     'write operations; Spring Security 7 method security: the nested-bean gates answer 403, never a silent 2xx',
@@ -214,6 +226,7 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
                 const auditor = fixture === 'F6' ? await auditorDocument(m.api) : undefined;
                 await test.step(`${ROLE_WORDS[fixture]} is the second identity's only role and is in force`, async () => applyFixture(m.api, m.sw, fixture, m.refs, m.spec, auditor));
                 const { p1, p2, authorityUuid } = m.refs;
+                const knownIssueAnswers: Array<{ what: string; answer: ApiAnswer; cell: Cell }> = []; // asserted last, under the core#2842 marker
 
                 await test.step('GET /v1/raProfiles: the rows seen, or the refusal', async () => {
                     const cell = MATRIX_B_RA_LIST[fixture];
@@ -243,9 +256,12 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
                     const issue = (ra: string) => callAs(m.api, m.token, 'POST', `/api/v2/operations/authorities/${authorityUuid}/raProfiles/${ra}/certificates`, { request: csr.derBase64, format: 'pkcs10', attributes: [], customAttributes: [] });
                     const onP1 = await issue(p1.uuid);
                     const accepted = m.own.probe('certificates', onP1, { name: runName(`rbac-issue-${fixture.toLowerCase()}`), note: 'issued by the second identity in the matrix' });
-                    expectCell(`${ROLE_WORDS[fixture]} issue on P1`, onP1, MATRIX_B_ISSUE_P1[fixture]);
+                    if (issueBug) knownIssueAnswers.push(knownIssueAnswer(fixture, 'issue on P1', onP1, MATRIX_B_ISSUE_P1[fixture]));
+                    else expectCell(`${ROLE_WORDS[fixture]} issue on P1`, onP1, MATRIX_B_ISSUE_P1[fixture]);
                     if (accepted) await waitIssued(m.api, accepted.uuid);
-                    expectCell(`${ROLE_WORDS[fixture]} issue on P2`, await issue(p2.uuid), MATRIX_B_ISSUE_P2[fixture]);
+                    const onP2 = await issue(p2.uuid);
+                    if (ISSUE_P2_400_BUG.has(fixture)) knownIssueAnswers.push(knownIssueAnswer(fixture, 'issue on P2', onP2, MATRIX_B_ISSUE_P2[fixture]));
+                    else expectCell(`${ROLE_WORDS[fixture]} issue on P2`, onP2, MATRIX_B_ISSUE_P2[fixture]);
                 });
 
                 await test.step('Administration: roles list, users list, role create, the second identity\'s own permissions endpoint', async () => {
@@ -273,6 +289,13 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
                             if (p.created) m.own.probe(p.created, res, { name: runName(`rbac-gate-${fixture.toLowerCase()}`), note: 'created by the second identity through a gate that should have refused' });
                             expect(res.status, `${ROLE_WORDS[fixture]}: ${p.what} must be refused: ${res.text.slice(0, 200)}`).toBe(403);
                         }
+                    });
+                }
+
+                if (knownIssueAnswers.length) {
+                    await test.step(`v2 issue without certificate Create: 403 (${issueBug}: answers 400 today)`, async () => {
+                        test.fail(true, `${issueBug}: the issue is refused with 400 "Failed to submit certificate request" instead of 403`);
+                        for (const k of knownIssueAnswers) expectCell(`${ROLE_WORDS[fixture]} ${k.what}`, k.answer, k.cell);
                     });
                 }
             });
