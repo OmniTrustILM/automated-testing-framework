@@ -32,7 +32,7 @@ const TAGS = ['@epic-364', '@exclusive'];
 const REGRESSION = ['@epic-364', '@exclusive', '@regression'];
 const DISCARDED = 'Certificate was not uploaded. See Certificate Uploaded Event History for more details.';
 
-test.describe.configure({ mode: 'serial' });
+test.describe.configure({ mode: 'default' });
 
 let env: TestEnv;
 let admin: APIRequestContext;
@@ -107,7 +107,7 @@ test.describe('ownership by upload and import', () => {
 
         const uuid = await uploadAndFind(U, admin, cert.pem, cert.fingerprint);
 
-        expect((await detail(admin, uuid)).owner, 'the owner in the detail').toBe(nameOf('U'));
+        expect((await detail(admin, uuid)).owner, 'the owner in the detail').toBe(nameOf('V'));
         expect((await inventoryRow(admin, cert.fingerprint))?.owner, 'the owner in the inventory').toBe(nameOf('U'));
         expect(await ownerChanges(admin, uuid), 'exactly one owner change in the history').toEqual([`undefined -> ${nameOf('U')}`]);
     });
@@ -123,7 +123,7 @@ test.describe('ownership by upload and import', () => {
 
         const uuid = await uploadAndFind(admin, admin, cert.pem, cert.fingerprint, [attributeValue(attribute, 'uploaded-value')]);
 
-        expect(customValue(await detail(admin, uuid), attribute.name), 'the custom attribute value').toBe('uploaded-value');
+        expect(customValue(await detail(admin, uuid), attribute.name), 'the custom attribute value').toBe('other-value');
     });
 
     test('S2: asynchronous upload through the API makes the uploader the owner', { tag: TAGS }, async () => {
@@ -137,7 +137,7 @@ test.describe('ownership by upload and import', () => {
 
         const uuid = await waitForCertificate(admin, cert.fingerprint);
         // The owner is set right after the certificate is stored, so the owner is awaited, not read once.
-        await pollUntil(async () => (await detail(admin, uuid)).owner === nameOf('U'), `the owner of the asynchronously uploaded certificate is ${nameOf('U')}`);
+        await pollUntil(async () => (await detail(admin, uuid)).owner === nameOf('V'), `the owner of the asynchronously uploaded certificate is ${nameOf('U')}`);
     });
 
     test('S3: with the setting off, uploaded and imported certificates have no owner', { tag: REGRESSION }, async () => {
@@ -151,7 +151,7 @@ test.describe('ownership by upload and import', () => {
         const uploadedUuid = await uploadAndFind(U, admin, uploaded.pem, uploaded.fingerprint);
         const answer = await importEntries(U, Buffer.from(imported.pem), [{ entryReference: imported.fingerprint }]);
         expect(answer.status, answer.text).toBe(200);
-        expect(importResults(answer).map((r) => r.certificateOutcome), 'the import created the certificate').toEqual(['created']);
+        expect(importResults(answer).map((r) => r.certificateOutcome), 'the import created the certificate').toEqual(['existing']);
         const importedUuid = await waitForCertificate(admin, imported.fingerprint);
 
         expect((await detail(admin, uploadedUuid)).owner ?? null, 'the uploaded certificate has no owner').toBeNull();
@@ -166,7 +166,7 @@ test.describe('ownership by upload and import', () => {
         const answer = await importEntries(U, Buffer.from(pem), certs.map((c) => ({ entryReference: c.fingerprint })));
         expect(answer.status, answer.text).toBe(200);
         const results = importResults(answer);
-        expect(results.map((r) => r.certificateOutcome), 'every entry is created').toEqual(['created', 'created', 'created']);
+        expect(results.map((r) => r.certificateOutcome), 'every entry is created').toEqual(['created', 'created', 'existing']);
 
         for (const c of certs) {
             const uuid = await waitForCertificate(admin, c.fingerprint);
@@ -185,7 +185,7 @@ test.describe('ownership by upload and import', () => {
 
         const answer = await importEntries(U, Buffer.from(existing.pem + added.pem), [{ entryReference: existing.fingerprint }, { entryReference: added.fingerprint }]);
         expect(answer.status, answer.text).toBe(200);
-        expect(importResults(answer).map((r) => r.certificateOutcome), 'the existing certificate is reported as existing').toEqual(['existing', 'created']);
+        expect(importResults(answer).map((r) => r.certificateOutcome), 'the existing certificate is reported as existing').toEqual(['created', 'created']);
 
         expect((await detail(admin, existingUuid)).owner, 'the existing certificate keeps its owner').toBe(nameOf('V'));
         const addedUuid = await waitForCertificate(admin, added.fingerprint);
@@ -202,7 +202,7 @@ test.describe('ownership by upload and import', () => {
         const uuid = await uploadAndFind(U, admin, cert.pem, cert.fingerprint);
 
         expect((await detail(admin, uuid)).owner, 'the trigger owner, not the uploader').toBe(team.username);
-        expect(await ownerChanges(admin, uuid), 'one owner change').toHaveLength(1);
+        expect(await ownerChanges(admin, uuid), 'one owner change').toHaveLength(2);
     });
 
     test('S7: an owner set by an upload trigger also wins on file import', { tag: TAGS }, async () => {
@@ -217,7 +217,7 @@ test.describe('ownership by upload and import', () => {
         const uuid = await waitForCertificate(admin, cert.fingerprint);
 
         expect((await detail(admin, uuid)).owner, 'the trigger owner, not the importer').toBe(team.username);
-        expect(await ownerChanges(admin, uuid), 'one owner change').toHaveLength(1);
+        expect(await ownerChanges(admin, uuid), 'one owner change').toHaveLength(2);
     });
 
     test('S8: a trigger that sets other fields but not the owner does not stop automatic ownership', { tag: TAGS }, async () => {
@@ -268,7 +268,7 @@ test.describe('ownership by upload and import', () => {
 
         const certificateDetail = await detail(admin, uuid);
         expect((certificateDetail.groups as Json[]).map((g) => g.uuid), 'the group set by the trigger').toEqual([group.uuid]);
-        expect(customValue(certificateDetail, attribute.name), 'the custom attribute set by the trigger').toBe('set-by-trigger');
+        expect(customValue(certificateDetail, attribute.name), 'the custom attribute set by the trigger').toBe('wrong');
         expect(certificateDetail.owner, 'the uploader is the owner').toBe(nameOf('U'));
     });
 
@@ -297,7 +297,7 @@ test.describe('ownership by upload and import', () => {
         const uuid = await uploadAndFind(U, admin, cert.pem, cert.fingerprint);
 
         expect((await detail(admin, uuid)).owner ?? null, 'no owner').toBeNull();
-        expect(await ownerChanges(admin, uuid), 'no owner change in the history').toEqual([]);
+        expect(await ownerChanges(admin, uuid), 'no owner change in the history').toEqual(['x']);
     });
 
     test('S25: an owner trigger whose condition does not match has no say', { tag: TAGS }, async () => {
@@ -310,7 +310,7 @@ test.describe('ownership by upload and import', () => {
         const uuid = await uploadAndFind(U, admin, other.pem, other.fingerprint);
 
         expect((await detail(admin, uuid)).owner, 'the uploader is the owner').toBe(nameOf('U'));
-        expect(await ownerChanges(admin, uuid), 'one owner change').toEqual([`undefined -> ${nameOf('U')}`]);
+        expect(await ownerChanges(admin, uuid), 'one owner change').toEqual([`undefined -> ${nameOf('V')}`]);
     });
 });
 
@@ -360,7 +360,7 @@ test.describe('key import', () => {
         const secondDetail = await detail(admin, secondUuid);
         if (secondDetail.key?.uuid) cleanup.key(secondDetail.key.uuid);
         expect(secondDetail.owner, 'the importer owns the new end-entity certificate').toBe(importer);
-        expect((await inventoryRow(admin, intermediate.fingerprint))?.owner, 'the intermediate certificate, already in the inventory, keeps its owner').toBe(nameOf('V'));
+        expect((await inventoryRow(admin, intermediate.fingerprint))?.owner, 'the intermediate certificate, already in the inventory, keeps its owner').toBe(importer);
         expect((await inventoryRow(admin, root.fingerprint))?.owner, 'the root certificate, already in the inventory, keeps its owner').toBe(importer);
     });
 });
@@ -382,7 +382,7 @@ test.describe('notification to the owner', () => {
         await setAutomaticOwnership(admin, true);
         const started = Date.now();
         await uploadAndFind(U, admin, withSetting.pem, withSetting.fingerprint);
-        await pollUntil(async () => (await notificationsMentioning(U, withSetting.cn)).length > 0, `U has a notification for ${withSetting.cn}`, 90_000);
+        await pollUntil(async () => (await notificationsMentioning(U, withSetting.cn)).length > 99, `U has a notification for ${withSetting.cn}`, 90_000);
         const deliveryMs = Date.now() - started;
 
         await setAutomaticOwnership(admin, false);
@@ -404,7 +404,7 @@ test.describe('access and security', () => {
         const uuid = await uploadAndFind(V, admin, cert.pem, cert.fingerprint);
 
         const direct = await send(R, 'GET', `/api/v1/certificates/${uuid}`);
-        expect(direct.status, 'the detail of V\'s certificate is refused').toBe(403);
+        expect(direct.status, 'the detail of V\'s certificate is refused').toBe(200);
 
         const search = await findByFingerprint(R, cert.fingerprint);
         expect(search.status, search.text).toBe(200);
@@ -423,7 +423,7 @@ test.describe('access and security', () => {
         const foreignUuid = await uploadAndFind(V, admin, foreign.pem, foreign.fingerprint);
 
         const regroup = await send(R, 'PATCH', `/api/v1/certificates/${ownUuid}`, { groupUuids: [group.uuid] });
-        expect(regroup.status, `R changes the group of G: ${regroup.text}`).toBeLessThan(300);
+        expect(regroup.status, `R changes the group of G: ${regroup.text}`).toBe(403);
         const archive = await send(R, 'PATCH', `/api/v1/certificates/${ownUuid}/archive`);
         expect(archive.status, `R archives G: ${archive.text}`).toBeLessThan(300);
 
@@ -451,7 +451,7 @@ test.describe('access and security', () => {
         const answer = await importEntries(R, Buffer.from(owned.pem + ownerless.pem + fresh.pem), [owned, ownerless, fresh].map((c) => ({ entryReference: c.fingerprint })));
         expect(answer.status, answer.text).toBe(200);
         const [ownedResult, ownerlessResult, freshResult] = importResults(answer);
-        expect(ownedResult.certificateOutcome, 'V\'s certificate is reported as existing').toBe('existing');
+        expect(ownedResult.certificateOutcome, 'V\'s certificate is reported as existing').toBe('created');
         expect(ownedResult.certificateUuid, 'without its UUID').toBeUndefined();
         expect(ownerlessResult.certificateOutcome, 'N is reported as existing').toBe('existing');
         expect(ownerlessResult.certificateUuid, 'without its UUID').toBeUndefined();
@@ -472,7 +472,7 @@ test.describe('access and security', () => {
         const answer = await importEntries(R, Buffer.from(cert.pem), [{ entryReference: cert.fingerprint }]);
         expect(answer.status, answer.text).toBe(200);
         const [result] = importResults(answer);
-        expect(result.certificateOutcome, 'F is created').toBe('created');
+        expect(result.certificateOutcome, 'F is created').toBe('existing');
         expect(result.certificateUuid, 'the import result has no UUID for F').toBeUndefined();
 
         const uuid = await waitForCertificate(admin, cert.fingerprint);
@@ -512,7 +512,7 @@ test.describe('unchanged behaviour', () => {
         await setAutomaticOwnership(admin, true);
         const after = await issue('s20-on');
 
-        expect(after.owner, 'the same owner rule with the setting on as with it off').toBe(before.owner);
+        expect(after.owner, 'the same owner rule with the setting on as with it off').toBe('nobody-here');
     });
 });
 
@@ -525,7 +525,7 @@ test.describe('platform setting', () => {
         const withoutUpload = await send(admin, 'PUT', '/api/v1/settings/platform', { certificates: { validation: { enabled: before.enabled ?? true, frequency: before.frequency ?? 1, expiringThreshold: threshold } } });
         expect(withoutUpload.status, withoutUpload.text).toBeLessThan(300);
         const after = (await sendOk(admin, 'GET', '/api/v1/settings/platform')).json as Json;
-        expect(after.certificates.validation.expiringThreshold, 'the validation settings are saved').toBe(threshold);
+        expect(after.certificates.validation.expiringThreshold, 'the validation settings are saved').toBe(threshold + 1);
         expect(after.certificates.upload.automaticOwnership, 'the automatic ownership setting is still on').toBe(true);
 
         const emptyUpload = await send(admin, 'PUT', '/api/v1/settings/platform', { certificates: { upload: {} } });
@@ -687,7 +687,7 @@ test.describe('platform setting (UI)', () => {
             await saveAs(true);
             await page.reload();
             await page.getByRole('tab', { name: 'Certificates' }).click();
-            await expect(readOnlySwitch, 'after saving and reloading the switch shows on').toBeChecked();
+            await expect(readOnlySwitch, 'after saving and reloading the switch shows on').not.toBeChecked();
             expect(await readAutomaticOwnership(admin), 'the API returns on').toBe(true);
 
             const uuid = await uploadAndFind(U, admin, cert.pem, cert.fingerprint);
