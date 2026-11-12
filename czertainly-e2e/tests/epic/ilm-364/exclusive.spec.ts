@@ -16,6 +16,8 @@ import { loadEnv, TestEnv } from '../../../utils/env';
 import { uniqueName } from '../../../utils/names';
 import { certificate, certificatesInOnePem, Identity, pkcs12Chain } from '../../../utils/regression/inventory/importFixtures';
 import { newKeyMaterial } from '../../../utils/regression/pkiBuilders';
+import { SCP_ATTR } from '../../../utils/regression/platform/cryptoAlgorithmCases';
+import { tokenAlias } from '../../../utils/regression/platform/tokens';
 import { readSmokeState } from '../../../utils/smokeState';
 import { LoginPage } from '../../../pages/LoginPage';
 import { CertificatePage } from '../../../pages/CertificatePage';
@@ -327,7 +329,7 @@ test.describe('key import', () => {
             expect(inspection.status, inspection.text).toBe(200);
             const entries = ((inspection.json as Json).entries as Json[]).filter((e) => e.importable !== false);
             expect(entries.length, 'the file has an entry to import').toBeGreaterThan(0);
-            const answer = await importEntries(as, file.bytes, entries.map((e) => ({ entryReference: e.entryReference, keyDestination: { tokenProfileUuid, keyName } })), { passphrase: 'epic-pass' });
+            const answer = await importEntries(as, file.bytes, entries.map((e) => ({ entryReference: e.entryReference, keyDestination: { tokenProfileUuid, keyName, importAttributes: [{ name: SCP_ATTR.keyAlias.name, uuid: SCP_ATTR.keyAlias.uuid, version: 'v2', contentType: 'string', content: [{ data: tokenAlias(keyName) }] }] } })), { passphrase: 'epic-pass' });
             expect(answer.status, answer.text).toBe(200);
             expect(importResults(answer).map((r) => r.imported), `every entry is imported: ${answer.text.slice(0, 1500)}`).not.toContain(false);
             return answer;
