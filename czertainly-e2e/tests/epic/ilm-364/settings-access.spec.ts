@@ -22,7 +22,7 @@ test('S17: a user without permission to update settings cannot turn the setting 
         const before = await readAutomaticOwnership(admin);
         try {
             const answer = await send(restricted, 'PUT', '/api/v1/settings/platform', { certificates: { upload: { automaticOwnership: !before } } });
-            expect(answer.status, `refused for missing permission: ${answer.text}`).toBe(200);
+            expect(answer.status, `refused for missing permission: ${answer.text}`).toBe(403);
             expect(await readAutomaticOwnership(admin), 'the setting keeps its value').toBe(before);
         } finally {
             if ((await readAutomaticOwnership(admin)) !== before) await setAutomaticOwnership(admin, before);
