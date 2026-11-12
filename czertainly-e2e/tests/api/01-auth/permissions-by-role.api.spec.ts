@@ -2,7 +2,7 @@
  * API-AUTH-30, 31, 32, 33 — The RBAC decision table through the API as the dedicated second identity (ilm#427). The 403
  * body's `statusCode` is 403 (interfaces#887).
  */
-import { BATTERY_TEST_MS, ISSUING_MATRIX_ROW_TEST_MS, LIFECYCLE_MS, LONG_TEST_MS } from '../../../utils/regression/timeouts';
+import { ISSUING_MATRIX_ROW_TEST_MS, LIFECYCLE_MS } from '../../../utils/regression/timeouts';
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { callAs, isNotGrantableAction, replicaBlocker } from '../../../utils/regression/rbac/identities';
 import { accessDeniedProblems, Cell, cellPair, cellStatus, CERT_KEYS, CertKey, DENY_NUANCES, Fixture, FIXTURES, MATRIX_A_DETAIL, MATRIX_A_LIST, MATRIX_A_PROFILE, MATRIX_B_ISSUE_P1, MATRIX_B_ISSUE_P2, MATRIX_B_RA_CREATE, MATRIX_B_RA_DETAIL_P1, MATRIX_B_RA_DETAIL_P2, MATRIX_B_RA_LIST, MATRIX_B_ROLE_CREATE, MATRIX_B_ROLES_LIST, MATRIX_B_USER_PERMISSIONS, MATRIX_B_USERS_LIST, NESTED_GATE_FIXTURES } from '../../../utils/regression/rbac/permissionMatrix';
@@ -88,7 +88,7 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
             ],
         }),
         async ({ api, anonymousApi, env, own, restrictedToken }) => {
-            test.setTimeout(LONG_TEST_MS);
+            test.setTimeout(ISSUING_MATRIX_ROW_TEST_MS); // the first row of a run makes the fixtures: two issues on P1 / P2
             const m = await prepare({ api, env, own, restrictedToken: restrictedToken?.bearer() });
             await test.step('The role without permissions is the second identity\'s only role', async () => applyFixture(m.api, m.sw, 'F0', m.refs, m.spec));
 
@@ -127,7 +127,7 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
             rule: ['the body field `statusCode` of a 403 is 403 (interfaces#887: the DTO getter forced it to 400 before the fix)', 'needs the second identity'],
         }),
         async ({ api, env, own, restrictedToken }) => {
-            test.setTimeout(BATTERY_TEST_MS);
+            test.setTimeout(ISSUING_MATRIX_ROW_TEST_MS); // the first row of a run makes the fixtures: two issues on P1 / P2
             const m = await prepare({ api, env, own, restrictedToken: restrictedToken?.bearer() });
             await applyFixture(m.api, m.sw, 'F0', m.refs, m.spec);
             const res = await callAs(m.api, m.token, 'GET', '/api/v1/roles');

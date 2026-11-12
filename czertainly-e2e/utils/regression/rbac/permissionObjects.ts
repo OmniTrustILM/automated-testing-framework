@@ -90,7 +90,7 @@ export async function ensureRbacObjects(api: GuardedApi, spec: string): Promise<
         if (known && onRa && (await apiJson<JsonObject>(api, 'GET', `/api/v1/certificates/${known.uuid}`)).state !== 'issued') known = undefined;
         const cert = known ?? (onRa
             ? await issueOwnCertificate(api, { uuid: onRa.uuid, name: onRa.name, authorityUuid: pick.authorityUuid }, spec,
-                { suffix: `rbac-${key}`, note: `RBAC fixture certificate ${key} (issued on ${plan.ra!.toUpperCase()})` })
+                { suffix: `rbac-${key}`, fillRequiredAttributes: true, note: `RBAC fixture certificate ${key} (issued on ${plan.ra!.toUpperCase()})` })
             : await uploadOwnCertificate(api, selfSignedPem(cn).pem, cn, spec, `RBAC fixture certificate ${key} (self-signed upload)`));
         certs[key] = { uuid: cert.uuid, name: cert.name, kind: 'own' };
         const groups = plan.groups.map((g) => refs[g].uuid);

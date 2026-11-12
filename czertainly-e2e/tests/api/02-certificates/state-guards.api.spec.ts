@@ -162,8 +162,8 @@ test.describe('Certificate state and operation refusal matrix', { tag: tags.api 
                     await waitForCertificateState(api, c.uuid, 'failed', ISSUED_WAIT_MS, { failOn: ['issued', 'rejected'] });
                     return c;
                 } catch (e) {
-                    // Only the CA's answer to the e-mail SAN says whether the fixture ends `failed` or `issued`.
-                    if ((await getCertificate(api, c.uuid)).state !== 'issued') throw e;
+                    // Only the CA's answer to the e-mail SAN says whether the fixture ends `failed` or `issued`; any other wait error fails.
+                    if (!/reached "issued" instead of "failed"/.test(String(e))) throw e;
                     return undefined;
                 }
             }) ?? await test.step('Fixture fallback: the CA accepted the e-mail SAN → two parallel renews, the one EJBCA rolls back is failed', async () => {
