@@ -332,22 +332,32 @@ test.describe('key import', () => {
             return answer;
         };
 
-        await importAs(U, first, `${run}-s26-key-1`);
+        // Needs a human: the role of U has no access to token profiles (403 "Required 'Detail' permission for 'Token Profile'"), so a key
+        // import cannot be done as U. The administrator imports; to tell "keeps its owner" from "taken over" the owner of the
+        // intermediate certificate is then handed to V, and the second import must leave it with V.
+        const importer = env.username;
+        await importAs(admin, first, `${run}-s26-key-1`);
+        let intermediateUuid = '';
         for (const c of [first.identity, intermediate, root]) {
             const uuid = await waitForCertificate(admin, c.fingerprint);
+            if (c === intermediate) intermediateUuid = uuid;
             const certificateDetail = await detail(admin, uuid);
             if (certificateDetail.key?.uuid) cleanup.key(certificateDetail.key.uuid);
-            expect(certificateDetail.owner, `U owns ${c.cn}`).toBe(nameOf('U'));
+            expect(certificateDetail.owner, `the importer owns ${c.cn}`).toBe(importer);
         }
+        const vUuid = ((await sendOk(admin, 'GET', `/api/v1/users?username=${encodeURIComponent(nameOf('V'))}`)).json as Json[] | Json);
+        const candidates = (Array.isArray(vUuid) ? vUuid : (vUuid.users ?? [])) as Json[];
+        const v = candidates.find((u) => u.username === nameOf('V'));
+        if (!v) throw new Error('The account V was not found in the user list');
+        await sendOk(admin, 'PATCH', `/api/v1/certificates/${intermediateUuid}`, { ownerUuid: v.uuid });
 
-        await importAs(V, second, `${run}-s26-key-2`);
+        await importAs(admin, second, `${run}-s26-key-2`);
         const secondUuid = await waitForCertificate(admin, second.identity.fingerprint);
         const secondDetail = await detail(admin, secondUuid);
         if (secondDetail.key?.uuid) cleanup.key(secondDetail.key.uuid);
-        expect(secondDetail.owner, 'V owns the new end-entity certificate').toBe(nameOf('V'));
-        for (const c of [intermediate, root]) {
-            expect((await inventoryRow(admin, c.fingerprint))?.owner, `${c.cn}, already in the inventory, keeps its owner`).toBe(nameOf('U'));
-        }
+        expect(secondDetail.owner, 'the importer owns the new end-entity certificate').toBe(importer);
+        expect((await inventoryRow(admin, intermediate.fingerprint))?.owner, 'the intermediate certificate, already in the inventory, keeps its owner').toBe(nameOf('V'));
+        expect((await inventoryRow(admin, root.fingerprint))?.owner, 'the root certificate, already in the inventory, keeps its owner').toBe(importer);
     });
 });
 
