@@ -155,6 +155,6 @@ test.describe.serial('Removing keys from the inventory in bulk', devTests(), () 
     const key = await admin.get<KeyDetail>(`/v1/keys/${compromisedUuid}`);
     expect(key.items.map((item) => item.state)).toEqual(['destroyedCompromised', 'destroyedCompromised']);
     const keys = await admin.allTokenKeys(provisioned.token.uuid, provisioned.tokenProfile.uuid);
-    expect(keys.find((listed) => listed.label === provisioned.planted.compromised)).toBeUndefined();
+    expect(keys.find((listed) => listed.storageName === provisioned.planted.compromised)).toBeUndefined();
   });
 });

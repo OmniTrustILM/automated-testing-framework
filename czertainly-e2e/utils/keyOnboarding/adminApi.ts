@@ -173,7 +173,7 @@ export class AdminApi {
 
 export interface TokenKey {
   keyPairMeta?: MetadataAttribute[];
-  label?: string;
+  storageName?: string;
   keyAlgorithm: string;
   length?: number | null;
   status:
