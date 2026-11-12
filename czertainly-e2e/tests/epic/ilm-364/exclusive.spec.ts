@@ -492,7 +492,7 @@ test.describe('unchanged behaviour', () => {
         if (!state) throw new Error('The RA profile of the global setup is missing (.smoke-state.json)');
         const issue = async (name: string): Promise<{ uuid: string; owner: unknown }> => {
             const cn = subjectOf(run, name);
-            const csr = csrFromKey(newKeyPair(), cn, { dns: [cn], ip: ['192.0.2.20'] });
+            const csr = csrFromKey(newKeyPair(), cn, { dns: [cn], ip: [] });
             const answer = await send(admin, 'POST', `/api/v2/operations/authorities/${state.authorityUuid}/raProfiles/${state.raProfileUuid}/certificates`, {
                 request: csr.derBase64, format: 'pkcs10', attributes: [], customAttributes: [],
             });
