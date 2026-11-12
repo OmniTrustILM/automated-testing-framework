@@ -46,10 +46,9 @@ let cleanup = new Cleanup();
 /** A new self-signed certificate with a subject unique to this run and scenario; every certificate shares one key pair (faster to make). */
 const newCertificate = (scenario: string): Identity => certificate(subjectOf(run, scenario), { keys });
 
-/** A browser signed in as the account (the login form, as the smoke user does); a failed test keeps its trace. */
-async function signedIn(browser: Browser, account: Account | 'admin', testInfo: TestInfo): Promise<{ page: Page; close: () => Promise<void> }> {
+/** A browser signed in as the account (the login form, as the smoke user does); the suite's trace setting records a failed test. */
+async function signedIn(browser: Browser, account: Account | 'admin', _testInfo: TestInfo): Promise<{ page: Page; close: () => Promise<void> }> {
     const context = await browser.newContext({ baseURL: env.baseUrl, ignoreHTTPSErrors: true, viewport: { width: 1440, height: 900 } });
-    await context.tracing.start({ screenshots: true, snapshots: true });
     const page = await context.newPage();
     const login = new LoginPage(page, account === 'admin' ? env : envFor(env, account));
     await login.goto();
@@ -57,8 +56,6 @@ async function signedIn(browser: Browser, account: Account | 'admin', testInfo: 
     return {
         page,
         close: async () => {
-            const failed = testInfo.status !== testInfo.expectedStatus;
-            await context.tracing.stop(failed ? { path: testInfo.outputPath(`trace-${account}.zip`) } : undefined);
             await context.close();
         },
     };
