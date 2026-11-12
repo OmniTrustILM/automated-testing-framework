@@ -1,13 +1,6 @@
 /**
- * epic369Utils — API helpers of the Epic ilm#369 timeline tests (reminders for non-compliant certificates).
- * WHAT: create and remove the objects of one timeline (groups, custom attribute, compliance rule and profile, notification profiles,
- *       triggers, certificates), flip a certificate's compliance, and read what the product did: the test user's notifications of a
- *       certificate, its event history and the runs of the hourly certificate status job.
- * WHY: the reminders arrive in later runs of a scheduled job, so one spec seeds the objects and later specs find them again by name
- *      and read the outcome of each run; both sides need the same naming and the same readers.
- * HOW: every object is named `atf-e369-<TIMELINE_ID>-<what>`. A run of the job is a history entry of the job `updateCertificateStatusJob`;
- *      the notifications and event firings of a run are those between its start and the start of the next run.
- *      Platform answers that mean "the platform did not answer" (5xx, no connection) carry the prefix `TIMELINE-ENVIRONMENT:`.
+ * epic369Utils — API helpers of the Epic ilm#369 timeline: create, flip and remove its objects, read notifications, firings and job runs.
+ * Own wrappers: timeline objects live across executions, while the regression mutation helpers need the current run's ledger.
  */
 
 import { APIRequestContext } from '@playwright/test';
@@ -15,22 +8,22 @@ import { expect } from '@playwright/test';
 import { Logger } from './Logger';
 import { csrFromKey, newKeyMaterial } from './regression/pkiBuilders';
 import { waitForCertificateState } from './certificateUtils';
-import type { NotificationProfileDetail } from './notificationProfileUtils';
 
 const logger = new Logger('Epic369Utils');
 
 export const NOT_COMPLIANT_EVENT = 'certificate_not_compliant';
 export const EXPIRING_EVENT = 'certificate_expiring';
-export const STATUS_JOB_NAME = 'updateCertificateStatusJob';
+const STATUS_JOB_NAME = 'updateCertificateStatusJob';
 const NAME_ROOT = 'atf-e369-';
-export const STALE_AFTER_MS = 6 * 60 * 60 * 1000;
+const STALE_AFTER_MS = 6 * 60 * 60 * 1000;
 
 export const ENVIRONMENT = 'TIMELINE-ENVIRONMENT:';
 
-export function timelineId(): string {
+/** Letters and digits only: a dash inside the id would let one timeline's prefix match another's objects. */
+function timelineId(): string {
     const id = process.env.TIMELINE_ID;
     if (!id) throw new Error('TIMELINE_ID is not set: the Epic workflow sets it from its timelineId config');
-    return id.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    return id.toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 
 /** Name prefix of all objects of one timeline. */
@@ -64,8 +57,6 @@ export async function call(api: APIRequestContext, method: 'get' | 'post' | 'pat
 
 const time = (value: unknown): number => new Date(value as string | number).getTime();
 
-// ---------------------------------------------------------------- creating the objects
-
 export async function userUuidOf(api: APIRequestContext, username: string): Promise<string> {
     const users = (await call(api, 'get', '/v1/users')) as Array<{ uuid: string; username: string }>;
     const user = users.find((u) => u.username === username);
@@ -84,7 +75,7 @@ export async function createNotificationProfile(
         name, description: 'atf epic 369', recipientType: 'user', recipientUuids: [userUuid], internalNotification: true,
         ...(options.frequency ? { frequency: options.frequency } : {}),
         ...(options.repetitions ? { repetitions: options.repetitions } : {}),
-    })) as NotificationProfileDetail;
+    })) as { uuid: string };
     return profile.uuid;
 }
 
@@ -110,11 +101,11 @@ export async function createNotifyingTrigger(
     return trigger.uuid;
 }
 
-export async function associateTriggers(api: APIRequestContext, event: string, groupUuid: string, triggerUuids: string[]): Promise<void> {
+async function associateTriggers(api: APIRequestContext, event: string, groupUuid: string, triggerUuids: string[]): Promise<void> {
     await call(api, 'post', '/v1/workflows/events', { event, resource: 'groups', objectUuid: groupUuid, triggerUuids });
 }
 
-export interface ComplianceSetup { attributeUuid: string; attributeName: string; ruleUuid: string; profileUuid: string }
+export interface ComplianceSetup { attributeUuid: string; profileUuid: string }
 
 /** A custom attribute on certificates, an internal rule "attribute equals ok" and a compliance profile with that rule. */
 export async function createComplianceSetup(api: APIRequestContext, prefix: string): Promise<ComplianceSetup> {
@@ -130,7 +121,7 @@ export async function createComplianceSetup(api: APIRequestContext, prefix: stri
     const profile = await call(api, 'post', '/v2/complianceProfiles', {
         name: `${prefix}compliance`, description: 'atf epic 369', internalRules: [rule.uuid], providerRules: [], customAttributes: [],
     });
-    return { attributeUuid: attribute.uuid, attributeName, ruleUuid: rule.uuid, profileUuid: profile.uuid };
+    return { attributeUuid: attribute.uuid, profileUuid: profile.uuid };
 }
 
 export async function associateComplianceProfile(api: APIRequestContext, profileUuid: string, raProfileUuid: string): Promise<void> {
@@ -161,13 +152,11 @@ export async function archiveCertificate(api: APIRequestContext, certUuid: strin
     await call(api, 'patch', `/v1/certificates/${certUuid}/archive`);
 }
 
-// ---------------------------------------------------------------- reading certificates and compliance
-
 export async function getCertificate(api: APIRequestContext, uuid: string): Promise<{ uuid: string; commonName: string; complianceStatus: string; validationStatus: string; archived?: boolean; state: string }> {
     return call(api, 'get', `/v1/certificates/${uuid}`);
 }
 
-/** The certificates of a timeline, archived ones too, by common name suffix: `{ c1: uuid, … }`. */
+/** The certificates of a timeline, archived ones too, by common name suffix: `{ reminded: uuid, … }`. */
 export async function findTimelineCertificates(api: APIRequestContext, prefix: string): Promise<Record<string, string>> {
     const body = await call(api, 'post', '/v1/certificates', {
         itemsPerPage: 100, pageNumber: 1, includeArchived: true,
@@ -178,7 +167,7 @@ export async function findTimelineCertificates(api: APIRequestContext, prefix: s
     return found;
 }
 
-export async function setFlag(api: APIRequestContext, certUuid: string, attributeUuid: string, value: 'ok' | 'bad'): Promise<void> {
+async function setFlag(api: APIRequestContext, certUuid: string, attributeUuid: string, value: 'ok' | 'bad'): Promise<void> {
     await call(api, 'patch', `/v1/attributes/custom/resources/certificates/objects/${certUuid}/${attributeUuid}`, [{ contentType: 'string', data: value }]);
 }
 
@@ -190,8 +179,6 @@ export async function makeCompliance(api: APIRequestContext, certUuid: string, a
         message: `compliance status of ${certUuid} after the check of this certificate only`, timeout: 90_000, intervals: [2_000],
     }).toBe(compliant ? 'ok' : 'nok');
 }
-
-// ---------------------------------------------------------------- reading what the product did
 
 export interface Notification { uuid: string; message: string; sentAt: number; targetObjectType?: string; targetObjectIdentification?: string[] }
 
@@ -232,20 +219,18 @@ export async function statusJobRuns(api: APIRequestContext): Promise<JobRun[]> {
         .sort((a, b) => a.start - b.start);
 }
 
-/** The k-th run (1 = R1) that started after T0; a missing or unfinished run is the environment's, not the product's. */
-export function runAfter(runs: JobRun[], t0: number, k: number): { run: JobRun; next?: JobRun } {
-    const after = runs.filter((r) => r.start > t0);
+/** The k-th job run that started after the start of the timeline; a missing or unfinished run is the environment's, not the product's. */
+export function runAfter(runs: JobRun[], start: number, k: number): { run: JobRun; next?: JobRun } {
+    const after = runs.filter((r) => r.start > start);
     const run = after[k - 1];
-    if (!run) throw new Error(`${ENVIRONMENT} run R${k} of ${STATUS_JOB_NAME} is not in its history (${after.length} run(s) after T0 ${new Date(t0).toISOString()}): the run was skipped`);
-    if (!run.end) throw new Error(`${ENVIRONMENT} run R${k} of ${STATUS_JOB_NAME} has not finished`);
+    if (!run) throw new Error(`${ENVIRONMENT} job run ${k} of ${STATUS_JOB_NAME} is not in its history (${after.length} run(s) after the start ${new Date(start).toISOString()}): the run was skipped`);
+    if (!run.end) throw new Error(`${ENVIRONMENT} job run ${k} of ${STATUS_JOB_NAME} has not finished`);
     return { run, next: after[k] };
 }
 
 /** Items whose time lies in [from, to): from a run's start up to the start of the next run. */
 export const within = <T>(items: T[], at: (item: T) => number, from: number, to: number = Number.POSITIVE_INFINITY): T[] =>
     items.filter((i) => at(i) >= from && at(i) < to);
-
-// ---------------------------------------------------------------- removing the objects
 
 interface Named { uuid: string; name: string }
 
@@ -276,8 +261,13 @@ export async function cleanupTimeline(api: APIRequestContext, prefix: string): P
     for (const t of own((await call(api, 'get', '/v1/workflows/triggers')) as Named[])) await attempt(`trigger ${t.name}`, () => call(api, 'delete', `/v1/workflows/triggers/${t.uuid}`));
     for (const a of own((await call(api, 'get', '/v1/workflows/actions')) as Named[])) await attempt(`action ${a.name}`, () => call(api, 'delete', `/v1/workflows/actions/${a.uuid}`));
     for (const e of own((await call(api, 'get', '/v1/workflows/executions')) as Named[])) await attempt(`execution ${e.name}`, () => call(api, 'delete', `/v1/workflows/executions/${e.uuid}`));
-    const profiles = (await call(api, 'get', '/v1/notificationProfiles?itemsPerPage=1000&pageNumber=1')).notificationProfiles as Named[];
-    for (const p of own(profiles ?? [])) await attempt(`notification profile ${p.name}`, () => call(api, 'delete', `/v1/notificationProfiles/${p.uuid}`));
+    const profiles: Named[] = [];
+    for (let page = 1; ; page++) {
+        const body = await call(api, 'get', `/v1/notificationProfiles?itemsPerPage=100&pageNumber=${page}`);
+        profiles.push(...((body?.notificationProfiles ?? []) as Named[]));
+        if (page >= Number(body?.totalPages ?? 0)) break;
+    }
+    for (const p of own(profiles)) await attempt(`notification profile ${p.name}`, () => call(api, 'delete', `/v1/notificationProfiles/${p.uuid}`));
     for (const p of own((await call(api, 'get', '/v2/complianceProfiles')) as Named[])) {
         await attempt(`compliance profile ${p.name}`, () => call(api, 'delete', '/v2/complianceProfiles/force', [p.uuid]));
     }
@@ -303,4 +293,11 @@ export async function cleanupStaleTimelines(api: APIRequestContext, ownPrefix: s
         logger.info(`Removing the leftovers of the earlier timeline ${prefix}`);
         await cleanupTimeline(api, prefix);
     }
+}
+
+export async function complianceProfileOf(api: APIRequestContext, prefix: string): Promise<string> {
+    const profiles = (await call(api, 'get', '/v2/complianceProfiles')) as Array<{ uuid: string; name: string }>;
+    const profile = profiles.find((p) => p.name === `${prefix}compliance`);
+    if (!profile) throw new Error(`${ENVIRONMENT} compliance profile of the timeline ${prefix} is not found`);
+    return profile.uuid;
 }
