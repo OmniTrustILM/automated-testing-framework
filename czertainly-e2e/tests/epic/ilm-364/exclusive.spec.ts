@@ -198,6 +198,8 @@ test.describe('ownership by upload and import', () => {
     });
 
     test('S8: a trigger that sets other fields but not the owner does not stop automatic ownership', { tag: TAGS }, async () => {
+        // bug draft: Upload by a user without RA profile access fails with 500 when a platform "Certificate uploaded" trigger sets an RA profile
+        test.fail();
         await setAutomaticOwnership(admin, true);
         const state = readSmokeState();
         if (!state) throw new Error('The RA profile of the global setup is missing (.smoke-state.json)');
@@ -220,6 +222,29 @@ test.describe('ownership by upload and import', () => {
         const certificateDetail = await detail(admin, uuid);
         expect((certificateDetail.groups as Json[]).map((g) => g.uuid), 'the group set by the trigger').toEqual([group.uuid]);
         expect(certificateDetail.raProfile?.uuid, 'the RA profile set by the trigger').toBe(state.raProfileUuid);
+        expect(customValue(certificateDetail, attribute.name), 'the custom attribute set by the trigger').toBe('set-by-trigger');
+        expect(certificateDetail.owner, 'the uploader is the owner').toBe(nameOf('U'));
+    });
+
+    test('S8: a trigger that sets a group and a custom attribute but not the owner does not stop automatic ownership', { tag: TAGS }, async () => {
+        await setAutomaticOwnership(admin, true);
+        const group = await createGroup(admin, cleanup, `${run}-s8b-group`);
+        const attribute = await createCustomAttribute(admin, cleanup, `${run}-s8b-attr`);
+        const cert = newCertificate('s8b');
+        cleanup.certificate(cert.fingerprint);
+        await createUploadTrigger(admin, cleanup, {
+            name: `${run}-s8b-trigger`,
+            conditions: [commonNameIs(cert.cn)],
+            setFields: [
+                { fieldSource: 'property', fieldIdentifier: 'GROUP_NAME', data: [group.uuid] },
+                { fieldSource: 'custom', fieldIdentifier: `${attribute.name}|STRING`, data: 'set-by-trigger' },
+            ],
+        });
+
+        const uuid = await uploadAndFind(U, admin, cert.pem, cert.fingerprint);
+
+        const certificateDetail = await detail(admin, uuid);
+        expect((certificateDetail.groups as Json[]).map((g) => g.uuid), 'the group set by the trigger').toEqual([group.uuid]);
         expect(customValue(certificateDetail, attribute.name), 'the custom attribute set by the trigger').toBe('set-by-trigger');
         expect(certificateDetail.owner, 'the uploader is the owner').toBe(nameOf('U'));
     });
