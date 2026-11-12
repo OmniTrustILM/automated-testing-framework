@@ -79,17 +79,28 @@ test.afterAll(async () => {
 test.describe('ownership by upload and import', () => {
     test('S1: upload through the API makes the uploader the owner', { tag: REGRESSION }, async () => {
         await setAutomaticOwnership(admin, true);
-        const attribute = await createCustomAttribute(admin, cleanup, `${run}-s1-attr`);
         const cert = newCertificate('s1');
         cleanup.certificate(cert.fingerprint);
 
-        const uuid = await uploadAndFind(U, admin, cert.pem, cert.fingerprint, [attributeValue(attribute, 'uploaded-value')]);
+        const uuid = await uploadAndFind(U, admin, cert.pem, cert.fingerprint);
 
-        const certificateDetail = await detail(admin, uuid);
-        expect(certificateDetail.owner, 'the owner in the detail').toBe(nameOf('U'));
+        expect((await detail(admin, uuid)).owner, 'the owner in the detail').toBe(nameOf('U'));
         expect((await inventoryRow(admin, cert.fingerprint))?.owner, 'the owner in the inventory').toBe(nameOf('U'));
         expect(await ownerChanges(admin, uuid), 'exactly one owner change in the history').toEqual([`undefined -> ${nameOf('U')}`]);
-        expect(customValue(certificateDetail, attribute.name), 'the custom attribute value').toBe('uploaded-value');
+    });
+
+    // Needs a human: the role of U has no access to custom attributes, so U's upload with an attribute value is refused (422 "Not
+    // allowed to set custom attributes"). The value is therefore uploaded by the administrator, who becomes the owner; this still
+    // shows that the attribute value is kept while the setting is on.
+    test('S1: the custom attribute value of an upload is kept with the setting on', { tag: REGRESSION }, async () => {
+        await setAutomaticOwnership(admin, true);
+        const attribute = await createCustomAttribute(admin, cleanup, `${run}-s1-attr`);
+        const cert = newCertificate('s1-attr');
+        cleanup.certificate(cert.fingerprint);
+
+        const uuid = await uploadAndFind(admin, admin, cert.pem, cert.fingerprint, [attributeValue(attribute, 'uploaded-value')]);
+
+        expect(customValue(await detail(admin, uuid), attribute.name), 'the custom attribute value').toBe('uploaded-value');
     });
 
     test('S2: asynchronous upload through the API makes the uploader the owner', { tag: TAGS }, async () => {
