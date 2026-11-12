@@ -677,6 +677,8 @@ test.describe('platform setting (UI)', () => {
             await page.getByTestId('pencil-button').click();
             const dialog = page.getByRole('dialog', { name: 'Edit Platform Settings' });
             await dialog.getByRole('tab', { name: 'Certificates' }).click();
+            // the form is filled from the stored setting: toggle only after it shows the value the platform holds
+            await expect(editSwitch).toBeChecked({ checked: !on });
             await editSwitch.setChecked(on, { force: true });
             await expect(editSwitch).toBeChecked({ checked: on });
             await dialog.getByRole('button', { name: 'Save', exact: true }).click();
@@ -693,9 +695,12 @@ test.describe('platform setting (UI)', () => {
             const uuid = await uploadAndFind(U, admin, cert.pem, cert.fingerprint);
 
             await saveAs(false);
-            await page.reload();
-            await page.getByRole('tab', { name: 'Certificates' }).click();
-            await expect(readOnlySwitch, 'after the second save the read-only view shows off').not.toBeChecked();
+            // Core may answer from its cache on another instance for up to 30 seconds after a change
+            await expect(async () => {
+                await page.reload();
+                await page.getByRole('tab', { name: 'Certificates' }).click();
+                await expect(readOnlySwitch, 'after the second save the read-only view shows off').not.toBeChecked({ timeout: 3_000 });
+            }).toPass({ timeout: 40_000 });
             expect(await readAutomaticOwnership(admin), 'the API returns off').toBe(false);
             expect((await detail(admin, uuid)).owner, 'the certificate uploaded while the setting was on still has U as owner').toBe(nameOf('U'));
         } finally {

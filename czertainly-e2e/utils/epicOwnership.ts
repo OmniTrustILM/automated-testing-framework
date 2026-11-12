@@ -322,11 +322,21 @@ async function platformTriggers(admin: APIRequestContext): Promise<string[]> {
     return (((answer.json as Json).eventsMapping ?? {})[UPLOAD_EVENT] ?? []) as string[];
 }
 
+/** Puts the earlier platform list back, leaving out triggers that no longer exist (the platform refuses a list that names one). */
+async function restorePlatformTriggers(admin: APIRequestContext, before: string[]): Promise<void> {
+    const existing: string[] = [];
+    for (const uuid of before) {
+        const answer = await admin.get(`/api/v1/workflows/triggers/${uuid}`);
+        if (answer.ok()) existing.push(uuid);
+    }
+    await sendOk(admin, 'PATCH', '/api/v1/settings/events', { event: UPLOAD_EVENT, triggerUuids: existing });
+}
+
 async function associateWithUploadEvent(admin: APIRequestContext, cleanup: Cleanup, triggerUuid: string): Promise<void> {
     const before = await platformTriggers(admin);
     // Registered before the change, so a trigger is never deleted while the platform list still names it.
     cleanup.add('platform trigger list of the upload event', UPLOAD_EVENT, () =>
-        sendOk(admin, 'PATCH', '/api/v1/settings/events', { event: UPLOAD_EVENT, triggerUuids: before }));
+        restorePlatformTriggers(admin, before));
     await sendOk(admin, 'PATCH', '/api/v1/settings/events', { event: UPLOAD_EVENT, triggerUuids: [...before, triggerUuid] });
     logger.info(`Platform triggers on the upload event: ${before.length} before, ${before.length + 1} now`);
 }
