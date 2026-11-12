@@ -329,6 +329,7 @@ test.describe('key import', () => {
             expect(entries.length, 'the file has an entry to import').toBeGreaterThan(0);
             const answer = await importEntries(as, file.bytes, entries.map((e) => ({ entryReference: e.entryReference, keyDestination: { tokenProfileUuid, keyName } })), { passphrase: 'epic-pass' });
             expect(answer.status, answer.text).toBe(200);
+            expect(importResults(answer).map((r) => r.imported), `every entry is imported: ${answer.text.slice(0, 1500)}`).not.toContain(false);
             return answer;
         };
 
