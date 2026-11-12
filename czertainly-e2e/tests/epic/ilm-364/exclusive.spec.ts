@@ -15,7 +15,8 @@ import { test, expect, request as playwrightRequest, APIRequestContext, Browser,
 import { loadEnv, TestEnv } from '../../../utils/env';
 import { uniqueName } from '../../../utils/names';
 import { certificate, certificatesInOnePem, Identity, pkcs12Chain } from '../../../utils/regression/inventory/importFixtures';
-import { newKeyMaterial } from '../../../utils/regression/pkiBuilders';
+import { csrFromKey, newKeyMaterial, newKeyPair } from '../../../utils/regression/pkiBuilders';
+import { waitForCertificateState } from '../../../utils/certificateUtils';
 import { SCP_ATTR } from '../../../utils/regression/platform/cryptoAlgorithmCases';
 import { tokenAlias } from '../../../utils/regression/platform/tokens';
 import { readSmokeState } from '../../../utils/smokeState';
@@ -479,6 +480,37 @@ test.describe('access and security', () => {
         const search = await findByFingerprint(R, cert.fingerprint);
         expect(search.status, search.text).toBe(200);
         expect((search.json as Json).certificates, 'no rows').toHaveLength(0);
+    });
+});
+
+test.describe('unchanged behaviour', () => {
+    test('S20: issued certificates keep their ownership with the setting on', { tag: REGRESSION }, async () => {
+        test.setTimeout(240_000);
+        const state = readSmokeState();
+        if (!state) throw new Error('The RA profile of the global setup is missing (.smoke-state.json)');
+        const issue = async (name: string): Promise<{ uuid: string; owner: unknown }> => {
+            const cn = subjectOf(run, name);
+            const csr = csrFromKey(newKeyPair(), cn, { dns: [cn], ip: ['192.0.2.20'] });
+            const answer = await send(U, 'POST', `/api/v2/operations/authorities/${state.authorityUuid}/raProfiles/${state.raProfileUuid}/certificates`, {
+                request: csr.derBase64, format: 'pkcs10', attributes: [], customAttributes: [],
+            });
+            expect(answer.status, `issue as U: ${answer.text}`).toBe(200);
+            const uuid = (answer.json as Json).uuid as string;
+            cleanup.add('issued certificate', cn, async () => {
+                const keyUuid = (await detail(admin, uuid)).key?.uuid;
+                await sendOk(admin, 'DELETE', `/api/v1/certificates/${uuid}`);
+                if (keyUuid) await sendOk(admin, 'DELETE', '/api/v1/keys', [keyUuid]);
+            });
+            await waitForCertificateState(admin, uuid, 'issued', 120_000);
+            return { uuid, owner: (await detail(admin, uuid)).owner ?? null };
+        };
+
+        await setAutomaticOwnership(admin, false);
+        const before = await issue('s20-off');
+        await setAutomaticOwnership(admin, true);
+        const after = await issue('s20-on');
+
+        expect(after.owner, 'the same owner rule with the setting on as with it off').toBe(before.owner);
     });
 });
 
