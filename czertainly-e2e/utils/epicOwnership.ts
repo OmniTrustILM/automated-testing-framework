@@ -15,6 +15,8 @@ import { Logger } from './Logger';
 import { attemptCleanup } from './cleanupLedger';
 import { requiredCustomAttributes } from './regression/customAttributes';
 import { getCertificateKeyUuid, deleteKeyIfOrphaned } from './keyUtils';
+import { findCryptoConnector, tokenRequestAttributes, tokenAlias, activationCode } from './regression/platform/tokens';
+import { PROFILE_USAGES } from './regression/platform/cryptoAlgorithmCases';
 
 const logger = new Logger('EpicOwnership');
 
@@ -170,6 +172,7 @@ export async function uploadAndFind(as: APIRequestContext, admin: APIRequestCont
 export class Cleanup {
     private readonly steps: Array<{ describe: { resource: string; name?: string; uuid?: string }; remove: () => Promise<unknown> }> = [];
     private readonly fingerprints: string[] = [];
+    private readonly keys: string[] = [];
     private startedAt = new Date(Date.now() - 60_000);
 
     add(resource: string, ref: string, remove: () => Promise<unknown>): void {
@@ -180,9 +183,13 @@ export class Cleanup {
         this.fingerprints.push(fingerprint);
     }
 
-    /** Removes the registered objects, last created first, then the certificates and the keys they left. */
+    /** A key in a token (made by an import); removed after the certificates and before the token. */
+    key(keyUuid: string): void {
+        this.keys.push(keyUuid);
+    }
+
+    /** Removes the certificates and the keys they left, then the registered objects, last created first. */
     async run(admin: APIRequestContext): Promise<void> {
-        for (const step of this.steps.splice(0)) await attemptCleanup(step.describe, step.remove);
         for (const fingerprint of this.fingerprints.splice(0)) {
             await attemptCleanup({ resource: 'certificate', name: fingerprint }, async () => {
                 const row = await inventoryRow(admin, fingerprint);
@@ -192,6 +199,10 @@ export class Cleanup {
                 if (keyUuid) await deleteKeyIfOrphaned(admin, keyUuid, this.startedAt);
             });
         }
+        for (const keyUuid of this.keys.splice(0)) {
+            await attemptCleanup({ resource: 'key', uuid: keyUuid }, () => sendOk(admin, 'DELETE', '/api/v1/keys', [keyUuid]));
+        }
+        for (const step of this.steps.splice(0)) await attemptCleanup(step.describe, step.remove);
     }
 }
 
@@ -326,3 +337,54 @@ export const subjectOf = (runPrefix: string, scenario: string): string => `${run
 export const commonNameIs = (cn: string): TriggerSpec['conditions'][number] => ({ fieldSource: 'property', fieldIdentifier: 'COMMON_NAME', operator: 'EQUALS', value: cn });
 
 export const setOwner = (userUuid: string | null): NonNullable<TriggerSpec['setFields']>[number] => ({ fieldSource: 'property', fieldIdentifier: 'OWNER', data: userUuid });
+
+/** An internal notification profile whose recipient is the owner of the certificate (nothing is sent outside the platform). */
+export async function createOwnerNotificationProfile(admin: APIRequestContext, cleanup: Cleanup, name: string): Promise<string> {
+    const created = await sendOk(admin, 'POST', '/api/v1/notificationProfiles', {
+        name,
+        description: 'Epic test profile',
+        recipientType: 'owner',
+        internalNotification: true,
+    });
+    const uuid = (created.json as Json).uuid as string;
+    cleanup.add('notification profile', name, () => sendOk(admin, 'DELETE', `/api/v1/notificationProfiles/${uuid}`));
+    return uuid;
+}
+
+/** The internal notifications of the signed-in account that mention the text (the certificate's subject or UUID). */
+export async function notificationsMentioning(api: APIRequestContext, text: string): Promise<Json[]> {
+    const answer = await sendOk(api, 'GET', '/api/v1/notifications');
+    return (((answer.json as Json).items ?? []) as Json[]).filter((n) => JSON.stringify(n).includes(text));
+}
+
+/**
+ * A token on the software cryptography provider and an enabled token profile on it, the key destination of a PKCS#12 import.
+ * The profile is removed first, then the token.
+ */
+export async function createSoftwareTokenProfile(admin: APIRequestContext, cleanup: Cleanup, name: string): Promise<string> {
+    const connector = await findCryptoConnector(admin, 2) ?? await findCryptoConnector(admin, 1);
+    if (!connector) throw new Error('No software cryptography connector is registered');
+    const kind = connector.version === 1 ? 'Soft' : undefined;
+    const defs = (await sendOk(admin, 'GET', `/api/v1/tokens/${connector.uuid}/attributes${kind ? `?kind=${kind}` : ''}`)).json as any[];
+    const token = await sendOk(admin, 'POST', '/api/v1/tokens', {
+        name,
+        description: 'Epic test token',
+        connectorUuid: connector.uuid,
+        ...(kind ? { kind } : {}),
+        attributes: tokenRequestAttributes(defs, tokenAlias(name), activationCode()),
+        customAttributes: await requiredCustomAttributes(admin, 'tokens', name),
+    });
+    const tokenUuid = (token.json as Json).uuid as string;
+    cleanup.add('token', name, () => sendOk(admin, 'DELETE', `/api/v1/tokens/${tokenUuid}`));
+    const profile = await sendOk(admin, 'POST', `/api/v1/tokens/${tokenUuid}/tokenProfiles`, {
+        name: `${name}-profile`,
+        description: 'Epic test token profile',
+        attributes: [],
+        customAttributes: await requiredCustomAttributes(admin, 'tokenProfiles', name),
+        enabled: true,
+        usage: [...PROFILE_USAGES],
+    });
+    const profileUuid = (profile.json as Json).uuid as string;
+    cleanup.add('token profile', `${name}-profile`, () => sendOk(admin, 'DELETE', `/api/v1/tokens/${tokenUuid}/tokenProfiles/${profileUuid}`));
+    return profileUuid;
+}

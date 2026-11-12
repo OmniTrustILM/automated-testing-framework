@@ -14,14 +14,14 @@
 import { test, expect, request as playwrightRequest, APIRequestContext, Browser, Page, TestInfo } from '@playwright/test';
 import { loadEnv, TestEnv } from '../../../utils/env';
 import { uniqueName } from '../../../utils/names';
-import { certificate, certificatesInOnePem, Identity } from '../../../utils/regression/inventory/importFixtures';
+import { certificate, certificatesInOnePem, Identity, pkcs12Chain } from '../../../utils/regression/inventory/importFixtures';
 import { newKeyMaterial } from '../../../utils/regression/pkiBuilders';
 import { readSmokeState } from '../../../utils/smokeState';
 import { LoginPage } from '../../../pages/LoginPage';
 import { CertificatePage } from '../../../pages/CertificatePage';
 import {
     Account, Cleanup, Json, accountCredentials, envFor, adminApi, apiAs, attributeValue, commonNameIs, createCustomAttribute, createGroup, createTeamUser,
-    createUploadTrigger, customValue, detail, findByFingerprint, importEntries, importResults, inventoryRow, ownerChanges, pollUntil,
+    createOwnerNotificationProfile, createSoftwareTokenProfile, createUploadTrigger, customValue, notificationsMentioning, detail, findByFingerprint, importEntries, importResults, inventoryRow, ownerChanges, pollUntil,
     readAutomaticOwnership, send, sendOk, setAutomaticOwnership, setOwner, subjectOf, upload, uploadAndFind, waitForCertificate,
 } from '../../../utils/epicOwnership';
 
@@ -308,6 +308,77 @@ test.describe('ownership by upload and import', () => {
 
         expect((await detail(admin, uuid)).owner, 'the uploader is the owner').toBe(nameOf('U'));
         expect(await ownerChanges(admin, uuid), 'one owner change').toEqual([`undefined -> ${nameOf('U')}`]);
+    });
+});
+
+test.describe('key import', () => {
+    test('S26: a key import makes the importer the owner of the chain it brings in', { tag: TAGS }, async () => {
+        test.setTimeout(180_000);
+        await setAutomaticOwnership(admin, true);
+        const tokenProfileUuid = await createSoftwareTokenProfile(admin, cleanup, `${run}-s26-token`);
+        const root = certificate(`${run}-s26-root.example.com`, { ca: true });
+        const intermediate = certificate(`${run}-s26-intermediate.example.com`, { ca: true, issuer: root });
+        const first = pkcs12Chain(`${run}-s26-first.example.com`, intermediate, root, 'epic-pass');
+        const second = pkcs12Chain(`${run}-s26-second.example.com`, intermediate, root, 'epic-pass');
+        [first.identity, intermediate, root, second.identity].forEach((c) => cleanup.certificate(c.fingerprint));
+
+        const importAs = async (as: APIRequestContext, file: { bytes: Buffer }, keyName: string) => {
+            const inspection = await send(as, 'POST', '/api/v1/inspections', { file: Buffer.from(file.bytes).toString('base64'), passphrase: 'epic-pass', tokenProfileUuid });
+            expect(inspection.status, inspection.text).toBe(200);
+            const entries = ((inspection.json as Json).entries as Json[]).filter((e) => e.importable !== false);
+            expect(entries.length, 'the file has an entry to import').toBeGreaterThan(0);
+            const answer = await importEntries(as, file.bytes, entries.map((e) => ({ entryReference: e.entryReference, keyDestination: { tokenProfileUuid, keyName } })), { passphrase: 'epic-pass' });
+            expect(answer.status, answer.text).toBe(200);
+            return answer;
+        };
+
+        await importAs(U, first, `${run}-s26-key-1`);
+        for (const c of [first.identity, intermediate, root]) {
+            const uuid = await waitForCertificate(admin, c.fingerprint);
+            const certificateDetail = await detail(admin, uuid);
+            if (certificateDetail.key?.uuid) cleanup.key(certificateDetail.key.uuid);
+            expect(certificateDetail.owner, `U owns ${c.cn}`).toBe(nameOf('U'));
+        }
+
+        await importAs(V, second, `${run}-s26-key-2`);
+        const secondUuid = await waitForCertificate(admin, second.identity.fingerprint);
+        const secondDetail = await detail(admin, secondUuid);
+        if (secondDetail.key?.uuid) cleanup.key(secondDetail.key.uuid);
+        expect(secondDetail.owner, 'V owns the new end-entity certificate').toBe(nameOf('V'));
+        for (const c of [intermediate, root]) {
+            expect((await inventoryRow(admin, c.fingerprint))?.owner, `${c.cn}, already in the inventory, keeps its owner`).toBe(nameOf('U'));
+        }
+    });
+});
+
+test.describe('notification to the owner', () => {
+    test('S22: a trigger notification to the owner reaches the uploader', { tag: TAGS }, async () => {
+        test.setTimeout(180_000);
+        const profile = await createOwnerNotificationProfile(admin, cleanup, `${run}-s22-profile`);
+        const withSetting = newCertificate('s22-on');
+        const withoutSetting = newCertificate('s22-off');
+        cleanup.certificate(withSetting.fingerprint);
+        cleanup.certificate(withoutSetting.fingerprint);
+        await createUploadTrigger(admin, cleanup, {
+            name: `${run}-s22-trigger`,
+            conditions: [{ fieldSource: 'property', fieldIdentifier: 'COMMON_NAME', operator: 'STARTS_WITH', value: `${run}-s22-` }],
+            notificationProfileUuid: profile,
+        });
+
+        await setAutomaticOwnership(admin, true);
+        const started = Date.now();
+        await uploadAndFind(U, admin, withSetting.pem, withSetting.fingerprint);
+        await pollUntil(async () => (await notificationsMentioning(U, withSetting.cn)).length > 0, `U has a notification for ${withSetting.cn}`, 90_000);
+        const deliveryMs = Date.now() - started;
+
+        await setAutomaticOwnership(admin, false);
+        await uploadAndFind(U, admin, withoutSetting.pem, withoutSetting.fingerprint);
+        // An absence can only be shown over a window: three times what the delivery took above, at least ten seconds.
+        const until = Date.now() + Math.max(10_000, 3 * deliveryMs);
+        while (Date.now() < until) {
+            expect(await notificationsMentioning(U, withoutSetting.cn), `U has no notification for ${withoutSetting.cn}`).toHaveLength(0);
+            await new Promise((resolve) => setTimeout(resolve, 2_000));
+        }
     });
 });
 
