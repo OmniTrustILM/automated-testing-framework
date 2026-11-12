@@ -50,6 +50,7 @@ export class CertificatePage {
     // Details page
     readonly tablist: Locator;
     readonly commonNameRow: Locator;
+    readonly ownerRow: Locator;
     readonly stateBadge: Locator;
     readonly subjectAlternativeNames: Locator;
 
@@ -86,6 +87,7 @@ export class CertificatePage {
 
         this.tablist = page.getByRole('tablist');
         this.commonNameRow = this.main.locator('tr[data-id="commonName"]');
+        this.ownerRow = this.main.locator('tr[data-id="owner"]');
         this.stateBadge = this.main.locator('tr[data-id="certState"] [data-testid="certificate-status"]');
         this.subjectAlternativeNames = widgetTitled(this.main, 'Subject Alternative Names');
 

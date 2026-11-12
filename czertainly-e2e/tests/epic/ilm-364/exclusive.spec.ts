@@ -1,17 +1,9 @@
 /**
- * exclusive — Epic ilm#364, the scenarios that change platform-wide state: automatic ownership of an uploaded or imported certificate.
- *
- * WHAT: who owns a certificate after an upload, an asynchronous upload or a file import, with the platform setting on and off, with
- *       platform triggers on "Certificate uploaded" that do and do not set the owner, and the access of a user who may only create.
- * WHY:  the setting is platform-wide and the platform triggers are platform-wide, so every test here changes global state: all of them are
- *       @exclusive, in this one file, serial, and run in their own execution. The setting and the validation settings are read first and
- *       restored in afterAll, also when a test failed.
- * HOW:  users U and V (create, list, detail) and R (create only) are prepared accounts (EPIC_USER_<letter>_*), never changed here. A test
- *       acts as the account the scenario names, reads the result as the administrator, and registers everything it creates in a Cleanup.
- *       Each certificate has a subject unique to the run; trigger conditions match that subject only.
+ * exclusive — Epic ilm#364: who owns an uploaded or imported certificate, with the platform setting and upload triggers.
+ * Every test changes platform-wide state: @exclusive, serial, the setting and the trigger list restored after each run.
  */
 
-import { test, expect, request as playwrightRequest, APIRequestContext, Browser, Page, TestInfo } from '@playwright/test';
+import { test, expect, request as playwrightRequest, APIRequestContext, Browser, Page } from '@playwright/test';
 import { loadEnv, TestEnv } from '../../../utils/env';
 import { uniqueName } from '../../../utils/names';
 import { certificate, certificatesInOnePem, Identity, pkcs12Chain } from '../../../utils/regression/inventory/importFixtures';
@@ -24,7 +16,7 @@ import { LoginPage } from '../../../pages/LoginPage';
 import { CertificatePage } from '../../../pages/CertificatePage';
 import {
     Account, Cleanup, Json, accountCredentials, envFor, adminApi, apiAs, attributeValue, commonNameIs, createCustomAttribute, createGroup, createTeamUser,
-    createOwnerNotificationProfile, createSoftwareTokenProfile, createUploadTrigger, customValue, notificationsMentioning, detail, findByFingerprint, importEntries, importResults, inventoryRow, ownerChanges, pollUntil,
+    createOwnerNotificationProfile, createSoftwareTokenProfile, createUploadTrigger, customValue, notificationsMentioning, detail, findByFingerprint, importEntries, importResults, inventoryRow, ownerChanges, waitUntil,
     readAutomaticOwnership, send, sendOk, setAutomaticOwnership, setOwner, subjectOf, upload, uploadAndFind, waitForCertificate,
 } from '../../../utils/epicOwnership';
 
@@ -50,7 +42,7 @@ let cleanup = new Cleanup();
 const newCertificate = (scenario: string): Identity => certificate(subjectOf(run, scenario), { keys });
 
 /** A browser signed in as the account (the login form, as the smoke user does); the suite's trace setting records a failed test. */
-async function signedIn(browser: Browser, account: Account | 'admin', _testInfo: TestInfo): Promise<{ page: Page; close: () => Promise<void> }> {
+async function signedIn(browser: Browser, account: Account | 'admin'): Promise<{ page: Page; close: () => Promise<void> }> {
     const context = await browser.newContext({ baseURL: env.baseUrl, ignoreHTTPSErrors: true, viewport: { width: 1440, height: 900 } });
     const page = await context.newPage();
     const login = new LoginPage(page, account === 'admin' ? env : envFor(env, account));
@@ -64,8 +56,6 @@ async function signedIn(browser: Browser, account: Account | 'admin', _testInfo:
     };
 }
 
-const ownerRow = (page: Page) => page.locator('tr[data-id="owner"]');
-const commonNameRow = (page: Page) => page.locator('tr[data-id="commonName"]');
 
 test.beforeAll(async () => {
     env = loadEnv();
@@ -78,7 +68,7 @@ test.beforeAll(async () => {
     } finally {
         await bootstrap.dispose();
     }
-    originalSetting = await readAutomaticOwnership(admin);
+    originalSetting = (await readAutomaticOwnership(admin)) ?? false;
     originalValidation = ((await sendOk(admin, 'GET', '/api/v1/settings/platform')).json as Json).certificates?.validation;
     keys = newKeyMaterial();
 });
@@ -112,9 +102,7 @@ test.describe('ownership by upload and import', () => {
         expect(await ownerChanges(admin, uuid), 'exactly one owner change in the history').toEqual([`undefined -> ${nameOf('U')}`]);
     });
 
-    // Needs a human: the role of U has no access to custom attributes, so U's upload with an attribute value is refused (422 "Not
-    // allowed to set custom attributes"). The value is therefore uploaded by the administrator, who becomes the owner; this still
-    // shows that the attribute value is kept while the setting is on.
+    // uploaded by the administrator: U's role may not set custom attributes
     test('S1: the custom attribute value of an upload is kept with the setting on', { tag: REGRESSION }, async () => {
         await setAutomaticOwnership(admin, true);
         const attribute = await createCustomAttribute(admin, cleanup, `${run}-s1-attr`);
@@ -137,7 +125,7 @@ test.describe('ownership by upload and import', () => {
 
         const uuid = await waitForCertificate(admin, cert.fingerprint);
         // The owner is set right after the certificate is stored, so the owner is awaited, not read once.
-        await pollUntil(async () => (await detail(admin, uuid)).owner === nameOf('U'), `the owner of the asynchronously uploaded certificate is ${nameOf('U')}`);
+        await waitUntil(async () => (await detail(admin, uuid)).owner === nameOf('U'), `the owner of the asynchronously uploaded certificate is ${nameOf('U')}`);
     });
 
     test('S3: with the setting off, uploaded and imported certificates have no owner', { tag: REGRESSION }, async () => {
@@ -185,7 +173,8 @@ test.describe('ownership by upload and import', () => {
 
         const answer = await importEntries(U, Buffer.from(existing.pem + added.pem), [{ entryReference: existing.fingerprint }, { entryReference: added.fingerprint }]);
         expect(answer.status, answer.text).toBe(200);
-        expect(importResults(answer).map((r) => r.certificateOutcome), 'the existing certificate is reported as existing').toEqual(['existing', 'created']);
+        const outcomeOf = (c: Identity) => importResults(answer).find((r) => r.entryReference === c.fingerprint)?.certificateOutcome;
+        expect([outcomeOf(existing), outcomeOf(added)], 'the existing certificate is reported as existing').toEqual(['existing', 'created']);
 
         expect((await detail(admin, existingUuid)).owner, 'the existing certificate keeps its owner').toBe(nameOf('V'));
         const addedUuid = await waitForCertificate(admin, added.fingerprint);
@@ -221,8 +210,8 @@ test.describe('ownership by upload and import', () => {
     });
 
     test('S8: a trigger that sets other fields but not the owner does not stop automatic ownership', { tag: TAGS }, async () => {
-        // bug draft: Upload by a user without RA profile access fails with 500 when a platform "Certificate uploaded" trigger sets an RA profile
-        test.fail();
+        // possibly the test, not the product: the RA profile switch asks the authority to identify a self-signed upload it never issued
+        test.fail(true, 'an upload fails with 500 when a platform upload trigger sets an RA profile');
         await setAutomaticOwnership(admin, true);
         const state = readSmokeState();
         if (!state) throw new Error('The RA profile of the global setup is missing (.smoke-state.json)');
@@ -273,8 +262,7 @@ test.describe('ownership by upload and import', () => {
     });
 
     test('S9: a discarded upload is refused with a pointer to the event history', { tag: REGRESSION }, async () => {
-        // bug draft: Upload of a certificate discarded by an ignore trigger answers 500 instead of a client error
-        test.fail();
+        test.fail(true, 'an upload discarded by an ignore trigger answers 500 instead of a client error');
         await setAutomaticOwnership(admin, true);
         const cert = newCertificate('s9');
         cleanup.certificate(cert.fingerprint);
@@ -336,9 +324,7 @@ test.describe('key import', () => {
             return answer;
         };
 
-        // Needs a human: the role of U has no access to token profiles (403 "Required 'Detail' permission for 'Token Profile'"), so a key
-        // import cannot be done as U. The administrator imports; to tell "keeps its owner" from "taken over" the owner of the
-        // intermediate certificate is then handed to V, and the second import must leave it with V.
+        // imported by the administrator (U's role cannot use token profiles); V then owns the intermediate, which the second import must keep
         const importer = env.username;
         await importAs(admin, first, `${run}-s26-key-1`);
         let intermediateUuid = '';
@@ -382,7 +368,7 @@ test.describe('notification to the owner', () => {
         await setAutomaticOwnership(admin, true);
         const started = Date.now();
         await uploadAndFind(U, admin, withSetting.pem, withSetting.fingerprint);
-        await pollUntil(async () => (await notificationsMentioning(U, withSetting.cn)).length > 0, `U has a notification for ${withSetting.cn}`, 90_000);
+        await waitUntil(async () => (await notificationsMentioning(U, withSetting.cn)).length > 0, `U has a notification for ${withSetting.cn}`, 90_000);
         const deliveryMs = Date.now() - started;
 
         await setAutomaticOwnership(admin, false);
@@ -454,7 +440,8 @@ test.describe('access and security', () => {
 
         const answer = await importEntries(R, Buffer.from(owned.pem + ownerless.pem + fresh.pem), [owned, ownerless, fresh].map((c) => ({ entryReference: c.fingerprint })));
         expect(answer.status, answer.text).toBe(200);
-        const [ownedResult, ownerlessResult, freshResult] = importResults(answer);
+        const resultOf = (c: Identity) => importResults(answer).find((r) => r.entryReference === c.fingerprint) ?? { entryReference: c.fingerprint, imported: false };
+        const [ownedResult, ownerlessResult, freshResult] = [owned, ownerless, fresh].map(resultOf);
         expect(ownedResult.certificateOutcome, 'V\'s certificate is reported as existing').toBe('existing');
         expect(ownedResult.certificateUuid, 'without its UUID').toBeUndefined();
         expect(ownerlessResult.certificateOutcome, 'N is reported as existing').toBe('existing');
@@ -488,8 +475,7 @@ test.describe('access and security', () => {
 });
 
 test.describe('unchanged behaviour', () => {
-    // Needs a human: the role of U has no access to authorities and RA profiles (403 "Required 'Detail' permission for 'Authority'"), so U
-    // cannot issue. The administrator issues; what is compared is the owner rule with the setting off and on.
+    // issued by the administrator: U's role cannot use authorities; the owner rule is compared with the setting off and on
     test('S20: issued certificates keep their ownership with the setting on', { tag: REGRESSION }, async () => {
         test.setTimeout(240_000);
         const state = readSmokeState();
@@ -534,18 +520,17 @@ test.describe('platform setting', () => {
 
         const emptyUpload = await send(admin, 'PUT', '/api/v1/settings/platform', { certificates: { upload: {} } });
         expect(emptyUpload.status, emptyUpload.text).toBeLessThan(300);
-        await pollUntil(async () => (await readAutomaticOwnership(admin)) === false, 'the setting reads off after an empty upload part');
+        await waitUntil(async () => (await readAutomaticOwnership(admin)) === false, 'the setting reads off after an empty upload part');
     });
 });
 
 test.describe('import wizard (UI)', () => {
-    test('S10: import one certificate in the UI, open it in one click, see yourself as owner', { tag: REGRESSION }, async ({ browser }, testInfo) => {
-        // bug draft: Import wizard cannot import for a user without custom attribute access: the Import button stays disabled after "Failed to get Resource Custom Attributes list (403)"
-        test.fail();
+    test('S10: import one certificate in the UI, open it in one click, see yourself as owner', { tag: REGRESSION }, async ({ browser }) => {
+        test.fail(true, 'the import wizard keeps Import disabled for a user without custom attribute access');
         await setAutomaticOwnership(admin, true);
         const cert = newCertificate('s10');
         cleanup.certificate(cert.fingerprint);
-        const { page, close } = await signedIn(browser, 'U', testInfo);
+        const { page, close } = await signedIn(browser, 'U');
         try {
             const certificates = new CertificatePage(page);
             await page.goto('/administrator/#/certificates');
@@ -557,8 +542,8 @@ test.describe('import wizard (UI)', () => {
             await certificates.importResults.getByTestId('import-open-certificate').click();
 
             await expect(page, 'the detail opens in one click').toHaveURL(/\/certificates\/detail\//);
-            await expect(commonNameRow(page)).toContainText(cert.cn);
-            await expect(ownerRow(page), 'the detail shows U as owner').toContainText(nameOf('U'));
+            await expect(certificates.commonNameRow).toContainText(cert.cn);
+            await expect(certificates.ownerRow, 'the detail shows U as owner').toContainText(nameOf('U'));
 
             await page.goto('/administrator/#/certificates');
             await page.reload();
@@ -569,14 +554,13 @@ test.describe('import wizard (UI)', () => {
         }
     });
 
-    test('S11: a discarded certificate in the import wizard is reported as not added', { tag: TAGS }, async ({ browser }, testInfo) => {
-        // bug draft: Import wizard cannot import for a user without custom attribute access: the Import button stays disabled after "Failed to get Resource Custom Attributes list (403)"
-        test.fail();
+    test('S11: a discarded certificate in the import wizard is reported as not added', { tag: TAGS }, async ({ browser }) => {
+        test.fail(true, 'the import wizard keeps Import disabled for a user without custom attribute access');
         await setAutomaticOwnership(admin, true);
         const cert = newCertificate('s11');
         cleanup.certificate(cert.fingerprint);
         await createUploadTrigger(admin, cleanup, { name: `${run}-s11-trigger`, conditions: [commonNameIs(cert.cn)], ignore: true });
-        const { page, close } = await signedIn(browser, 'U', testInfo);
+        const { page, close } = await signedIn(browser, 'U');
         try {
             const certificates = new CertificatePage(page);
             await page.goto('/administrator/#/certificates');
@@ -596,13 +580,12 @@ test.describe('import wizard (UI)', () => {
         }
     });
 
-    test('S12: the import result lets the user open each created certificate', { tag: TAGS }, async ({ browser }, testInfo) => {
-        // bug draft: Import wizard cannot import for a user without custom attribute access: the Import button stays disabled after "Failed to get Resource Custom Attributes list (403)"
-        test.fail();
+    test('S12: the import result lets the user open each created certificate', { tag: TAGS }, async ({ browser }) => {
+        test.fail(true, 'the import wizard keeps Import disabled for a user without custom attribute access');
         await setAutomaticOwnership(admin, true);
         const { pem, certs } = certificatesInOnePem(3, `${run}-s12`);
         certs.forEach((c) => cleanup.certificate(c.fingerprint));
-        const { page, close } = await signedIn(browser, 'U', testInfo);
+        const { page, close } = await signedIn(browser, 'U');
         try {
             const certificates = new CertificatePage(page);
             await page.goto('/administrator/#/certificates');
@@ -617,15 +600,12 @@ test.describe('import wizard (UI)', () => {
             const hrefs = await links.evaluateAll((all) => all.map((a) => a.getAttribute('href') ?? ''));
             expect(new Set(hrefs).size, 'three different details').toBe(3);
 
-            for (const href of hrefs) {
-                await page.goto(`/administrator/${href}`);
-                await expect(page).toHaveURL(/\/certificates\/detail\//);
-                await expect(ownerRow(page), `the detail ${href} shows U as owner`).toContainText(nameOf('U'));
-            }
             const shownNames = [];
             for (const href of hrefs) {
                 await page.goto(`/administrator/${href}`);
-                shownNames.push(await commonNameRow(page).innerText());
+                await expect(page).toHaveURL(/\/certificates\/detail\//);
+                await expect(certificates.ownerRow, `the detail ${href} shows U as owner`).toContainText(nameOf('U'));
+                shownNames.push(await certificates.commonNameRow.innerText());
             }
             for (const c of certs) expect(shownNames.join('\n'), `the three details show ${c.cn}`).toContain(c.cn);
         } finally {
@@ -633,9 +613,8 @@ test.describe('import wizard (UI)', () => {
         }
     });
 
-    test('S13: a user who may only upload opens the certificate they imported; others stay hidden', { tag: REGRESSION }, async ({ browser }, testInfo) => {
-        // bug draft: Import wizard cannot import for a user without custom attribute access: the Import button stays disabled after "Failed to get Resource Custom Attributes list (403)"
-        test.fail();
+    test('S13: a user who may only upload opens the certificate they imported; others stay hidden', { tag: REGRESSION }, async ({ browser }) => {
+        test.fail(true, 'the import wizard keeps Import disabled for a user without custom attribute access');
         await setAutomaticOwnership(admin, true);
         const ofU = newCertificate('s13-u');
         const ofV = newCertificate('s13-v');
@@ -643,7 +622,7 @@ test.describe('import wizard (UI)', () => {
         [ofU, ofV, ofR].forEach((c) => cleanup.certificate(c.fingerprint));
         await uploadAndFind(U, admin, ofU.pem, ofU.fingerprint);
         await uploadAndFind(V, admin, ofV.pem, ofV.fingerprint);
-        const { page, close } = await signedIn(browser, 'R', testInfo);
+        const { page, close } = await signedIn(browser, 'R');
         try {
             const certificates = new CertificatePage(page);
             await page.goto('/administrator/#/certificates');
@@ -654,7 +633,7 @@ test.describe('import wizard (UI)', () => {
             await certificates.importResults.getByTestId('import-open-certificate').click();
 
             await expect(page).toHaveURL(/\/certificates\/detail\//);
-            await expect(commonNameRow(page), 'the detail opens without an access error').toContainText(ofR.cn);
+            await expect(certificates.commonNameRow, 'the detail opens without an access error').toContainText(ofR.cn);
 
             await page.goto('/administrator/#/certificates');
             await page.reload();
@@ -669,11 +648,12 @@ test.describe('import wizard (UI)', () => {
 });
 
 test.describe('platform setting (UI)', () => {
-    test('S18: the Automatic Ownership switch shows the saved value; turning it off keeps existing owners', { tag: TAGS }, async ({ browser }, testInfo) => {
+    test('S18: the Automatic Ownership switch shows the saved value; turning it off keeps existing owners', { tag: TAGS }, async ({ browser }) => {
+        test.setTimeout(180_000); // sign-in, two saves, an upload and the 40-second cache window
         await setAutomaticOwnership(admin, false);
         const cert = newCertificate('s18');
         cleanup.certificate(cert.fingerprint);
-        const { page, close } = await signedIn(browser, 'admin', testInfo);
+        const { page, close } = await signedIn(browser, 'admin');
         const readOnlySwitch = page.getByTestId('switch-uploadAutomaticOwnership-input');
         const editSwitch = page.getByRole('dialog', { name: 'Edit Platform Settings' }).getByTestId('switch-automaticOwnership-input');
         const saveAs = async (on: boolean): Promise<void> => {
@@ -683,11 +663,11 @@ test.describe('platform setting (UI)', () => {
             await dialog.getByRole('tab', { name: 'Certificates' }).click();
             // the form is filled from the stored setting: toggle only after it shows the value the platform holds
             await expect(editSwitch).toBeChecked({ checked: !on });
-            await editSwitch.setChecked(on, { force: true });
+            await editSwitch.setChecked(on, { force: true }); // the switch input is visually hidden (sr-only)
             await expect(editSwitch).toBeChecked({ checked: on });
             await dialog.getByRole('button', { name: 'Save', exact: true }).click();
             await expect(dialog).toBeHidden();
-            await pollUntil(async () => (await readAutomaticOwnership(admin)) === on, `the platform setting reads ${on ? 'on' : 'off'}`);
+            await waitUntil(async () => (await readAutomaticOwnership(admin)) === on, `the platform setting reads ${on ? 'on' : 'off'}`);
         };
         try {
             await saveAs(true);

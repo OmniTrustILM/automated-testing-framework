@@ -1,11 +1,6 @@
 /**
- * epicOwnership — helpers of the Epic tests on automatic ownership by certificate upload (tests/epic/ilm-364).
- *
- * WHAT: the sign-in of the three prepared accounts U, V and R (API and UI), the platform setting, upload and import calls, the reads
- *       of a certificate (detail, history, inventory) and the platform triggers on "Certificate uploaded".
- * WHY:  every scenario of the Epic is "who is the owner of the certificate after X"; the calls and reads are the same in all of them.
- * HOW:  plain APIRequestContext calls (the Epic suite is outside the regression guard); every object a test creates is registered in a
- *       `Cleanup` and removed in dependency order, also when the test failed. The accounts U, V, R are never created or changed here.
+ * epicOwnership — helpers of the Epic ilm#364 tests: the prepared accounts, the ownership setting, uploads, imports, reads, upload triggers.
+ * Plain API contexts: every object a test creates goes into a Cleanup and is removed in dependency order, also after a failure.
  */
 
 import { APIRequestContext, request as playwrightRequest } from '@playwright/test';
@@ -17,12 +12,14 @@ import { requiredCustomAttributes } from './regression/customAttributes';
 import { getCertificateKeyUuid, deleteKeyIfOrphaned } from './keyUtils';
 import { findCryptoConnector, tokenRequestAttributes, tokenAlias, activationCode } from './regression/platform/tokens';
 import { PROFILE_USAGES } from './regression/platform/cryptoAlgorithmCases';
+import { fingerprintFilter, pollCertificateByFingerprint } from './regression/apiReads';
+import { pollUntil } from './regression/wait';
 
 const logger = new Logger('EpicOwnership');
 
 export type Account = 'U' | 'V' | 'R';
 
-export const UPLOAD_EVENT = 'certificate_uploaded';
+const UPLOAD_EVENT = 'certificate_uploaded';
 
 export interface Json { [key: string]: any }
 
@@ -39,9 +36,8 @@ export function envFor(env: TestEnv, account: Account): TestEnv {
     return { ...env, ...accountCredentials(account) };
 }
 
-/** An API context that acts as the account (password grant, cached per account by `fetchAccessToken`). */
-export async function apiAs(request: APIRequestContext, env: TestEnv, account: Account): Promise<APIRequestContext> {
-    const token = await fetchAccessToken(request, env, accountCredentials(account), { minLifetimeMs: 300_000 });
+async function contextFor(request: APIRequestContext, env: TestEnv, credentials: { username: string; password: string }): Promise<APIRequestContext> {
+    const token = await fetchAccessToken(request, env, credentials, { minLifetimeMs: 300_000 });
     return playwrightRequest.newContext({
         baseURL: env.baseUrl,
         extraHTTPHeaders: { Authorization: `Bearer ${token.bearer()}`, Accept: 'application/json' },
@@ -49,15 +45,11 @@ export async function apiAs(request: APIRequestContext, env: TestEnv, account: A
     });
 }
 
+/** An API context that acts as the account (password grant, cached per account by `fetchAccessToken`). */
+export const apiAs = (request: APIRequestContext, env: TestEnv, account: Account): Promise<APIRequestContext> => contextFor(request, env, accountCredentials(account));
+
 /** The administrator's context (the smoke user), for reads and for the setup the accounts may not do. */
-export async function adminApi(request: APIRequestContext, env: TestEnv): Promise<APIRequestContext> {
-    const token = await fetchAccessToken(request, env, { username: env.username, password: env.password }, { minLifetimeMs: 300_000 });
-    return playwrightRequest.newContext({
-        baseURL: env.baseUrl,
-        extraHTTPHeaders: { Authorization: `Bearer ${token.bearer()}`, Accept: 'application/json' },
-        ignoreHTTPSErrors: true,
-    });
-}
+export const adminApi = (request: APIRequestContext, env: TestEnv): Promise<APIRequestContext> => contextFor(request, env, { username: env.username, password: env.password });
 
 export interface Answer { status: number; json: Json | any[] | undefined; text: string }
 
@@ -75,33 +67,27 @@ export async function sendOk(api: APIRequestContext, method: 'GET' | 'POST' | 'P
     return answer;
 }
 
-/* ---------- the platform setting ---------- */
-
-export async function readAutomaticOwnership(api: APIRequestContext): Promise<boolean> {
+/** The stored value as the API returns it; undefined when the field is missing. */
+export async function readAutomaticOwnership(api: APIRequestContext): Promise<boolean | undefined> {
     const answer = await sendOk(api, 'GET', '/api/v1/settings/platform');
-    return (answer.json as Json).certificates?.upload?.automaticOwnership === true;
+    return (answer.json as Json).certificates?.upload?.automaticOwnership;
 }
 
 /** Sets the switch and waits until a read shows it (one Core instance is assumed; with several, the caches follow within 30 seconds). */
 export async function setAutomaticOwnership(api: APIRequestContext, on: boolean): Promise<void> {
     await sendOk(api, 'PUT', '/api/v1/settings/platform', { certificates: { upload: { automaticOwnership: on } } });
-    await pollUntil(async () => (await readAutomaticOwnership(api)) === on, `the platform setting reads ${on ? 'on' : 'off'}`);
+    await waitUntil(async () => (await readAutomaticOwnership(api)) === on, `the platform setting reads ${on ? 'on' : 'off'}`);
 }
 
-export async function pollUntil(check: () => Promise<boolean>, what: string, timeoutMs = 30_000): Promise<void> {
-    const deadline = Date.now() + timeoutMs;
-    for (;;) {
-        if (await check()) return;
-        if (Date.now() > deadline) throw new Error(`Timed out waiting for: ${what}`);
-        await new Promise((resolve) => setTimeout(resolve, 500));
-    }
+/** The shared poll of utils/regression/wait.ts with a message: an error of the check fails at once, as a timeout does. */
+export async function waitUntil(check: () => Promise<boolean>, what: string, timeoutMs = 30_000): Promise<void> {
+    const ok = await pollUntil(check, (done) => done, { timeoutMs, intervalMs: 500, tolerateErrors: 0, onTimeout: 'return' });
+    if (!ok) throw new Error(`Timed out waiting for: ${what}`);
 }
 
-/* ---------- upload, import and reads ---------- */
+const base64 = (text: string | Buffer): string => Buffer.from(text).toString('base64');
 
-export const base64 = (text: string | Buffer): string => Buffer.from(text).toString('base64');
-
-export const uploadRequest = (pem: string, customAttributes: unknown[] = []): Json => ({ certificate: base64(pem), customAttributes });
+const uploadRequest = (pem: string, customAttributes: unknown[] = []): Json => ({ certificate: base64(pem), customAttributes });
 
 export async function upload(api: APIRequestContext, pem: string, customAttributes: unknown[] = [], path: 'upload' | 'upload/async' = 'upload'): Promise<Answer> {
     return send(api, 'POST', `/api/v1/certificates/${path}`, uploadRequest(pem, customAttributes));
@@ -116,41 +102,30 @@ export interface ImportResult { entryReference: string; imported: boolean; certi
 
 export const importResults = (answer: Answer): ImportResult[] => ((answer.json as Json)?.results ?? []) as ImportResult[];
 
+const fingerprintSearch = (fingerprint: string, includeArchived = false): Json => ({ itemsPerPage: 10, pageNumber: 1, filters: fingerprintFilter(fingerprint), includeArchived });
+
 export async function findByFingerprint(api: APIRequestContext, fingerprint: string): Promise<Answer> {
-    return send(api, 'POST', '/api/v1/certificates', {
-        itemsPerPage: 10,
-        pageNumber: 1,
-        filters: [{ fieldSource: 'property', fieldIdentifier: 'FINGERPRINT', condition: 'EQUALS', value: fingerprint }],
-        includeArchived: false,
-    });
+    return send(api, 'POST', '/api/v1/certificates', fingerprintSearch(fingerprint));
 }
 
-/** The inventory row of the certificate as the signed-in account sees it, or undefined. */
-export async function inventoryRow(api: APIRequestContext, fingerprint: string): Promise<Json | undefined> {
-    const answer = await sendOk(api, 'POST', '/api/v1/certificates', {
-        itemsPerPage: 10,
-        pageNumber: 1,
-        filters: [{ fieldSource: 'property', fieldIdentifier: 'FINGERPRINT', condition: 'EQUALS', value: fingerprint }],
-        includeArchived: false,
-    });
+/** The inventory row of the certificate as the signed-in account sees it, or undefined; archived ones only when asked (clean-up). */
+export async function inventoryRow(api: APIRequestContext, fingerprint: string, opts: { includeArchived?: boolean } = {}): Promise<Json | undefined> {
+    const answer = await sendOk(api, 'POST', '/api/v1/certificates', fingerprintSearch(fingerprint, opts.includeArchived));
     return ((answer.json as Json).certificates as Json[])[0];
 }
 
 /** Waits until the certificate with the fingerprint is in the inventory (the asynchronous upload) and returns its uuid. */
 export async function waitForCertificate(admin: APIRequestContext, fingerprint: string): Promise<string> {
-    let uuid: string | undefined;
-    await pollUntil(async () => {
-        uuid = (await inventoryRow(admin, fingerprint))?.uuid;
-        return !!uuid;
-    }, `a certificate with fingerprint ${fingerprint} in the inventory`, 60_000);
-    return uuid!;
+    const row = await pollCertificateByFingerprint(admin, fingerprint, 60_000);
+    if (!row?.uuid) throw new Error(`Timed out waiting for: a certificate with fingerprint ${fingerprint} in the inventory`);
+    return String(row.uuid);
 }
 
 export async function detail(api: APIRequestContext, uuid: string): Promise<Json> {
     return (await sendOk(api, 'GET', `/api/v1/certificates/${uuid}`)).json as Json;
 }
 
-export async function history(api: APIRequestContext, uuid: string): Promise<Json[]> {
+async function history(api: APIRequestContext, uuid: string): Promise<Json[]> {
     return (await sendOk(api, 'GET', `/api/v1/certificates/${uuid}/history`)).json as Json[];
 }
 
@@ -165,8 +140,6 @@ export async function uploadAndFind(as: APIRequestContext, admin: APIRequestCont
     if (answer.status !== 200 && answer.status !== 201) throw new Error(`upload answered ${answer.status}: ${answer.text.slice(0, 500)}`);
     return waitForCertificate(admin, fingerprint);
 }
-
-/* ---------- clean-up ---------- */
 
 /** Everything a test creates, removed in dependency order by `run` (also after a failed test). */
 export class Cleanup {
@@ -188,16 +161,21 @@ export class Cleanup {
         this.keys.push(keyUuid);
     }
 
-    /** Removes the certificates and the keys they left, then the registered objects, last created first. */
+    /** Removes the certificates (archived ones too), then the keys they left, then the registered objects, last created first. */
     async run(admin: APIRequestContext): Promise<void> {
+        const leftKeys = new Set<string>();
         for (const fingerprint of this.fingerprints.splice(0)) {
             await attemptCleanup({ resource: 'certificate', name: fingerprint }, async () => {
-                const row = await inventoryRow(admin, fingerprint);
+                const row = await inventoryRow(admin, fingerprint, { includeArchived: true });
                 if (!row) return;
                 const keyUuid = await getCertificateKeyUuid(admin, row.uuid);
+                if (keyUuid) leftKeys.add(keyUuid);
                 await sendOk(admin, 'DELETE', `/api/v1/certificates/${row.uuid}`);
-                if (keyUuid) await deleteKeyIfOrphaned(admin, keyUuid, this.startedAt);
             });
+        }
+        // a key step of its own: a failed key removal is retried and reported apart from its certificate
+        for (const keyUuid of leftKeys) {
+            await attemptCleanup({ resource: 'key', uuid: keyUuid }, () => deleteKeyIfOrphaned(admin, keyUuid, this.startedAt));
         }
         for (const keyUuid of this.keys.splice(0)) {
             await attemptCleanup({ resource: 'key', uuid: keyUuid }, () => sendOk(admin, 'DELETE', '/api/v1/keys', [keyUuid]));
@@ -205,8 +183,6 @@ export class Cleanup {
         for (const step of this.steps.splice(0)) await attemptCleanup(step.describe, step.remove);
     }
 }
-
-/* ---------- objects of the scenarios ---------- */
 
 export async function createTeamUser(admin: APIRequestContext, cleanup: Cleanup, username: string): Promise<{ uuid: string; username: string }> {
     const created = await sendOk(admin, 'POST', '/api/v1/users', {
@@ -322,12 +298,13 @@ async function platformTriggers(admin: APIRequestContext): Promise<string[]> {
     return (((answer.json as Json).eventsMapping ?? {})[UPLOAD_EVENT] ?? []) as string[];
 }
 
-/** Puts the earlier platform list back, leaving out triggers that no longer exist (the platform refuses a list that names one). */
+/** Puts the earlier platform list back, leaving out only triggers that are gone (404): any other failed read stops the restore. */
 async function restorePlatformTriggers(admin: APIRequestContext, before: string[]): Promise<void> {
     const existing: string[] = [];
     for (const uuid of before) {
         const answer = await admin.get(`/api/v1/workflows/triggers/${uuid}`);
         if (answer.ok()) existing.push(uuid);
+        else if (answer.status() !== 404) throw new Error(`GET trigger ${uuid} answered ${answer.status()}: the platform list is not restored, so no trigger is dropped from it`);
     }
     await sendOk(admin, 'PATCH', '/api/v1/settings/events', { event: UPLOAD_EVENT, triggerUuids: existing });
 }

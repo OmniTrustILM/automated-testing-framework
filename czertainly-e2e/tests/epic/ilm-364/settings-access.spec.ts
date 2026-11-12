@@ -1,10 +1,6 @@
 /**
- * settings-access — Epic ilm#364, S17: a user without permission to update settings cannot turn the automatic ownership setting on.
- *
- * WHAT: user R (certificate create only) sends the settings update; it must be refused and the setting must keep its value.
- * WHY:  the setting hands owner rights to every uploader, so who may change it is part of the Epic's security surface.
- * HOW:  not @exclusive: a correct platform refuses the request and changes nothing. If it does not refuse, the setting is put back by
- *       the administrator in `finally`, so a failing run does not leave the platform changed.
+ * settings-access — Epic ilm#364, S17: a user without permission to update settings cannot turn automatic ownership on.
+ * Not @exclusive: a correct platform refuses and changes nothing; otherwise `finally` puts the value back.
  */
 
 import { test, expect, request as playwrightRequest, APIRequestContext } from '@playwright/test';
@@ -25,7 +21,7 @@ test('S17: a user without permission to update settings cannot turn the setting 
             expect(answer.status, `refused for missing permission: ${answer.text}`).toBe(403);
             expect(await readAutomaticOwnership(admin), 'the setting keeps its value').toBe(before);
         } finally {
-            if ((await readAutomaticOwnership(admin)) !== before) await setAutomaticOwnership(admin, before);
+            if ((await readAutomaticOwnership(admin)) !== before) await setAutomaticOwnership(admin, before ?? false);
         }
     } finally {
         await bootstrap.dispose();
