@@ -484,6 +484,8 @@ test.describe('access and security', () => {
 });
 
 test.describe('unchanged behaviour', () => {
+    // Needs a human: the role of U has no access to authorities and RA profiles (403 "Required 'Detail' permission for 'Authority'"), so U
+    // cannot issue. The administrator issues; what is compared is the owner rule with the setting off and on.
     test('S20: issued certificates keep their ownership with the setting on', { tag: REGRESSION }, async () => {
         test.setTimeout(240_000);
         const state = readSmokeState();
@@ -491,10 +493,10 @@ test.describe('unchanged behaviour', () => {
         const issue = async (name: string): Promise<{ uuid: string; owner: unknown }> => {
             const cn = subjectOf(run, name);
             const csr = csrFromKey(newKeyPair(), cn, { dns: [cn], ip: ['192.0.2.20'] });
-            const answer = await send(U, 'POST', `/api/v2/operations/authorities/${state.authorityUuid}/raProfiles/${state.raProfileUuid}/certificates`, {
+            const answer = await send(admin, 'POST', `/api/v2/operations/authorities/${state.authorityUuid}/raProfiles/${state.raProfileUuid}/certificates`, {
                 request: csr.derBase64, format: 'pkcs10', attributes: [], customAttributes: [],
             });
-            expect(answer.status, `issue as U: ${answer.text}`).toBe(200);
+            expect(answer.status, `issue: ${answer.text}`).toBe(200);
             const uuid = (answer.json as Json).uuid as string;
             cleanup.add('issued certificate', cn, async () => {
                 const keyUuid = (await detail(admin, uuid)).key?.uuid;
