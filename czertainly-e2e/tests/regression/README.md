@@ -144,9 +144,12 @@ flows (Deployment `07-deployment/01` to `02`, Configuration `03-configuration/01
 files of `tests/api` that cover them), the run infrastructure (snapshot, run-setup, non-interference), the smoke suite
 (default config) and the two developers' blocks (devblock config). The secondary flow is everything else on top: the
 extension rows of the other areas (certificate filters, sorting and paging, discovery, protocols, keys and tokens,
-workflows, compliance, secrets, sign-in) and the remaining API areas. Both live in this folder and run in the same
-configs, in area order; a branch that carries only the main flow simply has no spec in the other areas (the sign-out
-project then selects nothing).
+workflows, compliance, secrets, sign-in), the API filter and sort matrix, the negative rows of the configuration objects
+and the remaining API areas. Both live in these folders and run in the same configs, in area order.
+`utils/regression/flows.ts` lists the secondary files and folders; every other row is the main flow. `REG_FLOW` picks the
+rows of a run: `main` (the default), `secondary` or `all`. The run infrastructure and the API gate run in each flow. The
+sign-out spec belongs to the secondary flow, so it is listed when it is added and the main flow's sign-out project selects
+nothing (a unit test holds it).
 
 ## Configs, commands and reports
 

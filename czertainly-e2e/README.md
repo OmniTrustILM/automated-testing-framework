@@ -22,6 +22,7 @@ run switch are in [tests/regression/README.md](tests/regression/README.md).
 |---|---|---|
 | regression | `REG_ENV_FILE=<tier env file> npm run test:regression` | `regression-junit.xml` |
 | API | `REG_ENV_FILE=<tier env file> npm run test:api` | `api-junit.xml` |
+| the secondary flow of either | the same with `REG_FLOW=secondary` (`all` for both flows; the default is the main flow) | as above |
 | one developers' block | `REG_ENV_FILE=<tier env file> DEV_BLOCK=timestamping npx playwright test -c playwright.devblock.config.ts` (or `DEV_BLOCK=key-onboarding`) | `dev-<block>-junit.xml` |
 | smoke | `npm run test:smoke` (a dedicated deployment only) | `junit.xml` |
 | one Epic's tests (the QA test agent) | `npx playwright test -c playwright.epic.config.ts --grep @epic-<n>` (a dedicated deployment only) | `junit.xml` |

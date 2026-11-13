@@ -12,7 +12,11 @@ const parent = (line: { parents?: Record<string, string | string[]> }, key: stri
 
 export const teardownHandlers: Record<string, TeardownHandler> = {
     secrets: {
-        action: 'delete (DELETE /secrets/{uuid}), absence proven by GET /secrets/{uuid}',
+        action: 'delete (DELETE /secrets/{uuid}), absence proven by GET /secrets/{uuid}; a secret a TSP Basic credential owns goes with it',
+        goneWith(ctx, line) {
+            const owners: Array<[string, string | undefined]> = [['tspBasicCredentials', parent(line, 'tspBasicCredential')], ['tspProfiles', parent(line, 'tspProfile')]];
+            return owners.some(([type, uuid]) => !!uuid && ctx.ledger.some((l) => l.event === 'deleted' && l.runId === ctx.runId && l.type === type && l.uuid === uuid));
+        },
         async remove(ctx, line) {
             await deleteAndVerify(ctx, { uuid: line.uuid, what: `secret ${line.uuid}`, detailUrl: `/api/v1/secrets/${line.uuid}` });
         },

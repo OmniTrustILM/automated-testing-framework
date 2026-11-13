@@ -73,6 +73,8 @@ export function expectMirror(label: string, asc: ListRow[], desc: ListRow[], val
 
 const simpleText = (s: string): boolean => /^[a-z0-9]+$/.test(s);
 const collator = new Intl.Collator('en');
+/** A glibc-style database collation skips spaces and punctuation at the first level. */
+const skipPunctuation = new Intl.Collator('en', { ignorePunctuation: true });
 export const codeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 /**
@@ -86,14 +88,20 @@ export function textOrdered(prev: string, cur: string, dir: 'asc' | 'desc'): boo
     return codeUnit(lo, hi) <= 0 || collator.compare(lo, hi) <= 0;
 }
 
+const punctuationBlind = (prev: string, cur: string, dir: 'asc' | 'desc'): boolean =>
+    (dir === 'asc' ? skipPunctuation.compare(prev, cur) : skipPunctuation.compare(cur, prev)) <= 0;
+
+/** The whole list must follow one ordering: the `textOrdered` rule or the punctuation-blind `en` collator. */
 export function expectOrderedText(label: string, rows: ListRow[], valueOf: (r: ListRow) => string | undefined, dir: 'asc' | 'desc', key: (r: ListRow) => string): void {
-    let prev: { v: string; r: ListRow } | undefined;
-    for (const r of rows) {
+    const seq = rows.flatMap((r) => {
         const v = valueOf(r);
-        if (v === undefined) continue;
-        if (prev && !textOrdered(prev.v, v, dir)) throw new InvariantViolation(`${label}: ${key(prev.r)}="${prev.v}" comes before ${key(r)}="${v}"`);
-        prev = { v, r };
-    }
+        return v === undefined ? [] : [{ v, r }];
+    });
+    const fits = (ordered: typeof textOrdered) => seq.every((x, i) => i === 0 || ordered(seq[i - 1].v, x.v, dir));
+    if ([textOrdered, punctuationBlind].some(fits)) return;
+    const at = seq.findIndex((x, i) => i > 0 && !textOrdered(seq[i - 1].v, x.v, dir));
+    const [prev, cur] = [seq[at - 1], seq[at]];
+    throw new InvariantViolation(`${label}: ${key(prev.r)}="${prev.v}" comes before ${key(cur.r)}="${cur.v}"`);
 }
 
 export function expectTieBreakAscending(label: string, rows: ListRow[], valueOf: (r: ListRow) => string | undefined, key: (r: ListRow) => string): number {

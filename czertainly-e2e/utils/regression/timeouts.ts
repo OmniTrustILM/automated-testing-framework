@@ -175,6 +175,9 @@ export const DISCOVERY_RUN_MS = 4 * MINUTE_MS;
 
 export const DISCOVERY_LARGE_RUN_MS = 5 * MINUTE_MS;
 
+/** A run the teardown finds still running ends within 6 minutes (a v2 run on a dark range failed after 5.5 minutes on 2026-11-13). */
+export const DISCOVERY_SETTLE_MS = 6 * MINUTE_MS;
+
 export const STATUS_CHANGE_MS = MINUTE_MS;
 
 /** A run over two /24 ranges to reach the second chunk of 256 targets, and the untouched control run to complete: 10 minutes. */

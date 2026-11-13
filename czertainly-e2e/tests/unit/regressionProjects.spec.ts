@@ -121,7 +121,7 @@ test('in the real tree the sign-out spec is the only file of the logout project 
     expect(specs.length, 'the regression tree holds specs').toBeGreaterThan(15);
     const signOut = specs.filter((f) => LOGOUT_FILE.test(f));
     expect(signOut).toEqual(signOut.length ? ['tests/regression/01-sign-in-and-access/99-sign-out.spec.ts'] : []);
-    const projects = regressionProjects({}).filter((p) => p.name === 'regression' || p.name === 'logout');
+    const projects = regressionProjects({ REG_FLOW: 'all' }).filter((p) => p.name === 'regression' || p.name === 'logout');
     const byProject = (name: string) => specs.filter((f) => projectsSelectingFile(projects.filter((p) => p.name === name), f).includes(name));
     expect(byProject('logout')).toEqual(signOut);
     expect(byProject('regression').length + signOut.length, 'every spec belongs to exactly one of the two projects').toBe(specs.length);
