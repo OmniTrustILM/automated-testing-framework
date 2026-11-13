@@ -136,15 +136,18 @@ export async function associateComplianceProfile(api: APIRequestContext, profile
     await call(api, 'patch', `/v2/complianceProfiles/${profileUuid}/associations/raProfiles/${raProfileUuid}`);
 }
 
+/** Returns once the platform's own compliance check after issuance (as the system user) is done; the certificate is in no group yet. */
 export async function issueCertificate(
-    api: APIRequestContext, authorityUuid: string, raProfileUuid: string, commonName: string, groupUuid: string,
+    api: APIRequestContext, authorityUuid: string, raProfileUuid: string, commonName: string,
 ): Promise<string> {
     const csr = csrFromKey(newKeyMaterial().keys, commonName, { dns: [commonName], ip: [] });
     const issued = await call(api, 'post', `/v2/operations/authorities/${authorityUuid}/raProfiles/${raProfileUuid}/certificates`, {
         request: csr.derBase64, format: 'pkcs10', attributes: [], customAttributes: [],
     });
     await waitForCertificateState(api, issued.uuid, 'issued', 120_000);
-    await setGroup(api, issued.uuid, groupUuid);
+    await expect.poll(async () => (await getCertificate(api, issued.uuid)).complianceStatus, {
+        message: `${ENVIRONMENT} the compliance check after the issuance of ${commonName}`, timeout: 180_000, intervals: [2_000],
+    }).not.toBe('not_checked');
     return issued.uuid;
 }
 

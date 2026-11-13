@@ -105,12 +105,13 @@ test.describe('@epic-369 reminders timeline', () => {
             const compliance = await createComplianceSetup(api, prefix);
             await associateComplianceProfile(api, compliance.profileUuid, smoke.raProfileUuid);
 
-            // compliant first, so that the flip below is the transition
+            // compliant first, so that the flip below is the transition; the group only after the flag (see issueCertificate)
             const compliant: Record<string, string> = {};
             const issued = [['reminded', g1], ['twohourly', g2], ['once', g3], ['recovered', g1], ['archived', g1], ['twoprofiles', g7]] as const;
             for (const [name, groupUuid] of issued) {
-                compliant[name] = await issueCertificate(api, smoke.authorityUuid, smoke.raProfileUuid, `${prefix}${name}`, groupUuid);
+                compliant[name] = await issueCertificate(api, smoke.authorityUuid, smoke.raProfileUuid, `${prefix}${name}`);
                 await makeCompliance(api, compliant[name], compliance.attributeUuid, true);
+                await setGroup(api, compliant[name], groupUuid);
             }
 
             // S9, S10: self-signed, valid for 10 days (inside the expiring threshold); marked as a trusted CA so validation reaches the validity
