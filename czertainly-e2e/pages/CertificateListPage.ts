@@ -5,6 +5,7 @@
 import { expect, Locator, Page } from '@playwright/test';
 import { badgeTextOf } from '../utils/regression/inventory/fieldLabels';
 import { ListObservation, observeListRequest } from './ui/list';
+import { openHashRoute } from './ui/openHashRoute';
 
 export class CertificateListPage {
     readonly page: Page;
@@ -40,6 +41,13 @@ export class CertificateListPage {
 
     removeBadgeButton(index: number): Locator {
         return this.filterBadges.nth(index).getByRole('button', { name: 'Remove badge' });
+    }
+
+    /** The list by its route, loaded anew so it shows what is stored, with its rows rendered. */
+    async openFresh(): Promise<void> {
+        await openHashRoute(this.page, 'certificates');
+        await this.page.reload();
+        await this.waitForTableLoaded();
     }
 
     /** A refetch keeps the old rows under the busy overlay, so rows alone prove nothing. */

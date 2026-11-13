@@ -104,6 +104,12 @@ export class CertificatePage {
         await expect(this.main).toBeVisible();
     }
 
+    /** Opens the detail an import result links to (`#/certificates/detail/<uuid>`). */
+    async goToDetailLink(href: string): Promise<void> {
+        await this.page.goto(`/administrator/${href}`);
+        await expect(this.page).toHaveURL(/\/certificates\/detail\//);
+    }
+
     async goToDetail(uuid: string): Promise<void> {
         logger.info(`Navigating to certificate detail: ${uuid}`);
         await this.page.goto(`/administrator/#/certificates/detail/${uuid}`);

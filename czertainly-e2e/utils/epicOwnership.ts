@@ -8,7 +8,7 @@ import { TestEnv } from './env';
 import { openAuthenticatedApiContext } from './auth/apiContext';
 import { RENEW_MARGIN_MS, renewingContext } from './auth/renewingContext';
 import { Logger } from './Logger';
-import { attemptCleanup } from './cleanupLedger';
+import { attemptCleanup, recordCleanupFailure } from './cleanupLedger';
 import { requiredCustomAttributes } from './regression/customAttributes';
 import { getCertificateKeyUuid, deleteKeyIfOrphaned } from './keyUtils';
 import { findCryptoConnector, tokenRequestAttributes, tokenAlias, activationCode } from './regression/platform/tokens';
@@ -74,6 +74,13 @@ export async function setAutomaticOwnership(api: APIRequestContext, on: boolean)
     await waitUntil(async () => (await readAutomaticOwnership(api)) === on, `the platform setting reads ${on ? 'on' : 'off'}`);
 }
 
+/** Puts back the validation settings as they were read: only the fields the read returned. */
+export async function restoreValidation(admin: APIRequestContext, captured: Json): Promise<void> {
+    const { enabled, frequency, expiringThreshold } = captured;
+    const validation = Object.fromEntries(Object.entries({ enabled, frequency, expiringThreshold }).filter(([, value]) => value !== undefined));
+    await sendOk(admin, 'PUT', '/api/v1/settings/platform', { certificates: { validation } });
+}
+
 /** The shared poll of utils/regression/wait.ts with a message: an error of the check fails at once, as a timeout does. */
 export async function waitUntil(check: () => Promise<boolean>, what: string, timeoutMs = 30_000): Promise<void> {
     const ok = await pollUntil(check, (done) => done, { timeoutMs, intervalMs: 500, tolerateErrors: 0, onTimeout: 'return' });
@@ -84,21 +91,31 @@ const base64 = (text: string | Buffer): string => Buffer.from(text).toString('ba
 
 const uploadRequest = (pem: string, customAttributes: unknown[] = []): Json => ({ certificate: base64(pem), customAttributes });
 
+export interface CertificateFile { pem: string; fingerprint: string }
+
+/** Sends a request that stores the registered certificates: the cleanup waits for them unless the platform refused it. */
+async function storing(cleanup: Cleanup | undefined, fingerprints: string[], request: () => Promise<Answer>): Promise<Answer> {
+    fingerprints.forEach((f) => cleanup?.expectStored(f, true));
+    const answer = await request();
+    if (answer.status >= 300) fingerprints.forEach((f) => cleanup?.expectStored(f, false));
+    return answer;
+}
+
 export async function upload(api: APIRequestContext, pem: string, customAttributes: unknown[] = []): Promise<Answer> {
     return send(api, 'POST', '/api/v1/certificates/upload', uploadRequest(pem, customAttributes));
 }
 
-/** The asynchronous upload: once accepted, the cleanup waits for the certificate even when it is stored after the test. */
-export async function uploadAsync(api: APIRequestContext, cleanup: Cleanup, cert: { pem: string; fingerprint: string }): Promise<Answer> {
+export async function uploadAsync(api: APIRequestContext, cleanup: Cleanup, cert: CertificateFile): Promise<Answer> {
     cleanup.certificate(cert.fingerprint);
-    const answer = await send(api, 'POST', '/api/v1/certificates/upload/async', uploadRequest(cert.pem));
-    if (answer.status < 300) cleanup.certificate(cert.fingerprint, { stored: 'later' });
-    return answer;
+    return storing(cleanup, [cert.fingerprint], () => send(api, 'POST', '/api/v1/certificates/upload/async', uploadRequest(cert.pem)));
 }
 
 /** Imports the entries named by their references (certificate-only entries have no key destination). */
-export async function importEntries(api: APIRequestContext, file: Buffer, entries: Array<{ entryReference: string; keyDestination?: Json }>, extra: Json = {}): Promise<Answer> {
-    return send(api, 'POST', '/api/v1/certificates/import', { file: base64(file), entries, ...extra });
+export async function importEntries(
+    api: APIRequestContext, file: Buffer, entries: Array<{ entryReference: string; keyDestination?: Json }>, opts: { cleanup?: Cleanup; extra?: Json } = {},
+): Promise<Answer> {
+    return storing(opts.cleanup, entries.map((e) => e.entryReference), () =>
+        send(api, 'POST', '/api/v1/certificates/import', { file: base64(file), entries, ...opts.extra }));
 }
 
 export interface ImportResult { entryReference: string; imported: boolean; certificateOutcome?: string; certificateUuid?: string; message?: string }
@@ -137,39 +154,58 @@ export async function ownerChanges(api: APIRequestContext, uuid: string): Promis
     return (await history(api, uuid)).filter((e) => e.event === 'Update Owner' || e.event === 'UPDATE_OWNER').map((e) => String(e.message));
 }
 
-/** Uploads as the account and returns the uuid of the new certificate. */
-export async function uploadAndFind(as: APIRequestContext, admin: APIRequestContext, pem: string, fingerprint: string, customAttributes: unknown[] = []): Promise<string> {
-    const answer = await upload(as, pem, customAttributes);
+/** Uploads as the account (registered for the cleanup) and returns the uuid of the new certificate. */
+export async function uploadAndFind(as: APIRequestContext, admin: APIRequestContext, cleanup: Cleanup, cert: CertificateFile, customAttributes: unknown[] = []): Promise<string> {
+    cleanup.certificate(cert.fingerprint);
+    const answer = await storing(cleanup, [cert.fingerprint], () => upload(as, cert.pem, customAttributes));
     if (answer.status !== 200 && answer.status !== 201) throw new Error(`upload answered ${answer.status}: ${answer.text.slice(0, 500)}`);
-    return waitForCertificate(admin, fingerprint);
+    return waitForCertificate(admin, cert.fingerprint);
 }
 
-/** How long the cleanup waits for a certificate of an accepted asynchronous upload, as `waitForCertificate` does. */
+/** How long the cleanup waits for a certificate that an accepted request stores, as `waitForCertificate` does. */
 const STORED_LATER_MS = 60_000;
 
-/** The row of a certificate that an accepted asynchronous upload stores; not there after the wait = an error for the cleanup ledger. */
-async function rowStoredLater(admin: APIRequestContext, fingerprint: string): Promise<Json> {
-    const row = await pollUntil(() => inventoryRow(admin, fingerprint, { includeArchived: true }), (found) => found !== undefined,
-        { timeoutMs: STORED_LATER_MS, intervalMs: 3_000, tolerateErrors: 0, onTimeout: 'return' });
-    if (!row) throw new Error(`An accepted asynchronous upload is not in the inventory after ${STORED_LATER_MS / 1000} s: it may still be stored`);
-    return row;
+/** True when the reads over the wait never found the certificate; reads that keep failing leave the decision to the retried cleanup step. */
+async function stillMissing(admin: APIRequestContext, fingerprint: string): Promise<boolean> {
+    try {
+        const row = await pollUntil(() => inventoryRow(admin, fingerprint, { includeArchived: true }), (found) => found !== undefined,
+            { timeoutMs: STORED_LATER_MS, intervalMs: 3_000, onTimeout: 'return' });
+        return row === undefined;
+    } catch {
+        return false;
+    }
+}
+
+export interface CleanupStep {
+    readonly describe: { resource: string; name?: string };
+    readonly remove: () => Promise<unknown>;
+    /** A step that must succeed first; when it fails, this object is kept and recorded instead. */
+    requires?: CleanupStep;
+    cleaned?: boolean;
 }
 
 /** Everything a test creates, removed in dependency order by `run` (also after a failed test). */
 export class Cleanup {
-    private readonly steps: Array<{ describe: { resource: string; name?: string; uuid?: string }; remove: () => Promise<unknown> }> = [];
-    /** Fingerprint → true when an accepted asynchronous upload may store the certificate after the test. */
+    private readonly steps: CleanupStep[] = [];
+    /** Fingerprint → true while a request that stores the certificate is in flight or was accepted. */
     private readonly certificates = new Map<string, boolean>();
     private readonly keys: string[] = [];
     private startedAt = new Date(Date.now() - 60_000);
 
-    add(resource: string, ref: string, remove: () => Promise<unknown>): void {
-        this.steps.unshift({ describe: { resource, name: ref }, remove });
+    add(resource: string, ref: string, remove: () => Promise<unknown>): CleanupStep {
+        const step: CleanupStep = { describe: { resource, name: ref }, remove };
+        this.steps.unshift(step);
+        return step;
     }
 
-    /** A certificate the test may create; `stored: 'later'` when an accepted asynchronous upload stores it. */
-    certificate(fingerprint: string, opts: { stored?: 'later' } = {}): void {
-        this.certificates.set(fingerprint, this.certificates.get(fingerprint) === true || opts.stored === 'later');
+    /** A certificate the test may create. */
+    certificate(fingerprint: string): void {
+        if (!this.certificates.has(fingerprint)) this.certificates.set(fingerprint, false);
+    }
+
+    /** For a registered certificate: whether the platform may store it after the test, so the cleanup waits for it. */
+    expectStored(fingerprint: string, expected: boolean): void {
+        if (this.certificates.has(fingerprint)) this.certificates.set(fingerprint, expected);
     }
 
     /** A key in a token (made by an import); removed after the certificates and before the token. */
@@ -183,8 +219,13 @@ export class Cleanup {
         const certificates = [...this.certificates];
         this.certificates.clear();
         for (const [fingerprint, storedLater] of certificates) {
-            await attemptCleanup({ resource: 'certificate', name: fingerprint }, async () => {
-                const row = storedLater ? await rowStoredLater(admin, fingerprint) : await inventoryRow(admin, fingerprint, { includeArchived: true });
+            const describe = { resource: 'certificate', name: fingerprint };
+            if (storedLater && await stillMissing(admin, fingerprint)) {
+                recordCleanupFailure({ ...describe, message: `an accepted request stores it, but it is not in the inventory after ${STORED_LATER_MS / 1000} s: it may still appear` });
+                continue;
+            }
+            await attemptCleanup(describe, async () => {
+                const row = await inventoryRow(admin, fingerprint, { includeArchived: true });
                 if (!row) return;
                 const keyUuid = await getCertificateKeyUuid(admin, row.uuid);
                 if (keyUuid) leftKeys.add(keyUuid);
@@ -198,7 +239,13 @@ export class Cleanup {
         for (const keyUuid of this.keys.splice(0)) {
             await attemptCleanup({ resource: 'key', uuid: keyUuid }, () => sendOk(admin, 'DELETE', '/api/v1/keys', [keyUuid]));
         }
-        for (const step of this.steps.splice(0)) await attemptCleanup(step.describe, step.remove);
+        for (const step of this.steps.splice(0)) {
+            if (step.requires && !step.requires.cleaned) {
+                recordCleanupFailure({ ...step.describe, message: `kept: removing it would leave a reference while "${step.requires.describe.resource}" failed`, blockedBy: step.requires.describe.resource });
+                continue;
+            }
+            step.cleaned = await attemptCleanup(step.describe, step.remove);
+        }
     }
 }
 
@@ -278,42 +325,41 @@ export interface TriggerSpec {
     notificationProfileUuid?: string;
 }
 
-async function create(admin: APIRequestContext, cleanup: Cleanup, kind: string, body: Json): Promise<string> {
+async function create(admin: APIRequestContext, cleanup: Cleanup, kind: string, body: Json): Promise<{ uuid: string; step: CleanupStep }> {
     const created = await sendOk(admin, 'POST', `/api/v1/workflows/${kind}`, body);
     const uuid = (created.json as Json).uuid as string;
-    cleanup.add(`workflow ${kind}`, String(body.name), () => sendOk(admin, 'DELETE', `/api/v1/workflows/${kind}/${uuid}`));
-    return uuid;
+    return { uuid, step: cleanup.add(`workflow ${kind}`, String(body.name), () => sendOk(admin, 'DELETE', `/api/v1/workflows/${kind}/${uuid}`)) };
 }
 
 /** Creates a trigger chain on "Certificate uploaded" and adds it to the global platform list (so callers are exclusive); `cleanup` restores the list. */
 export async function createUploadTrigger(admin: APIRequestContext, cleanup: Cleanup, spec: TriggerSpec): Promise<string> {
-    const conditionUuid = await create(admin, cleanup, 'conditions', {
+    const condition = await create(admin, cleanup, 'conditions', {
         name: `${spec.name}-c`, description: 'Epic test', type: 'checkField', resource: 'certificates', items: spec.conditions,
     });
-    const ruleUuid = await create(admin, cleanup, 'rules', {
-        name: `${spec.name}-r`, description: 'Epic test', resource: 'certificates', conditionsUuids: [conditionUuid],
+    const rule = await create(admin, cleanup, 'rules', {
+        name: `${spec.name}-r`, description: 'Epic test', resource: 'certificates', conditionsUuids: [condition.uuid],
     });
     const actionUuids: string[] = [];
     if (!spec.ignore) {
-        const executionUuid = await create(admin, cleanup, 'executions', spec.notificationProfileUuid
+        const execution = await create(admin, cleanup, 'executions', spec.notificationProfileUuid
             ? { name: `${spec.name}-e`, description: 'Epic test', type: 'sendNotification', resource: 'certificates', items: [{ notificationProfileUuid: spec.notificationProfileUuid }] }
             : { name: `${spec.name}-e`, description: 'Epic test', type: 'setField', resource: 'certificates', items: spec.setFields ?? [] });
-        actionUuids.push(await create(admin, cleanup, 'actions', {
-            name: `${spec.name}-a`, description: 'Epic test', resource: 'certificates', executionsUuids: [executionUuid],
-        }));
+        actionUuids.push((await create(admin, cleanup, 'actions', {
+            name: `${spec.name}-a`, description: 'Epic test', resource: 'certificates', executionsUuids: [execution.uuid],
+        })).uuid);
     }
-    const triggerUuid = await create(admin, cleanup, 'triggers', {
+    const trigger = await create(admin, cleanup, 'triggers', {
         name: spec.name,
         description: 'Epic test',
         type: 'event',
         resource: 'certificates',
         event: UPLOAD_EVENT,
         ignoreTrigger: spec.ignore ?? false,
-        rulesUuids: [ruleUuid],
+        rulesUuids: [rule.uuid],
         actionsUuids: actionUuids,
     });
-    await associateWithUploadEvent(admin, cleanup, triggerUuid);
-    return triggerUuid;
+    await associateWithUploadEvent(admin, cleanup, trigger);
+    return trigger.uuid;
 }
 
 async function platformTriggers(admin: APIRequestContext): Promise<string[]> {
@@ -332,12 +378,12 @@ async function restorePlatformTriggers(admin: APIRequestContext, before: string[
     await sendOk(admin, 'PATCH', '/api/v1/settings/events', { event: UPLOAD_EVENT, triggerUuids: existing });
 }
 
-async function associateWithUploadEvent(admin: APIRequestContext, cleanup: Cleanup, triggerUuid: string): Promise<void> {
+async function associateWithUploadEvent(admin: APIRequestContext, cleanup: Cleanup, trigger: { uuid: string; step: CleanupStep }): Promise<void> {
     const before = await platformTriggers(admin);
-    // Registered before the change, so a trigger is never deleted while the platform list still names it.
-    cleanup.add('platform trigger list of the upload event', UPLOAD_EVENT, () =>
+    // Registered before the change and required by the trigger's delete: the platform list never names a deleted trigger.
+    trigger.step.requires = cleanup.add('platform trigger list of the upload event', UPLOAD_EVENT, () =>
         restorePlatformTriggers(admin, before));
-    await sendOk(admin, 'PATCH', '/api/v1/settings/events', { event: UPLOAD_EVENT, triggerUuids: [...before, triggerUuid] });
+    await sendOk(admin, 'PATCH', '/api/v1/settings/events', { event: UPLOAD_EVENT, triggerUuids: [...before, trigger.uuid] });
     logger.info(`Platform triggers on the upload event: ${before.length} before, ${before.length + 1} now`);
 }
 

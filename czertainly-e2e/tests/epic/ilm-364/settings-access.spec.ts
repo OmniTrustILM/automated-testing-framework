@@ -5,7 +5,7 @@
 
 import { test, expect, request as playwrightRequest, APIRequestContext } from '@playwright/test';
 import { loadEnv } from '../../../utils/env';
-import { adminApi, apiAs, readAutomaticOwnership, send, setAutomaticOwnership } from '../../../utils/epicOwnership';
+import { Answer, adminApi, apiAs, readAutomaticOwnership, send, setAutomaticOwnership } from '../../../utils/epicOwnership';
 
 test('S17: a user without permission to update settings cannot turn the setting on', { tag: ['@epic-364'] }, async () => {
     const env = loadEnv();
@@ -16,12 +16,14 @@ test('S17: a user without permission to update settings cannot turn the setting 
         admin = adminApi(grant, env);
         restricted = apiAs(grant, env, 'R');
         const before = await readAutomaticOwnership(admin);
+        let answer: Answer | undefined;
         try {
-            const answer = await send(restricted, 'PUT', '/api/v1/settings/platform', { certificates: { upload: { automaticOwnership: true } } });
+            answer = await send(restricted, 'PUT', '/api/v1/settings/platform', { certificates: { upload: { automaticOwnership: true } } });
             expect(answer.status, `refused for missing permission: ${answer.text}`).toBe(403);
             expect(await readAutomaticOwnership(admin), 'the setting keeps its value').toBe(before);
         } finally {
-            if ((await readAutomaticOwnership(admin)) !== before) await setAutomaticOwnership(admin, before ?? false);
+            // only a change this test made is undone: the exclusive tests may change the setting in parallel
+            if (answer && answer.status < 300 && before !== undefined) await setAutomaticOwnership(admin, before);
         }
     } finally {
         await admin?.dispose();

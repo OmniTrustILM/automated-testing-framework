@@ -5,19 +5,21 @@ import { expect, Locator, Page } from '@playwright/test';
 import { setSwitch } from './ui/form';
 import { openHashRoute } from './ui/openHashRoute';
 
+const CERTIFICATES_ROUTE = 'settings?tab=certificates';
+
 export class PlatformSettingsPage {
     readonly page: Page;
 
     // Certificates tab (read-only view)
-    readonly certificatesTab: Locator;
+    private readonly certificatesTab: Locator;
     readonly automaticOwnershipSwitch: Locator;
-    readonly editButton: Locator;
+    private readonly editButton: Locator;
 
     // Edit Platform Settings dialog
-    readonly editDialog: Locator;
-    readonly editCertificatesTab: Locator;
-    readonly editAutomaticOwnershipSwitch: Locator;
-    readonly saveButton: Locator;
+    private readonly editDialog: Locator;
+    private readonly editCertificatesTab: Locator;
+    private readonly editAutomaticOwnershipSwitch: Locator;
+    private readonly saveButton: Locator;
 
     constructor(page: Page) {
         this.page = page;
@@ -32,15 +34,17 @@ export class PlatformSettingsPage {
         this.saveButton = this.editDialog.getByRole('button', { name: 'Save', exact: true });
     }
 
-    /** Opens the Certificates tab; on the same route it reloads, so the view shows what is stored. */
-    async goToCertificates(): Promise<void> {
-        await openHashRoute(this.page, 'settings?tab=certificates');
+    /** The Certificates tab loaded anew, so the read-only view shows what the platform stored. */
+    async showStored(): Promise<void> {
+        await openHashRoute(this.page, CERTIFICATES_ROUTE);
+        await this.page.reload();
         await this.certificatesTab.click();
     }
 
     /** Saves the switch from the opposite stored value: the form is filled from the platform, so it is toggled only after it shows that value. */
     async saveAutomaticOwnership(on: boolean): Promise<void> {
-        await this.goToCertificates();
+        await openHashRoute(this.page, CERTIFICATES_ROUTE);
+        await this.certificatesTab.click();
         await this.editButton.click();
         await this.editCertificatesTab.click();
         await expect(this.editAutomaticOwnershipSwitch).toBeChecked({ checked: !on });
