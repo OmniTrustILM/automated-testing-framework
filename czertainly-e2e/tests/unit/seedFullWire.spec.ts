@@ -14,7 +14,6 @@ import { readRunState, runId } from '../../utils/regression/ledger/runState';
 import { Answer, Arrived, LoopbackServer } from './helpers/loopbackServer';
 import { FakeCore as BaseCore } from './helpers/fakeCore';
 import { registerFakeCore } from './helpers/guardRig';
-import { QUICK_STATE_WAIT_MS } from '../../utils/regression/timeouts';
 import { getCertificate } from '../../utils/regression/apiReads';
 
 type Json = Record<string, any>;
@@ -29,6 +28,7 @@ class SeedCore extends BaseCore {
     requiredGroupAttr = false;
     /** An upload trigger that sets the owner to nobody: automatic ownership then leaves the upload without one. */
     triggerSetsNoOwner = false;
+    readonly detailReads = new Map<string, number>();
 
     protected respond(a: Arrived): Answer | undefined {
         const path = a.url.split('?')[0];
@@ -40,6 +40,8 @@ class SeedCore extends BaseCore {
     }
 
     private get(path: string): Answer {
+        const detail = /^\/api\/v1\/certificates\/([0-9a-f-]{36})$/.exec(path);
+        if (detail) this.detailReads.set(detail[1], (this.detailReads.get(detail[1]) ?? 0) + 1);
         if (/^\/api\/v1\/attributes\/custom\/resources\/(certificates|users|groups)$/.test(path)) {
             return { status: 200, body: path.endsWith('/groups') && this.requiredGroupAttr ? [{ uuid: U(1), name: 'site', contentType: 'string', properties: { required: true } }] : [] };
         }
@@ -174,9 +176,8 @@ test.describe('the certificate seeds build on the loopback fake core (every requ
         test.setTimeout(180_000);
         core.platformSettings = OWNERSHIP_ON;
         core.triggerSetsNoOwner = true;
-        const started = Date.now();
         const m = await ensureCertificateSeed(api, 'T');
-        expect(Date.now() - started, 'no wait for an owner that never comes').toBeLessThan(QUICK_STATE_WAIT_MS);
+        expect(Math.max(...core.detailReads.values()), 'no poll for an owner that never comes (a 30 s poll reads ~15 times)').toBeLessThan(10);
         expect(core.patches.filter((p) => p.body.ownerUuid === ''), 'nothing to remove').toEqual([]);
         expect(core.patches.find((p) => idsOfUuids(m, [p.uuid])[0] === 'C01' && p.body.ownerUuid === m.ownerUuid)).toBeTruthy();
     });

@@ -6,7 +6,7 @@ import type * as forge from 'node-forge';
 import { waitForCertificateState } from './wait/certificateState';
 import { GuardedApi } from './guard/types';
 import { APIRequestContext, expect } from '@playwright/test';
-import { ISSUED_WAIT_MS, REVOKED_WAIT_MS } from './timeouts';
+import { ISSUED_WAIT_MS, QUICK_STATE_WAIT_MS, REVOKED_WAIT_MS } from './timeouts';
 import { opsBase } from './lifecycle/certificateLabels';
 import { sendRaw } from './lifecycle/rawAnswers';
 import { GeneratedCsr, csrFromKey, newKeyPair, SanSet, sameSans, sansOfDetail, selfSignedPem } from './pkiBuilders';
@@ -18,6 +18,7 @@ import { recordDerivedKeyOf, recordDerivedKeyOrNamed } from './issuedRecords';
 import { OwnRef, recordCreated } from './ledger/ledger';
 import { runName, ownName, ownCommonName } from './ledger/runState';
 import { settings } from './run/settings';
+import { pollUntil } from './wait';
 import type { JsonObject } from './json';
 
 const logger = new Logger('OwnCertificates');
@@ -120,7 +121,8 @@ async function automaticOwnershipOn(api: GuardedApi): Promise<boolean> {
 /** With automatic ownership on (core#2698) the sync upload answers with the uploader as owner; the suites expect none, so it is removed. */
 async function dropUploaderOwner(api: GuardedApi, ref: OwnRef): Promise<void> {
     if (!(await automaticOwnershipOn(api))) return;
-    if (!(await getCertificate(api, ref.uuid)).ownerUuid) {
+    const detail = await pollUntil(() => getCertificate(api, ref.uuid), () => true, { timeoutMs: QUICK_STATE_WAIT_MS, what: `certificate ${ref.uuid} detail` });
+    if (!detail.ownerUuid) {
         logger.info(`certificate ${ref.uuid}: automatic ownership is on, but the upload has no owner (an upload trigger may have set none)`);
         return;
     }
