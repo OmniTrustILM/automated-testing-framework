@@ -12,21 +12,27 @@ import { waitForCertificateState } from '../../../utils/certificateUtils';
 import { SCP_ATTR } from '../../../utils/regression/platform/cryptoAlgorithmCases';
 import { tokenAlias } from '../../../utils/regression/platform/tokens';
 import { readSmokeState } from '../../../utils/smokeState';
+import { pollUntil } from '../../../utils/regression/wait';
 import { LoginPage } from '../../../pages/LoginPage';
 import { CertificatePage } from '../../../pages/CertificatePage';
+import { CertificateListPage } from '../../../pages/CertificateListPage';
+import { PlatformSettingsPage } from '../../../pages/PlatformSettingsPage';
+import { openHashRoute } from '../../../pages/ui/openHashRoute';
 import {
     Account, Cleanup, Json, accountCredentials, envFor, adminApi, apiAs, attributeValue, commonNameIs, createCustomAttribute, createGroup, createTeamUser,
     createOwnerNotificationProfile, createSoftwareTokenProfile, createUploadTrigger, customValue, notificationsMentioning, detail, findByFingerprint, importEntries, importResults, inventoryRow, ownerChanges, waitUntil,
-    readAutomaticOwnership, send, sendOk, setAutomaticOwnership, setOwner, subjectOf, upload, uploadAndFind, waitForCertificate,
+    readAutomaticOwnership, send, sendOk, setAutomaticOwnership, setOwner, subjectOf, upload, uploadAndFind, uploadAsync, userUuid, waitForCertificate,
 } from '../../../utils/epicOwnership';
 
 const TAGS = ['@epic-364', '@exclusive'];
 const REGRESSION = ['@epic-364', '@exclusive', '@regression'];
 const DISCARDED = 'Certificate was not uploaded. See Certificate Uploaded Event History for more details.';
 
-test.describe.configure({ mode: 'serial' });
+// Every test waits for the setting (up to 30 s) and for its certificates (up to 60 s each): far above the 30-second default.
+test.describe.configure({ mode: 'serial', timeout: 300_000 });
 
 let env: TestEnv;
+let grant: APIRequestContext;
 let admin: APIRequestContext;
 let U: APIRequestContext;
 let V: APIRequestContext;
@@ -35,7 +41,7 @@ let originalSetting: boolean;
 let originalValidation: Json | undefined;
 let keys: ReturnType<typeof newKeyMaterial>;
 const run = uniqueName('e364').toLowerCase();
-const nameOf = (account: 'U' | 'V' | 'R') => accountCredentials(account).username;
+const nameOf = (account: Account) => accountCredentials(env, account).username;
 let cleanup = new Cleanup();
 
 /** A new self-signed certificate with a subject unique to this run and scenario; every certificate shares one key pair (faster to make). */
@@ -59,15 +65,12 @@ async function signedIn(browser: Browser, account: Account | 'admin'): Promise<{
 
 test.beforeAll(async () => {
     env = loadEnv();
-    const bootstrap = await playwrightRequest.newContext({ ignoreHTTPSErrors: true });
-    try {
-        admin = await adminApi(bootstrap, env);
-        U = await apiAs(bootstrap, env, 'U');
-        V = await apiAs(bootstrap, env, 'V');
-        R = await apiAs(bootstrap, env, 'R');
-    } finally {
-        await bootstrap.dispose();
-    }
+    // the contexts renew their tokens through this one, so it stays open until the last restore
+    grant = await playwrightRequest.newContext({ ignoreHTTPSErrors: true });
+    admin = adminApi(grant, env);
+    U = apiAs(grant, env, 'U');
+    V = apiAs(grant, env, 'V');
+    R = apiAs(grant, env, 'R');
     originalSetting = (await readAutomaticOwnership(admin)) ?? false;
     originalValidation = ((await sendOk(admin, 'GET', '/api/v1/settings/platform')).json as Json).certificates?.validation;
     keys = newKeyMaterial();
@@ -79,6 +82,7 @@ test.afterEach(async () => {
 });
 
 test.afterAll(async () => {
+    test.setTimeout(90_000); // the setting's wait (30 s) and the restores, above the 30-second hook default
     try {
         await setAutomaticOwnership(admin, originalSetting);
         if (originalValidation) {
@@ -86,6 +90,7 @@ test.afterAll(async () => {
         }
     } finally {
         await Promise.all([admin, U, V, R].map((api) => api?.dispose()));
+        await grant?.dispose();
     }
 });
 
@@ -117,9 +122,8 @@ test.describe('ownership by upload and import', () => {
     test('S2: asynchronous upload through the API makes the uploader the owner', { tag: TAGS }, async () => {
         await setAutomaticOwnership(admin, true);
         const cert = newCertificate('s2');
-        cleanup.certificate(cert.fingerprint);
 
-        const answer = await upload(U, cert.pem, [], 'upload/async');
+        const answer = await uploadAsync(U, cleanup, cert);
         expect(answer.status, answer.text).toBeLessThan(300);
         expect((answer.json as Json).fingerprint, 'the fingerprint the platform returns').toBe(cert.fingerprint);
 
@@ -304,7 +308,6 @@ test.describe('ownership by upload and import', () => {
 
 test.describe('key import', () => {
     test('S26: a key import makes the importer the owner of the chain it brings in', { tag: TAGS }, async () => {
-        test.setTimeout(180_000);
         await setAutomaticOwnership(admin, true);
         const tokenProfileUuid = await createSoftwareTokenProfile(admin, cleanup, `${run}-s26-token`);
         const root = certificate(`${run}-s26-root.example.com`, { ca: true });
@@ -327,19 +330,13 @@ test.describe('key import', () => {
         // imported by the administrator (U's role cannot use token profiles); V then owns the intermediate, which the second import must keep
         const importer = env.username;
         await importAs(admin, first, `${run}-s26-key-1`);
-        let intermediateUuid = '';
         for (const c of [first.identity, intermediate, root]) {
-            const uuid = await waitForCertificate(admin, c.fingerprint);
-            if (c === intermediate) intermediateUuid = uuid;
-            const certificateDetail = await detail(admin, uuid);
+            const certificateDetail = await detail(admin, await waitForCertificate(admin, c.fingerprint));
             if (certificateDetail.key?.uuid) cleanup.key(certificateDetail.key.uuid);
             expect(certificateDetail.owner, `the importer owns ${c.cn}`).toBe(importer);
         }
-        const vUuid = ((await sendOk(admin, 'GET', `/api/v1/users?username=${encodeURIComponent(nameOf('V'))}`)).json as Json[] | Json);
-        const candidates = (Array.isArray(vUuid) ? vUuid : (vUuid.users ?? [])) as Json[];
-        const v = candidates.find((u) => u.username === nameOf('V'));
-        if (!v) throw new Error('The account V was not found in the user list');
-        await sendOk(admin, 'PATCH', `/api/v1/certificates/${intermediateUuid}`, { ownerUuid: v.uuid });
+        const intermediateUuid = await waitForCertificate(admin, intermediate.fingerprint);
+        await sendOk(admin, 'PATCH', `/api/v1/certificates/${intermediateUuid}`, { ownerUuid: await userUuid(admin, nameOf('V')) });
 
         await importAs(admin, second, `${run}-s26-key-2`);
         const secondUuid = await waitForCertificate(admin, second.identity.fingerprint);
@@ -353,7 +350,6 @@ test.describe('key import', () => {
 
 test.describe('notification to the owner', () => {
     test('S22: a trigger notification to the owner reaches the uploader', { tag: TAGS }, async () => {
-        test.setTimeout(180_000);
         const profile = await createOwnerNotificationProfile(admin, cleanup, `${run}-s22-profile`);
         const withSetting = newCertificate('s22-on');
         const withoutSetting = newCertificate('s22-off');
@@ -373,12 +369,12 @@ test.describe('notification to the owner', () => {
 
         await setAutomaticOwnership(admin, false);
         await uploadAndFind(U, admin, withoutSetting.pem, withoutSetting.fingerprint);
-        // An absence can only be shown over a window: three times what the delivery took above, at least ten seconds.
-        const until = Date.now() + Math.max(10_000, 3 * deliveryMs);
-        while (Date.now() < until) {
-            expect(await notificationsMentioning(U, withoutSetting.cn), `U has no notification for ${withoutSetting.cn}`).toHaveLength(0);
-            await new Promise((resolve) => setTimeout(resolve, 2_000));
-        }
+        // An absence can only be shown over a window: three times what the delivery took above, at least ten seconds, on top of the budget.
+        const windowMs = Math.max(10_000, 3 * deliveryMs);
+        test.setTimeout(test.info().timeout + windowMs);
+        const seen = await pollUntil(() => notificationsMentioning(U, withoutSetting.cn), (found) => found.length > 0,
+            { timeoutMs: windowMs, intervalMs: 2_000, tolerateErrors: 0, onTimeout: 'return' });
+        expect(seen, `U has no notification for ${withoutSetting.cn} within ${Math.round(windowMs / 1000)} s`).toHaveLength(0);
     });
 });
 
@@ -477,7 +473,6 @@ test.describe('access and security', () => {
 test.describe('unchanged behaviour', () => {
     // issued by the administrator: U's role cannot use authorities; the owner rule is compared with the setting off and on
     test('S20: issued certificates keep their ownership with the setting on', { tag: REGRESSION }, async () => {
-        test.setTimeout(240_000);
         const state = readSmokeState();
         if (!state) throw new Error('The RA profile of the global setup is missing (.smoke-state.json)');
         const issue = async (name: string): Promise<{ uuid: string; owner: unknown }> => {
@@ -533,22 +528,21 @@ test.describe('import wizard (UI)', () => {
         const { page, close } = await signedIn(browser, 'U');
         try {
             const certificates = new CertificatePage(page);
-            await page.goto('/administrator/#/certificates');
-            await expect(certificates.main).toBeVisible();
-            await certificates.openImportModal();
+            await certificates.openImportFromList();
             await certificates.pasteCertificatePem(cert.pem);
             await certificates.importPastedCertificate();
 
-            await certificates.importResults.getByTestId('import-open-certificate').click();
+            await certificates.importOpenCertificateLinks.click();
 
             await expect(page, 'the detail opens in one click').toHaveURL(/\/certificates\/detail\//);
             await expect(certificates.commonNameRow).toContainText(cert.cn);
             await expect(certificates.ownerRow, 'the detail shows U as owner').toContainText(nameOf('U'));
 
-            await page.goto('/administrator/#/certificates');
+            const list = new CertificateListPage(page);
+            await openHashRoute(page, 'certificates');
             await page.reload();
-            const row = certificates.main.locator('tbody tr').filter({ hasText: cert.cn });
-            await expect(row, 'the inventory row shows U as owner').toContainText(nameOf('U'));
+            await list.waitForTableLoaded();
+            await expect(await list.rowByCommonName(cert.cn), 'the inventory row shows U as owner').toContainText(nameOf('U'));
         } finally {
             await close();
         }
@@ -563,16 +557,12 @@ test.describe('import wizard (UI)', () => {
         const { page, close } = await signedIn(browser, 'U');
         try {
             const certificates = new CertificatePage(page);
-            await page.goto('/administrator/#/certificates');
-            await expect(certificates.main).toBeVisible();
-            await certificates.openImportModal();
-            await certificates.importFileContent.fill(cert.pem);
-            await expect(certificates.importSubmitButton).toBeEnabled();
-            await certificates.importSubmitButton.click();
+            await certificates.openImportFromList();
+            await certificates.pasteCertificatePem(cert.pem);
+            await certificates.submitImport();
 
-            await expect(certificates.importResults).toBeVisible();
-            await expect(certificates.importResults.getByTestId('import-result-badge'), 'the entry shows Not imported').toHaveText('Not imported');
-            await expect(certificates.importResults.getByTestId('import-open-certificate'), 'no Open certificate link').toHaveCount(0);
+            await certificates.assertImportResult('Not imported');
+            await expect(certificates.importOpenCertificateLinks, 'no Open certificate link').toHaveCount(0);
             await expect(certificates.importResults, 'the message says it was not uploaded').toContainText('was not uploaded');
             await expect(certificates.importResults, 'the message points to the event history').toContainText('Certificate Uploaded Event History');
         } finally {
@@ -588,14 +578,11 @@ test.describe('import wizard (UI)', () => {
         const { page, close } = await signedIn(browser, 'U');
         try {
             const certificates = new CertificatePage(page);
-            await page.goto('/administrator/#/certificates');
-            await expect(certificates.main).toBeVisible();
-            await certificates.openImportModal();
-            await certificates.importFileContent.fill(pem);
-            await expect(certificates.importSubmitButton).toHaveText(/Import 3 entr/);
-            await certificates.importSubmitButton.click();
+            await certificates.openImportFromList();
+            await certificates.pasteCertificatePem(pem, 3);
+            await certificates.submitImport();
 
-            const links = certificates.importResults.getByTestId('import-open-certificate');
+            const links = certificates.importOpenCertificateLinks;
             await expect(links, 'each of the three entries has its own link').toHaveCount(3);
             const hrefs = await links.evaluateAll((all) => all.map((a) => a.getAttribute('href') ?? ''));
             expect(new Set(hrefs).size, 'three different details').toBe(3);
@@ -625,22 +612,21 @@ test.describe('import wizard (UI)', () => {
         const { page, close } = await signedIn(browser, 'R');
         try {
             const certificates = new CertificatePage(page);
-            await page.goto('/administrator/#/certificates');
-            await expect(certificates.main).toBeVisible();
-            await certificates.openImportModal();
+            await certificates.openImportFromList();
             await certificates.pasteCertificatePem(ofR.pem);
             await certificates.importPastedCertificate();
-            await certificates.importResults.getByTestId('import-open-certificate').click();
+            await certificates.importOpenCertificateLinks.click();
 
             await expect(page).toHaveURL(/\/certificates\/detail\//);
             await expect(certificates.commonNameRow, 'the detail opens without an access error').toContainText(ofR.cn);
 
-            await page.goto('/administrator/#/certificates');
+            const list = new CertificateListPage(page);
+            await openHashRoute(page, 'certificates');
             await page.reload();
-            const rows = certificates.main.locator('tbody tr');
-            await expect(rows.filter({ hasText: ofR.cn }), 'R\'s certificate is in the inventory').toHaveCount(1);
-            await expect(rows.filter({ hasText: ofU.cn }), 'U\'s certificate is not shown').toHaveCount(0);
-            await expect(rows.filter({ hasText: ofV.cn }), 'V\'s certificate is not shown').toHaveCount(0);
+            await list.waitForTableLoaded();
+            await expect(await list.rowByCommonName(ofR.cn), 'R\'s certificate is in the inventory').toHaveCount(1);
+            await expect(await list.rowByCommonName(ofU.cn), 'U\'s certificate is not shown').toHaveCount(0);
+            await expect(await list.rowByCommonName(ofV.cn), 'V\'s certificate is not shown').toHaveCount(0);
         } finally {
             await close();
         }
@@ -649,31 +635,19 @@ test.describe('import wizard (UI)', () => {
 
 test.describe('platform setting (UI)', () => {
     test('S18: the Automatic Ownership switch shows the saved value; turning it off keeps existing owners', { tag: TAGS }, async ({ browser }) => {
-        test.setTimeout(180_000); // sign-in, two saves, an upload and the 40-second cache window
         await setAutomaticOwnership(admin, false);
         const cert = newCertificate('s18');
         cleanup.certificate(cert.fingerprint);
         const { page, close } = await signedIn(browser, 'admin');
-        const readOnlySwitch = page.getByTestId('switch-uploadAutomaticOwnership-input');
-        const editSwitch = page.getByRole('dialog', { name: 'Edit Platform Settings' }).getByTestId('switch-automaticOwnership-input');
+        const settings = new PlatformSettingsPage(page);
         const saveAs = async (on: boolean): Promise<void> => {
-            await page.goto('/administrator/#/settings?tab=certificates');
-            await page.getByTestId('pencil-button').click();
-            const dialog = page.getByRole('dialog', { name: 'Edit Platform Settings' });
-            await dialog.getByRole('tab', { name: 'Certificates' }).click();
-            // the form is filled from the stored setting: toggle only after it shows the value the platform holds
-            await expect(editSwitch).toBeChecked({ checked: !on });
-            await editSwitch.setChecked(on, { force: true }); // the switch input is visually hidden (sr-only)
-            await expect(editSwitch).toBeChecked({ checked: on });
-            await dialog.getByRole('button', { name: 'Save', exact: true }).click();
-            await expect(dialog).toBeHidden();
+            await settings.saveAutomaticOwnership(on);
             await waitUntil(async () => (await readAutomaticOwnership(admin)) === on, `the platform setting reads ${on ? 'on' : 'off'}`);
         };
         try {
             await saveAs(true);
-            await page.reload();
-            await page.getByRole('tab', { name: 'Certificates' }).click();
-            await expect(readOnlySwitch, 'after saving and reloading the switch shows on').toBeChecked();
+            await settings.goToCertificates();
+            await expect(settings.automaticOwnershipSwitch, 'after saving and reloading the switch shows on').toBeChecked();
             expect(await readAutomaticOwnership(admin), 'the API returns on').toBe(true);
 
             const uuid = await uploadAndFind(U, admin, cert.pem, cert.fingerprint);
@@ -681,9 +655,8 @@ test.describe('platform setting (UI)', () => {
             await saveAs(false);
             // Core may answer from its cache on another instance for up to 30 seconds after a change
             await expect(async () => {
-                await page.reload();
-                await page.getByRole('tab', { name: 'Certificates' }).click();
-                await expect(readOnlySwitch, 'after the second save the read-only view shows off').not.toBeChecked({ timeout: 3_000 });
+                await settings.goToCertificates();
+                await expect(settings.automaticOwnershipSwitch, 'after the second save the read-only view shows off').not.toBeChecked({ timeout: 3_000 });
             }).toPass({ timeout: 40_000 });
             expect(await readAutomaticOwnership(admin), 'the API returns off').toBe(false);
             expect((await detail(admin, uuid)).owner, 'the certificate uploaded while the setting was on still has U as owner').toBe(nameOf('U'));

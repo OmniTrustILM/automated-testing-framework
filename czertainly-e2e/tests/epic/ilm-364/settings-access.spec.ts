@@ -9,12 +9,12 @@ import { adminApi, apiAs, readAutomaticOwnership, send, setAutomaticOwnership } 
 
 test('S17: a user without permission to update settings cannot turn the setting on', { tag: ['@epic-364'] }, async () => {
     const env = loadEnv();
-    const bootstrap = await playwrightRequest.newContext({ ignoreHTTPSErrors: true });
+    const grant = await playwrightRequest.newContext({ ignoreHTTPSErrors: true });
     let admin: APIRequestContext | undefined;
     let restricted: APIRequestContext | undefined;
     try {
-        admin = await adminApi(bootstrap, env);
-        restricted = await apiAs(bootstrap, env, 'R');
+        admin = adminApi(grant, env);
+        restricted = apiAs(grant, env, 'R');
         const before = await readAutomaticOwnership(admin);
         try {
             const answer = await send(restricted, 'PUT', '/api/v1/settings/platform', { certificates: { upload: { automaticOwnership: true } } });
@@ -24,8 +24,8 @@ test('S17: a user without permission to update settings cannot turn the setting 
             if ((await readAutomaticOwnership(admin)) !== before) await setAutomaticOwnership(admin, before ?? false);
         }
     } finally {
-        await bootstrap.dispose();
         await admin?.dispose();
         await restricted?.dispose();
+        await grant.dispose();
     }
 });

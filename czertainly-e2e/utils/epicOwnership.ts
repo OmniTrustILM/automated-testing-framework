@@ -1,11 +1,12 @@
 /**
  * epicOwnership — helpers of the Epic ilm#364 tests: the prepared accounts, the ownership setting, uploads, imports, reads, upload triggers.
- * Plain API contexts: every object a test creates goes into a Cleanup and is removed in dependency order, also after a failure.
+ * API contexts that renew their tokens; every object a test creates goes into a Cleanup, removed in dependency order also after a failure.
  */
 
-import { APIRequestContext, request as playwrightRequest } from '@playwright/test';
+import { APIRequestContext } from '@playwright/test';
 import { TestEnv } from './env';
-import { fetchAccessToken } from './auth/accessToken';
+import { openAuthenticatedApiContext } from './auth/apiContext';
+import { RENEW_MARGIN_MS, renewingContext } from './auth/renewingContext';
 import { Logger } from './Logger';
 import { attemptCleanup } from './cleanupLedger';
 import { requiredCustomAttributes } from './regression/customAttributes';
@@ -23,33 +24,27 @@ const UPLOAD_EVENT = 'certificate_uploaded';
 
 export interface Json { [key: string]: any }
 
-/** The sign-in of a prepared account, from `EPIC_USER_<letter>_USERNAME` / `_PASSWORD`; the accounts carry over between runs. */
-export function accountCredentials(account: Account): { username: string; password: string } {
-    const username = process.env[`EPIC_USER_${account}_USERNAME`];
-    const password = process.env[`EPIC_USER_${account}_PASSWORD`];
-    if (!username || !password) throw new Error(`Missing EPIC_USER_${account}_USERNAME / EPIC_USER_${account}_PASSWORD`);
-    return { username, password };
+/** The sign-in of a prepared account (`EPIC_USER_<letter>_USERNAME` / `_PASSWORD`); the accounts carry over between runs. */
+export function accountCredentials(env: TestEnv, account: Account): { username: string; password: string } {
+    const credentials = env.epicUsers?.[account];
+    if (!credentials) throw new Error(`Missing EPIC_USER_${account}_USERNAME / EPIC_USER_${account}_PASSWORD`);
+    return credentials;
 }
 
-/** The environment with the account's sign-in in the place of the smoke user's, for the login page object. */
+/** The environment with the account's sign-in in the place of the smoke user's. */
 export function envFor(env: TestEnv, account: Account): TestEnv {
-    return { ...env, ...accountCredentials(account) };
+    return { ...env, ...accountCredentials(env, account) };
 }
 
-async function contextFor(request: APIRequestContext, env: TestEnv, credentials: { username: string; password: string }): Promise<APIRequestContext> {
-    const token = await fetchAccessToken(request, env, credentials, { minLifetimeMs: 300_000 });
-    return playwrightRequest.newContext({
-        baseURL: env.baseUrl,
-        extraHTTPHeaders: { Authorization: `Bearer ${token.bearer()}`, Accept: 'application/json' },
-        ignoreHTTPSErrors: true,
-    });
-}
+/** A context that renews its token before it runs out, as the worker API does; `grant` must stay open while it is used. */
+const renewing = (grant: APIRequestContext, env: TestEnv): APIRequestContext =>
+    renewingContext(() => openAuthenticatedApiContext(grant, env, { minLifetimeMs: RENEW_MARGIN_MS }));
 
-/** An API context that acts as the account (password grant, cached per account by `fetchAccessToken`). */
-export const apiAs = (request: APIRequestContext, env: TestEnv, account: Account): Promise<APIRequestContext> => contextFor(request, env, accountCredentials(account));
+/** An API context that acts as the account. */
+export const apiAs = (grant: APIRequestContext, env: TestEnv, account: Account): APIRequestContext => renewing(grant, envFor(env, account));
 
 /** The administrator's context (the smoke user), for reads and for the setup the accounts may not do. */
-export const adminApi = (request: APIRequestContext, env: TestEnv): Promise<APIRequestContext> => contextFor(request, env, { username: env.username, password: env.password });
+export const adminApi = (grant: APIRequestContext, env: TestEnv): APIRequestContext => renewing(grant, env);
 
 export interface Answer { status: number; json: Json | any[] | undefined; text: string }
 
@@ -89,8 +84,16 @@ const base64 = (text: string | Buffer): string => Buffer.from(text).toString('ba
 
 const uploadRequest = (pem: string, customAttributes: unknown[] = []): Json => ({ certificate: base64(pem), customAttributes });
 
-export async function upload(api: APIRequestContext, pem: string, customAttributes: unknown[] = [], path: 'upload' | 'upload/async' = 'upload'): Promise<Answer> {
-    return send(api, 'POST', `/api/v1/certificates/${path}`, uploadRequest(pem, customAttributes));
+export async function upload(api: APIRequestContext, pem: string, customAttributes: unknown[] = []): Promise<Answer> {
+    return send(api, 'POST', '/api/v1/certificates/upload', uploadRequest(pem, customAttributes));
+}
+
+/** The asynchronous upload: once accepted, the cleanup waits for the certificate even when it is stored after the test. */
+export async function uploadAsync(api: APIRequestContext, cleanup: Cleanup, cert: { pem: string; fingerprint: string }): Promise<Answer> {
+    cleanup.certificate(cert.fingerprint);
+    const answer = await send(api, 'POST', '/api/v1/certificates/upload/async', uploadRequest(cert.pem));
+    if (answer.status < 300) cleanup.certificate(cert.fingerprint, { stored: 'later' });
+    return answer;
 }
 
 /** Imports the entries named by their references (certificate-only entries have no key destination). */
@@ -141,10 +144,22 @@ export async function uploadAndFind(as: APIRequestContext, admin: APIRequestCont
     return waitForCertificate(admin, fingerprint);
 }
 
+/** How long the cleanup waits for a certificate of an accepted asynchronous upload, as `waitForCertificate` does. */
+const STORED_LATER_MS = 60_000;
+
+/** The row of a certificate that an accepted asynchronous upload stores; not there after the wait = an error for the cleanup ledger. */
+async function rowStoredLater(admin: APIRequestContext, fingerprint: string): Promise<Json> {
+    const row = await pollUntil(() => inventoryRow(admin, fingerprint, { includeArchived: true }), (found) => found !== undefined,
+        { timeoutMs: STORED_LATER_MS, intervalMs: 3_000, tolerateErrors: 0, onTimeout: 'return' });
+    if (!row) throw new Error(`An accepted asynchronous upload is not in the inventory after ${STORED_LATER_MS / 1000} s: it may still be stored`);
+    return row;
+}
+
 /** Everything a test creates, removed in dependency order by `run` (also after a failed test). */
 export class Cleanup {
     private readonly steps: Array<{ describe: { resource: string; name?: string; uuid?: string }; remove: () => Promise<unknown> }> = [];
-    private readonly fingerprints: string[] = [];
+    /** Fingerprint → true when an accepted asynchronous upload may store the certificate after the test. */
+    private readonly certificates = new Map<string, boolean>();
     private readonly keys: string[] = [];
     private startedAt = new Date(Date.now() - 60_000);
 
@@ -152,8 +167,9 @@ export class Cleanup {
         this.steps.unshift({ describe: { resource, name: ref }, remove });
     }
 
-    certificate(fingerprint: string): void {
-        this.fingerprints.push(fingerprint);
+    /** A certificate the test may create; `stored: 'later'` when an accepted asynchronous upload stores it. */
+    certificate(fingerprint: string, opts: { stored?: 'later' } = {}): void {
+        this.certificates.set(fingerprint, this.certificates.get(fingerprint) === true || opts.stored === 'later');
     }
 
     /** A key in a token (made by an import); removed after the certificates and before the token. */
@@ -164,9 +180,11 @@ export class Cleanup {
     /** Removes the certificates (archived ones too), then the keys they left, then the registered objects, last created first. */
     async run(admin: APIRequestContext): Promise<void> {
         const leftKeys = new Set<string>();
-        for (const fingerprint of this.fingerprints.splice(0)) {
+        const certificates = [...this.certificates];
+        this.certificates.clear();
+        for (const [fingerprint, storedLater] of certificates) {
             await attemptCleanup({ resource: 'certificate', name: fingerprint }, async () => {
-                const row = await inventoryRow(admin, fingerprint, { includeArchived: true });
+                const row = storedLater ? await rowStoredLater(admin, fingerprint) : await inventoryRow(admin, fingerprint, { includeArchived: true });
                 if (!row) return;
                 const keyUuid = await getCertificateKeyUuid(admin, row.uuid);
                 if (keyUuid) leftKeys.add(keyUuid);
@@ -182,6 +200,15 @@ export class Cleanup {
         }
         for (const step of this.steps.splice(0)) await attemptCleanup(step.describe, step.remove);
     }
+}
+
+/** The uuid of the platform user with the username. */
+export async function userUuid(admin: APIRequestContext, username: string): Promise<string> {
+    const answer = (await sendOk(admin, 'GET', `/api/v1/users?username=${encodeURIComponent(username)}`)).json as Json[] | Json;
+    const users = (Array.isArray(answer) ? answer : (answer.users ?? [])) as Json[];
+    const user = users.find((u) => u.username === username);
+    if (!user) throw new Error(`The user ${username} was not found in the user list`);
+    return String(user.uuid);
 }
 
 export async function createTeamUser(admin: APIRequestContext, cleanup: Cleanup, username: string): Promise<{ uuid: string; username: string }> {
@@ -258,11 +285,7 @@ async function create(admin: APIRequestContext, cleanup: Cleanup, kind: string, 
     return uuid;
 }
 
-/**
- * Creates the chain of a platform trigger on "Certificate uploaded" (condition, rule, execution, action, trigger) and puts the trigger
- * on the event's platform list next to the triggers already there; the earlier list comes back when `cleanup` runs.
- * The platform list is global: tests that call this are exclusive.
- */
+/** Creates a trigger chain on "Certificate uploaded" and adds it to the global platform list (so callers are exclusive); `cleanup` restores the list. */
 export async function createUploadTrigger(admin: APIRequestContext, cleanup: Cleanup, spec: TriggerSpec): Promise<string> {
     const conditionUuid = await create(admin, cleanup, 'conditions', {
         name: `${spec.name}-c`, description: 'Epic test', type: 'checkField', resource: 'certificates', items: spec.conditions,
@@ -344,10 +367,7 @@ export async function notificationsMentioning(api: APIRequestContext, text: stri
     return (((answer.json as Json).items ?? []) as Json[]).filter((n) => JSON.stringify(n).includes(text));
 }
 
-/**
- * A token on the software cryptography provider and an enabled token profile on it, the key destination of a PKCS#12 import.
- * The profile is removed first, then the token.
- */
+/** A token on the software cryptography provider with an enabled token profile, the key destination of a PKCS#12 import. */
 export async function createSoftwareTokenProfile(admin: APIRequestContext, cleanup: Cleanup, name: string): Promise<string> {
     const connector = await findCryptoConnector(admin, 2) ?? await findCryptoConnector(admin, 1);
     if (!connector) throw new Error('No software cryptography connector is registered');

@@ -9,6 +9,7 @@ import { SanSet, sameSans } from '../utils/regression/pkiBuilders';
 import { Navigation } from './Navigation';
 import { CertificateAddPage } from './CertificateAddPage';
 import { ImportCertificatesDialog } from './ImportCertificatesDialog';
+import { openHashRoute } from './ui/openHashRoute';
 import { PageHeader } from './ui/pageHeader';
 import { chooseOption } from './ui/select';
 import { widgetTitled } from './ui/widget';
@@ -32,6 +33,7 @@ export class CertificatePage {
     readonly importDetectedContent: Locator;
     readonly importSubmitButton: Locator;
     readonly importResults: Locator;
+    readonly importOpenCertificateLinks: Locator;
     readonly importDoneButton: Locator;
     readonly importDialog: ImportCertificatesDialog;
 
@@ -72,6 +74,7 @@ export class CertificatePage {
         this.importDetectedContent = this.importModal.getByRole('region', { name: /Detected content/ });
         this.importSubmitButton = this.importModal.getByRole('button', { name: /Import \d+ entr/ });
         this.importResults = this.importModal.getByRole('region', { name: 'Import results' });
+        this.importOpenCertificateLinks = this.importResults.getByTestId('import-open-certificate');
         this.importDoneButton = this.importModal.getByRole('button', { name: 'Done', exact: true });
         this.importDialog = new ImportCertificatesDialog(page);
 
@@ -119,11 +122,20 @@ export class CertificatePage {
         await expect(this.importModal).toBeVisible();
     }
 
-    async pasteCertificatePem(pem: string): Promise<void> {
+    /** Opens the list by its route, then the import dialog. */
+    async openImportFromList(): Promise<void> {
+        await openHashRoute(this.page, 'certificates');
+        await expect(this.main).toBeVisible();
+        await this.openImportModal();
+    }
+
+    /** Waits until the pasted certificates are detected: one checked entry, or Import naming `entries` entries. */
+    async pasteCertificatePem(pem: string, entries = 1): Promise<void> {
         logger.info('Pasting certificate PEM');
         await this.importFileContent.fill(pem);
         await expect(this.importDetectedContent).toBeVisible();
-        await expect(this.importDetectedContent.getByRole('checkbox')).toBeChecked();
+        if (entries === 1) await expect(this.importDetectedContent.getByRole('checkbox')).toBeChecked();
+        else await expect(this.importSubmitButton).toHaveText(new RegExp(`Import ${entries} entr`));
         await this.importFileContent.blur();
     }
 
