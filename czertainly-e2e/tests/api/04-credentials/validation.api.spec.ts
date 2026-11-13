@@ -133,12 +133,11 @@ test.describe('credential validation', { tag: tags.api }, () => {
             const probe = await probeCredential(api, own.spec, body, 'by-name attribute probe (core#2512)');
             const rows = await adoptByName(api, '/api/v1/credentials', 'credentials', name, own.spec, 'orphan left by a refused create (core#2512)');
             testInfo.annotations.push({ type: 'observed', description: `status ${probe.status}; ${rows.length} credential(s) with the name afterwards` });
+            expect(probe.status, 'a name-only attribute is refused (4xx); a created one is adopted above').toBeGreaterThanOrEqual(400);
             expect(probe.status, 'a refused request is a 4xx, never a 5xx').toBeLessThan(500);
-            if (probe.status >= 400) {
-                if (probe.status === 422) expect422Messages(probe.text);
-                else expectMessageObject(probe.text);
-            }
-            expect(probe.status >= 400 ? rows : [], 'a refused create leaves no credential with that name').toHaveLength(0);
+            if (probe.status === 422) expect422Messages(probe.text);
+            else expectMessageObject(probe.text);
+            expect(rows, 'a refused create leaves no credential with that name').toHaveLength(0);
         });
 
     test('a create without connectorUuid is a 4xx with the error-contract body',

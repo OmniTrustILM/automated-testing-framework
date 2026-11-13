@@ -14,6 +14,7 @@ import { readRunState, runId } from '../../utils/regression/ledger/runState';
 import { Answer, Arrived, LoopbackServer } from './helpers/loopbackServer';
 import { FakeCore as BaseCore } from './helpers/fakeCore';
 import { registerFakeCore } from './helpers/guardRig';
+import { QUICK_STATE_WAIT_MS } from '../../utils/regression/timeouts';
 
 type Json = Record<string, any>;
 
@@ -25,6 +26,8 @@ class SeedCore extends BaseCore {
     readonly patches: Array<{ uuid: string; body: Json }> = [];
     requiredGroupAttr = false;
     automaticOwnership = false;
+    /** An upload trigger that sets the owner to nobody: automatic ownership then leaves the upload without one. */
+    triggerSetsNoOwner = false;
 
     protected respond(a: Arrived): Answer | undefined {
         const path = a.url.split('?')[0];
@@ -70,7 +73,7 @@ class SeedCore extends BaseCore {
                 notBefore: d.notBefore.toISOString(),
                 notAfter: d.notAfter.toISOString(),
                 key: { uuid: this.next() },
-                ...(this.automaticOwnership ? { ownerUuid: U(8888), owner: 'uploader' } : {}),
+                ...(this.automaticOwnership && !this.triggerSetsNoOwner ? { ownerUuid: U(8888), owner: 'uploader' } : {}),
             });
             return { status: 200, body: { uuid } };
         }
@@ -165,6 +168,17 @@ test.describe('the certificate seeds build on the loopback fake core (every requ
         expect(core.patches.find((p) => byId(p.uuid) === 'C01' && p.body.ownerUuid === m.ownerUuid)).toBeTruthy();
         const c03 = await api.get(`/api/v1/certificates/${certById(m, 'C03').uuid}`);
         expect((await c03.json()).ownerUuid).toBeUndefined();
+    });
+
+    test('with automatic ownership on but an upload trigger leaving no owner, the seed does not wait for one and removes nothing', async () => {
+        test.setTimeout(180_000);
+        core.automaticOwnership = true;
+        core.triggerSetsNoOwner = true;
+        const started = Date.now();
+        const m = await ensureCertificateSeed(api, 'T');
+        expect(Date.now() - started, 'no wait for an owner that never comes').toBeLessThan(QUICK_STATE_WAIT_MS);
+        expect(core.patches.filter((p) => p.body.ownerUuid === ''), 'nothing to remove').toEqual([]);
+        expect(core.patches.find((p) => idsOfUuids(m, [p.uuid])[0] === 'C01' && p.body.ownerUuid === m.ownerUuid)).toBeTruthy();
     });
 
     test('buildFreshSeedB: own groups only, every create recorded in the ledger before the first assertion, the guard refuses a foreign group', async () => {

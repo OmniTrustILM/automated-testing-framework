@@ -6,7 +6,7 @@ import type * as forge from 'node-forge';
 import { waitForCertificateState } from './wait/certificateState';
 import { GuardedApi } from './guard/types';
 import { APIRequestContext, expect } from '@playwright/test';
-import { ISSUED_WAIT_MS, QUICK_STATE_WAIT_MS, REVOKED_WAIT_MS } from './timeouts';
+import { ISSUED_WAIT_MS, REVOKED_WAIT_MS } from './timeouts';
 import { opsBase } from './lifecycle/certificateLabels';
 import { sendRaw } from './lifecycle/rawAnswers';
 import { GeneratedCsr, csrFromKey, newKeyPair, SanSet, sameSans, sansOfDetail, selfSignedPem } from './pkiBuilders';
@@ -18,7 +18,6 @@ import { recordDerivedKeyOf, recordDerivedKeyOrNamed } from './issuedRecords';
 import { OwnRef, recordCreated } from './ledger/ledger';
 import { runName, ownName, ownCommonName } from './ledger/runState';
 import { settings } from './run/settings';
-import { pollUntil } from './wait';
 import type { JsonObject } from './json';
 
 const logger = new Logger('OwnCertificates');
@@ -119,17 +118,13 @@ async function automaticOwnershipOn(api: GuardedApi): Promise<boolean> {
 }
 
 /**
- * The suites expect an own upload without an owner. With automatic ownership on (core#2698), the platform makes the uploader the
- * owner after the upload commits, so that owner is removed once it is there.
+ * The suites expect an own upload without an owner. With automatic ownership on (core#2698), the sync upload makes the uploader the
+ * owner before it answers (an after-commit listener in the request), so one read is enough; an upload trigger may leave no owner.
  */
 async function dropUploaderOwner(api: GuardedApi, ref: OwnRef): Promise<void> {
     if (!(await automaticOwnershipOn(api))) return;
-    const detail = await pollUntil(() => apiJson<CertificateDetail>(api, 'GET', `/api/v1/certificates/${ref.uuid}`), (d) => Boolean(d?.ownerUuid),
-        { timeoutMs: QUICK_STATE_WAIT_MS, onTimeout: 'return' });
-    if (!detail?.ownerUuid) {
-        logger.warn(`certificate ${ref.uuid}: automatic ownership is on, but no owner appeared within ${QUICK_STATE_WAIT_MS / 1000} s; a later one stays`);
-        return;
-    }
+    const detail = await apiJson<CertificateDetail>(api, 'GET', `/api/v1/certificates/${ref.uuid}`);
+    if (!detail?.ownerUuid) return;
     await apiJsonWithDate(api, 'PATCH', `/api/v1/certificates/${ref.uuid}`, { ownerUuid: '' });
     logger.info(`certificate ${ref.uuid}: automatic ownership is on; the uploader's ownership is removed`);
 }
