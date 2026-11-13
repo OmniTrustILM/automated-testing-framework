@@ -184,13 +184,18 @@ export async function findSystemDefaultEstProfile(api: APIRequestContext): Promi
 /**
  * Makes the EST Profile the system default again. Creating a default profile clears the flag of the
  * previous one and deleting it does not give the flag back, so a spec that creates one restores it.
- * The update replaces the whole profile, so the request is rebuilt from what the platform reports.
+ * A profile that is still the default is left alone. The update replaces the whole profile, so the
+ * request is rebuilt from what the platform reports.
  */
 export async function restoreSystemDefaultEstProfile(api: APIRequestContext, uuid: string): Promise<void> {
-  logger.info(`Restoring the system default EST Profile: ${uuid}`);
   const resp = await api.get(`/api/v1/estProfiles/${uuid}`);
   await ensureOk(resp, `Get EST Profile ${uuid}`);
   const d = (await resp.json()) as Record<string, any>;
+  if (d.systemDefault) {
+    logger.info(`EST Profile ${uuid} is still the system default`);
+    return;
+  }
+  logger.info(`Restoring the system default EST Profile: ${uuid}`);
   const associations = d.certificateAssociations;
   const data = {
     description: d.description,

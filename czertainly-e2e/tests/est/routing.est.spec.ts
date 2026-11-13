@@ -123,7 +123,7 @@ test.describe('@est routing', () => {
     if (!api) return;
     try {
       await cleanup();
-      if (defaultProfile && previousDefaultUuid) await restoreSystemDefaultEstProfile(api, previousDefaultUuid);
+      if (previousDefaultUuid) await restoreSystemDefaultEstProfile(api, previousDefaultUuid);
     } finally {
       await api.dispose();
     }

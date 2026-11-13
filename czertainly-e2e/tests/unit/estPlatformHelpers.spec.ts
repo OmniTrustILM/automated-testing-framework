@@ -268,6 +268,12 @@ test.describe('system default EST Profile', () => {
         });
     });
 
+    test('a profile that is still the default is not rewritten', async () => {
+        const { api, calls } = fakeApi(() => ({ body: { systemDefault: true, authenticationPolicy: 'raBasic' } }));
+        await restoreSystemDefaultEstProfile(api, 'p-1');
+        expect(calls.map((c) => c.method)).toEqual(['GET']);
+    });
+
     test('a bare profile restores with empty lists, and a refused update is raised', async () => {
         const bare = { authenticationPolicy: 'certificateRegistration', raProfile: { uuid: 'ra-1' } };
         const ok = fakeApi((call) => (call.method === 'GET' ? { body: bare } : undefined));
