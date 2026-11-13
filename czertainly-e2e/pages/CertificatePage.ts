@@ -133,9 +133,10 @@ export class CertificatePage {
 
     /** Opens the list by its route, then the import dialog, watching the certificate custom-attribute listing it loads. */
     async openImportFromList(): Promise<void> {
+        // Watched before the list loads: the list page may make the request first, and the dialog may reuse its answer.
+        this.certificateAttributesListing = watchApiCall(this.page, { method: 'GET', path: '/api/v1/attributes/custom/resources/certificates' });
         await openHashRoute(this.page, 'certificates');
         await expect(this.main).toBeVisible();
-        this.certificateAttributesListing = watchApiCall(this.page, { method: 'GET', path: '/api/v1/attributes/custom/resources/certificates' });
         await this.openImportModal();
     }
 
@@ -155,7 +156,9 @@ export class CertificatePage {
      */
     async importBlockedByAttributeAccess(): Promise<boolean> {
         if (await this.importEnabled()) return false;
-        if (!this.certificateAttributesListing) throw new Error('Import stays disabled; the custom-attribute listing was not watched (open the dialog with openImportFromList)');
+        if (!this.certificateAttributesListing) {
+            throw new Error('Import stays disabled; the custom-attribute listing was not watched (use openImportFromList)');
+        }
         const status = await this.certificateAttributesListing.then((r) => r.status(), () => undefined);
         if (status === 403) return true;
         throw new Error(`Import stays disabled, but the custom-attribute listing answered ${status ?? 'nothing'}: not the known blocker`);
