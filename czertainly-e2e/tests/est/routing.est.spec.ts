@@ -128,7 +128,7 @@ test.describe('@est routing', () => {
 
     const other = await enroll(undefined, directCredentials);
     expect(other.status).toBe(401);
-    expect(other.headers['www-authenticate']).toBe('Basic realm="est"');
+    expect(other.headers['www-authenticate']).toBe('Basic realm="est", charset="UTF-8"');
   });
 
   test('EST-011 /<EST Profile>/ is served by that profile on its default RA Profile', async () => {
@@ -138,7 +138,7 @@ test.describe('@est routing', () => {
 
     const other = await enroll(directProfile.name, defaultCredentials);
     expect(other.status).toBe(401);
-    expect(other.headers['www-authenticate']).toBe(`Basic realm="${directProfile.name}"`);
+    expect(other.headers['www-authenticate']).toBe(`Basic realm="${directProfile.name}", charset="UTF-8"`);
   });
 
   test('EST-012 /<RA Profile>/ is served by the EST Profile activated on it, issuing on that RA Profile', async () => {

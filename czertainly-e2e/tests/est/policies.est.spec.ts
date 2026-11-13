@@ -139,7 +139,7 @@ test.describe('@est policies', () => {
       const none = await enroll(profile, { csr: csr() });
       for (const resp of [wrong, none]) {
         expectRefused(resp, 401, EST_REFUSAL.unauthorized);
-        expect(resp.headers['www-authenticate']).toBe(`Basic realm="${profile.name}"`);
+        expect(resp.headers['www-authenticate']).toBe(`Basic realm="${profile.name}", charset="UTF-8"`);
       }
     });
 
@@ -200,7 +200,7 @@ test.describe('@est policies', () => {
       const unknown = await enroll(profile, { csr, basicAuth: { username: crypto.randomUUID(), password: reg.secret } });
       for (const resp of [wrong, unknown]) {
         expectRefused(resp, 401, EST_REFUSAL.registrationRejected);
-        expect(resp.headers['www-authenticate']).toBe(`Basic realm="${profile.name}"`);
+        expect(resp.headers['www-authenticate']).toBe(`Basic realm="${profile.name}", charset="UTF-8"`);
       }
     });
 
