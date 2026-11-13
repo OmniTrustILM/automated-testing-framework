@@ -74,11 +74,15 @@ export async function setAutomaticOwnership(api: APIRequestContext, on: boolean)
     await waitUntil(async () => (await readAutomaticOwnership(api)) === on, `the platform setting reads ${on ? 'on' : 'off'}`);
 }
 
-/** Puts back the validation settings as they were read: only the fields the read returned. */
-export async function restoreValidation(admin: APIRequestContext, captured: Json): Promise<void> {
+/** The validation fields a settings read returned, for a PUT that writes no value the platform did not have. */
+export function validationFields(captured: Json): Json {
     const { enabled, frequency, expiringThreshold } = captured;
-    const validation = Object.fromEntries(Object.entries({ enabled, frequency, expiringThreshold }).filter(([, value]) => value !== undefined));
-    await sendOk(admin, 'PUT', '/api/v1/settings/platform', { certificates: { validation } });
+    return Object.fromEntries(Object.entries({ enabled, frequency, expiringThreshold }).filter(([, value]) => value !== undefined));
+}
+
+/** Puts back the validation settings as they were read. */
+export async function restoreValidation(admin: APIRequestContext, captured: Json): Promise<void> {
+    await sendOk(admin, 'PUT', '/api/v1/settings/platform', { certificates: { validation: validationFields(captured) } });
 }
 
 /** The shared poll of utils/regression/wait.ts with a message: an error of the check fails at once, as a timeout does. */
@@ -179,9 +183,11 @@ async function stillMissing(admin: APIRequestContext, fingerprint: string): Prom
 export interface CleanupStep {
     readonly describe: { resource: string; name?: string };
     readonly remove: () => Promise<unknown>;
-    /** A step that must succeed first; when it fails, this object is kept and recorded instead. */
+    /** An earlier step that still refers to this object until it succeeds; when it fails, this object is kept and recorded instead. */
     requires?: CleanupStep;
     cleaned?: boolean;
+    /** Set when kept: the root failure, so a cascade is recorded as one cause. */
+    blockedBy?: string;
 }
 
 /** Everything a test creates, removed in dependency order by `run` (also after a failed test). */
@@ -240,8 +246,10 @@ export class Cleanup {
             await attemptCleanup({ resource: 'key', uuid: keyUuid }, () => sendOk(admin, 'DELETE', '/api/v1/keys', [keyUuid]));
         }
         for (const step of this.steps.splice(0)) {
-            if (step.requires && !step.requires.cleaned) {
-                recordCleanupFailure({ ...step.describe, message: `kept: removing it would leave a reference while "${step.requires.describe.resource}" failed`, blockedBy: step.requires.describe.resource });
+            const referrer = step.requires;
+            if (referrer && !referrer.cleaned) {
+                step.blockedBy = referrer.blockedBy ?? referrer.describe.resource;
+                recordCleanupFailure({ ...step.describe, message: `kept: the ${referrer.describe.resource} still refers to it`, blockedBy: step.blockedBy });
                 continue;
             }
             step.cleaned = await attemptCleanup(step.describe, step.remove);
@@ -325,7 +333,9 @@ export interface TriggerSpec {
     notificationProfileUuid?: string;
 }
 
-async function create(admin: APIRequestContext, cleanup: Cleanup, kind: string, body: Json): Promise<{ uuid: string; step: CleanupStep }> {
+interface Created { uuid: string; step: CleanupStep }
+
+async function create(admin: APIRequestContext, cleanup: Cleanup, kind: string, body: Json): Promise<Created> {
     const created = await sendOk(admin, 'POST', `/api/v1/workflows/${kind}`, body);
     const uuid = (created.json as Json).uuid as string;
     return { uuid, step: cleanup.add(`workflow ${kind}`, String(body.name), () => sendOk(admin, 'DELETE', `/api/v1/workflows/${kind}/${uuid}`)) };
@@ -339,14 +349,17 @@ export async function createUploadTrigger(admin: APIRequestContext, cleanup: Cle
     const rule = await create(admin, cleanup, 'rules', {
         name: `${spec.name}-r`, description: 'Epic test', resource: 'certificates', conditionsUuids: [condition.uuid],
     });
-    const actionUuids: string[] = [];
+    // each object is removed only after the one that refers to it: the platform list, the trigger, then rule and action
+    condition.step.requires = rule.step;
+    let action: Created | undefined;
     if (!spec.ignore) {
         const execution = await create(admin, cleanup, 'executions', spec.notificationProfileUuid
             ? { name: `${spec.name}-e`, description: 'Epic test', type: 'sendNotification', resource: 'certificates', items: [{ notificationProfileUuid: spec.notificationProfileUuid }] }
             : { name: `${spec.name}-e`, description: 'Epic test', type: 'setField', resource: 'certificates', items: spec.setFields ?? [] });
-        actionUuids.push((await create(admin, cleanup, 'actions', {
+        action = await create(admin, cleanup, 'actions', {
             name: `${spec.name}-a`, description: 'Epic test', resource: 'certificates', executionsUuids: [execution.uuid],
-        })).uuid);
+        });
+        execution.step.requires = action.step;
     }
     const trigger = await create(admin, cleanup, 'triggers', {
         name: spec.name,
@@ -356,8 +369,10 @@ export async function createUploadTrigger(admin: APIRequestContext, cleanup: Cle
         event: UPLOAD_EVENT,
         ignoreTrigger: spec.ignore ?? false,
         rulesUuids: [rule.uuid],
-        actionsUuids: actionUuids,
+        actionsUuids: action ? [action.uuid] : [],
     });
+    rule.step.requires = trigger.step;
+    if (action) action.step.requires = trigger.step;
     await associateWithUploadEvent(admin, cleanup, trigger);
     return trigger.uuid;
 }
@@ -378,7 +393,7 @@ async function restorePlatformTriggers(admin: APIRequestContext, before: string[
     await sendOk(admin, 'PATCH', '/api/v1/settings/events', { event: UPLOAD_EVENT, triggerUuids: existing });
 }
 
-async function associateWithUploadEvent(admin: APIRequestContext, cleanup: Cleanup, trigger: { uuid: string; step: CleanupStep }): Promise<void> {
+async function associateWithUploadEvent(admin: APIRequestContext, cleanup: Cleanup, trigger: Created): Promise<void> {
     const before = await platformTriggers(admin);
     // Registered before the change and required by the trigger's delete: the platform list never names a deleted trigger.
     trigger.step.requires = cleanup.add('platform trigger list of the upload event', UPLOAD_EVENT, () =>

@@ -20,7 +20,7 @@ import { PlatformSettingsPage } from '../../../pages/PlatformSettingsPage';
 import {
     Account, Cleanup, Json, accountCredentials, envFor, adminApi, apiAs, attributeValue, commonNameIs, createCustomAttribute, createGroup, createTeamUser,
     createOwnerNotificationProfile, createSoftwareTokenProfile, createUploadTrigger, customValue, notificationsMentioning, detail, findByFingerprint, importEntries, importResults, inventoryRow, ownerChanges, waitUntil,
-    readAutomaticOwnership, restoreValidation, send, sendOk, setAutomaticOwnership, setOwner, subjectOf, upload, uploadAndFind, uploadAsync, userUuid, waitForCertificate,
+    readAutomaticOwnership, restoreValidation, send, sendOk, setAutomaticOwnership, setOwner, subjectOf, upload, uploadAndFind, uploadAsync, userUuid, validationFields, waitForCertificate,
 } from '../../../utils/epicOwnership';
 
 const TAGS = ['@epic-364', '@exclusive'];
@@ -77,6 +77,7 @@ test.beforeAll(async () => {
 });
 
 test.afterEach(async () => {
+    test.setTimeout(test.info().timeout + 300_000); // the cleanup waits up to 60 s for each certificate an accepted request may still store
     await cleanup.run(admin);
     cleanup = new Cleanup();
 });
@@ -104,7 +105,6 @@ test.describe('ownership by upload and import', () => {
     test('S1: upload through the API makes the uploader the owner', { tag: REGRESSION }, async () => {
         await setAutomaticOwnership(admin, true);
         const cert = newCertificate('s1');
-        cleanup.certificate(cert.fingerprint);
 
         const uuid = await uploadAndFind(U, admin, cleanup, cert);
 
@@ -118,7 +118,6 @@ test.describe('ownership by upload and import', () => {
         await setAutomaticOwnership(admin, true);
         const attribute = await createCustomAttribute(admin, cleanup, `${run}-s1-attr`);
         const cert = newCertificate('s1-attr');
-        cleanup.certificate(cert.fingerprint);
 
         const uuid = await uploadAndFind(admin, admin, cleanup, cert, [attributeValue(attribute, 'uploaded-value')]);
 
@@ -143,7 +142,6 @@ test.describe('ownership by upload and import', () => {
         expect(await readAutomaticOwnership(admin), 'the setting reads off after it was turned off').toBe(false);
         const uploaded = newCertificate('s3-upload');
         const imported = newCertificate('s3-import');
-        cleanup.certificate(uploaded.fingerprint);
         cleanup.certificate(imported.fingerprint);
 
         const uploadedUuid = await uploadAndFind(U, admin, cleanup, uploaded);
@@ -177,7 +175,6 @@ test.describe('ownership by upload and import', () => {
         await setAutomaticOwnership(admin, true);
         const existing = newCertificate('s5-existing');
         const added = newCertificate('s5-new');
-        cleanup.certificate(existing.fingerprint);
         cleanup.certificate(added.fingerprint);
         const existingUuid = await uploadAndFind(V, admin, cleanup, existing);
 
@@ -195,7 +192,6 @@ test.describe('ownership by upload and import', () => {
         await setAutomaticOwnership(admin, true);
         const team = await createTeamUser(admin, cleanup, `${run}-team-s6`);
         const cert = newCertificate('s6');
-        cleanup.certificate(cert.fingerprint);
         await createUploadTrigger(admin, cleanup, { name: `${run}-s6-trigger`, conditions: [commonNameIs(cert.cn)], setFields: [setOwner(team.uuid)] });
 
         const uuid = await uploadAndFind(U, admin, cleanup, cert);
@@ -228,7 +224,6 @@ test.describe('ownership by upload and import', () => {
         const group = await createGroup(admin, cleanup, `${run}-s8-group`);
         const attribute = await createCustomAttribute(admin, cleanup, `${run}-s8-attr`);
         const cert = newCertificate('s8');
-        cleanup.certificate(cert.fingerprint);
         await createUploadTrigger(admin, cleanup, {
             name: `${run}-s8-trigger`,
             conditions: [commonNameIs(cert.cn)],
@@ -253,7 +248,6 @@ test.describe('ownership by upload and import', () => {
         const group = await createGroup(admin, cleanup, `${run}-s8b-group`);
         const attribute = await createCustomAttribute(admin, cleanup, `${run}-s8b-attr`);
         const cert = newCertificate('s8b');
-        cleanup.certificate(cert.fingerprint);
         await createUploadTrigger(admin, cleanup, {
             name: `${run}-s8b-trigger`,
             conditions: [commonNameIs(cert.cn)],
@@ -289,7 +283,6 @@ test.describe('ownership by upload and import', () => {
     test('S24: a trigger that clears the owner keeps the certificate without an owner', { tag: TAGS }, async () => {
         await setAutomaticOwnership(admin, true);
         const cert = newCertificate('s24');
-        cleanup.certificate(cert.fingerprint);
         await createUploadTrigger(admin, cleanup, { name: `${run}-s24-trigger`, conditions: [commonNameIs(cert.cn)], setFields: [setOwner(null)] });
 
         const uuid = await uploadAndFind(U, admin, cleanup, cert);
@@ -302,7 +295,6 @@ test.describe('ownership by upload and import', () => {
         await setAutomaticOwnership(admin, true);
         const matching = newCertificate('s25-trigger-subject');
         const other = newCertificate('s25-other-subject');
-        cleanup.certificate(other.fingerprint);
         await createUploadTrigger(admin, cleanup, { name: `${run}-s25-trigger`, conditions: [commonNameIs(matching.cn)], setFields: [setOwner(null)] });
 
         const uuid = await uploadAndFind(U, admin, cleanup, other);
@@ -359,8 +351,6 @@ test.describe('notification to the owner', () => {
         const profile = await createOwnerNotificationProfile(admin, cleanup, `${run}-s22-profile`);
         const withSetting = newCertificate('s22-on');
         const withoutSetting = newCertificate('s22-off');
-        cleanup.certificate(withSetting.fingerprint);
-        cleanup.certificate(withoutSetting.fingerprint);
         await createUploadTrigger(admin, cleanup, {
             name: `${run}-s22-trigger`,
             conditions: [{ fieldSource: 'property', fieldIdentifier: 'COMMON_NAME', operator: 'STARTS_WITH', value: `${run}-s22-` }],
@@ -388,7 +378,6 @@ test.describe('access and security', () => {
     test('S14: the restricted user cannot read another user\'s certificate by its UUID', { tag: REGRESSION }, async () => {
         await setAutomaticOwnership(admin, true);
         const cert = newCertificate('s14');
-        cleanup.certificate(cert.fingerprint);
         const uuid = await uploadAndFind(V, admin, cleanup, cert);
 
         const direct = await send(R, 'GET', `/api/v1/certificates/${uuid}`);
@@ -405,8 +394,6 @@ test.describe('access and security', () => {
         const group = await createGroup(admin, cleanup, `${run}-s27-group`);
         const own = newCertificate('s27-own');
         const foreign = newCertificate('s27-foreign');
-        cleanup.certificate(own.fingerprint);
-        cleanup.certificate(foreign.fingerprint);
         const ownUuid = await uploadAndFind(R, admin, cleanup, own);
         const foreignUuid = await uploadAndFind(V, admin, cleanup, foreign);
 
@@ -435,7 +422,7 @@ test.describe('access and security', () => {
         const owned = newCertificate('s15-owned');
         const ownerless = newCertificate('s15-ownerless');
         const fresh = newCertificate('s15-new');
-        [owned, ownerless, fresh].forEach((c) => cleanup.certificate(c.fingerprint));
+        cleanup.certificate(fresh.fingerprint);
         const ownerlessUuid = await uploadAndFind(admin, admin, cleanup, ownerless);
         await setAutomaticOwnership(admin, true);
         const ownedUuid = await uploadAndFind(V, admin, cleanup, owned);
@@ -510,10 +497,13 @@ test.describe('unchanged behaviour', () => {
 test.describe('platform setting', () => {
     test('S19: a settings update without the upload part leaves the setting as it is', { tag: TAGS }, async () => {
         await setAutomaticOwnership(admin, true);
-        const before = originalValidation ?? { enabled: true, frequency: 1, expiringThreshold: 30 };
-        const threshold = (before.expiringThreshold ?? 30) === 29 ? 28 : 29;
+        const before = originalValidation;
+        expect(before, 'the validation settings read before the tests').toBeDefined();
+        const threshold = before!.expiringThreshold === 29 ? 28 : 29;
 
-        const withoutUpload = await send(admin, 'PUT', '/api/v1/settings/platform', { certificates: { validation: { enabled: before.enabled ?? true, frequency: before.frequency ?? 1, expiringThreshold: threshold } } });
+        // validation on for the probe, so the saved threshold is a real one; afterAll puts back what was read
+        const validation = { ...validationFields(before!), enabled: true, expiringThreshold: threshold };
+        const withoutUpload = await send(admin, 'PUT', '/api/v1/settings/platform', { certificates: { validation } });
         expect(withoutUpload.status, withoutUpload.text).toBeLessThan(300);
         const after = (await sendOk(admin, 'GET', '/api/v1/settings/platform')).json as Json;
         expect(after.certificates.validation.expiringThreshold, 'the validation settings are saved').toBe(threshold);
@@ -609,7 +599,7 @@ test.describe('import wizard (UI)', () => {
         const ofU = newCertificate('s13-u');
         const ofV = newCertificate('s13-v');
         const ofR = newCertificate('s13-r');
-        [ofU, ofV, ofR].forEach((c) => cleanup.certificate(c.fingerprint));
+        cleanup.certificate(ofR.fingerprint);
         await uploadAndFind(U, admin, cleanup, ofU);
         await uploadAndFind(V, admin, cleanup, ofV);
         const { page, close } = await signedIn(browser, 'R');
@@ -638,7 +628,6 @@ test.describe('platform setting (UI)', () => {
     test('S18: the Automatic Ownership switch shows the saved value; turning it off keeps existing owners', { tag: TAGS }, async ({ browser }) => {
         await setAutomaticOwnership(admin, false);
         const cert = newCertificate('s18');
-        cleanup.certificate(cert.fingerprint);
         const { page, close } = await signedIn(browser, 'admin');
         const settings = new PlatformSettingsPage(page);
         const saveAs = async (on: boolean): Promise<void> => {
