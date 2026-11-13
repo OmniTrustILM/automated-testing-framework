@@ -1,16 +1,13 @@
 /// <reference types="node" />
 
 import { defineConfig, devices } from '@playwright/test';
-import * as dotenv from 'dotenv';
-import * as path from 'path';
+import { loadDotenv } from './utils/envFile';
 
-// Load environment variables from .env file
-dotenv.config({ path: path.resolve(__dirname, '.env') });
+// A variable that is already set is never overwritten, so loading .env first would win over REG_ENV_FILE.
+loadDotenv(process.env, __dirname, { requireExplicit: true });
 
 export default defineConfig({
-  // Only the smoke suite belongs to this config: the visual, unit, regression and API suites have their own configs,
-  // and a bare `playwright test` must not sweep them up. Pointing testDir at tests/smoke (instead of an ignore list)
-  // means a new suite folder never needs an entry here.
+  // Only the smoke suite: a bare `playwright test` must not sweep up the other suites.
   testDir: './tests/smoke',
 
   globalSetup: require.resolve('./global-setup'),

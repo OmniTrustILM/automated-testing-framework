@@ -1,18 +1,6 @@
 /**
- * API-CERT-16 — Certificate approvals through the v2 API (override approve and reject). ilm#429.
- *
- * WHAT: 1. Issue on an RA profile with an approval profile → 200; the certificate is pending approval and its approval is Pending.
- *       2. Override approve → 204; the certificate is issued; the approval is Approved with the comment "Approval flow overridden";
- *          the history says "Approval for action issue with approval profile <name> closed with status Approved".
- *       3. A second issue, override reject → 204; the certificate is rejected, the history says "… closed with status Rejected" and the
- *          certificate request content is kept.
- *       4. Renew, rekey and revoke on the rejected certificate → 422 "… in state Rejected".
- * WHY: an issue under an approval profile must wait for the decision and must not issue early; the approval comment is recorded on the
- *      recipient (core#1453) and the history names the final status (core#1449). A red test means the gate was skipped, the decision
- *      was not applied or a rejected certificate accepted an operation.
- * HOW: the approval profile is tied to an own RA profile clone only, never the run RA profile (the test declares the CA need, so
- *      it skips without a CA); the certificates, approvals and the clone are recorded in the ledger before any assertion and
- *      the gate is released in `finally`. Two gated issues each wait up to 60 s for the approval, one issuance up to 180 s.
+ * API-CERT-16 — Certificate approvals through the v2 API: override approve and reject (ilm#429). The approval profile is
+ * tied to an own RA profile clone only, never the run RA profile; the test skips without a CA.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { approvalDetail, approvalStatusLabel, decideApproval, findApproval, openApprovalGate, recipientComments, waitForApprovalStatus } from '../../../utils/regression/lifecycle/approvals';
@@ -38,7 +26,6 @@ test.describe('Certificate approvals through the v2 API', { tag: tags.api }, () 
             ],
         }),
         async ({ api, own }) => {
-            // Two gated issues (each a 60 s approval wait), one 180 s issuance, the reads.
             test.setTimeout(SLOW_LIFECYCLE_MS);
             const gate = await test.step('Prerequisite: an own RA profile clone with the run approval profile associated', async () => openApprovalGate(api, own.spec, 'g16'));
             try {

@@ -1,12 +1,7 @@
 /**
- * discoveryApi — own network discoveries of both generations through the guarded API.
- *
- * WHAT: Finds the healthy v1 and v2 discovery connector of the tier (a missing one is a named deploy gate), builds the run attributes from
- * the connector's live definitions, creates and probes discoveries, stops, resumes and cancels them, waits for their state, reads the
- * results and records the new certificates a run found.
- * WHY: Both generations share one create-and-read flow, and targets must stay the run's own TLS target or RFC 5737 documentation ranges.
- * HOW: Every run is recorded before any assertion and its new certificates as derived ledger lines; the scheduled variant lives in
- * discoveryJobs.
+ * discoveryApi — own network discoveries of both generations through the guarded API: finds the healthy v1 and v2 discovery
+ * connector (a missing one is a named deploy gate) and creates, probes, controls and reads discoveries.
+ * Targets are only the run's own TLS target or RFC 5737 documentation ranges; every run is recorded before any assertion.
  */
 
 import { waitForDiscoveryCompletion } from '../../discoveryUtils';
@@ -34,26 +29,20 @@ export interface DiscoveryConnector {
     uuid: string;
     name: string;
     generation: Generation;
-    /** v1: the discovery kind (`IP-Hostname`). */
     kind?: string;
-    /** v2: the uuid of the connector's discovery interface. */
     interfaceUuid?: string;
-    /** Why it cannot be used ("live health 503"), or undefined when it answers its live health. */
     unhealthy?: string;
 }
 
 export interface DiscoveryTier {
     v1?: DiscoveryConnector;
     v2?: DiscoveryConnector;
-    /** One line per generation that is missing or unhealthy. */
     problems: { v1?: string; v2?: string };
 }
 
 /**
- * The tier's IP discovery registrations, read-only: a connected connector with the `discoveryProvider` function group and the
- * kind `IP-Hostname` (generation v1), and a connected connector with a `discovery` interface (generation v2) whose resources
- * offer `certificates`. REG_DISCOVERY_V1_CONNECTOR / REG_DISCOVERY_V2_CONNECTOR name the registrations when several exist.
- * Health is read LIVE and BY VERSION (an unhealthy registration is reported, not used).
+ * The tier's IP discovery registrations, read-only; health is read live and by version (an unhealthy registration is reported, not used).
+ * REG_DISCOVERY_V1_CONNECTOR / _V2_CONNECTOR pick one when several exist.
  */
 export async function findDiscoveryConnectors(api: GuardedApi, env: NodeJS.ProcessEnv = process.env): Promise<DiscoveryTier> {
     const tier: DiscoveryTier = { problems: {} };
@@ -94,7 +83,6 @@ export async function findDiscoveryConnectors(api: GuardedApi, env: NodeJS.Proce
     return tier;
 }
 
-/** The named deploy gate of a missing generation (`@needs:v1-discovery` / `@needs:v2-discovery`), or undefined when present. */
 export function generationGate(tier: DiscoveryTier, g: Generation): string | undefined {
     return tier[g] ? undefined : `deploy gate: ${tier.problems[g] ?? `no ${g} discovery connector`} (@needs:${g}-discovery)`;
 }
@@ -107,7 +95,8 @@ const def = (defs: JsonObject[], name: string): JsonObject => {
 };
 
 /**
- * The run-level attribute definitions of a connector: v1 `attributes/discoveryProvider/<kind>`, v2 `GET /v1/discoveries/{uuid}/attributes`.
+ * The run-level attribute definitions of a connector (v1 `attributes/discoveryProvider/<kind>`, v2 `GET
+ * /v1/discoveries/{uuid}/attributes`).
  */
 export async function runDefinitions(api: GuardedApi, c: DiscoveryConnector): Promise<JsonObject[]> {
     const url = c.generation === 'v1' ? `/api/v1/connectors/${c.uuid}/attributes/discoveryProvider/${c.kind ?? IP_KIND}` : `/api/v1/discoveries/${c.uuid}/attributes`;
@@ -117,15 +106,11 @@ export async function runDefinitions(api: GuardedApi, c: DiscoveryConnector): Pr
 }
 
 export interface Target {
-    /** Hosts / ranges / CIDR: v1 one comma-separated `ip` value, v2 one `data_hosts` entry each. */
     hosts: string[];
-    /** Ports or ranges (default: the connector's 443). */
     ports?: string[];
-    /** 1..100 (default: the connector's 1). */
     parallel?: number;
 }
 
-/** v1 request attributes (V2 content items, `ip` required). Fields left undefined are left out (negative cases). */
 export function v1Attributes(defs: JsonObject[], t: Partial<Target> & { allPorts?: boolean }): JsonObject[] {
     const out: JsonObject[] = [];
     const attr = (name: string, content: JsonObject[]) => {
@@ -139,7 +124,6 @@ export function v1Attributes(defs: JsonObject[], t: Partial<Target> & { allPorts
     return out;
 }
 
-/** v2 request attributes (`version: "v3"`, one content item per list entry). */
 export function v2Attributes(defs: JsonObject[], t: Partial<Target>): JsonObject[] {
     const out: JsonObject[] = [];
     const attr = (name: string, contentType: string, items: unknown[]) => {
@@ -153,20 +137,14 @@ export function v2Attributes(defs: JsonObject[], t: Partial<Target>): JsonObject
 }
 
 export interface CreateOptions {
-    /** The discovery connector (either generation). */
     connector: DiscoveryConnector;
     target?: Target;
-    /** Trigger uuids (OWN triggers): applied to the NEW certificates of the run (event `certificate_discovered`). */
     triggers?: Array<{ uuid: string }>;
-    /** v2 resources (default `['certificates']`); v1 must not send any. */
     resources?: string[];
-    /** Extra / override fields of the request body (a negative case's defect). */
     body?: JsonObject;
-    /** Use this name instead of a generated one (a duplicate-name probe). */
     name?: string;
 }
 
-/** The request body of a discovery (pure): the generation decides kind / interface / resources. */
 export function discoveryBody(c: DiscoveryConnector, name: string, attributes: JsonObject[], o: Pick<CreateOptions, 'triggers' | 'resources' | 'body'> = {}): JsonObject {
     return {
         name,
@@ -185,7 +163,6 @@ export interface OwnDiscovery extends OwnRef {
     body: JsonObject;
 }
 
-/** Creates an own discovery (the run starts at once), records it before any assertion; throws on a refusal: a positive step. */
 export async function createOwnDiscovery(api: GuardedApi, spec: string, suffix: string, o: CreateOptions): Promise<OwnDiscovery> {
     const c = o.connector;
     const defs = await runDefinitions(api, c);
@@ -197,7 +174,6 @@ export async function createOwnDiscovery(api: GuardedApi, spec: string, suffix: 
     return { ...ref, generation: c.generation, connector: c, body: answer.json };
 }
 
-/** A negative probe: POST a body as is; an accepted one (a 2xx the caller expected to be refused) is recorded. */
 export async function probeDiscovery(api: GuardedApi, spec: string, body: JsonObject): Promise<ApiAnswer> {
     return probeCollectionCreate(api, spec, { type: 'discoveries', path: '/api/v1/discoveries', body, note: 'discovery create probe' });
 }
@@ -241,7 +217,6 @@ export interface DiscoveryCertificate extends JsonObject {
     processedError?: string | null;
 }
 
-/** Every staged certificate of a run (all pages), optionally only NEW (`true`) or EXISTING (`false`) ones. */
 export async function listDiscoveredCertificates(api: GuardedApi, uuid: string, newlyDiscovered?: boolean): Promise<DiscoveryCertificate[]> {
     const rows: DiscoveryCertificate[] = [];
     for (let page = 1; ; page++) {
@@ -254,7 +229,6 @@ export async function listDiscoveredCertificates(api: GuardedApi, uuid: string, 
     return rows;
 }
 
-/** `POST /v1/discoveries/list` (a read): the rows of one name, for "no run was created" oracles. */
 export async function findDiscoveriesByName(api: GuardedApi, name: string): Promise<JsonObject[]> {
     const sent = await sendJson(api, 'POST', '/api/v1/discoveries/list', {
         itemsPerPage: 100,
@@ -268,25 +242,20 @@ export async function findDiscoveriesByName(api: GuardedApi, name: string): Prom
 
 export type RunControl = 'stop' | 'resume' | 'cancel';
 
-/**
- * `PATCH /v1/discoveries/{uuid}/{stop|resume|cancel}`: the uuid is an OWN run or `api.probeUuid()` (a 404 negative); any other
- * is refused by the guard. A 204 is a legal edge, a 422 names the state ("Discovery <uuid> is <State> and cannot be stopped").
- */
+/** `PATCH /v1/discoveries/{uuid}/{stop|resume|cancel}`: the uuid is an own run or `api.probeUuid()`; any other is refused by the guard. */
 export const controlDiscovery = (api: GuardedApi, uuid: string, op: RunControl): Promise<ApiAnswer> => sendJson(api, 'PATCH', `/api/v1/discoveries/${uuid}/${op}`);
 
-/** Waits for the run's terminal `completed` (fails fast on `failed`); the poll is API state, never time. */
 export function waitForCompleted(api: GuardedApi, uuid: string, timeoutMs = 120_000, opts: WaitForDiscoveryOptions = {}): Promise<void> {
     return waitForDiscoveryCompletion(api, uuid, timeoutMs, opts);
 }
 
-/** Waits for a status (`stopped`, `cancelled`, `inProgress`, …) of `status` only; `connectorStatus` is not checked. */
 export function waitForStatus(api: GuardedApi, uuid: string, status: string, timeoutMs = 60_000): Promise<void> {
     return waitForDiscoveryCompletion(api, uuid, timeoutMs, { expected: { status }, failOn: status === 'failed' ? [] : ['failed'] });
 }
 
 /**
- * Polls the run until it is `completed` and returns EVERY distinct status it showed (in order): the oracle "inProgress → processing
- * → completed" is a subsequence check, because a fast run may skip a state between two polls. Fails fast on `failed`.
+ * Polls the run until `completed` and returns every distinct status it showed, in order (a fast run may skip a state between polls). Fails
+ * fast on `failed`.
  */
 export async function observeUntilCompleted(api: GuardedApi, uuid: string, timeoutMs = 180_000, intervalMs = 1_500): Promise<string[]> {
     const seen: string[] = [];
@@ -304,7 +273,6 @@ export async function observeUntilCompleted(api: GuardedApi, uuid: string, timeo
     return seen;
 }
 
-/** The value of a named metadata item of a run's detail (v1 `totalUrls` / `successUrls` / `failedUrls`), or undefined. */
 export function metadataNumber(detail: DiscoveryDetail, name: string): number | undefined {
     for (const group of (detail.metadata ?? []) as Array<{ items?: Array<{ name?: string; content?: Array<{ data?: unknown }> }> }>) {
         for (const item of group.items ?? []) {
@@ -317,7 +285,6 @@ export function metadataNumber(detail: DiscoveryDetail, name: string): number | 
     return undefined;
 }
 
-/** True when `sub` is a subsequence of `seq` (order kept, gaps allowed). */
 export const isSubsequence = (sub: string[], seq: string[]): boolean => {
     let i = 0;
     for (const x of seq) if (x === sub[i]) i += 1;
@@ -326,9 +293,8 @@ export const isSubsequence = (sub: string[], seq: string[]): boolean => {
 
 
 /**
- * Records the certificates the run onboarded as NEW (and the keys the platform linked to them) as `derived` ledger lines with
- * the SERVER's `createdAfter` (the run's own start time, minus the margin), so the teardown deletes them by uuid when nobody
- * adopted them. EXISTING rows are never recorded. Idempotent. Returns the uuids recorded or already known.
+ * Records the certificates the run onboarded as NEW (and their linked keys) as `derived` ledger lines, so the teardown deletes them when
+ * nobody adopted them. Idempotent.
  */
 export async function recordOnboarded(api: GuardedApi, spec: string, run: { uuid: string }): Promise<string[]> {
     const detail = await getDiscovery(api, run.uuid);
@@ -350,11 +316,9 @@ export async function recordOnboarded(api: GuardedApi, spec: string, run: { uuid
     return [...known];
 }
 
-/** The SHA-256 fingerprints of a result listing, lowercase hex without separators, sorted and de-duplicated. */
 export const fingerprintSet = (rows: Array<{ fingerprint?: string }>): string[] =>
     [...new Set(rows.map((r) => String(r.fingerprint ?? '').replace(/[:\s]/g, '').toLowerCase()).filter(Boolean))].sort();
 
-/** The run's `Discovery Source` / history evidence is read from the inventory certificate (read-only). */
 export async function getInventoryCertificate(api: GuardedApi, uuid: string): Promise<JsonObject> {
     const sent = await sendJson(api, 'GET', `/api/v1/certificates/${uuid}`);
     if (sent.status !== 200) throw new Error(`GET certificate ${uuid} answered ${sent.status}`);
@@ -367,7 +331,6 @@ export async function getCertificateHistory(api: GuardedApi, uuid: string): Prom
     return (sent.json ?? []) as JsonObject[];
 }
 
-/** Count of certificates in the inventory for a filter (a read: `POST /v1/certificates`, search allow-list). */
 export async function countCertificates(api: GuardedApi, filters: JsonObject[]): Promise<number> {
     const sent = await sendJson(api, 'POST', '/api/v1/certificates', { itemsPerPage: 1, pageNumber: 1, filters });
     if (sent.status !== 200) throw new Error(`POST /v1/certificates answered ${sent.status}`);

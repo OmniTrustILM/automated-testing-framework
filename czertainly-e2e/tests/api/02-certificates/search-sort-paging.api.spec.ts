@@ -1,21 +1,7 @@
 /**
- * API-CERT-53, 54, 56 — Certificate search sorting and paging over the run's own certificate seed. ilm#428.
- *
- * WHAT: 1. Sorting by Expires At, Valid From, Group and Owner, ascending and descending: the 24 seeds come in the comparator order, objects
- *          without a value last in both directions, ties ordered by uuid, stable across two reads and across pages of 10.
- *       2. Sorting by the number, date and multi-select custom attribute columns (numerically, chronologically, by smallest value
- *          ascending and largest descending) and by the text column (only the collation-independent facts) puts empty values last.
- *       3. With no sort the list is newest first by creation, the CA last; itemsPerPage 1, 10, 24, 25 and 1000 give ceil(24 / size) pages
- *          whose union is the whole seed; a page past the last answers 200 with an empty list and the real totals; omitted paging gives
- *          page 1 of size 10.
- *       4. Invalid paging (page 0 or negative, items per page 0, negative, above 1000) → 422 with one message; eight combinations of sort,
- *          size, includeArchived and filter count page to the same rows as one big request.
- * WHY: sorting runs on the whole set before paging, with a unique tie-break and nulls last (core#2031, core#2033, core#2394; ilm#322 for
- *      the null ordering after the Hibernate 7 migration, ilm#133 for the default order); multi-valued fields sort by their minimum
- *      ascending and maximum descending. Paging is validated by core itself with a 422 (core PR #2527).
- * HOW: the run's 24-certificate seed is planned once; a sort field is first checked as sortable in the live catalogue; the order oracle is
- *      the comparator over the seed manifest (searchTables), and a Common Name prefix filter keeps other objects of the tier out. The
- *      search is a read.
+ * API-CERT-53, 54, 56 — Certificate search sorting and paging over the run's own certificate seed (ilm#428). Sorting
+ * runs on the whole set before paging, with a unique tie-break and nulls last (core#2031, core#2033, core#2394; ilm#322
+ * for nulls after the Hibernate 7 migration, ilm#133 for the default order).
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { expectRefused } from '../../../utils/regression/errorContract';
@@ -63,7 +49,6 @@ async function assertSortable(api: GuardedApi, source: 'property' | 'custom', id
 }
 
 test.describe('certificate search sorting and paging', { tag: tags.api }, () => {
-    // ------------------------------------------------------------------ property fields
 
     const PROPERTY_SORTS: Array<{ field: SortField; label: string }> = [
         { field: 'NOT_AFTER', label: 'Expires At' },
@@ -86,13 +71,10 @@ test.describe('certificate search sorting and paging', { tag: tags.api }, () => 
                     // The same read twice: the order does not move (a unique tie-break, core#2030).
                     const second = await sortedSeed(api, m, sort);
                     expect(second.uuids, 'the order is stable across two reads').toEqual(first.uuids);
-                    // Pages of 10 (the boundaries fall inside tie groups for GROUP_NAME / OWNER): concatenated = the one request of 24.
                     expect(await pagedSeed(api, m, sort, 10), 'pages of 10 concatenated').toEqual(first.uuids);
                 });
         }
     }
-
-    // ------------------------------------------------------------------ attribute columns
 
     const ATTRIBUTE_SORTS: Array<{ key: 'num' | 'day' | 'pick'; field: SortField; what: string }> = [
         { key: 'num', field: 'num', what: 'numerically' },
@@ -130,8 +112,6 @@ test.describe('certificate search sorting and paging', { tag: tags.api }, () => 
                 const head = r.ids.slice(0, withValue.length);
                 expect([...head].sort(), 'the 7 certificates with a value come first').toEqual([...withValue].sort());
                 expect([...r.ids.slice(withValue.length)].sort(), 'the 17 without a value are the last block, in both directions').toEqual([...without].sort());
-                // The six lowercase values, C03's mixed-case `Red` left out: annulled (C09) < blue (C05) < green (C04) < red (C01, C02) <
-                // red-blue (C06).
                 const lowercase = head.filter((id) => id !== 'C03');
                 const rank = (id: CertId): number => ({ C09: 0, C05: 1, C04: 2, C01: 3, C02: 3, C06: 4 } as Record<string, number>)[id];
                 const ranks = lowercase.map(rank);
@@ -139,8 +119,6 @@ test.describe('certificate search sorting and paging', { tag: tags.api }, () => 
                 expect(ranks, `${dir}: ${lowercase.join(', ')}`).toEqual(sorted);
             });
     }
-
-    // ------------------------------------------------------------------ paging contract and combined requests
 
     test('with no sort the listing is newest first by creation, and the CA comes last',
         testMeta({ id: 'API-CERT-56', row: 'default-order', prio: 'P1', issue: ISSUE, rule: ['default order created descending, CertificateServiceImpl; uuid tie-break; ilm#133 AC12 (legacy shape and order)', 'order C23 … C01, then the CA C24 (uploaded first)'] }),
@@ -190,7 +168,6 @@ test.describe('certificate search sorting and paging', { tag: tags.api }, () => 
             expect(body.totalPages).toBe(3);
         });
 
-    // Core refuses invalid paging itself with a 422 (core PR #2527, RequestValidatorHelper.validatePaging): a JSON array with one message.
     const BAD_PAGING: Array<{ row: string; body: JsonObject; message: string; rule: string }> = [
         { row: 'pageNumber-0', body: { pageNumber: 0, itemsPerPage: 10 }, message: 'Page number must be at least 1, but was 0', rule: 'search body with pageNumber 0' },
         { row: 'pageNumber-negative', body: { pageNumber: -1, itemsPerPage: 10 }, message: 'Page number must be at least 1, but was -1', rule: 'search body with a negative pageNumber' },
@@ -209,8 +186,6 @@ test.describe('certificate search sorting and paging', { tag: tags.api }, () => 
             });
     }
 
-    // Pairwise combinations (all pairs of {sort, size, includeArchived, filter count} covered by these 8 rows): the concatenated pages
-    // of each equal one big request with the same sort, filters and includeArchived.
     type SortVariant = 'none' | 'asc' | 'desc' | 'attribute-desc';
     const sortOf = (variant: SortVariant, m: CertificateSeed): SortSpec | undefined => {
         switch (variant) {
@@ -242,7 +217,6 @@ test.describe('certificate search sorting and paging', { tag: tags.api }, () => 
                 const m = await certificateSeedPlan(api, testInfo, own.spec);
                 const sort = sortOf(row.sort, m);
                 const filters: Filter[] = row.two ? [propertyFilter('KEY_SIZE', 'EQUALS', [2048])] : [];
-                // The one big request carries the same sort, filters and includeArchived as the paged ones.
                 const big = await searchPage(api, { filters: [seedIsolation(m), ...filters], itemsPerPage: 100, pageNumber: 1, includeArchived: row.archived, ...(sort ? { sort } : {}) });
                 const paged = await pagedSeed(api, m, sort, row.size, filters, { includeArchived: row.archived });
                 expect(paged, name).toEqual(big.rows.map((x) => String(x.uuid)));

@@ -1,12 +1,6 @@
 /**
- * sortOracles — sort oracles of a listing.
- *
- * WHAT: Sort oracles of a listing: non-decreasing in both directions with empty values last, page 2 continues page 1, a
- *       second read answers the same order, asc and desc mirror each other, composition and tie-break. Text order is checked
- *       only where it is decidable without the database collation; enum columns are checked structurally.
- * WHY: Ordering bugs hide in empty values, page boundaries and ties.
- * HOW: Non-decreasing in both directions with empty values last, page 2 continues page 1, a repeat read gives the same order, asc and desc
- * mirror, composition and tie-break; text order only where decidable, enums structurally.
+ * sortOracles — sort oracles of a listing: order in both directions with empty values last, page continuity, repeat stability, asc / desc
+ * mirror, composition and tie-break; text order only where decidable without the database collation.
  */
 import type { Filter, Sort } from '../searchApi';
 import { expectSorted, InvariantViolation } from '../listInvariants';
@@ -16,17 +10,12 @@ import { codeUnit, expectContinuation, expectKeysEqual, expectMirror, expectNull
 import { ListingRun, Transport, fetchRows, listingPage, listingTotal } from './listing';
 import { ApiAnswer } from '../../apiReads';
 
-// ====================================================================================================================
-// 8. Sorting (API-GEN-11)
-// ====================================================================================================================
 
 export interface SortTarget {
     id: string;
     source?: 'property' | 'meta' | 'custom' | 'data';
-    /** The DTO values (property fields with a verified mapping); undefined: emptiness comes from the EMPTY filter. */
     get?: (row: ListRow) => Values;
     sort: FieldMap['sort'];
-    /** The catalogue's EMPTY / NOT_EMPTY, for the filter-defined emptiness of a field without a mapping. */
     emptyFilter?: Filter;
 }
 
@@ -35,7 +24,6 @@ export const targetOf = (field: FieldMap): SortTarget => ({ id: field.id, source
 const HEAD_MAX = 200;
 const HEAD_PAGE = 50;
 
-/** The value a sort puts a row at: the first value; the smallest (asc) / largest (desc) text of a multi-valued field. */
 function sortText(target: SortTarget, row: ListRow, dir: 'asc' | 'desc'): string | undefined {
     const values = target.get?.(row).map(String) ?? [];
     if (!values.length) return undefined;
@@ -44,10 +32,8 @@ function sortText(target: SortTarget, row: ListRow, dir: 'asc' | 'desc'): string
 }
 
 /**
- * Both directions of one sortable field over the listing (core#2031, #2394): in each direction the pages
- * of 50 concatenated equal one request of up to 200 rows, a second read answers the same order, the values are ordered (where
- * decidable), rows without a value come last (head window and, past 200 rows, the last page), and ascending and descending list
- * the same values in opposite order. Reads <= ~20 requests per field.
+ * Both directions of one sortable field: pages of 50 equal one larger request, a second read gives the same order, values are ordered
+ * (where decidable), empty values last, asc and desc mirror. At most ~20 requests per field.
  */
 export async function runSortField(run: ListingRun, target: SortTarget): Promise<void> {
     const { transport: t, spec, baseline: base, log } = run;
@@ -120,10 +106,7 @@ export async function runSortField(run: ListingRun, target: SortTarget): Promise
     }
 }
 
-/**
- * Sort composes with the set (core#2031 AC5): a sorted walk returns exactly the rows of the unsorted one, and a sorted AND
- * filtered request returns the filtered rows (here: NOT_EMPTY of the sorted field). Budget: maxWalkRows per walk.
- */
+/** Sort composes with the set: a sorted walk returns the rows of the unsorted one, and sorted AND filtered returns the filtered rows. */
 export async function runSortComposition(run: ListingRun, target: SortTarget): Promise<void> {
     const { transport: t, spec, baseline: base, log } = run;
     if (!base.complete) {
@@ -145,8 +128,8 @@ export async function runSortComposition(run: ListingRun, target: SortTarget): P
 }
 
 /**
- * The uuid tie-break: equal sort values are ordered by ascending key in both directions
- * (SortOrderBuilder). Returns the number of equal-value runs seen (0: no ties in the head window, nothing proven).
+ * The uuid tie-break: equal sort values are ordered by ascending key in both
+ * directions; returns the number of equal-value runs seen (0: nothing proven).
  */
 export async function runTieBreak(run: ListingRun, target: SortTarget): Promise<number> {
     const { transport: t, spec, baseline: base, log } = run;
@@ -165,16 +148,11 @@ export async function runTieBreak(run: ListingRun, target: SortTarget): Promise<
     return ties;
 }
 
-// ====================================================================================================================
-// 9. Sort refusals ====================================================================================================================
 
-/** The sort a refusal probe sends. */
 export const sortOf = (fieldIdentifier: string, fieldSource: Sort['fieldSource'] = 'property', direction: Sort['direction'] = 'asc'): Sort => ({ fieldSource, fieldIdentifier, direction });
 
-/** `POST <url>` with a one-row page and the given sort; the probe is returned for the caller's status / body assertions. */
 export async function probeSort(t: Transport, url: string, sort: unknown, extra: Record<string, unknown> = {}): Promise<ApiAnswer> {
     return t.postRead(url, { filters: [], itemsPerPage: 1, pageNumber: 1, sort, ...extra });
 }
 
-/** The refusal text of a listing outside the configurable-column pipeline (RequestValidatorHelper.java). */
 export const unsupportedSortText = (label: string): string => `Sorting is not supported for the ${label} listing.`;

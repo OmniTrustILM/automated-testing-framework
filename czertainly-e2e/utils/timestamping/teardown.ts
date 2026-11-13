@@ -1,52 +1,9 @@
 /**
- * teardown — the teardown handlers of the timestamping block's ledger types: `tspProfiles`, `signingProfiles`,
- * `timeQualityConfigurations` and `tspBasicCredentials` (descriptor: ./resourceTypes.ts).
- *
- * WHAT: how the run-end teardown, and the block's own teardown project, remove the objects the timestamping provisioner
- * and the specs record. The registry (runTeardown HANDLER_MODULES) loads this module and wraps each handler with
- * `wrapHandlerWithGuard` (dry-run check, ledger + live run-prefixed name check, `ctx.seen`), exactly like
- * platform/platformTeardown.ts. Every handler is self-contained and idempotent: it reads only the context and its
- * ledger line, so it can be called from the main loop of runTeardown or from `executeTeardown({ readLines })` over a
- * filtered ledger, and a second call for an object that is already gone ends in the wrapper's "gone" path.
- *
- * WHY (core @ 569e853c563a, see resourceTypes.ts for the citations): the references between these objects form a
- * cycle that only a deactivation breaks. A signing profile is ACTIVATED on a TSP profile (`signing_profile.tsp_profile_uuid`,
- * the TSP profile cannot be deleted while it is set) and a TSP profile may name a signing profile as its DEFAULT (the
- * signing profile cannot be deleted while it is). A signing profile with signing records cannot be deleted (every TSP
- * request leaves one), and core keeps no way to drop them but the bulk delete. The Basic credentials of a TSP profile
- * go with it, but the vault secrets behind them are removed ASYNCHRONOUSLY, and the vault profile refuses its delete
- * while one is left. The developers' bash teardown (timestamping lib/teardown.sh) takes the same road: deactivate →
- * delete the TSP profile → empty the signing records → delete the signing profile.
- *
- * ONE DELETE OUTSIDE THE LEDGER GUARD: the explicit delete of a Basic-credential vault secret core's queue left
- * (`DELETE /v1/secrets/{uuid}?deleteInVaults=true`). The secret has no `created` line, so the guard cannot check it.
- * It is safe because it is sent only for a secret listed and read live in the same step whose name matches
- * `tsp-basic-<uuid of the run's own TSP profile>-<own run-prefixed username>-<8 hex>` (anchored, so the username `a` never
- * matches the secret of `a-b`; in the TSP profile's own handler the username part is any but the whole name is still
- * anchored: the own profile's uuid, then `-<any>-<8 hex>`, which only core uses for that profile's credentials), and only
- * after the own object it belonged to is deleted and proven absent. A secret that stays is
- * reported (warning + cleanup-failure record), not thrown: the `vaultProfiles` step fails with core's own refusal.
- *
- * HOW, per type:
- * - tspProfiles: deactivate it on every own signing profile that is activated on it (each read live), remember the vault
- *   secrets behind its Basic credentials (named `tsp-basic-<tsp profile uuid>-…`; the API does not expose their uuid),
- *   delete the profile (`deleteAndVerify`), then wait until those secrets are gone; one that stays gets one explicit
- *   delete (only a secret whose name carries the uuid of this very TSP profile) and, if it still stays, it is reported
- *   as a cleanup failure naming it (the handler itself succeeds: the profile is gone), because the run's vault profile
- *   cannot be deleted while it exists.
- * - signingProfiles: needs no ledger parents (a spec records a profile core unexpectedly accepted with none): the linked
- *   TSP profile comes from the live activation read. Deactivate it when still activated, empty its signing records page by page (bulk delete, round
- *   limit, a record core keeps is a failure), delete it; a refusal that names signing records (a record the deferred
- *   persistence staged after the last page) repeats the emptying, at most `DELETE_ATTEMPTS` times.
- * - tspBasicCredentials: a credential a spec added to the run's TSP profile: delete it through the profile-scoped route
- *   (`DELETE /v1/tspProfiles/{tsp}/basicCredentials/{uuid}`; core deletes the vault secret behind it, asynchronously, then the
- *   row), prove it by GET, and wait for its secret. It is "gone with its profile" when the TSP profile has its `deleted`
- *   line (core removes the rows with the profile), so the handler works in either order.
- * - timeQualityConfigurations: delete only; core refuses while a signing profile references it, which the handler
- *   reports as blocked by the signing profile(s).
- * Not removable through the API (reported, never a failure of these handlers): the `signing_record_volume` rows (hourly
- * counts that outlive their profile on purpose) and poisoned `signing_record_outbox` rows of a profile deleted while
- * staged records were still draining.
+ * teardown — the teardown handlers of the timestamping block's ledger types (descriptor: ./resourceTypes.ts), idempotent and wrapped by
+ * `wrapHandlerWithGuard`.
+ * One delete is outside the ledger guard: `DELETE /v1/secrets/{uuid}?deleteInVaults=true` for a Basic-credential vault secret that core's
+ * queue left behind. It is sent only for a secret read live in the same step whose name matches
+ * `tsp-basic-<own TSP profile uuid>-<username>-<8 hex>`, after its own object is gone.
  */
 import type { APIRequestContext, APIResponse } from '@playwright/test';
 import { assertNotDryRun } from '../regression/run/flags';
@@ -62,15 +19,12 @@ const logger = new Logger('TimestampingHandlers');
 
 type Json = Record<string, any>;
 
-/** Signing records are listed and deleted a page at a time; core's page maximum is 1000. */
 export const SIGNING_RECORD_PAGE = 1000;
-/** Rounds of list + bulk delete before the handler gives up: it ends a loop in which core reports every delete done but keeps the records. */
+/** Ends a loop in which core reports every delete done but keeps the records. */
 export const SIGNING_RECORD_ROUNDS = 100;
-/** Tries of "empty the records, delete the profile" (a record staged by the deferred persistence can land after the last page). */
+/** Retries: a record staged by deferred persistence can land after the last page. */
 export const DELETE_ATTEMPTS = 3;
-/** Reads of a Basic-credential secret while core's queue removes it, and again after the explicit delete. */
 export const SECRET_WAIT_ATTEMPTS = 20;
-/** The name core gives the vault secret behind a TSP Basic credential (TspProfileBasicCredentialServiceImpl.createVaultSecret). */
 export const basicSecretPrefix = (tspProfileUuid: string): string => `tsp-basic-${tspProfileUuid}-`;
 
 const parentList = (line: LedgerLine, key: string): string[] => {
@@ -84,7 +38,6 @@ function blocked(message: string, blockedBy: string): Error {
 
 const brief = async (r: APIResponse): Promise<string> => (await r.text()).replace(/\s+/g, ' ').slice(0, 300);
 
-/** Read a second object (not the handler's own line) live, marking it seen; LiveObjectMissing propagates. */
 async function ownLive(ctx: TeardownContext, type: string, uuid: string, helper: string): Promise<void> {
     const { body } = await assertOwnLive(ctx.api, type, { uuid }, helper, {
         lines: ctx.ledger, runId: ctx.runId, tier: ctx.tier, ...(ctx.knownBug ? { onKnownBug: ctx.knownBug } : {}),
@@ -92,7 +45,6 @@ async function ownLive(ctx: TeardownContext, type: string, uuid: string, helper:
     if (body) ctx.seen.add(uuid);
 }
 
-/** `GET /v1/signingProfiles/{uuid}/protocols/tsp`: the TSP profile it is activated on (`available`, uuid, name), undefined on 404. */
 async function tspActivation(api: APIRequestContext, signingProfileUuid: string): Promise<Json | undefined> {
     const url = `/api/v1/signingProfiles/${signingProfileUuid}/protocols/tsp`;
     const resp = await api.get(url);
@@ -101,10 +53,7 @@ async function tspActivation(api: APIRequestContext, signingProfileUuid: string)
     return (await resp.json()) as Json;
 }
 
-/**
- * Deactivate TSP on a signing profile and prove it (`available: false`). A 404 answer follows a 200 read of the same
- * object in this step, so the activation (or the profile) is gone already.
- */
+/** A 404 answer follows a 200 read of the same object in this step, so the activation (or the profile) is gone already. */
 async function deactivateTsp(ctx: TeardownContext, signingProfileUuid: string): Promise<void> {
     assertNotDryRun(`teardown.timestamping deactivate TSP on signing profile ${signingProfileUuid}`);
     const resp = await ctx.api.patch(`/api/v1/signingProfiles/${signingProfileUuid}/protocols/tsp/deactivate`);
@@ -117,10 +66,9 @@ async function deactivateTsp(ctx: TeardownContext, signingProfileUuid: string): 
 }
 
 /**
- * Empty a signing profile's signing records: `POST /v1/signingProfiles/{uuid}/signingRecords` (page 1, `items[].uuid`),
- * bulk `DELETE /v1/signingRecords` with the page's uuids (core answers a `BulkActionMessageDto` per record it could not
- * delete). Ends on an empty first page (the absence proof) or a 404 of the listing (the profile is gone). A record that
- * stays — a message, a non-2xx answer, or still there after `rounds` rounds — is a failure.
+ * Ends on an empty first page (the absence proof) or a 404 of the listing; a record that stays is a failure.
+ * Each listed row must prove association with this signing profile before
+ * any bulk delete: the unscoped DELETE would otherwise wipe foreign records.
  */
 export async function emptySigningRecords(ctx: TeardownContext, signingProfileUuid: string, rounds: number = SIGNING_RECORD_ROUNDS): Promise<void> {
     assertNotDryRun(`teardown.timestamping signing records of ${signingProfileUuid}`);
@@ -131,8 +79,19 @@ export async function emptySigningRecords(ctx: TeardownContext, signingProfileUu
         if (!list.ok()) throw new Error(`signing profile ${signingProfileUuid}: listing its signing records answered ${list.status()} - ${await brief(list)}`);
         const items = (((await list.json()) as Json).items ?? []) as Json[];
         if (!items.length) return;
-        const uuids = items.map((r) => r?.uuid).filter((u): u is string => typeof u === 'string');
-        if (uuids.length !== items.length) throw new Error(`signing profile ${signingProfileUuid}: its signing record list holds rows without a uuid; not deleting blindly`);
+        const uuids: string[] = [];
+        for (const row of items) {
+            if (typeof row?.uuid !== 'string') {
+                throw new Error(`signing profile ${signingProfileUuid}: its signing record list holds rows without a uuid; not deleting blindly`);
+            }
+            const owner = row?.signingProfile?.uuid;
+            if (owner !== signingProfileUuid) {
+                throw new Error(
+                    `signing profile ${signingProfileUuid}: listing returned record ${row.uuid} owned by ${typeof owner === 'string' ? owner : 'no signingProfile.uuid'}; not deleting blindly`,
+                );
+            }
+            uuids.push(row.uuid);
+        }
         const del = await ctx.api.delete('/api/v1/signingRecords', { data: uuids });
         if (!del.ok()) throw new Error(`signing profile ${signingProfileUuid}: deleting ${uuids.length} signing record(s) answered ${del.status()} - ${await brief(del)}`);
         const messages = (await del.json().catch(() => [])) as Json[] | null;
@@ -146,16 +105,14 @@ export async function emptySigningRecords(ctx: TeardownContext, signingProfileUu
 const escapeRegExp = (v: string): string => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
- * Does `name` belong to the secrets of this TSP profile — anchored either way, with core's 8-hex suffix:
- * `tsp-basic-<tsp>-<username>-<8 hex>` for one credential when `username` is given (so the username `a` never matches the
- * secret of `a-b`), `tsp-basic-<tsp>-<any username>-<8 hex>` for the profile as a whole (a name without the suffix never matches).
+ * Anchored either way with core's 8-hex suffix, so the username `a` never
+ * matches the secret of `a-b` and a name without the suffix never matches.
  */
 export const isBasicSecretName = (name: string, tspProfileUuid: string, username?: string): boolean =>
     username === undefined
         ? new RegExp(`^${escapeRegExp(basicSecretPrefix(tspProfileUuid))}.+-[0-9a-f]{8}$`).test(name)
         : new RegExp(`^${escapeRegExp(basicSecretPrefix(tspProfileUuid) + username)}-[0-9a-f]{8}$`).test(name);
 
-/** The uuid and name of every vault secret of this TSP profile (of one credential with `username`): POST /v1/secrets, name filter, checked again client-side. */
 async function basicCredentialSecrets(ctx: TeardownContext, tspProfileUuid: string, username?: string): Promise<Array<{ uuid: string; name: string }>> {
     const prefix = basicSecretPrefix(tspProfileUuid);
     const resp = await ctx.api.post('/api/v1/secrets', {
@@ -168,7 +125,6 @@ async function basicCredentialSecrets(ctx: TeardownContext, tspProfileUuid: stri
         .map((r) => ({ uuid: r.uuid as string, name: r.name as string }));
 }
 
-/** Polls `GET /v1/secrets/{uuid}` until it answers 404 (core's queue ran the delete); false when it is still readable. */
 async function secretGone(ctx: TeardownContext, uuid: string): Promise<boolean> {
     const last = await pollUntil(
         async () => (await ctx.api.get(`/api/v1/secrets/${uuid}`)).status(),
@@ -179,22 +135,15 @@ async function secretGone(ctx: TeardownContext, uuid: string): Promise<boolean> 
 }
 
 /**
- * After the own object is deleted and proven absent: every secret behind its Basic credentials should be gone. Core
- * queues their removal; one that stays after the wait gets ONE explicit delete (`?deleteInVaults=true`, the way core's own
- * credential path deletes), but only when it was read with 200 in this step and its live name still matches the exact
- * secret name of this TSP profile (`-<any>-<8 hex>`, or this credential's username when given), so it is provably the credential's.
- *
- * This is the one delete that does not go through the ledger guard: the secret has no `created` line. Its ownership
- * rests on that anchored live name, which carries the uuid of the run's own TSP profile, the 8-hex suffix and, for a
- * credential's handler, its run-prefixed username.
- *
- * A secret that stays is NOT a failure of the handler: the object it belongs to is already gone and has its `deleted`
- * line (a failure here would hide that line, and a later pass would read 404 for the object). It is reported (warning
- * and cleanup-failure record); the `vaultProfiles` step then fails with core's own refusal if the secret really stays.
+ * Core queues the removal of the secrets behind a credential; one that stays gets ONE explicit delete, only when read with 200 in this step
+ * and its live name still matches the exact secret name of this TSP profile.
+ * It does not go through the ledger guard (the secret has no `created` line); ownership rests on the anchored live name.
+ * A secret that stays is NOT a failure of the handler: the object is already gone and has its `deleted` line. It is reported as a warning
+ * and a cleanup-failure record.
  */
 async function settleBasicSecrets(ctx: TeardownContext, tspProfileUuid: string, secrets: Array<{ uuid: string; name: string }>, username?: string): Promise<void> {
     assertNotDryRun(`teardown settleBasicSecrets ${tspProfileUuid}`);
-    // Never throws: the own object is gone, and an error here would keep its `deleted` line from being written.
+    // Never throws: an error here would keep the own object's `deleted` line from being written.
     const leftover = (uuid: string, message: string): void => {
         const text = `Basic-credential secret ${uuid} of TSP profile ${tspProfileUuid} stays in the vault profile (${message.slice(0, 300)}); its vault profile cannot be deleted while it exists`;
         try {
@@ -228,7 +177,6 @@ async function settleBasicSecrets(ctx: TeardownContext, tspProfileUuid: string, 
                 leftover(secret.uuid, `the explicit delete answered ${resp.status()} - ${await brief(resp)}`);
                 continue;
             }
-            // Core queues this delete too: wait with the same poll as for its own queue.
             if (!(await secretGone(ctx, secret.uuid))) leftover(secret.uuid, `still readable ${SECRET_WAIT_ATTEMPTS} reads after the explicit delete`);
         } catch (e) {
             leftover(secret.uuid, `unexpected error: ${String(e)}`);
@@ -240,8 +188,8 @@ const tspProfiles: TeardownHandler = {
     action: 'deactivate TSP on every own signing profile activated on it (PATCH /signingProfiles/{uuid}/protocols/tsp/deactivate), delete (DELETE /tspProfiles/{uuid}), then wait until the vault secrets of its Basic credentials are gone; absence by GET /tspProfiles/{uuid}',
     async remove(ctx, line) {
         assertNotDryRun(`teardown.tspProfiles ${line.uuid}`);
-        // Core refuses the delete while any signing profile is activated on the TSP profile. Candidates: the ledger's
-        // parent, every other own live signing profile of the run; each is read live before it is changed.
+        // Core refuses the delete while any signing profile is activated on
+        // the TSP profile; each candidate is read live before it is changed.
         const candidates = new Set([...parentList(line, 'signingProfile'), ...liveOwnLines(ctx.ledger, ctx.runId, 'signingProfiles').map((l) => l.uuid)]);
         for (const signingUuid of candidates) {
             const activation = await tspActivation(ctx.api, signingUuid);
@@ -250,7 +198,7 @@ const tspProfiles: TeardownHandler = {
             await deactivateTsp(ctx, signingUuid);
         }
         // The credential rows go with the profile and the API does not expose the secrets' uuids: read them first.
-        // A TSP profile without a vault profile cannot hold credentials (TspProfileBasicCredentialServiceImpl.java:94-96 create refuses).
+        // A TSP profile without a vault profile cannot hold credentials.
         const secrets = ctx.live === undefined || ctx.live.vaultProfile ? await basicCredentialSecrets(ctx, line.uuid) : [];
         await deleteAndVerify(ctx, { uuid: line.uuid, what: `TSP profile ${line.uuid}`, detailUrl: `/api/v1/tspProfiles/${line.uuid}` });
         await settleBasicSecrets(ctx, line.uuid, secrets);
@@ -262,7 +210,6 @@ const signingProfiles: TeardownHandler = {
     async remove(ctx, line) {
         assertNotDryRun(`teardown.signingProfiles ${line.uuid}`);
         const detailUrl = `/api/v1/signingProfiles/${line.uuid}`;
-        // Normally the TSP profile's handler released the activation already; this makes the handler self-contained.
         if ((await tspActivation(ctx.api, line.uuid))?.available) await deactivateTsp(ctx, line.uuid);
         await deleteAndVerify(ctx, {
             uuid: line.uuid,
@@ -297,7 +244,6 @@ const tspBasicCredentials: TeardownHandler = {
         const tsp = parentList(line, 'tspProfile')[0];
         if (!tsp) throw new Error(`Basic credential ${line.uuid}: no TSP profile known (ledger parents)`);
         const username = typeof ctx.live?.username === 'string' ? ctx.live.username : undefined;
-        // The secret behind it is not exposed by the API: read its name-matched secrets before the delete.
         const secrets = username === undefined ? [] : await basicCredentialSecrets(ctx, tsp, username);
         await deleteAndVerify(ctx, { uuid: line.uuid, what: `Basic credential ${line.uuid}`, detailUrl: `/api/v1/tspProfiles/${tsp}/basicCredentials/${line.uuid}` });
         await settleBasicSecrets(ctx, tsp, secrets, username);
@@ -324,5 +270,4 @@ const timeQualityConfigurations: TeardownHandler = {
     },
 };
 
-/** The raw handlers; runTeardown wraps each with wrapHandlerWithGuard when it loads this module. */
 export const teardownHandlers: Record<string, TeardownHandler> = { tspBasicCredentials, tspProfiles, signingProfiles, timeQualityConfigurations };

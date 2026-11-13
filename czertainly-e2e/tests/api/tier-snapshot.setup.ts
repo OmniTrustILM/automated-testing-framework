@@ -1,20 +1,7 @@
 /**
- * API-GEN-33 — Run setup: the guard proof, then the "before" snapshot of a shared tier. ilm#428.
- *
- * WHAT: 1. [guard] The tier assertion holds and the run uses one worker; on a local stack a run-prefixed role created through BASE_URL is
- *          read back through the core's own URL (instance proof); an own role is created with its ledger line first and the guard accepts
- *          it, while a run-prefixed name without a ledger line, a pre-existing role and a pre-existing RA profile are refused for ownership
- *          (the helper and the guarded API, behind a spy that forwards reads only); the teardown registry deletes the own role and writes a
- *          deleted line.
- *       2. [before] The total and the pre-existing objects of every resource (about 30) are stored as the snapshot that the
- *          non-interference spec compares against; old snapshot files (14 days) are purged and a stale snapshot with the same run id is
- *          deleted first.
- * WHY: every later spec relies on the guard to refuse a change to anything the run did not create, so that is proven live on the target
- *      tier before the first spec; the snapshot is the "before" half of the non-interference proof. A required resource that cannot be read
- *      makes the proof incomplete and fails the setup.
- * HOW: the `snapshot` project of both configs, serial. The only spec allowed a raw context (tests/unit/specGuards.spec.ts); the rules it
- *      proves are in tests/regression/README.md. It needs BASE_URL (a run without a tier fails); the [before] test is skipped on a local
- *      stack; under the dry run the own role is kept and listed by the run-end dry run.
+ * API-GEN-33 — Run setup: the guard proof, then the "before" snapshot of a shared tier (ilm#428). [guard] proves the
+ * tier assertion, one worker, and that an own role is accepted while a run-prefixed name without a ledger line and
+ * pre-existing objects are refused.
  */
 import { randomUUID } from 'crypto';
 import { expect, getAuthenticatedApiContext, test } from '../../fixtures/testFixtures';
@@ -86,10 +73,10 @@ test.describe('run setup with the guard proof, then the before snapshot', { tag:
                 const watched = readOnlySpy(raw);
                 // A forged OwnRef and the guard layer removed on purpose: the helper's own assertOwnLive must refuse.
                 const forged = { uuid: raUuid, name: runName('forged'), kind: 'own' } as OwnRef;
-                // The refusal must be for OWNERSHIP: the brand of a raw context or a path rule would hide a broken check.
+                // The refusal must be for OWNERSHIP: the brand of a
+                // raw context or a path rule would hide a broken check.
                 const helperRefusal = await expectOwnershipRefusal(enableOwnRaProfile(watched.api as unknown as GuardedApi, authorityUuid, forged));
                 expect(helperRefusal.uuid, 'the helper refused the pre-existing RA profile itself').toBe(raUuid);
-                // The guarded context over the same spy: PATCH and DELETE refused for ownership (also under the dry run).
                 const guarded = guardApi(watched.api);
                 expect((await expectOwnershipRefusal(guarded.patch(`/api/v1/authorities/${authorityUuid}/raProfiles/${raUuid}/disable`))).uuid).toBe(raUuid);
                 expect((await expectOwnershipRefusal(guarded.delete(`/api/v1/authorities/${authorityUuid}/raProfiles/${raUuid}`))).uuid).toBe(raUuid);
@@ -118,7 +105,6 @@ test.describe('run setup with the guard proof, then the before snapshot', { tag:
 
     test('snapshot the shared tier before the first spec', testMeta({ id: 'API-GEN-33', row: 'before', prio: 'P1', issue: 'ilm#428' }), async ({ api }, testInfo) => {
         test.skip(isLocalTier(), 'local stack: the non-interference proof runs on shared tiers only');
-        // ~30 resources, three of them read as a newest sample plus an oldest window of up to four pages.
         test.setTimeout(180_000);
         expect(process.env.BASE_URL, 'BASE_URL is unset: a run without a tier fails').toBeTruthy();
         assertRunTier();

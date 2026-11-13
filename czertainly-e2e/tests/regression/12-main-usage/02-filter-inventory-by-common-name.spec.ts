@@ -1,14 +1,7 @@
 /**
- * REG-USE-02 — The certificate inventory filtered by Common Name (release checklist: Usage 2). ilm#428.
- *
- * WHAT: 1. Upload a self-signed certificate named after the run.
- *       2. Inventory → Property / Common Name / contains <run id> → the badge shows.
- *       3. Every row matches and the row count equals the API search.
- *       4. Open the certificate: Details names it and the Validation, History and Event History tabs load without an error.
- *       5. Back to the list, remove the badge → the filter is gone.
- * WHY: the inventory filter is the everyday way to find a certificate; the badge, the rows and the API must agree.
- * HOW: the certificate is own, uploaded through the API and recorded from the upload answer before anything is asserted; the filter value
- *      is the run id, so only objects of this run match. Nothing else is changed.
+ * REG-USE-02 — The certificate inventory filtered by Common Name (release checklist: Usage 2; ilm#428). Filters the
+ * inventory by Common Name containing the run id: the badge shows,
+ * every row matches and the row count equals the API search.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { CertificateListPage } from '../../../pages/CertificateListPage';
@@ -62,18 +55,17 @@ test.describe('Certificate inventory filter', { tag: tags.regression }, () => {
                 await live('certificates', uploaded);
                 await certPage.openCertificateFromList(cn);
                 await certPage.assertUploadedCertificateDetails(cn);
-                await certPage.assertTabsOpenWithoutError(['Validation', 'History', 'Event History']);
+                await certPage.verifyOtherTabsOpenWithoutError(['Validation', 'History', 'Event History']);
             });
 
             await test.step('Back to the list, remove the badge → the filter is gone', async () => {
                 await certPage.goToList();
                 const badge = `Property 'Common Name' contains '${runId()}'`;
-                // The filter may or may not survive the navigation, and the persisted badge can render a moment after the list: each poll
-                // round removes the badge when it is shown, then reads again; the step ends only once a read finds it gone after the list
-                // settled.
+                // The filter may or may not survive the navigation, and
+                // the persisted badge can render a moment after the list.
                 await waitForListRows(page);
                 await expect.poll(async () => {
-                    if ((await filterBadges(page)).includes(badge)) await list.filter.removeBadge(badge);
+                    if ((await filterBadges(page)).includes(badge)) await list.removeFilterBadge(badge);
                     return filterBadges(page);
                 }, { message: 'the common-name badge is gone', timeout: 30_000 }).not.toContain(badge);
                 await waitForListRows(page);

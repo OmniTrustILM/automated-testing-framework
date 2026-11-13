@@ -1,20 +1,7 @@
 /**
- * REG-CERT-07, REG-CERT-08 — Renew and rekey from the certificate detail dialogs (release checklist: Certificates 7 and 8). ilm#429.
- *
- * WHAT: 1. Detail → Renew with a same-key CSR (REG-CERT-07, row renew) → the successor is Issued with the same public key; the
- *          Related Certificates tab lists it as a Renewal and the History tab says "Renewed using RA Profile <name>".
- *       2. A challenge-protected pre-registration, completed through the API (row challenge) → the Renew dialog shows a
- *          required Challenge field and the submit button stays disabled while it is empty.
- *       3. Detail → Rekey with a CSR on the same key (REG-CERT-08) → refused (422, "Public key of certificate and CSR are same"),
- *          no successor exists.
- *       4. Rekey with a new key, same subject and SANs → the successor is Issued with a different fingerprint and the same SAN
- *          set, related as Rekey; the History tab says "Rekeyed using RA Profile <name>".
- * WHY: renew and rekey are the lifecycle actions an operator uses on an issued certificate; a rekey must change the key, a
- *      renew must keep it, and a challenge-protected certificate must ask for its challenge.
- * HOW: every certificate acted on is issued by this run through the API (or pre-registered in the form); every successor is
- *      recorded in the ledger right after the dialog's answer, before any assertion, and its platform-made key after the
- *      issuance; the live ownership check runs before each dialog acts. The authority is the run's own RA profile; timeouts cover the
- *      issuances (180 s each).
+ * REG-CERT-07, REG-CERT-08 — Renew and rekey from the certificate detail dialogs (release checklist: Certificates 7 and
+ * 8; ilm#429). Renew keeps the public key and lists the successor as a Renewal; a challenge-protected pre-registration
+ * makes the Renew dialog require its Challenge.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { CertificateAddPage } from '../../../pages/CertificateAddPage';
@@ -35,18 +22,16 @@ import { LIFECYCLE_MS, REGISTERED_WAIT_MS, SLOW_LIFECYCLE_MS } from '../../../ut
 import { waitForCertificateState } from '../../../utils/regression/wait/certificateState';
 import { escapeRegExp } from '../../../utils/regression/text';
 
-
 test.describe('Renew and rekey in the web UI', { tag: tags.regression }, () => {
     test('the Renew dialog issues a same-key successor related as Renewal',
         testMeta({
-            id: 'REG-CERT-07', row: 'renew', prio: 'P1', issue: 'ilm#429',
+            id: 'REG-CERT-07', row: 'renew', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'fe#1857 (Renew dialog, CSR optional only with a platform private key: an externally keyed certificate uploads one; same key)',
                 'successor related as Renewal once issued (history "Renewed using RA Profile <name>")',
             ],
         }),
         async ({ signedIn: page, api, own, live, ownRaProfile }) => {
-            // One API issuance, the dialog, the successor's issuance (180 s each) and the tab checks.
             test.setTimeout(SLOW_LIFECYCLE_MS);
             const ra = ownRaProfile;
             const a = await test.step('Issue certificate A through the API (own)', async () => own.certificate.issue(ra, { suffix: 'ui07' }));
@@ -97,7 +82,7 @@ test.describe('Renew and rekey in the web UI', { tag: tags.regression }, () => {
 
     test('after a challenged registration the Renew dialog requires the challenge',
         testMeta({
-            id: 'REG-CERT-07', row: 'challenge', prio: 'P1', issue: 'ilm#429',
+            id: 'REG-CERT-07', row: 'challenge', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'fe#1857 (challenge-gated renew: the dialog shows a required Challenge field while the registration authorization is ACTIVE; the renew path verifies the secret)',
                 'after the first issuance the authorization is retained for renew / rekey',
@@ -113,8 +98,8 @@ test.describe('Renew and rekey in the web UI', { tag: tags.regression }, () => {
             const secret = newChallenge();
             const cn = ownCommonName('ui07c');
 
-            // The register route is not on the guard's create allow-list, so the pre-registration goes
-            // through the Add Certificate form, like REG-CERT-12.
+            // The register route is not on the guard's create allow-list, so the pre-registration goes through the Add
+            // Certificate form, like REG-CERT-12.
             const uuid = await test.step('Pre-register through the form (Pre-register, CN, challenge) → Registered', async () => {
                 await certPage.goToList();
                 await certPage.openIssuePage();
@@ -123,7 +108,6 @@ test.describe('Renew and rekey in the web UI', { tag: tags.regression }, () => {
                 await addPage.fillRequestCommonName(cn);
                 await addPage.fillChallenge(secret);
                 await submitFormCreateRecorded(addPage, own, 'register', { cn: cn, note: 'pre-registered via UI with a challenge', ra: ra });
-                // This row accepts the "accepted with warnings" panel (the certificate is opened from it).
                 const id = (await addPage.waitForCreatedCertificate({ acceptWarnings: true })).uuid;
                 await waitForCertificateState(api, id, 'registered', REGISTERED_WAIT_MS, { failOn: ['failed', 'rejected', 'issued'] });
                 return id;
@@ -151,7 +135,7 @@ test.describe('Renew and rekey in the web UI', { tag: tags.regression }, () => {
 
     test('the Rekey dialog refuses a same-key CSR and issues a new-key successor related as Rekey',
         testMeta({
-            id: 'REG-CERT-08', prio: 'P2', issue: 'ilm#429',
+            id: 'REG-CERT-08', prio: 'P2', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'a rekey CSR must carry a different key and the same subject: 422 "…Public key of certificate and CSR are same"; fe#2264 (Rekey dialog, Key Source External)',
                 'successor related as Rekey, different key fingerprint, same SAN set (history "Rekeyed using RA Profile <name>")',
@@ -170,10 +154,10 @@ test.describe('Renew and rekey in the web UI', { tag: tags.regression }, () => {
                 await live('certificates', a);
                 await detail.goToDetail(a.uuid);
                 await rekey.open();
-                // The ISSUED subject on the SAME key: only the key rule can fire (core compares the normalized X500 names).
+                // Same subject on the same key, so only the key rule can fire.
                 await rekey.fillExternal(csrFromKeyWithSubject(a.keys, String(aDetail.subjectDn), sansOfDetail(aDetail.subjectAlternativeNames)).pem);
                 const answer = await rekey.submit();
-                // A refusal is expected: an accepted same-key rekey is recorded first, and it fails the test.
+                // A refusal is expected: an accepted same-key rekey is recorded first, then fails the test.
                 expect(own.probe('certificates', answer, { name: a.cn, note: 'same-key rekey accepted (negative probe)', parents: { raProfile: ra.uuid, authority: ra.authorityUuid, predecessor: a.uuid } }), 'a refused rekey creates nothing').toBeUndefined();
                 expect(answer.status, answer.text.slice(0, 300)).toBe(422);
                 await expect(rekey.error).toBeVisible();

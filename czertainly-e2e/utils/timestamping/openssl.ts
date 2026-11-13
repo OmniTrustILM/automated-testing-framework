@@ -1,9 +1,6 @@
 /**
  * openssl — the OpenSSL wrapper of the timestamping block (query building, reply parsing, token verification).
- *
- * WHAT: the OpenSSL wrapper of the timestamping block (query building, reply parsing, token verification).
- * WHY: the specs judge a token with the same tool a client uses; ported unchanged from the developers' suite (automated-testing-framework#41).
- * HOW: every function shells out to `openssl` with OPENSSL_CONF=/dev/null and works on files under a directory the caller passes (the test's output dir).
+ * Every function shells out to `openssl` with OPENSSL_CONF=/dev/null and works on files under a directory the caller passes.
  */
 import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
@@ -23,9 +20,7 @@ export function openssl(args: string[]): OpensslResult {
     const stdout = execFileSync('openssl', args, {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
-      // Without this, openssl.cnf's [new_oids] section makes `ts -reply -text` print the
-      // local alias (tsa_policy2) instead of the OID, so assertions would depend on the
-      // machine's openssl configuration.
+      // Otherwise openssl.cnf's [new_oids] prints a local alias instead of the OID.
       env: { ...process.env, OPENSSL_CONF: '/dev/null' },
     });
     return { stdout, stderr: '', exitCode: 0 };
@@ -59,7 +54,6 @@ export interface QueryInfo {
   nonceHex?: string;
 }
 
-/** Builds a DER-encoded TimeStampReq with `openssl ts -query`. */
 export function buildTimestampQuery(options: QueryOptions): BuiltQuery {
   const dataPath = path.join(options.dir, 'input.txt');
   const queryPath = path.join(options.dir, 'query.tsq');
@@ -131,10 +125,7 @@ const FIELD_PATTERNS: Array<[keyof ReplyInfo, RegExp]> = [
   ['tsa', /^TSA:\s*(.+)$/m],
 ];
 
-/**
- * Parses `openssl ts -reply -text`. Only the TimeStampResp is rendered, so the extension
- * block belongs to the TSTInfo — not to the signer certificate embedded in the token.
- */
+/** Only the TimeStampResp is rendered, so the extension block belongs to the TSTInfo, not to the signer certificate. */
 export function parseTimestampReply(responsePath: string): ReplyInfo {
   const result = openssl(['ts', '-reply', '-in', responsePath, '-text']);
   const raw = result.stdout + result.stderr;
@@ -157,8 +148,7 @@ export function parseTimestampReply(responsePath: string): ReplyInfo {
   }
 
   info.granted = /^Status:\s*Granted/m.test(raw);
-  // openssl prints the literal "unspecified" for absent optional fields rather than
-  // omitting the line.
+  // openssl prints the literal "unspecified" for absent optional fields.
   info.accuracySpecified = isSpecified(info.accuracy);
   info.nonceSpecified = isSpecified(info.nonce);
   if (info.accuracySpecified) {
@@ -178,10 +168,7 @@ export function parseTimestampReply(responsePath: string): ReplyInfo {
   return info;
 }
 
-/**
- * Serial numbers are printed as 0x…; signing records carry them as unpadded lower-case hex
- * without a 0x prefix and without leading zeros.
- */
+/** Serial numbers are printed as 0x…; signing records carry unpadded lower-case hex without leading zeros. */
 export function normalizeSerial(printed: string): string {
   return normalizeHexInteger(printed);
 }
@@ -239,21 +226,14 @@ export interface VerificationResult {
 }
 
 export interface VerificationOptions {
-  /** The request the token answers. */
   queryPath?: string;
-  /** The timestamped data, hashed afresh in place of the request's imprint. */
   dataPath?: string;
   untrustedFile?: string;
 }
 
-/** RSA PKCS#1 v1.5 and ECDSA: the signatures PKCS#7, and so `openssl ts -verify`, can check. */
 const PKCS7_SIGNATURE_ALGORITHMS = /^1\.2\.840\.(?:113549\.1\.1\.(?:5|11|12|13|14)|10045\.4\.(?:1|3\.[1-4]))$/;
 
-/**
- * Verifies a token against a trusted chain and binds it to the request or the data. A
- * signature `ts -verify` cannot check, such as RSA-PSS, ML-DSA or SLH-DSA, goes through
- * `cms -verify` instead.
- */
+/** A signature `ts -verify` cannot check (RSA-PSS, ML-DSA, SLH-DSA) goes through `cms -verify` instead. */
 export function verifyTimestamp(
   responsePath: string,
   caFile: string,
@@ -265,7 +245,6 @@ export function verifyTimestamp(
   try {
     algorithm = signerSignature(tokenPath).algorithm;
   } catch {
-    // `cms -verify` reports what is wrong with the token.
   }
   return algorithm !== undefined && PKCS7_SIGNATURE_ALGORITHMS.test(algorithm)
     ? verifyWithTs(responsePath, caFile, options)
@@ -287,10 +266,7 @@ function verifyWithTs(responsePath: string, caFile: string, options: Verificatio
   return { ok: result.exitCode === 0 && /Verification: OK/.test(output), output };
 }
 
-/**
- * `cms -verify` checks the chain, the signature and that the signed messageDigest covers the
- * returned TSTInfo. The TSTInfo's binding to the request, which `ts -verify` adds, is checked here.
- */
+/** `cms -verify` checks the chain, the signature and the messageDigest; the TSTInfo's binding to the request is checked here. */
 function verifyWithCms(
   responsePath: string,
   tokenPath: string,
@@ -298,7 +274,6 @@ function verifyWithCms(
   options: VerificationOptions,
 ): VerificationResult {
   const tstInfoPath = path.join(path.dirname(tokenPath), 'tstinfo.der');
-  // -purpose timestampsign is what `ts -verify` requires of the signer.
   const args = [
     'cms', '-verify', '-inform', 'DER', '-in', tokenPath, '-CAfile', caFile,
     '-purpose', 'timestampsign', '-binary', '-out', tstInfoPath,
@@ -318,7 +293,6 @@ function verifyWithCms(
   return { ok: bindings.every((binding) => binding.ok), output: steps.join('; ') };
 }
 
-/** The checks `ts -verify` makes of the TSTInfo against `-data` or `-queryfile`. */
 function requestBindings(
   tstInfo: Buffer,
   responsePath: string,
@@ -355,16 +329,13 @@ function compared(what: string, source: string, actual: Buffer, expected: Buffer
 }
 
 export interface TokenSignature {
-  /** The SignerInfo's signatureAlgorithm OID. */
   algorithm: string;
-  /** The hash OID of an RSASSA-PSS signature. */
   pssHash?: string;
 }
 
 export const RSASSA_PSS = '1.2.840.113549.1.1.10';
 const SHA1 = '1.3.14.3.2.26';
 
-/** How the token's signer says it signed, or null for a response without a token. */
 export function tokenSignature(responsePath: string): TokenSignature | null {
   const tokenPath = extractToken(responsePath, path.dirname(responsePath));
   return tokenPath ? signerSignature(tokenPath) : null;
@@ -374,11 +345,9 @@ function signerSignature(tokenPath: string): TokenSignature {
   const der = fs.readFileSync(tokenPath);
   const [, explicitContent] = derChildren(der, readDerNode(der, 0));
   const signedData = readDerNode(der, explicitContent.contentStart);
-  // digestAlgorithms is SignedData's first SET and signerInfos its last.
   const signerInfos = derChildren(der, signedData).filter((node) => node.tag === DER_SET).pop();
   if (!signerInfos) throw new Error('the token holds no signerInfos');
   const fields = derChildren(der, derChildren(der, signerInfos)[0]);
-  // The signature is SignerInfo's only OCTET STRING, right after its signatureAlgorithm.
   const algorithmIdentifier = fields[fields.findIndex((node) => node.tag === DER_OCTET_STRING) - 1];
   if (algorithmIdentifier?.tag !== DER_SEQUENCE) throw new Error('the SignerInfo holds no signatureAlgorithm');
 
@@ -391,7 +360,6 @@ function signerSignature(tokenPath: string): TokenSignature {
   return { algorithm, pssHash: decodeOid(der, derChildren(der, readDerNode(der, hashAlgorithm.contentStart))[0]) };
 }
 
-/** The OID of the key algorithm in a certificate's subjectPublicKeyInfo. */
 export function certificateKeyAlgorithm(certificateContent: string): string {
   const der = Buffer.from(certificateContent, 'base64');
   const [tbsCertificate] = derChildren(der, readDerNode(der, 0));
@@ -467,10 +435,7 @@ const DER_SEQUENCE = 0x30;
 const DER_SET = 0x31;
 const DER_CONTEXT_0 = 0xa0;
 
-/**
- * The messageImprint of a TimeStampReq or a TSTInfo, the first SEQUENCE in either. The
- * algorithm is its OID alone, because one side may encode absent parameters as NULL.
- */
+/** The first SEQUENCE of a TimeStampReq or a TSTInfo; the algorithm is its OID alone, because one side may encode absent parameters as NULL. */
 function messageImprint(der: Buffer): { algorithm: Buffer; hashedMessage: Buffer } {
   const imprint = derChildren(der, readDerNode(der, 0)).find((node) => node.tag === DER_SEQUENCE);
   const [algorithmIdentifier, hashedMessage] = imprint ? derChildren(der, imprint) : [];
@@ -490,7 +455,6 @@ function extractToken(responsePath: string, dir: string): string | null {
   return extract.exitCode === 0 && fs.existsSync(tokenPath) ? tokenPath : null;
 }
 
-/** Certificate embedded in the timestamp token (present when the request set certReq). */
 export function tokenSignerCertificate(responsePath: string, dir: string): string | null {
   const tokenPath = extractToken(responsePath, dir);
   if (!tokenPath) return null;

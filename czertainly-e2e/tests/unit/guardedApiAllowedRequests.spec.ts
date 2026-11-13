@@ -1,8 +1,6 @@
 /**
  * The deliberate allowances of the guard, each with its limits, on the wire (a real Playwright context, a loopback fake
- * core, a second origin that must see nothing): the dedicated user, inspections, the certificate-only import, raw
- * bodies, probe methods, literal path ids, key items, the provider-rule waiver, connector creates and certificate
- * registration. Each refused neighbour is a row too, so an allowance cannot widen unnoticed.
+ * core, a second origin that must see nothing). Each refused neighbour is a row too, so an allowance cannot widen unnoticed.
  */
 import { APIRequestContext, expect, request, test } from '@playwright/test';
 import * as net from 'net';
@@ -23,7 +21,6 @@ import { Arrived, LoopbackServer } from './helpers/loopbackServer';
 import { registerGuardRig } from './helpers/guardRig';
 import { guardVerdict } from './helpers/guardVerdict';
 import { randomBytes } from 'node:crypto';
-// Run-scoped generated test passwords: no password-like literal in the file.
 const GEN_PW_1 = `qa-${randomBytes(9).toString('base64url')}`;
 const GEN_PW_2 = `qa-${randomBytes(9).toString('base64url')}`;
 
@@ -61,7 +58,6 @@ const lines: LedgerLine[] = [
     mk('keys', OWN_KEY, `${RUN}-key`), mk('keyItems', OWN_ITEM, `${RUN}-key`, { key: OWN_KEY }),
     mk('keyItems', OWN_ITEM_NO_PARENT, `${RUN}-key`), mk('keys', OWN_ITEM_AS_KEY, `${RUN}-key`), mk('keyItems', OWN_ITEM_RENAMED, `${RUN}-key`, { key: OWN_KEY }),
     mk('complianceProfiles', OWN_COMPLIANCE), mk('notificationInstances', OWN_NI), mk('customAttributes', OWN_CA),
-    // The dedicated identity's ILM user, created by this run, named by the operator (no run prefix).
     mk('users', DED, DED_NAME),
 ];
 
@@ -118,10 +114,6 @@ const outcome = async (call: Promise<unknown>): Promise<string> => (await refusa
 const mutationsSeen = () => A.mutations().map((a) => `${a.method} ${a.url}`);
 const noMutationArrived = () => expect(A.mutations(), 'nothing refused reached the core').toEqual([]);
 
-// ------------------------------------------------------------------ dedicated user
-
-// dedicated user: the DED-named own users line — PATCH roles / enable and DELETE are sent; a pre-existing user, the env unset,
-// a roles line, a foreign live name: refused
 test('dedicated user: own DED-named users are patched, enabled and deleted; any other target is refused', async () => {
     const g = guard();
     expect(await outcome(g.patch(`/api/v1/users/${DED}/roles`, { data: [] }))).toBe('sent');
@@ -140,10 +132,7 @@ test('dedicated user: own DED-named users are patched, enabled and deleted; any 
     expect(B.arrived).toEqual([]);
 });
 
-// ------------------------------------------------------------------ rejected requests (pins)
-
-// rejected requests, pinned: the guard did not widen — probe mapping uuid sent, pre-existing refused; own DED recipient sent,
-// pre-existing refused; inbox read as DED; duplicate keys only on the read route
+// rejected requests, pinned: the guard did not widen — probe mapping uuid sent, pre-existing refused.
 test('rejected requests stay pinned: probe mapping, DED recipient, inbox read and duplicate keys', async () => {
     const g = guard();
     const mapping = (u: string) => ({ attributeMappings: [{ mappingAttributeUuid: u, mappingAttributeName: 'x', customAttributeUuid: OWN_CA }] });
@@ -161,12 +150,9 @@ test('rejected requests stay pinned: probe mapping, DED recipient, inbox read an
     expect(B.arrived).toEqual([]);
 });
 
-// ------------------------------------------------------------------ inspections
-
 const big = () => Buffer.alloc(5 * 1024 * 1024, 7).toString('base64');
 
-// inspections: POST /v1/inspections is a body-judged create, never a raw POST; tokenProfileUuid absent / not-a-uuid / probe
-// sent, pre-existing refused, own sent after its live read
+// inspections: POST /v1/inspections is a body-judged create, never a raw POST.
 test('inspections: POST /v1/inspections is a body-judged create, never a raw POST', async () => {
     expect(postRouteKind('/v1/inspections')).toBe('create');
     expect(isRawPostRouteAllowed('/v1/inspections')).toBe(false);
@@ -207,10 +193,6 @@ test('inspections and import: a 7 MB file is judged in under 2 s and sent unchan
     for (const a of sent) expect(JSON.parse(a.body).file).toBe(file);
 });
 
-// ------------------------------------------------------------------ import
-
-// import: the certificate-only import shape is sent; every other shape is refused before anything is sent; the customAttributes
-// waiver is unchanged
 test('import: the certificate-only import shape is sent, every other shape is refused, waiver unchanged', async () => {
     expect(postRouteKind('/v1/certificates/import')).toBe('create');
     expect(isRawPostRouteAllowed('/v1/certificates/import')).toBe(false);
@@ -255,10 +237,6 @@ test('import: the certificate-only import shape is sent, every other shape is re
     expect(B.arrived).toEqual([]);
 });
 
-// ------------------------------------------------------------------ raw bodies
-
-// raw bodies: xml / octet-stream / multipart with a boundary are sent as written on the read POST; refused everywhere else and
-// in every other form
 test('raw bodies: xml, octet-stream and multipart are sent as written on the read POST, refused elsewhere', async () => {
     const g = guard();
     const types = ['application/xml', 'application/octet-stream', 'multipart/form-data; boundary=----qa-boundary_1.2'];
@@ -267,7 +245,6 @@ test('raw bodies: xml, octet-stream and multipart are sent as written on the rea
         expect(await outcome(g.post('/api/v1/certificates', { data: Buffer.from('bytesÿ', 'latin1').toString('utf8'), headers: { 'content-type': t.toUpperCase() } })), `${t} upper-case`).toBe('sent');
     }
     const sent = A.mutations();
-    // The media type is normalised to lower case; a multipart boundary is case-sensitive and goes as written.
     expect(sent.map((a) => a.headers['content-type'])).toEqual(types.flatMap((t) => [readPostType(t), readPostType(t.toUpperCase())]));
     expect(sent[0].body).toBe('<x>garbage</x>');
     expect(sent.every((a) => a.headers.authorization === 'Bearer SECRET-TOKEN')).toBe(true);
@@ -290,21 +267,17 @@ test('raw bodies: xml, octet-stream and multipart are sent as written on the rea
     ];
     for (const [name, call] of refused) expect(await outcome(call()), name).toBe('request');
     noMutationArrived();
-    // A read POST is not judged (section 2 fact 1, like a JSON search naming a foreign uuid): the text goes as written.
+    // A read POST is not judged (section 2 fact 1, like a JSON search naming a foreign uuid)
     expect(await outcome(g.post('/api/v1/certificates', { data: `<x>${FOREIGN}</x>`, headers: xml }))).toBe('sent');
     expect(A.mutations().map((a) => a.body)).toEqual([`<x>${FOREIGN}</x>`]);
     A.reset();
     expect(B.arrived).toEqual([]);
 });
 
-// ------------------------------------------------------------------ probe methods
-
-// probe methods (a): QAPROBE is sent as that method, bodyless, through fetch only; PROPFIND, FOO and lower-case variants stay refused
 test('probe methods: QAPROBE is sent bodyless through fetch only; PROPFIND and FOO stay refused', async () => {
     expect([...PROBE_METHODS]).toEqual(['TRACE', 'QAPROBE']);
     expect([...METHOD_TABLES.METHODS]).toEqual(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', ...PROBE_METHODS]);
     expect([...METHOD_TABLES.BODYLESS]).toEqual(['GET', ...PROBE_METHODS]);
-    // Node's HTTP parser refuses an unknown method, so a raw socket server records the request line.
     const requestLines: string[] = [];
     const server = net.createServer((sock) => {
         let buf = '';
@@ -338,7 +311,7 @@ test('probe methods: QAPROBE is sent bodyless through fetch only; PROPFIND and F
             ['FOO', () => g.fetch('/api/v1/info', { method: 'FOO' })],
             ['propfind (lower case)', () => g.fetch('/api/v1/info', { method: 'propfind' })],
             ['QAPROBE2', () => g.fetch('/api/v1/info', { method: 'QAPROBE2' })],
-            // An unknown token is refused as a METHOD, not merely as a path-less mutation: on an own object with a body it stays refused.
+            // An unknown token is refused as a METHOD, not merely as a path-less mutation.
             ['FOO on an own object with a body', () => g.fetch(`/api/v1/roles/${OWN_ROLE}`, { method: 'FOO', data: { name: `${RUN}-roles` } })],
             ['PROPFIND on an own object', () => g.fetch(`/api/v1/roles/${OWN_ROLE}`, { method: 'PROPFIND' })],
             ['LOCK on an own object', () => g.fetch(`/api/v1/roles/${OWN_ROLE}`, { method: 'LOCK' })],
@@ -356,8 +329,6 @@ test('probe methods: QAPROBE is sent bodyless through fetch only; PROPFIND and F
     expect(B.arrived).toEqual([]);
 });
 
-// probe methods (b): the two NO_HANDLER_PROBES pairs are sent bodyless and query-less as the run's identity; every neighbour is
-// refused; the table is absent from the route tables
 test('probe methods: the two NO_HANDLER_PROBES pairs are sent bodyless; every neighbour is refused', async () => {
     expect(NO_HANDLER_PROBES.map((p) => `${p.method} ${p.path}`)).toEqual(['POST /v1/statistics', 'DELETE /v1/info']);
     for (const p of NO_HANDLER_PROBES) {
@@ -403,10 +374,7 @@ test('probe methods: the two NO_HANDLER_PROBES pairs are sent bodyless; every ne
     expect(B.arrived).toEqual([]);
 });
 
-// ------------------------------------------------------------------ literal path ids
-
-// literal path ids: PUT | DELETE /v1/groups | credentials/not-a-uuid are sent; every neighbour refused; the body is still
-// judged; the literals are never uuid-like
+// literal path ids: PUT | DELETE /v1/groups | credentials/not-a-uuid are sent; every neighbour refused.
 test('literal path ids: PUT / DELETE on groups and credentials with not-a-uuid are sent', async () => {
     for (const p of MALFORMED_UUID_PROBES) {
         for (const l of p.literals) {
@@ -441,10 +409,6 @@ test('literal path ids: PUT / DELETE on groups and credentials with not-a-uuid a
     expect(B.arrived).toEqual([]);
 });
 
-// ------------------------------------------------------------------ key items are typed keyItems
-
-// keyItems — own items under own keys are sent on the item operation, per-key list and bulk item routes; foreign, mistyped or
-// parentless items are refused
 test('keyItems: own items under own keys are sent on item, list and bulk routes; others refused', async () => {
     expect(TARGET_TYPES.items).toBe('keyItems');
     expect(BULK_ROUTES.filter((r) => r.path.startsWith('/v1/keys/items')).every((r) => r.type === 'keyItems')).toBe(true);
@@ -480,10 +444,6 @@ test('keyItems: own items under own keys are sent on item, list and bulk routes;
     expect(B.arrived).toEqual([]);
 });
 
-// ------------------------------------------------------------------ provider-rule ruleUuid waiver on an own compliance profile
-
-// ruleUuid of a provider rule on an own compliance profile is waived; internal rules, foreign profiles, other routes, lists,
-// nested keys and string bodies are not
 test('a provider rule uuid on an own compliance profile is waived; internal and foreign ones not', async () => {
     expect(ROUTE_FIELD_WAIVERS.map((w) => `${w.method} ${w.path} ${w.field}`)).toEqual(['PATCH /v2/complianceProfiles/{id}/rules ruleUuid']);
     expect([...routeFieldWaivers('PATCH', `/v2/complianceProfiles/${OWN_COMPLIANCE}/rules`, { connectorUuid: FOREIGN2 })]).toEqual(['ruleUuid']);
@@ -512,11 +472,6 @@ test('a provider rule uuid on an own compliance profile is waived; internal and 
     expect(B.arrived).toEqual([]);
 });
 
-// ------------------------------------------------------------------ connector callbacks, POST /v2/connectors, certificate register
-
-// the three form callbacks are a kind of their own (guard POST_CALLBACK, limits in guardedApiTimestamping.spec.ts): refused here, where the
-// preflight registered nothing; every other callback stays refused too; POST /v2/connectors is a create, proxyUuid probes only, connect / approve
-// platform-level
 test('a callback on anything the preflight did not register stays refused; POST /v2/connectors is a create', async () => {
     const g = guard();
     expect(await outcome(g.post(`/api/v2/connectors/${PRE_CONNECTOR}/callback`, { data: { name: 'x' } })), 'a pre-existing connector nobody registered').toBe('request');
@@ -539,8 +494,6 @@ test('a callback on anything the preflight did not register stays refused; POST 
     expect(mutationsSeen()).toEqual(['POST /api/v2/connectors', 'POST /api/v2/connectors']);
     A.reset();
     expect(await outcome(g.post('/api/v2/connectors', { data: { name: `${RUN}-stub`, url: 'http://x', authType: 'none', proxyUuid: FOREIGN } }))).toBe('request');
-    // A pre-existing proxy named by its CODE (no uuid) binds the new connector: refused on both creates, any depth / case; blank / null /
-    // absent pass.
     for (const path of ['/api/v2/connectors', '/api/v1/connectors']) {
         const base = { name: `${RUN}-stub`, url: 'http://x', authType: 'none' };
         for (const body of [{ ...base, proxyCode: 'edge-1' }, { ...base, ProxyCode: 'edge-1' }, { ...base, proxyCode: ' x ' }, { ...base, proxyCode: 1 }, { ...base, proxyCode: ['edge-1'] }, { ...base, customAttributes: [{ proxyCode: 'edge-1' }] }, { ...base, nested: { proxycode: 'e' } }]) {
@@ -559,8 +512,6 @@ test('a callback on anything the preflight did not register stays refused; POST 
     expect(B.arrived).toEqual([]);
 });
 
-// cert-lifecycle register: …/certificates/register is a create under foreign scope parents; sourceCertificateUuid / ownerUuid /
-// groupUuids must be own
 test('cert-lifecycle register is a create under foreign scope parents; references must be own', async () => {
     const path = `/api/v2/operations/authorities/${FOREIGN}/raProfiles/${FOREIGN2}/certificates/register`;
     expect(postRouteKind(path.slice(4))).toBe('create');

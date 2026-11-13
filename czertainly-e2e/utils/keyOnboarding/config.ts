@@ -1,29 +1,32 @@
 /**
- * config — the environment contract of the key onboarding block.
- *
- * WHAT: every KO_* variable the block reads, with the developers' defaults (config.env.example of their suite), and
- * where the setup leaves its summary.
- * WHY: the block needs a PKCS#11 connector with the key-listing feature, a SoftHSM token behind its proxy sidecar, and
- * docker on the runner to plant key pairs on that token the way a tool outside the platform would. A missing value
- * makes the setup `unavailable` with the variable's name; nothing is guessed.
- * HOW: `keyOnboardingConfig()` reads the process environment (the env file is already loaded by prepareRun);
- * `summaryFile()` is the run's summary path under REG_STATE_DIR (never inside the clone).
+ * config — the KO_* settings of the key onboarding block and where the setup leaves its summary (under REG_STATE_DIR).
+ * Key pairs are planted with docker on a proven local stack and with `kubectl exec` into the sidecar on a shared tier (KO_KUBE_*).
+ * A missing value makes the setup `unavailable` with the variable's name; nothing is guessed.
  */
 import * as path from 'path';
 import { currentRunId, regressionStateDir } from '../regression/run/runId';
+import { isLocalTier } from '../regression/tier/kind';
+
+export type PlantingMode = 'docker' | 'cluster';
+
+export interface KubeTarget {
+    namespace: string;
+    deployment: string;
+    container: string;
+    module: string;
+}
 
 export interface KeyOnboardingConfig {
     /** The PKCS#11 cryptography-provider connector (v2) as core reaches it; found by URL, never registered here. */
     pkcs11ConnectorUrl: string;
-    /** The credential-provider v2 connector (secret interface) the run's vault instance is created on. */
     vaultConnectorUrl: string;
-    /** The connector's config profile and the label of the token on it. */
     pkcs11Profile: string;
     pkcs11Token: string;
-    /** The token's user PIN (no default: the block is unavailable without it). */
+    /** No default: the block is unavailable without it. */
     tokenPin?: string;
-    /** The running SoftHSM sidecar whose token the block plants key pairs on. */
     sidecarContainer: string;
+    mode: PlantingMode;
+    kube: KubeTarget;
 }
 
 export function keyOnboardingConfig(env: NodeJS.ProcessEnv = process.env): KeyOnboardingConfig {
@@ -34,10 +37,21 @@ export function keyOnboardingConfig(env: NodeJS.ProcessEnv = process.env): KeyOn
         pkcs11Token: env.KO_PKCS11_TOKEN ?? 'softhsm',
         tokenPin: env.KO_TOKEN_PIN || undefined,
         sidecarContainer: env.KO_SIDECAR_CONTAINER ?? 'pkcs11-sidecar-softhsm',
+        mode: isLocalTier(env) ? 'docker' : 'cluster',
+        kube: {
+            namespace: env.KO_KUBE_NAMESPACE ?? 'ilm',
+            deployment: env.KO_KUBE_DEPLOYMENT ?? 'pkcs11-cryptography-provider',
+            container: env.KO_KUBE_CONTAINER ?? 'proxy-softhsm',
+            module: env.KO_PKCS11_MODULE ?? '/usr/lib/softhsm/libsofthsm2.so',
+        },
     };
 }
 
-/** The run's summary: `<REG_STATE_DIR>/<run id>.key-onboarding.json`. */
 export function summaryFile(env: NodeJS.ProcessEnv = process.env): string {
     return path.join(regressionStateDir(env), `${currentRunId(env)}.key-onboarding.json`);
+}
+
+/** While the planting marker exists the token may hold the run's pairs: a removal that cannot run fails the teardown. */
+export function plantingMarkerFile(runId: string, env: NodeJS.ProcessEnv = process.env): string {
+    return path.join(regressionStateDir(env), `${runId}.key-onboarding.planting`);
 }

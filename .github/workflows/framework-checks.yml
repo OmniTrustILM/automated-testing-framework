@@ -1,6 +1,4 @@
-# Fast checks on the framework's own code. No environment, no secrets, no browser: these must stay
-# quick and green so that a red run means something, which is why the smoke suite - which needs a
-# live platform and credentials - is not run from here.
+# Fast checks of the framework's own code: no environment, no secrets, so no smoke run here.
 name: Framework checks
 
 on:
@@ -17,7 +15,6 @@ on:
 permissions:
   contents: read
 
-# A newer push to the same branch or pull request makes the older run pointless.
 concurrency:
   group: framework-checks-${{ github.ref }}
   cancel-in-progress: true
@@ -25,7 +22,8 @@ concurrency:
 jobs:
   checks:
     name: Unit tests and spec parsing
-    runs-on: ubuntu-latest
+    # Pinned: Playwright 1.58 cannot install Chromium on ubuntu-latest (26.04). Back to ubuntu-latest with #140.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     defaults:
       run:
@@ -43,24 +41,26 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # For the page-object stand-in unit tests.
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
       - name: Type check
         run: npx tsc --noEmit
 
-      # Includes tests/unit/specGuards.spec.ts: the static rules over the REG-* / API-* specs and the
-      # regression helpers (the deny-by-default guard lint) and the resolved project filters of both
-      # configs (no @local test is selected unless TIER_KIND=local).
       - name: Unit tests
         run: npm run test:unit
 
-      # The unit tests must write nothing into the tracked tree (a snapshot, a fixture, a generated file).
       - name: Unit tests left the tree unchanged
         run: git diff --exit-code
 
-      # Every spec is imported and listed. This is what catches a broken import or a syntax error
-      # in a suite that cannot otherwise be exercised here, because running it needs a platform.
-      # Listing loads the configs but never runs their globalTeardown, so nothing reaches a tier.
+      # Listing imports every spec (a broken import fails here) and never reaches a tier.
       - name: All specs parse (smoke)
         run: npx playwright test --list
+
+      # Epic tests live on the Epic branches until they are merged, so the list may be empty here.
+      - name: All specs parse (Epic tests)
+        run: npx playwright test -c playwright.epic.config.ts --list --pass-with-no-tests
 
       - name: All specs parse (REG-* regression)
         run: npx playwright test -c playwright.regression.config.ts --list
@@ -73,3 +73,8 @@ jobs:
 
       - name: All specs parse (visual)
         run: npx playwright test -c playwright.visual.config.ts --list
+
+      # key-onboarding is @local only, so the list is empty here; it must still parse. Timestamping is not listed while it stays
+      # disabled on develop-01.
+      - name: All specs parse (key-onboarding block)
+        run: DEV_BLOCK=key-onboarding npx playwright test -c playwright.devblock.config.ts --list --pass-with-no-tests

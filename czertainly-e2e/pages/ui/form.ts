@@ -1,19 +1,12 @@
 /**
- * form — form helpers.
- *
- * WHAT: form helpers: the one way to fill a text input, the form's submit button, a switch, and the filler of empty required
- *       custom attributes a tier may define (with the API read that says whether any are defined).
- * WHY: inputs are readonly until focused (anti-autofill), so every fill goes through `fillText`; a switch is a hidden input
- *       under its label, so it is clicked through the label and its state proven; tiers differ in custom attributes, so a
- *       create form fills whatever is required, and waits for the editor only on a tier that defines any.
- * HOW: labels that end in an asterisk mark required attributes; selects get their first option, inputs a value; whether the
- *       editor renders is decided from the definitions the API lists, never from a timed wait.
+ * form — form helpers: `fillText`, `cancelIfOpen`, switches and the filler of empty required custom attributes.
+ * Inputs are readonly until focused, so every fill goes through `fillText`. A switch is a hidden input, clicked through its label.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import { Logger } from '../../utils/Logger';
 import { chooseOption } from './select';
 
-const logger = new Logger('form');
+const logger = new Logger('Form');
 
 /** TextInputs are readonly until focused (anti-autofill): click, then fill. */
 export async function fillText(input: Locator, value: string): Promise<void> {
@@ -21,15 +14,17 @@ export async function fillText(input: Locator, value: string): Promise<void> {
     await input.fill(value);
 }
 
-/** The form's submit (ProgressButton, data-testid progress-button: "Create", "Save", …). */
-export const submitButtonOf = (scope: Locator): Locator => scope.getByTestId('progress-button').last();
+/** Clicks `cancelButton` when `dialog` is still open (after a refused submit) and waits until the dialog is gone. */
+export async function cancelIfOpen(dialog: Locator, cancelButton: Locator): Promise<void> {
+    if (await dialog.isVisible()) {
+        await cancelButton.click();
+        await expect(dialog).toBeHidden();
+    }
+}
 
 /**
- * Sets a switch (a visually hidden input with a `label[for]`) by clicking its label, then proves the state with
- * `toBeChecked`. `switchOrId` is the switch id (`switch-<id>-input` inside `scope`) or the input locator itself (a
- * checkbox such as `eventDataCategory-<code>-input`). It never forces a click on the hidden input: a forced check can leave
- * the form's state unchanged while the DOM says checked. A switch already in the wanted state is left alone; an input
- * without an id (so without a label to click) fails.
+ * Sets a switch by clicking its label, then proves the state with `toBeChecked`. `switchOrId` is the switch id inside
+ * `scope` or the input locator itself. It never forces a click on the hidden input: a forced check can leave the form's state unchanged.
  */
 export async function setSwitch(scope: Locator, switchOrId: string | Locator, on: boolean): Promise<void> {
     const input = typeof switchOrId === 'string' ? scope.getByTestId(`switch-${switchOrId}-input`) : switchOrId;
@@ -45,18 +40,11 @@ export async function setSwitch(scope: Locator, switchOrId: string | Locator, on
     else await expect(input, `${name} is off`).not.toBeChecked();
 }
 
-/**
- * The custom attribute editor of a form once it has rendered: its "Show custom attribute" select (shown only while optional
- * attributes remain to add) OR a custom attribute label (shown for the required ones). A tier whose definitions are all
- * required renders only labels; one whose definitions are all optional renders only the select.
- */
+/** The editor once rendered: its "Show custom attribute" select (optional attributes remain) or a custom attribute label (required ones). */
 export const customAttributeEditor = (scope: Locator): Locator =>
     scope.getByTestId('select-selectAddCustomAttribute-trigger').or(scope.locator('label[for^="__attributes__custom"]')).first();
 
-/**
- * Whether the tier defines any custom attribute for a resource (`users`, `groups`, `raProfiles`, …): `GET
- * /v1/attributes/custom/resources/<resource>` with the signed-in session. A failed read fails (it is no proof of "none").
- */
+/** Whether the tier defines any custom attribute for a resource. A failed read fails: it is no proof of "none". */
 export async function customAttributesDefined(page: Page, resource: string): Promise<boolean> {
     const answer = await page.request.get(`/api/v1/attributes/custom/resources/${resource}`);
     expect(answer.status(), `GET /api/v1/attributes/custom/resources/${resource}`).toBe(200);
@@ -66,13 +54,8 @@ export async function customAttributesDefined(page: Page, resource: string): Pro
 }
 
 /**
- * Fill every empty required custom attribute of a form. They render as `__attributes__custom…__.<name>` fields; in tabbed
- * forms they sit in a hidden "Custom Attributes" tab, which is opened first. Selects get their first option, inputs get
- * `value`. Returns the labels it filled.
- *
- * `definitionsExist` says whether the tier defines custom attributes for the form's resource (read it with
- * `customAttributesDefined`): only then the editor must render, and the wait for it is a hard expectation. A form of a
- * resource without definitions has no editor, so nothing is waited for.
+ * Fills every empty required custom attribute of a form and returns the labels it filled; tabbed forms keep them in a
+ * hidden "Custom Attributes" tab. `definitionsExist` (from `customAttributesDefined`) makes the wait for the editor a hard expectation.
  */
 export async function fillRequiredCustomAttributes(page: Page, scope: Locator, value: string, definitionsExist: boolean): Promise<string[]> {
     if (definitionsExist) {

@@ -1,18 +1,4 @@
-/**
- * connectorApi — live connector health and read-only connector probes.
- *
- * WHAT: live connector health and read-only connector probes. The stored status `connected` does not say the
- *       connector answers now, so health is read live and by interface version (v1 `HealthDto` ok, v2 `HealthInfo` UP), the
- *       version taken from the connector detail. Everything here is a GET; the anonymous probes (liveness, readiness,
- *       health, info) take a context without credentials.
- * WHY: A stored status `connected` does not say the connector answers now.
- * HOW: Health is read live by interface version (v1 `ok`, v2 `UP`) from the connector detail; everything is a GET and the anonymous probes
- * take a context without credentials.
- *
- *       The core's own anonymous liveness and readiness probes share one oracle here: `healthGroupProblems` says what is
- *       wrong with an answer (status 200 and the body exactly `{"status":"UP"}`), `expectHealthGroupUp` asserts it with the
- *       probe's name, and `isHealthGroupUp` is the yes / no for a poll that waits for startup.
- */
+/** connectorApi — live connector health (by interface version) and read-only connector probes; everything here is a GET. */
 import { expect, type APIRequestContext, type APIResponse } from '@playwright/test';
 import { hasRunFamilyPrefix } from '../run/runId';
 import { pollUntil } from '../wait';
@@ -21,7 +7,6 @@ import { DEFAULT_ADCS_CONNECTOR, DEFAULT_CREDENTIAL_CONNECTOR, settings } from '
 
 export type ConnectorVersion = 1 | 2;
 
-/** `v1` / `v2` (the interfaces ConnectorVersion codes, any case), or the numbers 1 / 2; anything else is undefined. */
 export function parseConnectorVersion(value: unknown): ConnectorVersion | undefined {
     if (value === 1 || value === 2) return value;
     if (typeof value !== 'string') return undefined;
@@ -29,21 +14,15 @@ export function parseConnectorVersion(value: unknown): ConnectorVersion | undefi
     return m ? (Number(m[1]) as ConnectorVersion) : undefined;
 }
 
-/** The health path of a connector version. */
 const healthPath = (uuid: string, version: ConnectorVersion): string => `/api/v${version}/connectors/${uuid}/health`;
 
 export interface HealthVerdict {
     healthy: boolean;
-    /** The `status` the body carried (`ok`, `UP`, …), when there was one. */
     status?: string;
-    /** One line: why healthy or not ("live health 503", "v2 status DOWN", …). */
     why: string;
 }
 
-/**
- * The health oracle of REG-DEP-01.d (pure): v1 → HTTP 200 and `status` = `ok`; v2 → HTTP 200 and `status` = `UP`.
- * A non-200 answer, a body without the status, or any other status value is unhealthy.
- */
+/** The health oracle (pure): v1 → 200 and `status` `ok`; v2 → 200 and `status` `UP`; anything else is unhealthy. */
 export function judgeHealth(version: ConnectorVersion, httpStatus: number, body: unknown): HealthVerdict {
     const status = typeof (body as JsonObject | null)?.status === 'string' ? String((body as JsonObject).status) : undefined;
     if (httpStatus !== 200) return { healthy: false, status, why: `live health ${httpStatus}` };
@@ -55,11 +34,9 @@ export function judgeHealth(version: ConnectorVersion, httpStatus: number, body:
 export interface ConnectorRow {
     uuid: string;
     name: string;
-    /** The STORED status (`connected`, `waitingForApproval`, `failed`, `offline`). */
     status?: string;
 }
 
-/** `GET /api/v1/connectors` (every registered connector, v1 and v2 records). */
 export async function listConnectors(api: APIRequestContext): Promise<ConnectorRow[]> {
     const res = await api.get('/api/v1/connectors');
     if (!res.ok()) throw new Error(`GET /api/v1/connectors answered ${res.status()}`);
@@ -73,12 +50,10 @@ export async function findConnector(api: APIRequestContext, name: string): Promi
 
 export interface VersionResult {
     version?: ConnectorVersion;
-    /** HTTP status of the detail read. */
     detailStatus: number;
     detail?: JsonObject;
 }
 
-/** The connector's version from its v2 detail (`version`); undefined when the detail cannot be read or has none. */
 export async function connectorVersion(api: APIRequestContext, uuid: string): Promise<VersionResult> {
     const res = await api.get(`/api/v2/connectors/${uuid}`);
     if (!res.ok()) return { detailStatus: res.status() };
@@ -91,7 +66,6 @@ export interface HealthResult extends HealthVerdict {
     uuid: string;
     storedStatus?: string;
     version?: ConnectorVersion;
-    /** HTTP status of the health read (0: not read, the version was unknown). */
     httpStatus: number;
     body?: unknown;
     elapsedMs: number;
@@ -106,10 +80,7 @@ async function bodyOf(res: APIResponse): Promise<unknown> {
     }
 }
 
-/**
- * Live health of one connector by its version (REG-DEP-01.d, the CA choice): the version from the v2 detail, then the
- * health path of THAT version. An unknown version is unhealthy ("version unknown"), never a guess.
- */
+/** Live health by the connector's version (from the v2 detail); an unknown version is unhealthy, never a guess. */
 export async function healthByVersion(api: APIRequestContext, connector: ConnectorRow): Promise<HealthResult> {
     const started = Date.now();
     const { version, detailStatus } = await connectorVersion(api, connector.uuid);
@@ -122,14 +93,12 @@ export async function healthByVersion(api: APIRequestContext, connector: Connect
     return { ...base, ...judgeHealth(version, res.status(), body), httpStatus: res.status(), body, elapsedMs: Date.now() - started };
 }
 
-/** One line for a failure message: "connector X: stored connected, live health 503". */
 export function describeHealth(h: HealthResult): string {
     return `connector ${h.name}: stored ${h.storedStatus ?? 'unknown'}, ${h.why}`;
 }
 
 export type AliveResult = HealthResult | { name: string; missing: true };
 
-/** Health of every named connector (a name that is not registered is `missing`). */
 export async function connectorsAlive(api: APIRequestContext, names: string[]): Promise<AliveResult[]> {
     const all = await listConnectors(api);
     const out: AliveResult[] = [];
@@ -140,10 +109,7 @@ export async function connectorsAlive(api: APIRequestContext, names: string[]): 
     return out;
 }
 
-/**
- * Polls `healthByVersion` until healthy; fails fast when the version cannot be read (a 404 on the wrong version is
- * never retried into a pass) and with the last verdict at the timeout.
- */
+/** Polls `healthByVersion` until healthy; fails fast when the version cannot be read. */
 export async function waitForHealthy(api: APIRequestContext, connector: ConnectorRow, timeoutMs = 30_000, intervalMs = 2_000): Promise<HealthResult> {
     const h = await pollUntil(
         async () => {
@@ -158,11 +124,9 @@ export async function waitForHealthy(api: APIRequestContext, connector: Connecto
     return h;
 }
 
-// ------------------------------------------------------------------ read-only attribute probes
 
 export interface ProbeResult {
     ok: boolean;
-    /** What was read ("GET …/attributes", "v2 info + RA-profile attributes of an authority"). */
     what: string;
     httpStatus: number;
     why: string;
@@ -174,13 +138,9 @@ const nonEmptyAttributeMap = (body: unknown): boolean => {
 };
 
 /**
- * One read-only attribute call through the connector (REG-DEP-01.d, the connector table's probe column; API-GEN-32 connector
- * sentinel): core asks the connector live and answers its attribute definitions.
- * - v1: `GET /v1/connectors/{uuid}/attributes` (every function group and kind) → 200 and at least one non-empty list;
- * - v2: `GET /v2/connectors/{uuid}/info` → 200 and an object; then, when a connected authority that the run did not
- *   create lives on the connector, `GET /v1/authorities/{authority}/attributes/raProfile` → 200 and a non-empty list
- *   (the call that failed with 503 on the shared tiers).
- * Reads only; nothing is created.
+ * One read-only attribute call through the connector. v1: `GET /v1/connectors/{uuid}/attributes` → 200 and a non-empty list.
+ * v2: `GET /v2/connectors/{uuid}/info` → 200; then, for a connected authority
+ * the run did not create, its raProfile attributes → 200 and a non-empty list.
  */
 export async function probeAttributes(api: APIRequestContext, connector: ConnectorRow, version: ConnectorVersion): Promise<ProbeResult> {
     if (version === 1) {
@@ -212,7 +172,6 @@ export async function probeAttributes(api: APIRequestContext, connector: Connect
         : { ok: false, what, httpStatus: 200, why: 'RA-profile attribute probe answered an empty list' };
 }
 
-// ------------------------------------------------------------------ anonymous probes (REG-DEP-01.a–c)
 
 export const PROBE_PATHS = {
     health: '/api/v1/health',
@@ -221,10 +180,8 @@ export const PROBE_PATHS = {
     info: '/api/v1/info',
 } as const;
 
-/** The body an anonymous liveness or readiness probe answers: exactly this, and nothing else. */
 const HEALTH_GROUP_BODY = { status: 'UP' } as const;
 
-/** What is wrong with the answer of an anonymous liveness or readiness probe (empty: 200 and exactly `{"status":"UP"}`). */
 export function healthGroupProblems(answer: { status: number; json?: unknown }): string[] {
     const problems: string[] = [];
     if (answer.status !== 200) problems.push(`status ${answer.status}, expected 200`);
@@ -232,30 +189,22 @@ export function healthGroupProblems(answer: { status: number; json?: unknown }):
     return problems;
 }
 
-/** True when the answer of an anonymous liveness or readiness probe is clean (for a poll that waits for the core to start). */
 export const isHealthGroupUp = (answer: { status: number; json?: unknown }): boolean => healthGroupProblems(answer).length === 0;
 
-/** Asserts the answer of an anonymous liveness or readiness probe: 200 and exactly `{"status":"UP"}`; the failure names the probe. */
 export function expectHealthGroupUp(answer: { status: number; json?: unknown; text?: string }, which: string): void {
     expect(healthGroupProblems(answer), `${which}: ${(answer.text ?? JSON.stringify(answer.json) ?? '').slice(0, 200)}`).toEqual([]);
 }
 
-/** The Accept header of the anonymous probes. */
 export const ACCEPT_JSON = { Accept: 'application/json' } as const;
 
 /*
- * The answer of an anonymous GET (REG-DEP-01.a–c, API-GEN-32[health], REG-USE-07.1) is read with `answerOf`. The spec sends the
- * GET itself on the `request` fixture (no Authorization header, no session cookie): the deny-by-default lint allows that
- * fixture for a GET written in the spec, never handed to a helper. On a local stack whose BASE_URL is the frontend dev proxy
- * the proxy adds the admin certificate (AUTH_MODE=header), so such a call is not anonymous there (callers annotate
- * instead of asserting 401).
+ * Anonymous GETs are sent by the spec on the `request` fixture (no Authorization, no session cookie), which the deny-by-default
+ * lint allows only in a spec. Behind the frontend dev proxy of a local stack the call is not anonymous (annotate, do not assert 401).
  */
 
-// ------------------------------------------------------------------ the REG-DEP-01.d connector list (pure)
 
 const DEFAULT_REQUIRED_CONNECTORS = [DEFAULT_CREDENTIAL_CONNECTOR, DEFAULT_ADCS_CONNECTOR];
 
-/** REG_REQUIRED_CONNECTORS (comma list) or the default: the credential and the ADCS connector. */
 export function requiredConnectors(env: NodeJS.ProcessEnv = process.env): string[] {
     const raw = settings(env).requiredConnectors;
     const list = (raw ?? DEFAULT_REQUIRED_CONNECTORS.join(',')).split(',').map((s) => s.trim()).filter(Boolean);
@@ -263,9 +212,8 @@ export function requiredConnectors(env: NodeJS.ProcessEnv = process.env): string
 }
 
 /**
- * REG_BLOCKED_CONNECTORS = `name:reason;name2:reason2` (`;` between entries; the reason may hold `:` and `,`): the
- * connectors whose REG-DEP-01.d test is skipped with that reason (an environment blocker with a Blockers row, never a
- * pass). An entry without a reason is refused (a skip always names its reason).
+ * REG_BLOCKED_CONNECTORS = `name:reason;name2:reason2`: connectors whose REG-DEP-01.d test is skipped with that reason; an entry without a
+ * reason is refused.
  */
 export function blockedConnectors(env: NodeJS.ProcessEnv = process.env): Map<string, string> {
     const out = new Map<string, string>();

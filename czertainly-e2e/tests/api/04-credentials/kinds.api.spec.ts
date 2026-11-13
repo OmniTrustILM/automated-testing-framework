@@ -1,19 +1,6 @@
 /**
- * API-GEN-41, API-GEN-42 — Credentials of the kinds ApiKey and SoftKeyStore. ilm#428.
- *
- * WHAT: 1. (API-GEN-41, ApiKey) An own credential with valid attributes → 201; the detail shows the kind, the connector and the secret
- *          attributes without data, and the list lists it; the plain secrets are in no body; deleting it → 204, then 404.
- *       2. (API-GEN-41) Each required attribute left out in turn → 422 and nothing stays behind.
- *       3. (API-GEN-42, SoftKeyStore) The same two rows for a credential built from a PKCS#12 keystore the runner generates: type PKCS12,
- *          password and file.
- * WHY: the credential provider offers three kinds and only Basic had a test; a kind that cannot be created from its own definitions, or
- *      shows a secret in a detail or a list, is a defect the Basic rows do not show. A missing required attribute is refused by the
- *      connector and relayed as 422 (interfaces#898).
- * HOW: create-only on shared tiers with run-prefixed names; the attributes come from the live definitions of the kind, the secrets and
- *      the keystore are generated per run and logged nowhere. Every create goes through `createOwn` or a probe that records an accepted
- *      create in the ledger before any assertion, and a credential row that a refused create left behind is adopted by its unique name.
- *      A row skips with the named reason when no connected credential connector offers the kind (a read, before anything is written).
- *      Env: REG_CREDENTIAL_CONNECTOR (the connector to prefer).
+ * API-GEN-41, API-GEN-42 — Credentials of the kinds ApiKey and SoftKeyStore (ilm#428). A missing required attribute is
+ * refused by the connector and relayed as 422 (interfaces#898).
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { deleteOwnAndProveGone, refused422 } from '../../../utils/regression/inventory/configProbes';
@@ -30,10 +17,6 @@ import type { JsonObject } from '../../../utils/regression/json';
 
 const ISSUE = 'ilm#428';
 
-/**
- * The connector of the kind and the attributes of a valid credential, or the row skips with the named reason (reads only). A SoftKeyStore
- * keystore is encrypted with the very password the credential sends.
- */
 async function setupOf(kind: CredentialKind, api: GuardedApi): Promise<{ connector: KindConnector; built: BuiltAttributes }> {
     const found = await kindConnector(api, kind);
     test.skip(!found.ok, found.skip ?? `no ${kind} credential connector`);
@@ -95,7 +78,6 @@ test.describe('credential kinds', { tag: tags.api }, () => {
                     await test.step(`without ${attribute}`, async () => {
                         const name = ownName(`${suffix}-no-${attribute}`.slice(0, 40));
                         const probe = await probeCredential(api, own.spec, await kindBody(api, connector, kind, name, withoutAttribute(built.attributes, attribute)), `${kind} create without ${attribute}`);
-                        // An orphan row of the refused create is the run's own: the ledger gets it before the first assertion.
                         await adoptByName(api, '/api/v1/credentials', 'credentials', name, own.spec, `orphan of a refused ${kind} create without ${attribute}`);
                         const messages = refused422(probe);
                         const def = connector.defs.find((d) => d.name === attribute) ?? {};

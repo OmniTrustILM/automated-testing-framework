@@ -1,12 +1,6 @@
 /**
- * acmeProfiles — the run's own ACME profile.
- *
- * WHAT: the run's OWN ACME profile: created with one exact, pre-authorized DNS identifier (orders for it
- *       need no challenge), enabled, and activated on an own RA profile only. `ensureAcmeProfile` reuses the run's profile from
- *       the run state, else creates and records it.
- * WHY: Protocol specs need an ACME profile they may change, and a shared tier must never see one of its existing profiles touched.
- * HOW: `createOwnAcmeProfile` records the create before any assertion, `ensureAcmeProfile` reuses the run's profile from the run state, and
- * activation passes the live own-object check on both objects.
+ * acmeProfiles — the run's own ACME profile: enabled, the run's DNS identifier and every name under example.test pre-authorized,
+ * activated on an own RA profile only; `ensureAcmeProfile` reuses the run state's profile, else creates and records it before any assertion.
  */
 import { apiJson } from '../apiReads';
 import { requiredCustomAttributes } from '../customAttributes';
@@ -17,9 +11,11 @@ import { createOwn } from '../ownCrud';
 import { ownName, readRunState, runName, runId, updateRunState } from '../ledger/runState';
 
 /**
- * The platform's documented defaults of an ACME profile, the one home of this rule. `validity` is how long an order stays
- * open, not how long a certificate lasts: set short, the order expires between challenge and finalize.
+ * The platform's documented ACME profile defaults; `validity` is how long an order stays open, not a certificate's lifetime (set short, the
+ * order expires before finalize).
  */
+export const ACME_ORDER_DOMAIN = 'example.test';
+
 const ACME_PROFILE_DEFAULTS = {
     retryInterval: 30,
     validity: 36000,
@@ -30,16 +26,15 @@ const ACME_PROFILE_DEFAULTS = {
 } as const;
 
 export interface AcmeProfileOptions {
-    /** The one exact DNS identifier orders may use without a challenge. */
     identifier: string;
-    /** A planned name (the run's canonical profile); default `ownName(suffix)`. */
     name?: string;
     note?: string;
 }
 
 /**
- * An own ACME profile with one exact, pre-authorized DNS identifier: orders for it need no challenge. Created disabled; recorded before any
- * assertion.
+ * An own, disabled ACME profile that pre-authorizes one DNS identifier and every name under example.test (RFC 2606 reserved): a CA that
+ * names its end entities by CN issues one certificate per name, so each further order uses its own run-prefixed name. Recorded before
+ * any assertion.
  */
 async function createOwnAcmeProfile(api: GuardedApi, spec: string, suffix: string, o: AcmeProfileOptions): Promise<OwnRef> {
     const { answer: _answer, ...ref } = await createOwn(api, spec, {
@@ -51,7 +46,10 @@ async function createOwnAcmeProfile(api: GuardedApi, spec: string, suffix: strin
             description: `REG run ${runId()}`,
             ...ACME_PROFILE_DEFAULTS,
             customAttributes: await requiredCustomAttributes(api, 'acmeProfiles', runName('ca')),
-            preauthorizedIdentifiers: [{ type: 'dns', value: o.identifier, matchType: 'exact', allowWildcard: false }],
+            preauthorizedIdentifiers: [
+                { type: 'dns', value: o.identifier, matchType: 'exact', allowWildcard: false },
+                { type: 'dns', value: ACME_ORDER_DOMAIN, matchType: 'subdomain', allowWildcard: false },
+            ],
             identifierAuthorizationMode: 'preauthorizedOrChallenge',
         },
     });
@@ -64,7 +62,7 @@ async function enableOwnAcmeProfile(api: GuardedApi, acmeProfile: OwnRef): Promi
 }
 
 export async function activateAcmeOnOwnRaProfile(api: GuardedApi, authorityUuid: string, raProfile: OwnRef, acmeProfile: OwnRef): Promise<void> {
-    // Never on an issue-only parent (REG_RA_PROFILE_NAME) or any other RA profile the run did not create.
+    // Never on an issue-only parent or any RA profile the run did not create.
     await assertOwnLive(api, 'raProfiles', raProfile, 'activateAcmeOnOwnRaProfile (RA profile)');
     await assertOwnLive(api, 'acmeProfiles', acmeProfile, 'activateAcmeOnOwnRaProfile (ACME profile)');
     await apiJson(api, 'PATCH', `/api/v1/authorities/${authorityUuid}/raProfiles/${raProfile.uuid}/protocols/acme/activate/${acmeProfile.uuid}`, {
@@ -73,11 +71,10 @@ export async function activateAcmeOnOwnRaProfile(api: GuardedApi, authorityUuid:
     });
 }
 
-/** The run's ACME profile (created + enabled through the API when the run has none). */
 export async function ensureAcmeProfile(api: GuardedApi, spec: string): Promise<OwnRef & { identifier: string }> {
     const state = readRunState();
     if (state.acmeProfile) return state.acmeProfile;
-    const identifier = `${runId()}.example.test`;
+    const identifier = `${runId()}.${ACME_ORDER_DOMAIN}`;
     const ref = await createOwnAcmeProfile(api, spec, 'acme', { identifier, name: runName('acme') });
     await enableOwnAcmeProfile(api, ref);
     const acme = { ...ref, identifier };

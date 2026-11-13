@@ -1,16 +1,6 @@
 /**
- * discoveryUtils — API-based wait helpers for the network discovery flow (SMK-003).
- *
- * Replaces the page.reload()-based polling in DiscoveryPage.waitForCompletion
- * with direct backend polling — faster and avoids UI render races.
- *
- * GET /api/v1/discoveries/{uuid} returns a discovery object with two status
- * fields that both flip to "completed" when done: status (overall) and
- * connectorStatus (connector-side).
- *
- * Also the API side of SMK-003's cleanup: which inventory certificates a discovery
- * added, and deleting the discovery itself. Cleanup must name its own objects by UUID —
- * a "select all" in the UI also takes whatever a test on the other worker created.
+ * discoveryUtils — API-based wait helpers for the network discovery flow (SMK-003), and its cleanup by UUID:
+ * a "select all" in the UI also takes what a test on the other worker created.
  */
 
 import { APIRequestContext } from '@playwright/test';
@@ -20,23 +10,19 @@ import { Logger } from './Logger';
 const logger = new Logger('DiscoveryUtils');
 
 export interface WaitForDiscoveryOptions {
-    /** The terminal state to wait for. Default { status: 'completed', connectorStatus: 'completed' }; a stop or a
-     *  cancel waits for e.g. { status: 'stopped' } or { status: 'cancelled' } (connectorStatus then not checked). */
+    /** Default { status: 'completed', connectorStatus: 'completed' }; connectorStatus is not checked when omitted. */
     expected?: { status: string; connectorStatus?: string };
-    /** Statuses (of `status` or `connectorStatus`) that end the wait at once. Default ['failed'], minus the expected one. */
+    /** Statuses that end the wait at once. Default ['failed'], minus the expected one. */
     failOn?: string[];
     /** Poll intervals in ms; the last one repeats. Default [2000, 3000, 5000]. */
     intervals?: number[];
-    /** A 404 within this many ms of the start is polled again (read-after-write lag); default 10 s, 0 = fail at once. */
+    /** A 404 within this many ms of the start is polled again; default 10 s, 0 = fail at once. */
     notFoundGraceMs?: number;
 }
 
 /**
- * Polls GET /api/v1/discoveries/{uuid} until `status` (and `connectorStatus`, when expected) reach the expected values.
- * Fails fast like waitForCertificateState: at once on a status in `failOn`, on a 404 after the read-after-write grace
- * (`notFoundGraceMs`, default 10 s), on any other 4xx than 408 / 425 / 429, and on the third transient
- * answer in a row (5xx, 408, 425, 429); the error names both statuses and the elapsed time. Existing callers keep
- * working.
+ * Polls GET /api/v1/discoveries/{uuid} until the expected statuses. Fails fast like waitForCertificateState; the error names both statuses
+ * and the elapsed time.
  */
 export async function waitForDiscoveryCompletion(
     request: APIRequestContext,
@@ -91,11 +77,8 @@ export async function waitForDiscoveryCompletion(
 }
 
 /**
- * Inventory UUIDs of the certificates this discovery added. `newlyDiscovered=true` leaves out
- * certificates that were in the inventory before the run: the discovery found them too, but
- * they are not ours to delete. Pages are 1-based.
- *
- * Read it before deleting the discovery — the delete drops this list but keeps the certificates.
+ * Inventory UUIDs of the certificates this discovery added (`newlyDiscovered=true`
+ * leaves out earlier ones). Read it before deleting the discovery.
  */
 export async function listNewlyDiscoveredInventoryUuids(
     request: APIRequestContext,
@@ -118,7 +101,7 @@ export async function listNewlyDiscoveredInventoryUuids(
     return uuids;
 }
 
-/** Deletes the discovery and its history. 404 counts as done, so a repeated cleanup passes. */
+/** Deletes the discovery and its history; 404 counts as done. */
 export async function deleteDiscovery(request: APIRequestContext, discoveryUuid: string): Promise<void> {
     logger.info(`Deleting discovery: ${discoveryUuid}`);
     const resp = await request.delete(`/api/v1/discoveries/${discoveryUuid}`);

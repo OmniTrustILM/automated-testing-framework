@@ -1,8 +1,6 @@
 /**
- * platform — unit tests of the pure parts of the platform/ helpers: algorithm cases, key and token request bodies,
- * the scheduler's cron subset and system-job checks, the upgrade snapshot diff, secret and compliance helpers, the local
- * stack's compose arguments and refusals, the scheduled-job teardown handler and the core restart plan (fake runners
- * and fake APIs only).
+ * platform — unit tests of the pure parts of the platform/ helpers: algorithm cases, key and token request bodies, the
+ * scheduler's cron subset, the upgrade snapshot diff, the compose arguments and the core restart plan.
  */
 import type { APIRequestContext } from '@playwright/test';
 import { fakeResponse } from './helpers/fakeResponse';
@@ -20,7 +18,7 @@ import { findConnectorWithInterface } from '../../utils/regression/platform/conn
 import { secretAttributesFor, secretContentFor, stringValues, waitForSecretState } from '../../utils/regression/platform/secretsAndVaults';
 import { composeArgs, coreStartLogFacts, PlatformStack, stackConfig, stackProblem, restartCore, restartPlan } from '../../utils/regression/platform/localStack';
 import { isFireTime, nextFireUtc, parseQuartzCron, SYSTEM_JOBS, systemJobProblems, JOBS_URL, teardownHandlers } from '../../utils/regression/platform/schedulerApi';
-import { diffSnapshots, parseSchemaHistory, schemaHistoryProblems, Snapshot, upgradeDirectionProblem } from '../../utils/regression/platform/upgradeRunner';
+import { diffSnapshots, parseSchemaHistory, schemaHistoryProblems, Snapshot, takeSnapshot, upgradeDirectionProblem } from '../../utils/regression/platform/upgradeRunner';
 import { randomUUID } from 'node:crypto';
 import type { JsonObject } from '../../utils/regression/json';
 import { handlerOf, TeardownContext } from '../../utils/regression/teardown/runTeardown';
@@ -29,8 +27,6 @@ import * as path from 'path';
 import { localProofFile } from '../../utils/regression/tier/localProof';
 import { tierIdentity } from '../../utils/regression/tier/kind';
 import { blockedConnectors, judgeHealth, parseConnectorVersion, requiredConnectors } from '../../utils/regression/platform/connectorApi';
-
-// ------------------------------------------------------------------ cryptoAlgorithmCases
 
 test('algorithm cases are consistent: every cell is known, signed and encrypted families are generated ones, encrypt is RSA only, absent families are not generated', () => {
     const providers = ['scp-v1', 'scp-v2', 'pkcs11'] as const;
@@ -77,8 +73,6 @@ test('key usages: private sign + decrypt, public verify + encrypt, ECDSA never e
     expect(offeredAlgorithms([{ name: 'data_keyAlgorithm', content: [{ reference: 'RSA', data: 'RSA' }, { data: 'ECDSA' }] }])).toEqual(['RSA', 'ECDSA']);
 });
 
-// ------------------------------------------------------------------ token and key request builders (pure)
-
 test('tokenAlias: letters, digits and single underscores, a letter first; the token request attributes follow the live schema', () => {
     expect(tokenAlias('qa-reg-20261014-160000-ab12-tok')).toBe('qa_reg_20261014_160000_ab12_tok');
     expect(tokenAlias('9-x')).toBe('t_9_x');
@@ -120,19 +114,22 @@ test('itemOf / keyItemsOf / eventsOf read a key detail and a history', () => {
     });
 });
 
-// ------------------------------------------------------------------ schedulerApi
-
 test('Quartz subset: the six system crons parse; next fire in UTC; isFireTime; system-job problems', () => {
     for (const j of SYSTEM_JOBS) expect(() => parseQuartzCron(j.cron)).not.toThrow();
     const from = new Date('2026-10-14T10:17:30Z');
     expect(nextFireUtc('0 0 * ? * *', from).toISOString()).toBe('2026-10-14T11:00:00.000Z');
     expect(nextFireUtc('0 30 * ? * *', from).toISOString()).toBe('2026-10-14T10:30:00.000Z');
     expect(nextFireUtc('0 15 3 ? * *', from).toISOString()).toBe('2026-10-15T03:15:00.000Z');
-    // 2026-10-14 is a Wednesday: the next Sunday 02:30 UTC is 2026-10-18.
     expect(nextFireUtc('0 30 2 ? * SUN', from).toISOString()).toBe('2026-10-18T02:30:00.000Z');
     expect(nextFireUtc('0 0 * ? * *', new Date('2026-10-14T11:00:00Z')).toISOString(), 'strictly after').toBe('2026-10-14T12:00:00.000Z');
     expect(isFireTime('0 30 2 ? * SUN', new Date('2026-10-18T02:30:00Z'))).toBe(true);
     expect(isFireTime('0 30 2 ? * SUN', new Date('2026-10-18T03:30:00Z')), 'another zone would land here').toBe(false);
+    // Quartz numbers the weekdays from 1 = Sunday to 7 = Saturday; 0 is not a weekday.
+    expect(nextFireUtc('0 30 2 ? * 1', from).toISOString(), '1 is Sunday').toBe('2026-10-18T02:30:00.000Z');
+    expect(nextFireUtc('0 30 2 ? * 7', from).toISOString(), '7 is Saturday').toBe('2026-10-17T02:30:00.000Z');
+    expect(nextFireUtc('0 30 2 ? * MON-FRI', from).toISOString(), 'a named range').toBe('2026-10-15T02:30:00.000Z');
+    expect(() => parseQuartzCron('0 0 0 ? * 0')).toThrow(/out of range/);
+    expect(nextFireUtc('0 0/15 * ? * *', from).toISOString(), 'a step without a range runs to the maximum').toBe('2026-10-14T10:30:00.000Z');
     expect(() => parseQuartzCron('0 0 0 29 2 ? 2027')).toThrow(/year/);
     expect(() => parseQuartzCron('0 0 L * * ?')).toThrow(/unsupported|out of range/);
 
@@ -142,8 +139,6 @@ test('Quartz subset: the six system crons parse; next fire in UTC; isFireTime; s
     expect(systemJobProblems(broken)).toEqual([`${SYSTEM_JOBS[0].jobName}: cron "0 5 * ? * *" (expected "0 0 * ? * *")`, 'unexpected system job extraJob']);
     expect(systemJobProblems(jobs.slice(1))).toEqual([`system job ${SYSTEM_JOBS[0].jobName} is missing`]);
 });
-
-// ------------------------------------------------------------------ upgradeRunner
 
 const snap = (types: Snapshot['types'], extra: Partial<Snapshot> = {}): Snapshot => ({
     takenAt: 't', types, certificatesTotal: 10, auditLogTotal: 100, connectorStatuses: { A: 'connected' }, schemaHistory: [], ...extra,
@@ -162,6 +157,14 @@ test('diffSnapshots: kept objects pass; a lost or renamed object, a new non-syst
     ]));
 });
 
+test('takeSnapshot refuses a users list at its cap instead of comparing a partial list', async () => {
+    const users = (n: number) => Array.from({ length: n }, (_, i) => ({ uuid: `u${i}`, username: `user-${i}` }));
+    const listing = (n: number) => fakeApi((c) => ({ status: 200, body: c.url === '/api/v1/users' ? users(n) : c.url === '/api/v1/roles' ? [{ uuid: 'r1', name: 'admin' }] : [] }));
+    expect((await takeSnapshot(partialOf<APIRequestContext>(listing(999).api))).types.users.count).toBe(999);
+    await expect(takeSnapshot(partialOf<APIRequestContext>(listing(1000).api)))
+        .rejects.toThrow('users: /api/v1/users answered 1000 rows (one page holds at most 1000); it may be truncated and proves nothing');
+});
+
 test('schemaHistoryProblems: rows kept with the same checksum, new rows success, out-of-order detected; parse of psql rows; one-way guard', () => {
     const before = parseSchemaHistory(['1||schema|0|t', '2|202501010000|a|111|t', '3|2026031912128|secret compliance|222|t']);
     const after = parseSchemaHistory(['1||schema|0|t', '2|202501010000|a|111|t', '3|2026031912128|secret compliance|222|t', '4|202610081500|newer|333|t']);
@@ -174,8 +177,6 @@ test('schemaHistoryProblems: rows kept with the same checksum, new rows success,
     expect(upgradeDirectionProblem('2.20.1', '2.20.0')).toMatch(/never a downgrade/);
     expect(upgradeDirectionProblem('latest', '2.20.0')).toMatch(/cannot compare/);
 });
-
-// ------------------------------------------------------------------ secretsAndVaults and complianceProfiles (pure)
 
 test('requestAttributesFrom fills required data attributes by type and given values by name; secretAttributesFor; the overall compliance status; stringValues', () => {
     const defs = [
@@ -199,8 +200,6 @@ test('requestAttributesFrom fills required data attributes by type and given val
     expect(expectedOverallStatus(['na'])).toBe('na');
     expect(stringValues({ a: 'x', b: [1, 'y', { c: 'z' }] })).toEqual(['x', 'y', 'z']);
 });
-
-// ------------------------------------------------------------------ localStack (pure + fake runner)
 
 test('composeArgs and the stack commands with a fake runner; refusals without a local tier or a loopback BASE_URL', () => {
     const cfg = stackConfig({ LOCAL_COMPOSE_FILE: '/x/compose.yml', LOCAL_COMPOSE_PROJECT: 'proj', LOCAL_SERVICE_DB: 'postgres', REG_DOCKER_BIN: '/tmp/fake-docker' });
@@ -226,8 +225,6 @@ test('coreStartLogFacts reads the Flyway line, ERROR lines and the auth sync', (
     expect(f.errors).toHaveLength(1);
     expect(f.syncFailed).toBe(true);
 });
-
-// ------------------------------------------------------------------ secret body and connector lookup
 
 interface Call { method: string; url: string; data?: unknown }
 
@@ -265,7 +262,22 @@ test('core\'s secret body (secret polymorphic on type), and the credential provi
     expect(found, 'the space-spelled credential provider wins over the first connected connector').toMatchObject({ uuid: 'c2', interfaceUuid: 'i2' });
 });
 
-// ------------------------------------------------------------------ waitForSecretState (own fake API, block scope)
+test('a disconnected named connector or credential provider v2 never wins over a connected provider', async () => {
+    const provider = [{ functionGroupCode: 'credentialProvider' }];
+    const rows = [
+        { uuid: 'c1', name: 'Named-Provider', status: 'offline', functionGroups: provider },
+        { uuid: 'c2', name: 'Common-Credential-Connector-v2', status: 'failed', functionGroups: provider },
+        { uuid: 'c3', name: 'Other-Provider', status: 'connected', functionGroups: provider },
+    ];
+    const { api, calls } = fakeApi((c) => {
+        if (c.url === '/api/v1/connectors') return { status: 200, body: rows };
+        const uuid = c.url.split('/').pop();
+        return { status: 200, body: { interfaces: [{ uuid: `i-${uuid}`, code: 'secret' }] } };
+    });
+    const found = await findConnectorWithInterface(partialOf<APIRequestContext>(api), /^secret/i, { REG_SECRET_CONNECTOR: 'Named-Provider' } as NodeJS.ProcessEnv);
+    expect(found, 'the connected provider is picked').toMatchObject({ uuid: 'c3', interfaceUuid: 'i-c3' });
+    expect(calls.map((c) => c.url), 'disconnected connectors are not read').toEqual(['/api/v1/connectors', '/api/v2/connectors/c3']);
+});
 
 {
     function fakeApi(handler: (url: string) => { status: number; body?: unknown }) {
@@ -297,22 +309,12 @@ test('core\'s secret body (secret polymorphic on type), and the credential provi
     });
 }
 
-// ------------------------------------------------------------- scheduledJobs teardown handler and stackConfig, own fake API (block scope)
-
 {
-    /**
-     * Rows for the registry and stack-config pieces:
-     * - the `scheduledJobs` teardown handler of `schedulerApi`: a job is read (200 → seen),
-     *   a system job or a job with another name is refused, a 404 is done, a normal delete proves absence by the same GET;
-     * - `HANDLER_MODULES.scheduledJobs` resolves to a handler (every ledger type a spec records has one);
-     * - `stackConfig` reads both spellings of the compose settings (LOCAL_* and REG_LOCAL_*), the platform names first.
-     */
 
     const JOB = 'aaaaaaaa-0000-4000-8000-000000000001';
     const RUN = 'qa-reg-20261014-120000-ab12';
     const line = (name = `${RUN}-job`) => partialOf<LedgerLine>({ type: 'scheduledJobs', uuid: JOB, name, event: 'created', runId: RUN });
 
-    /** A fake API over one job: GET / DELETE with a call log. */
     function fakeApi(job: JsonObject | undefined, opts: { deleteStatus?: number; stillThere?: boolean } = {}) {
         const calls: string[] = [];
         let present = job !== undefined;
@@ -369,14 +371,7 @@ test('core\'s secret body (secret polymorphic on type), and the credential provi
     });
 }
 
-// ------------------------------------------------------------------ core restart on a proven local stack
-
 {
-    /**
-     * the core restart (`localStack.restartCore`): it runs only on a proven local stack, restarts one named compose
-     * service of one named project, and never touches the real docker CLI under the unit tests (a fake docker script inside the
-     * test output logs its arguments).
-     */
 
     const RUN = 'qa-reg-20261014-120000-ab12';
 
@@ -389,7 +384,6 @@ test('core\'s secret body (secret polymorphic on type), and the credential provi
         fs.writeFileSync(localProofFile(env), JSON.stringify({ runId: RUN, tier: tierIdentity(env), at: at.toISOString() }));
     }
 
-    /** A fake docker (absolute path inside the test output): appends its arguments to a log. */
     function fakeDocker(dir: string): { bin: string; calls: () => string[] } {
         fs.mkdirSync(dir, { recursive: true });
         const log = path.join(dir, 'docker-calls.log');
@@ -424,15 +418,12 @@ test('core\'s secret body (secret polymorphic on type), and the credential provi
         writeProof(env);
         restartCore(env);
         expect(docker.calls()).toEqual(['compose -p ilm restart core']);
-        // Under REG_UNIT_NO_DOCKER only an absolute fake inside the test output may run: `docker` itself is refused.
         expect(process.env.REG_UNIT_NO_DOCKER).toBe('1');
         expect(() => restartCore({ ...env, REG_DOCKER_BIN: 'docker' })).toThrow(/real docker CLI is disabled/);
         expect(() => restartCore({ ...env, REG_DOCKER_BIN: '/usr/local/bin/docker' })).toThrow(/real docker CLI is disabled/);
         expect(docker.calls()).toHaveLength(1);
     });
 }
-
-// ------------------------------------------------------------------ connectorApi (pure)
 
 test('parseConnectorVersion reads the interfaces ConnectorVersion codes and nothing else', () => {
     expect(parseConnectorVersion('v1')).toBe(1);

@@ -1,30 +1,18 @@
 /**
- * checks — the oracle of the error contract for refused requests.
- *
- * WHAT: The oracle of the error contract, applied to refused requests only: the expected status, the 422 messages or the
- *       single `message`, the body shape, and the leak scan (stack frames, exception classes, packages, SQL, file paths) plus
- *       the echo of a token or a marker. One list of problems per request.
- * WHY: A refusal can be correct in status and still leak a stack frame, a class name, SQL, a path or an echoed token.
- * HOW: One list of problems per request: expected status, 422 messages or single message, body shape, the leak scan and the echo check.
+ * checks — the oracle of the error contract for refused requests: one list of problems per request (status, messages, body shape, leaks of
+ * stack frames, classes, packages, SQL and paths, echo of a token or marker).
  */
 
-// ------------------------------------------------------------------ the oracle vocabulary
 
 export type Oracle = string | RegExp;
 const oracleMatches = (o: Oracle, s: string): boolean => (typeof o === 'string' ? s === o : o.test(s));
 const describeOracle = (o: Oracle): string => (typeof o === 'string' ? JSON.stringify(o) : String(o));
 
-/** What a refused request must answer (the error contract of the inventory API and the matrix row). */
 export interface Expectation {
-    /** One status, the accepted family (a shape-only row, a pinned row), or any `'4xx'` (never a server error). */
     status: number | readonly number[] | '4xx';
-    /** A 422 body: the messages, in order (a string is exact, a RegExp is matched). Omitted: shape only. */
     messages?: readonly Oracle[];
-    /** Any other error body: the single `message`. Omitted: shape only. */
     message?: Oracle;
-    /** The body must be empty (a refused method answers 400 with no body; a 401). */
     empty?: boolean;
-    /** Extra checks on the parsed answer (the set of conditions a 422 lists, a search page, …); returns problems. */
     extra?: (p: { status: number; text: string; json: unknown }) => string[];
 }
 
@@ -38,7 +26,6 @@ export interface Answer {
 
 export const JSON_TYPE = /application\/json/i;
 
-/** Whether `got` is what the expectation accepts. */
 export function statusOk(want: Expectation['status'], got: number): boolean {
     if (want === '4xx') return got >= 400 && got < 500;
     return typeof want === 'number' ? want === got : want.includes(got);
@@ -46,7 +33,6 @@ export function statusOk(want: Expectation['status'], got: number): boolean {
 const describeStatus = (want: Expectation['status']): string => (want === '4xx' ? 'a 4xx' : typeof want === 'number' ? String(want) : want.join(' or '));
 export const preview = (text: string): string => JSON.stringify(text.length > 160 ? `${text.slice(0, 160)}…` : text);
 
-/** Parsed body, or undefined when empty or not JSON. */
 export function parsed(text: string): unknown {
     try {
         return text ? JSON.parse(text) : undefined;
@@ -55,7 +41,6 @@ export function parsed(text: string): unknown {
     }
 }
 
-/** The shape of an error body (the error contract): a 422 is an array of non-empty strings, any other 4xx / 5xx `{message}`. */
 export function shapeProblems(status: number, contentType: string, text: string): string[] {
     const out: string[] = [];
     const body = parsed(text);
@@ -72,8 +57,8 @@ export function shapeProblems(status: number, contentType: string, text: string)
 }
 
 /**
- * Judges one answer against its expectation: status, body shape, the messages / message, an empty body, the leak scan
- * of the body (and of the WWW-Authenticate header), and the echo of any secret or marker the request carried.
+ * Judges one answer: status, body shape, messages, empty body, the leak scan of the body and WWW-Authenticate header, and the echo of any
+ * secret or marker.
  */
 export function checkResponse(e: Expectation, a: Answer, echo: readonly string[] = []): string[] {
     const problems: string[] = [];
@@ -103,7 +88,6 @@ export function checkResponse(e: Expectation, a: Answer, echo: readonly string[]
     return problems;
 }
 
-// ------------------------------------------------------------------ the leak scanner
 
 type LeakKind = 'stack-trace' | 'exception-class' | 'package' | 'sql' | 'file-path';
 export interface Leak {
@@ -111,18 +95,16 @@ export interface Leak {
     sample: string;
 }
 
-/**
- * The JDK types Spring's type-mismatch text names (`Failed to convert value of type 'java.lang.String' to required type 'java.util.UUID'`).
- */
+/** The JDK types Spring's type-mismatch text names; stripped before the package scan. */
 const JDK_TYPE = /\bjava\.(?:lang|util|time|math|net)\.[A-Z][\w$]*/g;
 
 const PATTERNS: ReadonlyArray<{ kind: LeakKind; re: RegExp }> = [
     { kind: 'stack-trace', re: /\bat\s+[\w$.]+\([\w$]+\.(?:java|kt|groovy|scala):\d+\)/ },
     { kind: 'stack-trace', re: /\bCaused by:\s*[\w$.]+/ },
     { kind: 'stack-trace', re: /\b[\w$]+\.(?:java|kt|groovy):\d+\b/ },
-    // Class names ending in Exception / Error: ConstraintViolationException, NullPointerException, PSQLException (never the bare word).
+    // Class names ending in Exception / Error (never the bare word).
     { kind: 'exception-class', re: /\b[A-Za-z][A-Za-z0-9]+(?:Exception|Error)\b/ },
-    // Application, framework and library packages (a JDK type of the documented type-mismatch sentence is stripped first).
+    // Application, framework and library packages.
     { kind: 'package', re: /\b(?:com|org|io|net|jakarta|javax|jdk|sun|reactor|ch|de)\.(?:otilm|czertainly|springframework|hibernate|postgresql|apache|fasterxml|swagger|bouncycastle|zaxxer|netty|sql|io|security|persistence|validation|servlet|tomcat|catalina|slf4j|logging|opentelemetry)\b[\w.$]*/ },
     { kind: 'package', re: /\bjava\.(?:sql|io|nio|security|net\.http)\b[\w.$]*/ },
     { kind: 'package', re: /(?:^|[\s'"(\[@])(?:[a-z][a-z0-9]*\.){3,}[A-Z][\w$]*/ },
@@ -134,7 +116,6 @@ const PATTERNS: ReadonlyArray<{ kind: LeakKind; re: RegExp }> = [
     { kind: 'file-path', re: /\b[\w-]+\.(?:java|kt|xml|properties|yml|yaml|jar|class)\b/ },
 ];
 
-/** What an error body must never show: stack frames, class and package names, SQL, file paths. */
 export function findLeaks(text: string): Leak[] {
     const scan = text.replace(JDK_TYPE, 'JDKTYPE');
     const found: Leak[] = [];
@@ -145,5 +126,4 @@ export function findLeaks(text: string): Leak[] {
     return found;
 }
 
-/** True when `secret` (a token, a password, a marker) appears in `text`. */
 export const findEchoedInput = (text: string, secret: string): boolean => secret.length > 0 && text.includes(secret);

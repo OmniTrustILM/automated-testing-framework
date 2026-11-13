@@ -1,19 +1,15 @@
 /**
- * configWire — loopback wire check of the config helpers of the main flows.
- *
- * WHAT: the helpers for own RA profiles, roles, users, the inventory seed subset, ACME activation and issued records, on one
- *       stateful fake core (tests/unit/helpers/loopbackServer.ts): every request goes through the guard, each test asserts
- *       what arrived, the ledger is written before any assertion, a foreign object or a raw context is refused before
- *       anything is sent.
- * WHY: a helper that creates or changes an object is only safe if what it sends and records is proven, without a tier.
- * HOW: a loopback server answers like core; the ledger lives in a per-test REG_STATE_DIR.
+ * configWire — loopback wire check of the config helpers of the main flows. Covers the helpers for own RA profiles,
+ * roles, users, the inventory seed subset, ACME activation and issued records, against one stateful fake core
+ * (tests/unit/helpers/loopbackServer.ts).
  */
 import { APIRequestContext, expect, test } from '@playwright/test';
 import * as forge from 'node-forge';
 import { connectorsAlive, findConnector, healthByVersion, probeAttributes, waitForHealthy } from '../../utils/regression/platform/connectorApi';
 import { GuardedApi } from '../../utils/regression/guard/types';
 import { buildSeedSubset, manifestProblems, planSeedSubset } from '../../utils/regression/inventory/seedMinimal';
-import { derivedDeletable, OwnObjectViolation } from '../../utils/regression/ledger/ownership';
+import { carriesRunPrefix, derivedDeletable, OwnObjectViolation } from '../../utils/regression/ledger/ownership';
+import { hasRunFamilyPrefix } from '../../utils/regression/run/runId';
 import { adcsBlocker, isCredentialLogonRefusal } from '../../utils/regression/config/authorities';
 import { issueWithCsr, uploadOwnCertificate } from '../../utils/regression/ownCertificates';
 import {
@@ -31,6 +27,7 @@ import { createOwnRaProfileLike, enableOwnRaProfile, ensureAcmeOnRaProfile, ensu
 import { rowsNamed } from '../../utils/regression/listReads';
 import { issueOnly, OwnRef, readLedger, recordCreated } from '../../utils/regression/ledger/ledger';
 import { readRunState, runName, runId, updateRunState } from '../../utils/regression/ledger/runState';
+import { acmeOrderName, invalidOrderReason } from '../../utils/regression/lifecycle/acmeOrders';
 import { selfSignedPem } from '../../utils/regression/pkiBuilders';
 import { Answer, Arrived, LoopbackServer } from './helpers/loopbackServer';
 import { FakeCore as BaseCore } from './helpers/fakeCore';
@@ -58,43 +55,28 @@ const ACME_ACCOUNT = U(52);
 
 type Json = Record<string, any>;
 
-/** A fake core that remembers what the run created (GET answers it) and serves a fixed tier around it. */
 class ConfigCore extends BaseCore {
     adcsHealthy = false;
     /** An enabled RA profile on the MS ADCS authority (the copy source when MS ADCS is healthy). */
     adcsHasRa = false;
     ejbcaHealthy = true;
     usersRequireAttr = true;
-    /** Run-family decoys: a run-prefixed authority with an enabled RA profile, and a run-prefixed RA profile. */
     decoys = false;
-    /** A second enabled, non-run RA profile that sorts BEFORE the source by name but comes AFTER it in the list. */
     twoSources = false;
-    /** A required LIST custom attribute on users. */
     usersRequireList = false;
-    /** The tier requires an integer custom attribute on roles. */
     rolesRequireAttr = false;
-    /** The next N certificate detail reads answer 500 (the by-name fallback). */
     failDetailReads = 0;
-    /** The credential connector's attribute map (an empty map is no probe). */
     credAttrs: Json = { credentialProvider: { Basic: [{ name: 'username' }] } };
-    /** The status of the ADCS authority's RA-profile attribute read. */
     adcsRaAttrStatus = 200;
-    /** `acmeAvailable` after the activation. */
     acmeAvailable = true;
-    /**
-     * Called with the 1-based number of each certificate search before it is answered: a certificate can appear or change between two
-     * reads.
-     */
     onCertificateSearch: ((n: number) => void) | undefined;
     private searches = 0;
-    /** How many certificate searches arrived. */
     get searchCount(): number {
         return this.searches;
     }
     protected seq = 1000;
     readonly certs: Json[] = [];
 
-    /** A certificate the platform lists (search row) and serves (detail, with its linked key): `commonName`, `state`, `key.uuid`. */
     addCert(commonName: string, state: string): Json {
         const cert = { kind: 'cert', uuid: this.next(), commonName, state, key: { uuid: this.next() } };
         this.store.set(`/api/v1/certificates/${cert.uuid}`, cert);
@@ -134,7 +116,6 @@ class ConfigCore extends BaseCore {
             ],
             [`/api/v1/authorities/${A_EJBCA}`]: { uuid: A_EJBCA, connectorName: 'EJBCA-NG-Connector' },
             '/api/v1/raProfiles': [
-                // Decoys sort before the source by name ('aa-…', 'qa-…' < 'source-ra'): only the run-family filters keep them out.
                 ...(this.decoys ? [
                     { uuid: R_DECOY_A, name: 'aa-ra', authorityInstanceUuid: A_DECOY, enabled: true },
                     { uuid: R_DECOY_B, name: `qa-api-decoy-ra`, authorityInstanceUuid: A_EJBCA, enabled: true },
@@ -244,8 +225,6 @@ async function refusal(call: Promise<unknown>): Promise<string> {
     }
 }
 
-// ------------------------------------------------------------------ the CA-agnostic run RA profile
-
 test('ensureRunRaProfile: MS ADCS unhealthy (v2 health 503) → an own RA profile copied from the EJBCA-NG source, created under its authority and enabled', async () => {
     const ra = await ensureRunRaProfile(api, 'T');
     const created = wire();
@@ -263,7 +242,6 @@ test('ensureRunRaProfile: MS ADCS unhealthy (v2 health 503) → an own RA profil
     const line = readLedger().find((l) => l.uuid === ra.uuid)!;
     expect(line).toMatchObject({ type: 'raProfiles', event: 'created', parents: { authority: A_EJBCA } });
     expect(readRunState().raProfile?.uuid).toBe(ra.uuid);
-    // The run state answers the next call: nothing more is sent.
     server.reset();
     expect((await ensureRunRaProfile(api, 'T')).uuid).toBe(ra.uuid);
     expect(wire()).toEqual([]);
@@ -296,7 +274,6 @@ test('ensureOwnRaProfile: an issue-only parent (REG_RA_PROFILE_NAME, local) is n
     server.reset();
     expect((await ensureOwnRaProfile(api, 'T')).uuid).toBe(own.uuid);
     expect(wire()).toEqual([]);
-    // The guard and the helper refuse the issue-only parent itself.
     const forged = { uuid: R_SRC, name: 'source-ra', kind: 'own' } as OwnRef;
     expect(await refusal(enableOwnRaProfile(api, A_EJBCA, forged))).toBe('ownership');
     expect(await refusal(api.patch(`/api/v1/authorities/${A_EJBCA}/raProfiles/${R_SRC}/protocols/acme/activate/${ACME_PROFILE}`, { data: {} }))).toBe('ownership');
@@ -307,8 +284,6 @@ test('createOwnRaProfileLike with a raw context is refused (not-guarded); nothin
     expect(await refusal(createOwnRaProfileLike(rawAsGuarded(raw), 'T', 'x', { source: { uuid: R_SRC, authorityUuid: A_EJBCA }, note: 'x' }))).toBe('not-guarded');
     expect(wire()).toEqual([]);
 });
-
-// ------------------------------------------------------------------ roles and users
 
 test('createOwnRole / createOwnUser / setOwnUserRoles: creates and own-to-own assignment are sent; required custom attributes are filled; a foreign role is refused', async () => {
     const role = await createOwnRole(api, 'T', 'role-edit');
@@ -328,8 +303,6 @@ test('createOwnRole / createOwnUser / setOwnUserRoles: creates and own-to-own as
     expect(await refusal(api.delete(`/api/v1/roles/${FOREIGN_ROLE}`))).toBe('ownership');
     expect(wire()).toEqual([]);
 });
-
-// ------------------------------------------------------------------ the inventory seed subset
 
 test('buildSeedSubset: own attribute, own disabled user, three uploads, owner PATCHes on own certificates; ledger first; idempotent', async () => {
     core.usersRequireAttr = false;
@@ -365,8 +338,6 @@ test('buildSeedSubset with a raw context is refused (not-guarded); nothing is se
     expect(wire()).toEqual([]);
 });
 
-// ------------------------------------------------------------------ issuance and protocol-made objects
-
 test('issueWithCsr goes through the guard (create path); recordCertificatesNamed and recordAcmeAccount only read', async () => {
     const ra = await ensureRunRaProfile(api, 'T');
     server.reset();
@@ -375,7 +346,6 @@ test('issueWithCsr goes through the guard (create path); recordCertificatesNamed
     expect(issued.createdAfter, 'createdAfter from the server Date header').toBeTruthy();
     expect(await refusal(issueWithCsr(rawAsGuarded(raw), ra.authorityUuid, ra.uuid, 'TUlJQw=='))).toBe('not-guarded');
 
-    // A protocol-made certificate of a run-prefixed name is adopted; reads only.
     const cn = `${runId()}.example.test`;
     const pemOf = (name: string): string => {
         const keys = forge.pki.rsa.generateKeyPair(1024);
@@ -400,8 +370,6 @@ test('issueWithCsr goes through the guard (create path); recordCertificatesNamed
     expect(readLedger().find((l) => l.uuid === ACME_ACCOUNT)).toMatchObject({ type: 'acmeAccounts', parents: { acmeProfile: ACME_PROFILE } });
     expect(wire(), 'reads and read-only POSTs only').toEqual(['POST /api/v1/certificates']);
 });
-
-// ------------------------------------------------------------------ connectorApi
 
 test('connectorApi: version from the detail, health by version, attribute probes, connectorsAlive — GETs only', async () => {
     const adcs = (await findConnector(api, 'MS-ADCS-NG-Connector'))!;
@@ -431,8 +399,6 @@ test('ledger before assertion: recordCreated writes the line the guard accepts f
     expect(await refusal(api.delete(`/api/v1/roles/${unrecorded.uuid}`)), 'a ledger line without the run prefix proves nothing').toBe('ownership');
     expect(wire()).toEqual([`PUT /api/v1/roles/${r.uuid}`]);
 });
-
-// ------------------------------------------------------------------ mutants the earlier tests did not kill
 
 test('pickHealthyAuthority never copies from a run object: a run-family authority or RA profile is skipped even when it sorts first', async () => {
     core.decoys = true;
@@ -473,7 +439,6 @@ test('probeAttributes: an empty v1 attribute map and a failing v2 RA-profile att
 test('requiredCustomAttributes fills a required LIST attribute with its first predefined item copied as is: reference, data and contentType (REG-CFG-09)', async () => {
     core.usersRequireAttr = false;
     core.usersRequireList = true;
-    // Core compares reference + data + contentType of the item with the predefined list: a bare `{ data }` is a 422.
     expect(await requiredCustomAttributes(api, 'users', 'v')).toEqual([{ version: 'v3', uuid: REQUIRED_LIST_ATTR, name: 'site', contentType: 'string', content: [{ reference: 'site-a', data: 'Site A', contentType: 'string' }] }]);
     const user = await createOwnUser(api, 'T', 'user-list');
     expect(bodyOf('POST', '/api/v1/users').customAttributes[0].content[0], `user ${user.name}`).toEqual({ reference: 'site-a', data: 'Site A', contentType: 'string' });
@@ -503,8 +468,11 @@ test('ensureAcmeOnRaProfile: activation on the own RA profile, and a profile tha
     const ok = await ensureAcmeOnRaProfile(api, 'T');
     expect(ok.directoryUrl).toBe('https://acme.example.test/directory');
     expect(wire()).toEqual(expect.arrayContaining([`PATCH /api/v1/authorities/${A_EJBCA}/raProfiles/${ok.raProfile.uuid}/protocols/acme/activate/${ok.acmeProfile.uuid}`]));
-    // Activated per the run state, but the platform reports ACME as not available: the check fails, and since there is
-    // nothing left to activate, NOTHING that mutates reaches the server — only the read that was judged.
+    expect(bodyOf('POST', '/api/v1/acmeProfiles').preauthorizedIdentifiers, 'the identifier and the names under it').toEqual([
+        { type: 'dns', value: ok.acmeProfile.identifier, matchType: 'exact', allowWildcard: false },
+        { type: 'dns', value: 'example.test', matchType: 'subdomain', allowWildcard: false },
+    ]);
+    // Activated per the run state, but the platform reports ACME as not available.
     core.acmeAvailable = false;
     server.reset();
     await expect(ensureAcmeOnRaProfile(api, 'T')).rejects.toThrow(/ACME should be available on the run RA profile/);
@@ -512,7 +480,24 @@ test('ensureAcmeOnRaProfile: activation on the own RA profile, and a profile tha
     expect(server.arrived.map((a) => `${a.method} ${a.url}`)).toContain(`GET /api/v1/authorities/${A_EJBCA}/raProfiles/${ok.raProfile.uuid}/protocols/acme`);
 });
 
-// ------------------------------------------------------------------ an issuance recorded even when the step throws
+test('acmeOrderName: a unique run-prefixed name under example.test per order, so the ledger records it and the teardown deletes it', () => {
+    const names = ['rsa', 'rsa', 'fin2'].map((label) => acmeOrderName(label));
+    expect(new Set(names).size, 'one name per order').toBe(3);
+    for (const n of names) {
+        expect(n.endsWith('.example.test') && carriesRunPrefix(n) && hasRunFamilyPrefix(n), n).toBe(true);
+        expect(n.length, n).toBeLessThanOrEqual(64);
+    }
+});
+
+test('invalidOrderReason: the order error and the FAILED history messages of its certificates, SUCCESS rows left out', async () => {
+    core.seed('/api/v1/certificates/c-1/history', [
+        { event: 'Request Certificate', status: 'SUCCESS', message: 'Certificate request created' },
+        { event: 'Issue Certificate', status: 'FAILED', message: 'End Entity x already exists' },
+    ] as unknown as Json);
+    expect(await invalidOrderReason(api, { error: { detail: 'issuance failed' } }, ['c-1']))
+        .toBe('issuance failed | End Entity x already exists');
+    expect(await invalidOrderReason(api, undefined, [])).toBe('');
+});
 
 const certSpec = 'T';
 const ISSUED_AFTER = '2026-10-14T10:00:00.000Z';
@@ -540,7 +525,6 @@ test('recordIssuedSettled: records, polls the API state until two reads agree an
     const cn = `${runId()}.example.test`;
     const first = core.addCert(cn, 'pending_issue');
     let second: Json | undefined;
-    // Search 1 = the first recording, 2 = poll read (pending), 3 = the issuance lands and a successor appears, 4 = stable.
     core.onCertificateSearch = (n) => {
         if (n === 3) {
             first.state = 'issued';
@@ -562,21 +546,16 @@ test('recordIssuedSettled: a certificate that stays pending does not hang the ho
     const cn = `${runId()}.example.test`;
     const stuck = core.addCert(cn, 'requested');
     const uuids = await recordIssuedSettled(api, cn, ISSUED_AFTER, certSpec, 'safety net', { timeoutMs: 3_000 });
-    // 1 recording + the polled reads + 1 final recording: a certificate that is still requested is never "settled", so the poll
-    // reads at least three times (two equal reads alone would end it at two).
     expect(core.searchCount, 'the poll kept reading while the certificate was requested').toBeGreaterThanOrEqual(5);
     expect(uuids).toEqual([stuck.uuid]);
     expect(readLedger().find((l) => l.uuid === stuck.uuid)).toMatchObject({ type: 'certificates' });
 });
-
-// ------------------------------------------------------------------ follow-ups from the live-run incidents
 
 test('every own-object create fills the required custom attributes of its resource: a role with a required integer; ACME profile, RA profile, authority and upload definitions are read', async () => {
     core.rolesRequireAttr = true;
     const want = [{ version: 'v3', uuid: U(46), name: 'costCenter', contentType: 'integer', content: [{ data: 1, contentType: 'integer' }] }];
     const role = await createOwnRole(api, 'T', 'role-attr');
     expect(bodyOf('POST', '/api/v1/roles').customAttributes, `role ${role.name}`).toEqual(want);
-    // The run's shared role goes through ensureRunRole (a planned name), a separate path from createOwnRole.
     const shared = await ensureRunRole(api, 'T');
     const sharedBody = server.arrived.filter((a) => a.method === 'POST' && a.url === '/api/v1/roles').map((a) => JSON.parse(a.body) as Json).find((b) => b.name === shared.name)!;
     expect(sharedBody.customAttributes, `shared role ${shared.name}`).toEqual(want);

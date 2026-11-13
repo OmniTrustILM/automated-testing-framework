@@ -1,14 +1,6 @@
 /**
- * tlsTarget — a TLS scan target the run controls.
- *
- * WHAT: a TLS scan target the run controls: runner-hosted listeners on random ports that serve per-run certificates
- *       (a root, an optional intermediate, one leaf per listener, every name run-prefixed), so every certificate a discovery
- *       onboards is recognisable and recorded, and `servedFingerprints()` is an oracle the test computed itself. The discovery rows
- *       scan only this server or RFC 5737 documentation ranges. REG_SCAN_HOST = the dotted name or address the connector reaches.
- * WHY: A discovery test needs certificates it can recognise and compute itself, and must never scan anything but its own server or
- * documentation ranges.
- * HOW: Runner-hosted listeners on random ports serve per-run, run-prefixed certificates; `servedFingerprints()` is the oracle the test
- * computes itself.
+ * tlsTarget — a TLS scan target the run controls: runner-hosted listeners on random ports serving per-run, run-prefixed
+ * certificates, so every certificate a discovery onboards is recognisable. REG_SCAN_HOST is the name the connector reaches.
  */
 import * as forge from 'node-forge';
 import * as net from 'net';
@@ -19,15 +11,10 @@ import { uniqueSuffix } from '../text';
 import { settings } from '../run/settings';
 
 export interface TlsTargetOptions {
-    /** Listeners (ports), default 1. */
     listeners?: number;
-    /** Distinct leaf certificates among the listeners (default = listeners); the rest repeat leaf 1 (REG-DISC-08's repeat). */
     distinctLeaves?: number;
-    /** Send leaf + intermediate (default true: REG-DISC-01 counts both); false sends the leaf alone (REG-DISC-08: 7 distinct). */
     withIntermediate?: boolean;
-    /** Common-name stem of the leaves: `<stem>-<n>.example.test`, run-prefixed. */
     stem?: string;
-    /** One stem per DISTINCT leaf (a trigger's rule can then match some leaves and not others); default: `stem` for all. */
     leafStems?: string[];
     env?: NodeJS.ProcessEnv;
 }
@@ -35,7 +22,6 @@ export interface TlsTargetOptions {
 interface ServedCertificate {
     pem: string;
     commonName: string;
-    /** SHA-256 of the DER, lowercase hex: the form the inventory and the discovery rows use. */
     fingerprint: string;
     role: 'leaf' | 'intermediate';
 }
@@ -43,18 +29,16 @@ interface ServedCertificate {
 export interface TlsTarget {
     host: string;
     ports: number[];
-    /** The certificate (chain) served on each port, in port order. */
     served: ServedCertificate[][];
-    /** Distinct certificates over all ports (leaves and the intermediate). */
+    rootPem: string;
+    intermediatePem: string;
     distinct(): ServedCertificate[];
     servedFingerprints(): string[];
-    /** `host:port,…` form for v1 `ip` / `port` attributes. */
     ipAttribute(): string;
     portsAttribute(): string;
     close(): Promise<void>;
 }
 
-/** Why no scan target can be hosted ("deploy gate"), or undefined. A skip with this text is never coverage. */
 export function scanTargetProblem(env: NodeJS.ProcessEnv = process.env): string | undefined {
     const host = settings(env).scanHost;
     if (!host) {
@@ -103,21 +87,16 @@ function issue(opts: {
 
 const fingerprintOf = (cert: forge.pki.Certificate): string => sha256Hex(Buffer.from(forge.asn1.toDer(forge.pki.certificateToAsn1(cert)).getBytes(), 'binary'));
 
-/** The domain of every common name this module builds. */
 const LEAF_DOMAIN = 'example.test';
 
-/**
- * The common name of leaf number `index` (from 1): `<run id>-<stem>-<unique>-<index>.example.test`, refused when it is
- * longer than a certificate common name may be (64 characters). The stem is the spec's own part of the name, so a stem
- * that is too long for the run id's length fails here with the limit named, before any listener opens.
- */
+/** The common name of leaf number `index`: `<run id>-<stem>-<unique>-<index>.example.test`, refused when longer than 64 characters. */
 export function leafCommonName(stem: string, unique: string, index: number, id: string = runId()): string {
     return checkedCommonName(`${id}-${stem}-${unique}-${index}.${LEAF_DOMAIN}`);
 }
 
 /**
- * Starts the listeners and returns the target. The caller closes it in `afterAll` (`close()` is idempotent). Generates the
- * certificates synchronously first, so a failure leaves no listener behind.
+ * Starts the listeners and returns the target; the caller closes it in `afterAll` (idempotent). Certificates are generated first, so a
+ * failure leaves no listener behind.
  */
 export async function startTlsTarget(opts: TlsTargetOptions = {}): Promise<TlsTarget> {
     const env = opts.env ?? process.env;
@@ -189,6 +168,8 @@ export async function startTlsTarget(opts: TlsTargetOptions = {}): Promise<TlsTa
         host: scanHost(env),
         ports,
         served,
+        rootPem: forge.pki.certificateToPem(root),
+        intermediatePem: interPem,
         distinct: distinctServed,
         servedFingerprints: () => distinctServed().map((c) => c.fingerprint).sort(),
         ipAttribute: () => scanHost(env),
@@ -201,14 +182,8 @@ export async function startTlsTarget(opts: TlsTargetOptions = {}): Promise<TlsTa
     };
 }
 
-/** A dark `/29` (6 usable addresses) of the first documentation range: a run that completes in seconds with no certificate. */
 export const DARK_SMALL = '192.0.2.8/29';
-/**
- * Two dark documentation /24 ranges (508 targets = two chunks of 256 on the v2 connector): REG-DISC-03's extra work next to the own target.
- */
+/** Two dark documentation /24 ranges (508 targets = two chunks of 256 on the v2 connector). */
 export const DARK_TWO_RANGES = '192.0.2.0/24,198.51.100.0/24';
-/**
- * Three dark documentation /24 ranges (762 usable targets, ~6 minutes at parallelism 1 and a 500 ms connect timeout): held in progress
- * while API-DISC-03 walks the state matrix.
- */
+/** Three dark documentation /24 ranges (762 targets, ~6 minutes at parallelism 1): held in progress while a state matrix is walked. */
 export const DARK_LARGE = '192.0.2.0/24,198.51.100.0/24,203.0.113.0/24';

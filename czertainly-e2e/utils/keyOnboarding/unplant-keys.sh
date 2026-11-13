@@ -2,8 +2,8 @@
 # Removes one run's objects from a SoftHSM token, the counterpart of plant-keys.sh. It runs as root inside the sidecar
 # image, with the sidecar's token volume mounted. pkcs11-tool runs as the sidecar's user, because that user owns the
 # token files, and reads the PIN from TOKEN_PIN itself (`--pin env:`), so the PIN is not on its command line either.
-# Every private key, public key and certificate whose label starts with LABEL_PREFIX (a run id and a
-# hyphen) is deleted; every other object stays. The prefix is compared as plain text, never as a pattern.
+# Every private key, public key, certificate, secret key and data object whose label starts with LABEL_PREFIX (a run id
+# and a hyphen) is deleted, counted and proven gone by a second listing; every other object stays. The prefix is compared as plain text, never as a pattern.
 # It prints one line: how many objects it deleted.
 set -eu
 
@@ -36,9 +36,14 @@ run_objects() {
     /^Private Key Object/ { type = "privkey" }
     /^Public Key Object/ { type = "pubkey" }
     /^Certificate Object/ { type = "cert" }
+    /^Secret Key Object/ { type = "secrkey" }
+    /^Data object/ { type = "data" }
     type != "" && /^[ \t]+label:/ {
       label = $0
       sub(/^[ \t]+label:[ \t]*/, "", label)
+      # pkcs11-tool quotes the label of a data object (39: the quote character, not spelled inside this program)
+      q = sprintf("%c", 39)
+      if (type == "data" && length(label) >= 2 && substr(label, 1, 1) == q && substr(label, length(label), 1) == q) label = substr(label, 2, length(label) - 2)
       if (index(label, ENVIRON["LABEL_PREFIX"]) == 1) print type "\t" label
     }' "$work/objects" >"$work/run-objects"
   wc -l <"$work/run-objects" | tr -d ' '

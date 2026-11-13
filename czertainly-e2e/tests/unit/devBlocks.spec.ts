@@ -1,11 +1,6 @@
 /**
  * devBlocks — the registry of the developers' blocks, the project builder, the DEV_BLOCK choice of
  * playwright.devblock.config.ts and the block run's global teardown.
- *
- * WHAT: unknown or unset DEV_BLOCK is an error; each block yields proof → setup → block → teardown with the right
- * files; a shared tier selects nothing in any of them and a local one selects all four; the regression config holds no block.
- * WHY: a block reports on its own and must exit 0 with an empty report on a shared tier; the proof project must come first.
- * HOW: pure functions with an injected environment; the global teardown with injected seams.
  */
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
@@ -90,14 +85,6 @@ test('the proof file and the configs are where the README says', () => {
     }
 });
 
-// ------------------------------------------------------------------ one run secret per run, across the config's loads
-
-/**
- * Playwright evaluates the config in the runner AND again in every worker process (a worker inherits the runner's environment). The timestamping
- * block derives its Basic-credential passwords from TSA_RUN_SECRET: a config that made a new secret on every load gave the setup worker one value
- * and the spec workers another (every TSP request answered 401). Loads the real config afresh, the run's other variables cleared like a new process
- * would see them, TSA_RUN_SECRET as the previous load left it.
- */
 function loadDevBlockConfig(stateDir: string): string | undefined {
     const keys = ['TIER_KIND', 'BASE_URL', 'REG_STATE_DIR', 'REG_ENV_FILE', 'REG_ENV_FILE_PINNED', 'REG_RUN_ID', 'API_RUN_ID', 'DEV_BLOCK', 'AUTH_MODE', 'REG_RA_PROFILE_NAME', 'REG_RUN_ID_REUSE'];
     const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));

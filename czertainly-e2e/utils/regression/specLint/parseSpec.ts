@@ -1,28 +1,21 @@
 /**
- * specLint/parseSpec — reads a spec's source with the TypeScript compiler API (never a hand-written bracket scanner):
- * its test blocks with titles, tags and `testMeta()` ids, the names its code uses, and the tag rules specGuards checks
- * (`@bug:` only with `test.fail()`, one suite tag per test). The compiler (the `typescript` devDependency, TypeScript 6;
- * the native TypeScript 7 has no JavaScript compiler API) is loaded lazily, so specs that import `testMeta` never load it.
+ * specLint/parseSpec — reads a spec's source with the TypeScript compiler API: its test blocks with titles, tags and
+ * `testMeta()` ids, the names its code uses, and the tag rules. The compiler is loaded lazily.
+ * TypeScript 6 on purpose: the native TypeScript 7 has no JavaScript compiler API.
  */
 import type * as TS from 'typescript';
 import { idTag } from '../tags';
 
-/** The test declaration forms Playwright 1.58 knows: `test(…)`, `test.only / skip / fixme / fail(title, …, body)`. */
 export type TestKind = 'test' | 'only' | 'skip' | 'fixme' | 'fail';
 
 export interface TestBlock {
     title: string;
-    /** The whole call, from `test` to the closing parenthesis. */
     body: string;
     kind: TestKind;
-    /** Titles of the enclosing `test.describe` calls, outermost first. */
     describes: string[];
-    /** Every tag the test carries: `@words` in its title and its describes' titles, and the `tag` details of all of them
-     *  (string literals, `tags.<name>`, `tags.bug(…)`, `testMeta({ … })`). */
+    /** Every tag the test carries: `@words` in its title and its describes' titles, and the `tag` details of all of them. */
     tags: string[];
-    /** 1-based line of the call. */
     line: number;
-    /** The `id` of a literal `testMeta({ id: '…' })` in the test's details (the ledger id, independent of the title). */
     id?: string;
 }
 
@@ -34,7 +27,6 @@ export function typescript(): typeof TS {
     return require('typescript') as typeof TS;
 }
 
-/** `test`, `test.<form>` or `test.describe[.<modifier>[.<modifier>]]` of a call expression. */
 export function calleeKind(ts: typeof TS, call: TS.CallExpression): { kind: TestKind } | { describe: true } | undefined {
     const c = call.expression;
     if (ts.isIdentifier(c) && c.text === 'test') return { kind: 'test' };
@@ -46,14 +38,12 @@ export function calleeKind(ts: typeof TS, call: TS.CallExpression): { kind: Test
         if (DECLARATION_FORMS.has(name)) return { kind: name as TestKind };
         return undefined;
     }
-    // test.describe.<modifier>[.<modifier>] (`test.describe.serial`, `test.describe.serial.only`, `test.describe.parallel.only`).
     let t: TS.Expression = c;
     while (ts.isPropertyAccessExpression(t) && DESCRIBE_MODIFIERS.has(t.name.text)) t = t.expression;
     if (t !== c && ts.isPropertyAccessExpression(t) && t.name.text === 'describe' && ts.isIdentifier(t.expression) && t.expression.text === 'test') return { describe: true };
     return undefined;
 }
 
-/** The title argument: a string or template literal (a declaration); anything else (a boolean condition) is a modifier. */
 export function titleOf(ts: typeof TS, sf: TS.SourceFile, arg: TS.Expression | undefined): string | undefined {
     if (!arg) return undefined;
     if (ts.isStringLiteralLike(arg)) return arg.text;
@@ -65,7 +55,6 @@ export const hasFunctionArg = (ts: typeof TS, call: TS.CallExpression): boolean 
 
 const SIMPLE_TAGS: Record<string, string> = { regression: '@regression', api: '@api', gate: '@gate', phaseB: '@phaseB', local: '@local', slow: '@slow' };
 
-/** Tags a details expression carries (best effort over the forms the suite uses). */
 function tagsOf(ts: typeof TS, sf: TS.SourceFile, node: TS.Node | undefined): string[] {
     if (!node) return [];
     if (ts.isStringLiteralLike(node)) return node.text.startsWith('@') ? [node.text] : [];
@@ -94,7 +83,6 @@ function tagsOf(ts: typeof TS, sf: TS.SourceFile, node: TS.Node | undefined): st
     return [];
 }
 
-/** The `id` of `testMeta({ id: '…' })` (a literal string only), else undefined. */
 function metaIdOf(ts: typeof TS, node: TS.Node): string | undefined {
     if (!ts.isCallExpression(node) || !ts.isIdentifier(node.expression) || node.expression.text !== 'testMeta') return undefined;
     const arg = node.arguments[0];
@@ -105,7 +93,6 @@ function metaIdOf(ts: typeof TS, node: TS.Node): string | undefined {
     return undefined;
 }
 
-/** The tags `testMeta({ … })` adds, read from its literal argument (id, prio, local, gate, phaseB, needs, bug). */
 function metaTags(ts: typeof TS, sf: TS.SourceFile, arg: TS.Expression | undefined): string[] {
     if (!arg || !ts.isObjectLiteralExpression(arg)) return [];
     const out: string[] = [];
@@ -129,7 +116,6 @@ function metaTags(ts: typeof TS, sf: TS.SourceFile, arg: TS.Expression | undefin
     return out;
 }
 
-/** Every test declaration of a spec source (describes excluded, `test.step` / modifiers ignored), with its tags. */
 export function testBlocks(src: string, fileName = 'spec.ts'): TestBlock[] {
     const ts = typescript();
     const sf = ts.createSourceFile(fileName, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
@@ -163,7 +149,6 @@ export function testBlocks(src: string, fileName = 'spec.ts'): TestBlock[] {
     return blocks;
 }
 
-/** The lines of the `test.only(` / `describe.only(` / `test.describe.only(` calls of a source (strings and comments are not calls). */
 export function onlyCalls(src: string, fileName = 'spec.ts'): number[] {
     const ts = typescript();
     const sf = ts.createSourceFile(fileName, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
@@ -180,7 +165,6 @@ export function onlyCalls(src: string, fileName = 'spec.ts'): number[] {
     return lines;
 }
 
-/** Every identifier and string literal of a source (comments excluded): a code-level marker search. */
 export function codeNames(src: string, fileName = 'spec.ts'): Set<string> {
     const ts = typescript();
     const sf = ts.createSourceFile(fileName, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
@@ -196,8 +180,8 @@ export function codeNames(src: string, fileName = 'spec.ts'): Set<string> {
 const BUG_TAG = /@bug:|\btags\.bug\(|\bbug\s*:\s*['"[]/;
 
 /**
- * Titles of tests that carry a `@bug` tag (literal, `tags.bug(…)`, `testMeta({ bug })`, or inherited from a describe) but
- * never call `test.fail(`. `test.fixme` / `test.skip` declarations are included: a skipped test is never a bug marker.
+ * Titles of tests with a `@bug` tag (literal, `tags.bug(…)`, `testMeta({ bug
+ * })`, or inherited) that never call `test.fail(`; skipped tests count too.
  */
 export function bugTagsWithoutFail(src: string): string[] {
     return testBlocks(src)
@@ -205,7 +189,6 @@ export function bugTagsWithoutFail(src: string): string[] {
         .map((b) => b.title);
 }
 
-/** Tests that do not carry exactly one suite tag (`@regression` or `@api`), with what they carry. */
 export function suiteTagProblems(src: string): string[] {
     return testBlocks(src)
         .map((b) => ({ b, suite: b.tags.filter((t) => t === '@regression' || t === '@api') }))

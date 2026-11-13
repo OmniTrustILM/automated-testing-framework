@@ -1,22 +1,6 @@
 /**
- * API-GEN-17, API-GEN-18 — Credential create validation, one test per row. ilm#428.
- *
- * WHAT: 1. The valid Basic body (name, connector, kind, username and password attributes) → 201 with the uuid; the credential is listed
- *          enabled.
- *       2. A blank, null or whitespace-only name → 422 "Name must not be empty"; the same name again → 409 and exactly one credential has
- *          it.
- *       3. A connectorUuid that is not a UUID → 422 "Invalid UUID <value> in the request"; an unknown connector → 404; a connector without
- *          the credential function group → 422; a missing connectorUuid → a 4xx with the error-contract body, never a 5xx.
- *       4. A kind the connector does not offer → 422 "Unsupported credential kind …"; `attributes: []` → 422 with two texts, a missing
- *          username → 422, a password attribute without content → 422 "Value of required attribute … not set.".
- *       5. A name-only attribute (no uuid) is refused and leaves no credential behind (core#2512: an orphan today, test.fail).
- *       6. An empty-string password is accepted today (201); the row records this behaviour until the product owner decides.
- * WHY: core checks the name and the connector; the connector decides the kind and the required attributes, and its 422 is relayed as 422
- *      (interfaces#898). The credential row is saved before the attribute content is written, which is the atomicity gap behind core#2512
- *      (mechanism core#2449, request attribute without uuid core#2451).
- * HOW: create-only on shared tiers with run-prefixed names; every create goes through a probe helper that records the ledger line before
- *      any assertion, and an orphan of a refused create is adopted by its unique name. The wrong-function-group row skips without a
- *      pre-existing connector that lacks the credential group. The empty-password row records today's behaviour and is P3.
+ * API-GEN-17, API-GEN-18 — Credential create validation, one test per row (ilm#428). core#2512: a name-only attribute
+ * leaves an orphan credential today (test.fail).
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { expect422Messages, expectMessageObject } from '../../../utils/regression/errorContract';
@@ -32,8 +16,6 @@ import { createdUuid } from '../../../utils/regression/ownCrud';
 
 const ISSUE = 'ilm#428';
 const UUID_FORMAT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-// ================================================================== API-GEN-18
 
 const NAME_ROWS: ReadonlyArray<readonly [row: string, value: string | null, what: string]> = [
     ['name-blank', '', 'a blank'],
@@ -150,7 +132,6 @@ test.describe('credential validation', { tag: tags.api }, () => {
             const name = ownName('cred-byname');
             const body = await basicBody(api, c, name, {}, undefined, { withUuid: false });
             const probe = await probeCredential(api, own.spec, body, 'by-name attribute probe (core#2512)');
-            // Ledger first: a refused create may have left a credential behind. Its unique name is the only handle (no uuid is answered).
             const rows = await adoptByName(api, '/api/v1/credentials', 'credentials', name, own.spec, 'orphan left by a refused create (core#2512)');
             testInfo.annotations.push({ type: 'observed', description: `status ${probe.status}; ${rows.length} credential(s) with the name afterwards` });
             expect(probe.status, 'a refused request is a 4xx, never a 5xx').toBeLessThan(500);

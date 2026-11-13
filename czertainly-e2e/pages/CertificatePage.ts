@@ -1,12 +1,6 @@
 /**
- * CertificatePage — the smoke suite's certificate page object.
- *
- * WHAT: the smoke suite's certificate page object: the list, the import dialog, the Issue-now fields and the
- *       Details / Request / History tabs (SMK-004, SMK-007, SMK-008).
- * WHY: the three smoke specs call these names; the regression suite uses `CertificateListPage`, `CertificateAddPage`,
- *       `CertificateDetailPage` and `ImportCertificatesDialog`, to which every method here delegates.
- * HOW: the list is opened through the sidebar because SMK-004 and SMK-007 navigate that way (SMK-002 uses
- *       Navigation directly); the methods that moved to the classes above delegate to them under their old names.
+ * CertificatePage — the Certificates UI flow of the smoke suite (SMK-004), also used by SMK-007, SMK-008 and the regression suite.
+ * The import and submit-issue methods delegate to ImportCertificatesDialog and CertificateAddPage.
  */
 
 import { Page, Locator, Response, expect } from '@playwright/test';
@@ -15,6 +9,7 @@ import { SanSet, sameSans } from '../utils/regression/pkiBuilders';
 import { Navigation } from './Navigation';
 import { CertificateAddPage } from './CertificateAddPage';
 import { ImportCertificatesDialog } from './ImportCertificatesDialog';
+import { PageHeader } from './ui/pageHeader';
 import { chooseOption } from './ui/select';
 import { widgetTitled } from './ui/widget';
 
@@ -23,6 +18,9 @@ const logger = new Logger('CertificatePage');
 export class CertificatePage {
     readonly page: Page;
     private readonly navigation: Navigation;
+
+    // Page header (fe-administrator#2426): Create, and Import / Delete in its menu; the widget buttons on older builds
+    readonly header: PageHeader;
 
     // List page
     readonly main: Locator;
@@ -35,7 +33,6 @@ export class CertificatePage {
     readonly importSubmitButton: Locator;
     readonly importResults: Locator;
     readonly importDoneButton: Locator;
-    /** The import dialog's page object; the import methods below that the regression specs call delegate to it. */
     readonly importDialog: ImportCertificatesDialog;
 
     // Delete certificate from Details page
@@ -52,6 +49,9 @@ export class CertificatePage {
 
     // Details page
     readonly tablist: Locator;
+    readonly commonNameRow: Locator;
+    readonly stateBadge: Locator;
+    readonly subjectAlternativeNames: Locator;
 
     // Attributes tab
     readonly customAttributeSelectTrigger: Locator;
@@ -62,9 +62,10 @@ export class CertificatePage {
         this.navigation = new Navigation(page);
 
         this.main = page.locator('main');
-        this.addCertificateButton = this.main.getByTestId('add-certificate-button');
+        this.header = new PageHeader(page);
+        this.addCertificateButton = this.header.action('create', this.main.getByTestId('add-certificate-button'));
 
-        this.uploadButton = this.main.getByTestId('upload-button');
+        this.uploadButton = this.header.action('import', this.main.getByTestId('upload-button'));
         this.importModal = page.getByRole('dialog', { name: 'Import certificates and keys' });
         this.importFileContent = this.importModal.getByRole('textbox', { name: 'File content' });
         this.importDetectedContent = this.importModal.getByRole('region', { name: /Detected content/ });
@@ -73,7 +74,7 @@ export class CertificatePage {
         this.importDoneButton = this.importModal.getByRole('button', { name: 'Done', exact: true });
         this.importDialog = new ImportCertificatesDialog(page);
 
-        this.deleteButton = this.main.getByTestId('trash-button');
+        this.deleteButton = this.header.action('delete', this.main.getByTestId('trash-button'));
         this.deleteConfirmDialog = page.getByRole('dialog').filter({ hasText: 'Delete Certificate' });
         this.deleteConfirmButton = this.deleteConfirmDialog.getByRole('button', { name: 'Delete', exact: true });
 
@@ -84,6 +85,9 @@ export class CertificatePage {
         this.submitButton = this.main.getByTestId('progress-button');
 
         this.tablist = page.getByRole('tablist');
+        this.commonNameRow = this.main.locator('tr[data-id="commonName"]');
+        this.stateBadge = this.main.locator('tr[data-id="certState"] [data-testid="certificate-status"]');
+        this.subjectAlternativeNames = widgetTitled(this.main, 'Subject Alternative Names');
 
         this.customAttributeSelectTrigger = this.main.getByTestId('select-selectCustomAttribute-trigger');
         this.saveCustomValueButton = this.main.getByTestId('save-custom-value');
@@ -91,7 +95,7 @@ export class CertificatePage {
     }
 
     async goToList(): Promise<void> {
-        await this.navigation.openViaSidebar('Certificates', /\/certificates/i);
+        await this.navigation.openViaSidebar('sidebar-certificates', /\/certificates/i);
         await expect(this.main).toBeVisible();
     }
 
@@ -103,13 +107,13 @@ export class CertificatePage {
 
     async openIssuePage(): Promise<void> {
         logger.info('Navigating to Issue Certificate page');
-        await this.addCertificateButton.click();
+        await this.header.click(this.addCertificateButton);
         await expect(this.page).toHaveURL(/\/certificates\/add/);
     }
 
     async openImportModal(): Promise<void> {
         logger.info('Opening Import certificates and keys');
-        await this.uploadButton.click();
+        await this.header.click(this.uploadButton);
         await expect(this.importModal).toBeVisible();
     }
 
@@ -126,21 +130,15 @@ export class CertificatePage {
         await expect(this.importSubmitButton).toBeEnabled();
         await this.importSubmitButton.click();
         await expect(this.importResults).toBeVisible();
-        // The result badge has its own test id since fe-administrator#2274; it used to be the generic 'badge'.
         await expect(this.importResults.getByTestId('import-result-badge')).toHaveText('Imported');
     }
 
-    /**
-     * Click Import and return the platform's answer to the import call (`POST /api/v1/certificates/import`): its
-     * `results[].certificateUuid` / `certificateOutcome` let a spec record what the import created before asserting
-     * anything. The result badge is not checked here: `assertImportResult` does that.
-     */
+    /** Clicks Import and returns the answer of the import call, so a spec can record what it created before asserting. */
     async submitImport(): Promise<Response> {
         logger.info('Submitting the import');
         return this.importDialog.submitForResponse();
     }
 
-    /** The import results region shows the given outcome badge (`Imported`, `Already in inventory`, …). */
     async assertImportResult(text: string): Promise<void> {
         await this.importDialog.assertResults([text]);
     }
@@ -173,7 +171,7 @@ export class CertificatePage {
 
     async deleteFromDetail(): Promise<void> {
         logger.info('Deleting certificate from details page');
-        await this.deleteButton.click();
+        await this.header.click(this.deleteButton);
         await expect(this.deleteConfirmDialog).toBeVisible();
         await this.deleteConfirmButton.click();
         await expect(this.deleteConfirmDialog).not.toBeVisible();
@@ -201,9 +199,8 @@ export class CertificatePage {
     }
 
     /**
-     * Create on the Add Certificate form (the smoke spec's entry point). As the smoke suite expects, it waits for the
-     * new certificate's detail page and FAILS when the "accepted with warnings" panel shows instead; a regression row that
-     * accepts the panel passes `{ acceptWarnings: true }`.
+     * Create on the Add Certificate form: waits for the detail page and
+     * fails on the "accepted with warnings" panel unless `acceptWarnings`.
      */
     async submitIssue(options: { acceptWarnings?: boolean } = {}): Promise<string> {
         return (await new CertificateAddPage(this.page).submitIssueFailingOnWarnings(options)).uuid;
@@ -254,32 +251,21 @@ export class CertificatePage {
         await expect(formatRow).toContainText('pkcs10');
     }
 
-    /**
-     * The state badge and identity of an issued certificate on the Details tab: the common name row, the state label
-     * `Issued` and the RA profile name. The caller reloads first: the detail page opened by Create does not poll.
-     */
+    /** The common name row, the state `Issued` and the RA profile name. The caller reloads first: the page opened by Create does not poll. */
     async assertIssuedDetails(expected: { commonName: string; raProfileName: string }): Promise<void> {
         logger.info('Asserting the Details tab of an issued certificate');
         await this.openTab('Details');
-        await expect(this.main.locator('tr[data-id="commonName"]')).toContainText(expected.commonName);
-        await expect(this.main.locator('tr[data-id="certState"] [data-testid="certificate-status"]')).toHaveText('Issued');
+        await expect(this.commonNameRow).toContainText(expected.commonName);
+        await expect(this.stateBadge).toHaveText('Issued');
         await expect(this.main).toContainText(expected.raProfileName);
     }
 
-    /** The `Subject Alternative Names` widget of the Details tab (rows `tr[data-id=<SAN type>]`, values joined by ", "). */
-    get sanWidget(): Locator {
-        return widgetTitled(this.main, 'Subject Alternative Names');
-    }
-
-    /**
-     * The DNS names and IP addresses the Details tab shows in its `Subject Alternative Names` widget (rows `dNSName` and
-     * `iPAddress`; the frontend renders `subjectAlternativeNames` of the detail as one row per type, values joined by ", ").
-     */
+    /** The DNS names and IP addresses of the `Subject Alternative Names` widget. */
     async sanValues(): Promise<SanSet> {
         await this.openTab('Details');
-        await expect(this.sanWidget).toBeVisible();
+        await expect(this.subjectAlternativeNames).toBeVisible();
         const valuesOf = async (type: string): Promise<string[]> => {
-            const row = this.sanWidget.locator(`tr[data-id="${type}"]`);
+            const row = this.subjectAlternativeNames.locator(`tr[data-id="${type}"]`);
             if (!(await row.count())) return [];
             const text = (await row.locator('td').last().innerText()).trim();
             return text ? text.split(/,\s*/).map((v) => v.trim()).filter(Boolean) : [];
@@ -287,10 +273,7 @@ export class CertificatePage {
         return { dns: await valuesOf('dNSName'), ip: await valuesOf('iPAddress') };
     }
 
-    /**
-     * The Details tab shows the expected SANs: `exact` = set equality of DNS and IP (no extras), `dns` = every expected
-     * DNS name is shown (a CA whose template rewrites the SAN extension, the oracle on a CA other than EJBCA-NG).
-     */
+    /** `exact`: DNS and IP sets are equal; `dns`: every expected DNS name is shown (for a CA whose template rewrites the SAN extension). */
     async assertSans(expected: SanSet, mode: 'exact' | 'dns' = 'exact'): Promise<void> {
         const shown = await this.sanValues();
         logger.info(`SANs shown: ${shown.dns.length} DNS, ${shown.ip.length} IP (${mode})`);
@@ -306,8 +289,7 @@ export class CertificatePage {
         await expect(table).toContainText(pattern);
     }
 
-    /** Each listed tab that is shown opens without an error text (a tab that is not shown is skipped with a warning). */
-    async assertTabsOpenWithoutError(tabs: string[]): Promise<void> {
+    async verifyOtherTabsOpenWithoutError(tabs: string[]): Promise<void> {
         for (const tabName of tabs) {
             logger.info(`Opening tab (shallow check): ${tabName}`);
             const tab = this.tablist.getByRole('tab', { name: tabName, exact: true });
@@ -321,11 +303,6 @@ export class CertificatePage {
         }
     }
 
-    /** The former name of `assertTabsOpenWithoutError`; the smoke spec calls it. */
-    async verifyOtherTabsOpenWithoutError(tabs: string[]): Promise<void> {
-        await this.assertTabsOpenWithoutError(tabs);
-    }
-
     async assignCustomAttributeValue(attributeName: string, value: string): Promise<void> {
         logger.info(`Assigning custom attribute "${attributeName}" with value "${value}"`);
         await chooseOption(this.page, this.customAttributeSelectTrigger, attributeName);
@@ -333,7 +310,6 @@ export class CertificatePage {
         await valueInput.click();
         await valueInput.fill(value);
         await this.saveCustomValueButton.click();
-        // Wait for the row to appear in the Custom Attributes table
         const row = this.main.locator('tr').filter({ hasText: attributeName });
         await expect(row).toBeVisible();
     }

@@ -1,6 +1,5 @@
 /**
- * uiWidget — offline checks of pages/ui/widget.ts on `page.setContent` documents shaped like the admin UI: a widget is
- * the closest `<section>` around its title heading (nested widgets, exact and RegExp titles, regex characters literal).
+ * uiWidget — offline checks of pages/ui/widget.ts on `page.setContent` documents shaped like the admin UI.
  */
 import { expect, test } from '@playwright/test';
 import { widgetTitled as widget } from '../../pages/ui/widget';
@@ -17,7 +16,6 @@ test('widget(): the closest <section> around the title heading — nested widget
     await expect(widget(page.locator('main'), /^(Certificate|CSR) Properties$/)).toHaveAttribute('data-testid', 'inner-c');
     await expect(widget(page, 'Subject Alternative Names').getByTestId('pencil-button')).toHaveCount(1);
     await expect(widget(page, 'Nope')).toHaveCount(0);
-    // Regex characters in a title are literal.
     await page.setContent('<main><section data-testid="s"><h5>A (b) [c].*</h5></section></main>');
     await expect(widget(page, 'A (b) [c].*')).toHaveAttribute('data-testid', 's');
 });

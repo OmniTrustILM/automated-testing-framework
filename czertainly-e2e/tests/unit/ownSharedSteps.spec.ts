@@ -1,14 +1,6 @@
 /**
- * ownSharedSteps — the ledger steps of `own` that specs use instead of the lower-level record helpers, and the worker-scoped API context.
- *
- * WHAT: `own.probe` (an accepted create that a row expected to be refused, API answer or form answer), `own.adoptNamed` (the row a refused
- * create left behind: run-prefixed names only, recorded, then proven live), `own.restrictedUser` (a left-behind dedicated user skips the
- * test), `own.derivedKey`, `own.issuedNamed`, `own.acmeAccount`, `own.runAuthority`; `withWorkerApi` (a guarded context for a worker
- * fixture) and `buildRig` (no skip: a tier without a CA is the `ca` need's to skip).
- * WHY: each of them is a safety step (record before assert, never adopt what is not this run's); a unit test per step keeps a
- * refactor from loosening one of them.
- * HOW: `ownObjects` is built directly over a guarded context to a loopback fake core; assertions read the ledger lines and the requests
- * that reached the wire.
+ * ownSharedSteps — the ledger steps of `own` that specs use instead of the lower-level record helpers, and the
+ * worker-scoped API context.
  */
 import { expect, test } from '@playwright/test';
 import type { TestEnv } from '../../utils/env';
@@ -30,7 +22,6 @@ const SPEC = 'ownSharedSteps.spec';
 const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const ENV_KEYS = ['REG_RESTRICTED_USERNAME', 'REG_RESTRICTED_PASSWORD', 'REG_CA_CONNECTORS', 'REG_ADCS_CONNECTOR', 'REG_RA_PROFILE_NAME'];
 
-/** GET answers by path (set by the test); a POST to the certificate search answers the certificates of `searchable`. */
 class StepsCore extends FakeCore {
     readonly routes = new Map<string, Answer>();
     searchable: Array<Record<string, unknown>> = [];
@@ -62,8 +53,6 @@ registerFakeCore(() => core, (rig: FakeCoreRig) => {
 const created = (type: string) => readLedger().filter((l) => l.type === type && l.event === 'created');
 const prefixed = (what: string) => `${runId()}-${what}`;
 
-// ------------------------------------------------------------------ own.probe
-
 test('own.probe records an accepted API create before the row asserts, and nothing for a refusal', () => {
     const accepted = own.probe('groups', { status: 201, json: { uuid: U(1) }, serverAt: new Date('2026-01-02T03:04:05Z') }, { name: prefixed('probe-a'), note: 'accepted although refused expected', parents: { raProfile: U(2) } });
     expect(accepted).toEqual({ uuid: U(1), name: prefixed('probe-a'), kind: 'own' });
@@ -80,13 +69,12 @@ test('own.probe records a form answer that names an id whatever its status, take
     expect(own.probe('roles', { status: 409, uuid: U(4), text: 'exists', body: { name: prefixed('dup') } })?.uuid, 'the same object again').toBe(U(4));
     expect(created('roles')).toHaveLength(1);
     expect(own.probe('roles', { status: 409, text: 'exists', body: { name: prefixed('none') } }), 'a form answer with no id').toBeUndefined();
-    // No name anywhere: the line is written first, under a placeholder without the run prefix (the teardown reports it, never deletes it).
+    // No name anywhere: the line is written first, under a placeholder without the run prefix (the teardown reports it,
+    // never deletes it).
     expect(own.probe('roles', { status: 201, uuid: U(6), text: '' })?.name).toBe('(no name)');
     expect(created('roles').map((l) => l.name)).toEqual([prefixed('dup'), '(no name)']);
     expect(server.arrived, 'recording sends nothing').toEqual([]);
 });
-
-// ------------------------------------------------------------------ own.adoptNamed
 
 test('own.adoptNamed records the row a refused create left behind and proves it live', async () => {
     const name = prefixed('left-behind');
@@ -97,7 +85,6 @@ test('own.adoptNamed records the row a refused create left behind and proves it 
     expect(created('roles')).toMatchObject([{ uuid: U(10), name, spec: SPEC, note: 'left by a refused create', parents: { raProfile: U(12) } }]);
     expect(server.arrived.map((a) => `${a.method} ${a.url}`), 'the list, then the live read of the row').toEqual(['GET /api/v1/roles', `GET /api/v1/roles/${U(10)}`]);
     expect(server.mutations()).toEqual([]);
-    // Again: the row is already this run's, so no second line.
     await own.adoptNamed('roles', name);
     expect(created('roles')).toHaveLength(1);
     expect(await own.adoptNamed('roles', prefixed('nothing-here'))).toEqual([]);
@@ -117,14 +104,11 @@ test('own.adoptNamed fails on an unreadable list and on a type it has no list fo
     await expect(own.adoptNamed('groups', name)).rejects.toThrow(/answered 500/);
     expect(readLedger(), 'a failed read adopts nothing').toEqual([]);
     await expect(own.adoptNamed('approvals', name)).rejects.toThrow(/no list URL is known for the type approvals/);
-    // The list says the name, the live object says another: the live proof refuses it (the line was written first, the object stays
-    // unproven).
+    // The list says the name, the live object says another.
     core.serve('/api/v1/groups', [{ uuid: U(13), name }]);
     core.serve(`/api/v1/groups/${U(13)}`, { uuid: U(13), name: 'Everyone' });
     await expect(own.adoptNamed('groups', name)).rejects.toBeInstanceOf(OwnObjectViolation);
 });
-
-// ------------------------------------------------------------------ own.restrictedUser
 
 test('own.restrictedUser needs a configured second identity, returns the run\'s own user, and skips for a left-behind one', async () => {
     await expect(own.restrictedUser()).rejects.toThrow(/no second identity is configured/);
@@ -139,8 +123,6 @@ test('own.restrictedUser needs a configured second identity, returns the run\'s 
     expect(await own.restrictedUser(), 'the run\'s own user is returned from the ledger').toEqual(known);
     expect(skipped).toHaveLength(1);
 });
-
-// ------------------------------------------------------------------ own.derivedKey, issuedNamed, acmeAccount
 
 test('own.derivedKey records the key the platform linked, from a uuid or a certificate answer, and fails on an unreadable certificate', async () => {
     core.serve(`/api/v1/certificates/${U(30)}`, { uuid: U(30), key: { uuid: U(31) } });
@@ -175,8 +157,6 @@ test('own.acmeAccount records the account of the run\'s ACME profile and fails w
     await expect(own.acmeAccount('https://acme.invalid/acme/profile/x/acct/unknown', profile)).rejects.toThrow(/is listed/);
 });
 
-// ------------------------------------------------------------------ own.runAuthority
-
 test('own.runAuthority is the uuid of the authority the run made, not of an issue-only one, and undefined without one', () => {
     expect(own.runAuthority()).toBeUndefined();
     updateRunState({ authority: issueOnly({ uuid: U(60), name: 'existing-authority' }) });
@@ -184,8 +164,6 @@ test('own.runAuthority is the uuid of the authority the run made, not of an issu
     updateRunState({ authority: { uuid: U(61), name: prefixed('authority'), kind: 'own' } });
     expect(own.runAuthority()).toBe(U(61));
 });
-
-// ------------------------------------------------------------------ the worker API context and the rig
 
 test('withWorkerApi hands a guarded context to the worker fixture and disposes it afterwards', async () => {
     const env = { baseUrl: process.env.BASE_URL, authMode: 'header', username: 'admin', password: 'unused' } as TestEnv;

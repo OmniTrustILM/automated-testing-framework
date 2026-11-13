@@ -1,14 +1,15 @@
 #!/bin/sh
 # Plants key pairs on a SoftHSM token the way a tool outside ILM would. It runs as root inside the sidecar image, with
-# the sidecar's token volume mounted. pkcs11-tool runs as the sidecar's user, because that user owns the token files.
+# the sidecar's token volume mounted. pkcs11-tool runs as the sidecar's user, because that user owns the token files,
+# and reads the PIN from TOKEN_PIN itself (`--pin env:`), so the PIN is not on its command line either.
 # It prints one line: a certificate for the certified pair's public key, base64-encoded DER, from a throwaway issuer.
 set -eu
 
 apk add --no-cache opensc openssl su-exec >/dev/null
 
 tool() {
-  su-exec "$TOKEN_OWNER" pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so \
-    --token-label "$TOKEN_LABEL" --login --pin "$TOKEN_PIN" "$@" >/dev/null
+    su-exec "$TOKEN_OWNER" pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so \
+    --token-label "$TOKEN_LABEL" --login --pin env:TOKEN_PIN "$@" >/dev/null
 }
 
 tool --keypairgen --key-type rsa:2048 --id "$RSA_ID" --label "$RSA_LABEL"

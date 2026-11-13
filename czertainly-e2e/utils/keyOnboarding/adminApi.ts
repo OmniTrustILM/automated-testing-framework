@@ -1,22 +1,14 @@
 /**
- * adminApi — the admin API of the key onboarding specs.
- *
- * WHAT: `AdminApi` (raw / get / post / patch, token key listing, onboarding, key creation and removal, certificate upload,
- * the key custom attribute) and the response types the specs read.
- * WHY: the specs were written against this class; keeping its method names keeps their bodies unchanged.
- * HOW: ported from the developers' suite; it wraps `GuardedApi` instead of a client-certificate context (the framework
- * authenticates, and the guard judges ownership). Objects the platform creates are recorded by the caller right after
- * the answer: `keyCustomAttribute` hands the new attribute's uuid to `onCreated`, `uploadCertificate` records through
- * the framework's own-certificate helper.
+ * adminApi — the admin API of the key onboarding specs, over `GuardedApi`.
+ * The caller records created objects right after the answer (`onCreated`, and the own-certificate helper for `uploadCertificate`).
  */
 import type { APIResponse } from '@playwright/test';
 import type { GuardedApi } from '../regression/guard/types';
 import { uploadOwnCertificate } from '../regression/ownCertificates';
-import { AttributeDefinition, definitionNamed, offered, requestAttribute } from './attributes';
+import { AttributeDefinition, definitionNamed, MetadataAttribute, offered, requestAttribute } from './attributes';
 
 type Method = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
 
-/** The connector's listing limit, which bounds every page of token keys Core serves. */
 export const MAX_TOKEN_KEYS_PER_PAGE = 1000;
 
 const LIST_PAGE_SIZE = 1000;
@@ -27,7 +19,6 @@ const WHOLE_KEY: string[] = [];
 
 const COMPROMISE_REASON = 'disclosure';
 
-/** Calls the ILM API through the guarded API of the regression framework (identity and ownership rules are the guard's). */
 export class AdminApi {
   constructor(private readonly request: GuardedApi) {}
 
@@ -69,7 +60,6 @@ export class AdminApi {
     return this.json<T>('PATCH', apiPath, body);
   }
 
-  /** Every item of a POST .../list style endpoint, read page by page. */
   async listItems<T>(apiPath: string): Promise<T[]> {
     const items: T[] = [];
     for (let pageNumber = 1; ; pageNumber++) {
@@ -89,7 +79,6 @@ export class AdminApi {
     );
   }
 
-  /** Every key pair on the token, read page by page. */
   async allTokenKeys(tokenUuid: string, profileUuid: string): Promise<TokenKey[]> {
     const keys: TokenKey[] = [];
     for (let pageNumber = 1; ; pageNumber++) {
@@ -111,10 +100,7 @@ export class AdminApi {
     });
   }
 
-  /**
-   * Creates a key pair on the token through Core. The curve is a child of the key spec group, which Core learns from
-   * the callback the key form makes once an algorithm is chosen.
-   */
+  /** The curve is a child of the key spec group, which Core learns from the callback the key form makes. */
   async createKeyPair(tokenUuid: string, profileUuid: string, name: string): Promise<KeyDetail> {
     const keyPairs = `/v1/tokens/${tokenUuid}/tokenProfiles/${profileUuid}/keys/keyPair`;
     const definitions = await this.get<AttributeDefinition[]>(`${keyPairs}/attributes`);
@@ -131,9 +117,22 @@ export class AdminApi {
     return this.post<KeyDetail>(keyPairs, { name, attributes: [algorithm, curve], customAttributes: [] });
   }
 
-  /** Deletes the key from its token and from the inventory. */
   async deleteKey(keyUuid: string): Promise<void> {
     await this.json<void>('DELETE', `/v1/keys/${keyUuid}`, WHOLE_KEY);
+  }
+
+  /** Enables every item of the key: an onboarded key starts disabled. */
+  async enableKey(keyUuid: string): Promise<void> {
+    await this.patch<void>(`/v1/keys/${keyUuid}/enable`, WHOLE_KEY);
+  }
+
+  async allKeyItems(): Promise<KeyItemSummary[]> {
+    const items: KeyItemSummary[] = [];
+    for (let pageNumber = 1; ; pageNumber++) {
+      const page = await this.post<KeyItemPage>('/v1/keys', { itemsPerPage: LIST_PAGE_SIZE, pageNumber, filters: [] });
+      items.push(...page.cryptographicKeys);
+      if (pageNumber >= page.totalPages) return items;
+    }
   }
 
   removeKeyFromInventory(keyUuid: string): Promise<APIResponse> {
@@ -149,8 +148,8 @@ export class AdminApi {
   }
 
   /**
-   * Uploads a certificate (base64-encoded DER), which brings its public key into the inventory as a key of its own. The
-   * framework helper records the certificate (its common name `name` carries the run prefix) and the key Core linked to it.
+   * Uploads a base64 DER certificate, which brings its public key into
+   * the inventory; the helper records the certificate and the linked key.
    */
   async uploadCertificate(certificate: string, name: string, spec: string): Promise<CertificateDetail> {
     const wrapped = certificate.replace(/\s+/g, '').replace(/(.{64})/g, '$1\n').replace(/\n$/, '');
@@ -159,10 +158,7 @@ export class AdminApi {
     return this.get<CertificateDetail>(`/v1/certificates/${uuid}`);
   }
 
-  /**
-   * Creates the key custom attribute of this run as an optional text attribute, hands its uuid to `onCreated` right after
-   * the answer (the caller records it), and returns its definition. A pre-existing attribute is never read or enabled.
-   */
+  /** Creates this run's optional text attribute and hands its uuid to `onCreated`; a pre-existing attribute is never read or enabled. */
   async keyCustomAttribute(name: string, onCreated: (uuid: string) => void): Promise<AttributeDefinition> {
     const created = await this.post<{ uuid: string }>('/v1/attributes/custom', {
       name,
@@ -176,7 +172,7 @@ export class AdminApi {
 }
 
 export interface TokenKey {
-  keyHandle?: string;
+  keyPairMeta?: MetadataAttribute[];
   label?: string;
   keyAlgorithm: string;
   length?: number | null;
@@ -187,7 +183,10 @@ export interface TokenKey {
     | 'inInventoryWithoutToken'
     | 'importInProgress'
     | 'noPublicKey'
-    | 'noUniqueId';
+    | 'noUsableId'
+    | 'unsupportedKeyType'
+    | 'unreadable'
+    | 'gone';
   fingerprint?: string;
   suggestedName?: string;
   inventoryKeyUuid?: string;
@@ -204,12 +203,12 @@ export interface TokenKeyPage {
 }
 
 export interface TokenKeySelection {
-  keyHandle: string;
+  keyPairMeta: MetadataAttribute[];
   name?: string;
 }
 
 export interface OnboardingResult {
-  keyHandle: string;
+  keyPairMeta: MetadataAttribute[];
   onboarded: boolean;
   intoExistingKey: boolean;
   keyUuid?: string;
@@ -239,6 +238,18 @@ export interface KeyDetail {
   tokenProfileUuid?: string;
   items: KeyItem[];
   customAttributes?: Array<{ name: string; content?: Array<{ data: unknown }> }>;
+  removableFromInventory: boolean;
+}
+
+export interface KeyItemSummary {
+  uuid: string;
+  keyWrapperUuid: string;
+  removableFromInventory: boolean;
+}
+
+export interface KeyItemPage {
+  cryptographicKeys: KeyItemSummary[];
+  totalPages: number;
 }
 
 export interface CertificateDetail {

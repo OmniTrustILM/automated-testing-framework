@@ -1,11 +1,9 @@
 /**
- * The rbac/ helpers on the wire: the real guard and a real APIRequestContext against a stateful loopback fake core. Users
- * and roles (authApi; deletes proven by the list, foreign objects refused before sending), `callAs` (the other identity's
- * token on that request only), the dedicated user, the role switch and the barrier, and the RBAC objects (permissionObjects).
+ * The rbac/ helpers on the wire: the real guard and a real APIRequestContext against a stateful loopback fake core.
  */
 import { APIRequestContext, expect, test } from '@playwright/test';
 import * as forge from 'node-forge';
-import { probeRole, probeUser, replaceOwnRoleUsers, replaceOwnUserRoles, roleUserUuids, saveOwnPermissions, setOwnUserEnabled, updateOwnRole, updateOwnUser, userRoleUuids, addOwnUserRole, removeOwnUserRole, readPermissions, deleteOwnUserOrRole } from '../../utils/regression/rbac/authApi';
+import { probeRole, probeUser, replaceOwnRoleUsers, replaceOwnUserRoles, roleUserUuids, saveOwnPermissions, setOwnUserEnabled, updateOwnRole, updateOwnUser, userRoleUuids, addOwnUserRole, removeOwnUserRole, readPermissions, deleteOwnUserOrRole, listAll } from '../../utils/regression/rbac/authApi';
 import { usersOrRolesNamed } from '../../utils/regression/listReads';
 import { GuardedApi } from '../../utils/regression/guard/types';
 import { callAs, callWithAuthorization } from '../../utils/regression/rbac/identities';
@@ -20,7 +18,6 @@ import { Answer, Arrived, LoopbackServer } from './helpers/loopbackServer';
 import { FakeCore as BaseCore } from './helpers/fakeCore';
 import { registerFakeCore, rawAsGuarded } from './helpers/guardRig';
 import { randomBytes } from 'node:crypto';
-// Run-scoped generated test passwords: no password-like literal in the file.
 const GEN_PW_1 = `qa-${randomBytes(9).toString('base64url')}`;
 const GEN_PW_2 = `qa-${randomBytes(9).toString('base64url')}`;
 
@@ -41,13 +38,11 @@ class AuthCore extends BaseCore {
     raProfiles = new Map<string, Json>();
     certs = new Map<string, Json>();
     protected seq = 1000;
-    /** The CA is healthy and has an enabled RA profile to copy. */
     caHealthy = true;
+    failNextCertPatch = false;
     /** What `POST /users` answers for a username that exists (the known bug core#2297 answers 500). */
     duplicateStatus = 500;
-    /** Fixture F3: `POST /users` answers this non-2xx status WITH a uuid in the body and creates nothing. */
     failCreateWithUuid: number | undefined;
-    /** The username whose bearer is `DED-TOKEN` (the dedicated identity-provider account). */
     dedicatedUsername = 'qa-restricted-account';
 
     constructor() {
@@ -56,7 +51,6 @@ class AuthCore extends BaseCore {
         this.users.set(FOREIGN_USER, { uuid: FOREIGN_USER, username: 'someone-else', enabled: true, roles: [] });
     }
 
-    /** The profile of the identity behind the bearer: the admin, or the DED user computed from the roles it holds. */
     private profile(auth: string | undefined): Answer {
         if (auth === 'Bearer ADM-TOKEN') {
             return { status: 200, body: { uuid: ADM_UUID, username: 'admin-test', enabled: true, roles: [], permissions: { allowedListings: ['approvals', 'certificates', 'dashboard'], allowedActions: [] } } };
@@ -85,7 +79,6 @@ class AuthCore extends BaseCore {
         let m: RegExpExecArray | null;
         if (path === '/api/v1/auth/profile') return this.profile(auth);
 
-        // ---- users
         if (path === '/api/v1/users' && a.method === 'GET') return { status: 200, body: [...this.users.values()].map((u) => ({ uuid: u.uuid, username: u.username, enabled: u.enabled })) };
         if (path === '/api/v1/users' && a.method === 'POST') {
             if (this.failCreateWithUuid !== undefined) return { status: this.failCreateWithUuid, body: { uuid: this.next(), message: 'refused' } };
@@ -126,7 +119,6 @@ class AuthCore extends BaseCore {
             return { status: 200, body: { ...u } };
         }
 
-        // ---- roles
         if (path === '/api/v1/roles' && a.method === 'GET') return { status: 200, body: [...this.roles.values()].map((r) => ({ uuid: r.uuid, name: r.name })) };
         if (path === '/api/v1/roles' && a.method === 'POST') {
             if ([...this.roles.values()].some((r) => r.name === body.name)) return { status: 500, body: { message: 'Internal server error.' } };
@@ -161,7 +153,6 @@ class AuthCore extends BaseCore {
             return { status: 200, body: r.permissions };
         }
 
-        // ---- the RBAC data table
         if (path === '/api/v1/attributes/custom/resources/users' || /^\/api\/v1\/attributes\/custom\/resources\/(roles|raProfiles|certificates|groups)$/.test(path)) return { status: 200, body: [] };
         if (path === '/api/v1/connectors') return { status: 200, body: [{ uuid: C_EJBCA, name: 'EJBCA-NG-Connector', status: 'connected' }] };
         if (path === `/api/v2/connectors/${C_EJBCA}`) return { status: 200, body: { uuid: C_EJBCA, name: 'EJBCA-NG-Connector', version: 'v1' } };
@@ -193,7 +184,16 @@ class AuthCore extends BaseCore {
             return { status: 200, body: { uuid } };
         }
         if ((m = /^\/api\/v1\/certificates\/([0-9a-f-]{36})$/.exec(path)) && this.certs.has(m[1])) {
-            if (a.method === 'PATCH') Object.assign(this.certs.get(m[1])!, body);
+            if (a.method === 'PATCH') {
+                if (this.failNextCertPatch) {
+                    this.failNextCertPatch = false;
+                    return { status: 500, body: { message: 'transient' } };
+                }
+                // As the core: the detail shows the RA profile and the groups, not the PATCH fields.
+                const cert = this.certs.get(m[1])!;
+                if (body.raProfileUuid) cert.raProfile = { uuid: body.raProfileUuid };
+                if (body.groupUuids) cert.groups = (body.groupUuids as string[]).map((uuid) => ({ uuid }));
+            }
             return { status: 200, body: this.certs.get(m[1]) };
         }
         return { status: 404, body: { message: `no fake route ${a.method} ${path}` } };
@@ -222,8 +222,6 @@ async function refusal(call: Promise<unknown>): Promise<string> {
     }
 }
 
-// ------------------------------------------------------------------ users
-
 test('setOwnUserEnabled: enable / disable are sent for an own user, repeats answer 200 each; the lockout guard refuses the calling account', async () => {
     const user = await createOwnUser(api, 'T', 'state', { enabled: false });
     expect(core.users.get(user.uuid)!.enabled).toBe(false);
@@ -235,14 +233,12 @@ test('setOwnUserEnabled: enable / disable are sent for an own user, repeats answ
     expect(wire().filter((w) => /enable|disable/.test(w))).toEqual([
         `PATCH /api/v1/users/${user.uuid}/enable`, `PATCH /api/v1/users/${user.uuid}/enable`, `PATCH /api/v1/users/${user.uuid}/disable`, `PATCH /api/v1/users/${user.uuid}/disable`,
     ]);
-    // L-disable: a ref that IS the calling account (own on paper) is refused by the helper before the request leaves.
     core.users.set(ADM_UUID, { uuid: ADM_UUID, username: runName('self'), enabled: true, roles: [] });
     const self = { uuid: ADM_UUID, name: runName('self'), kind: 'own' } as OwnRef;
     recordCreated('users', self, { spec: 'T' });
     server.reset();
     await expect(setOwnUserEnabled(api, self, false)).rejects.toThrow(/calling account itself/);
     expect(wire()).toEqual([]);
-    // A foreign user is refused by the helper (ledger) and by the guard.
     const foreign = { uuid: FOREIGN_USER, name: 'someone-else', kind: 'own' } as OwnRef;
     expect(await refusal(setOwnUserEnabled(api, foreign, false))).toBe('ownership');
     expect(await refusal(api.patch(`/api/v1/users/${FOREIGN_USER}/disable`))).toBe('ownership');
@@ -269,11 +265,9 @@ test('updateOwnUser sends the editable fields and groupUuids: []; PUT of a role 
     expect(await userRoleUuids(api, user.uuid)).toEqual([role.uuid]);
     expect((await replaceOwnRoleUsers(api, role, [])).status).toBe(200);
     expect(await roleUserUuids(api, role.uuid)).toEqual([]);
-    // PUT /users/{u}/roles/{r} carries an empty JSON object (the mapping declares consumes = application/json).
     const put = server.arrived.find((a) => a.method === 'PUT' && /\/roles\//.test(a.url))!;
     expect(put.headers['content-type']).toMatch(/application\/json/);
     expect(JSON.parse(put.body)).toEqual({});
-    // A foreign role in the list is refused before the request leaves.
     server.reset();
     expect(await refusal(replaceOwnUserRoles(api, user, [{ uuid: SYSTEM_ROLE, name: 'admin', kind: 'own' } as OwnRef]))).toBe('ownership');
     expect(wire()).toEqual([]);
@@ -286,7 +280,6 @@ test('deleteOwnUserOrRole: DELETE → 204, the list decides (a deleted user\'s d
     expect(core.users.has(user.uuid)).toBe(false);
     expect(readLedger().filter((l) => l.uuid === user.uuid).map((l) => l.event)).toEqual(['created', 'deleted']);
     expect(await usersOrRolesNamed(api, 'users', user.name)).toEqual([]);
-    // A deleted object is no longer own: a second delete is refused by the ledger, nothing is sent.
     server.reset();
     expect(await refusal(deleteOwnUserOrRole(api, 'users', user, 'T', 'unit'))).toBe('ownership');
     expect(wire()).toEqual([]);
@@ -298,7 +291,7 @@ test('updateOwnRole sends `name` on purpose (the contract accepts and ignores it
     expect(bodyOf('PUT', `/api/v1/roles/${role.uuid}`)).toMatchObject({ name: 'other-name', description: 'd1', email: 'e@example.test', customAttributes: [] });
     expect(core.roles.get(role.uuid)!.name, 'the fake keeps the name like the platform').toBe(role.name);
 
-    // An object a permission names must be this run's own (the guard types `objects[].uuid` as any own object): a stand-in own object.
+    // An object a permission names must be this run's own (the guard types `objects[].uuid` as any own object)
     const object = await createOwnUser(api, 'T', 'object');
     const saved = await saveOwnPermissions(api, role, {
         allowAllResources: false,
@@ -313,7 +306,6 @@ test('updateOwnRole sends `name` on purpose (the contract accepts and ignores it
         ],
     });
     expect((await readPermissions(api, role.uuid)).allowAllResources).toBe(false);
-    // A permission on a foreign object is refused by the guard, nothing is sent.
     server.reset();
     expect(await refusal(saveOwnPermissions(api, role, { allowAllResources: false, resources: [{ name: 'raProfiles', objects: [{ uuid: U(77), name: 'foreign', allow: ['detail'] }] }] }))).toBe('ownership');
     expect(wire()).toEqual([]);
@@ -326,12 +318,9 @@ test('probeUser / probeRole return the answer without asserting it (the duplicat
     expect(second.json).toEqual({ message: 'Internal server error.' });
     const role = await createOwnRole(api, 'T', 'dup');
     expect((await probeRole(api, 'T', role.name)).status).toBe(500);
-    // A system role name: a create naming no uuid is allow-listed, the platform answers.
     expect((await probeRole(api, 'T', 'admin')).status).toBe(500);
     expect(await usersOrRolesNamed(api, 'roles', 'admin')).toHaveLength(1);
 });
-
-// ------------------------------------------------------------------ one request as another identity
 
 test('callAs: the second identity\'s bearer replaces the admin\'s for that request only; undefined keeps the context\'s own credentials', async () => {
     expect((await callAs(api, 'DED-TOKEN', 'GET', '/api/v1/auth/profile')).status, 'no DED user yet: the fake refuses it').toBe(401);
@@ -341,24 +330,19 @@ test('callAs: the second identity\'s bearer replaces the admin\'s for that reque
     expect(own.status).toBe(200);
     expect(own.json.username).toBe('admin-test');
     expect(server.arrived[0].headers.authorization).toBe('Bearer ADM-TOKEN');
-    // A raw header value (a PT-03 variant) and a query parameter.
     server.reset();
     const variant = await callWithAuthorization(api, 'Basic bm90OnRoaXM=', 'GET', '/api/v1/auth/profile', { params: { access_token: 'x' } });
     expect(variant.status).toBe(401);
     expect(server.arrived[0].headers.authorization).toBe('Basic bm90OnRoaXM=');
     expect(server.arrived[0].url).toBe('/api/v1/auth/profile?access_token=x');
-    // The guard still judges what the identity-override request names: a foreign uuid in a mutation is refused, nothing sent.
     server.reset();
     expect(await refusal(callAs(api, 'DED-TOKEN', 'DELETE', `/api/v1/users/${FOREIGN_USER}`))).toBe('ownership');
     expect(await refusal(callAs(api, 'DED-TOKEN', 'PATCH', `/api/v1/users/${FOREIGN_USER}/disable`))).toBe('ownership');
     expect(wire()).toEqual([]);
-    // A probe uuid is fine (401 / 403 negatives answer 404 / refusals).
     const probe = await callAs(api, 'DED-TOKEN', 'DELETE', `/api/v1/roles/${api.probeUuid()}`);
     expect(probe.status).toBe(500); // the fake answers like core#2511; the point is that it was SENT
     expect(wire()).toHaveLength(1);
 });
-
-// ------------------------------------------------------------------ the dedicated user, the role switch, the data table
 
 test('ensureRestrictedUser: absent → created enabled and ledgered under the account\'s name; present but not made by this run → not adopted, nothing sent', async () => {
     const dedicatedUser = { username: 'qa-restricted-account', password: GEN_PW_1 };
@@ -366,7 +350,6 @@ test('ensureRestrictedUser: absent → created enabled and ledgered under the ac
     expect(wire()).toEqual(['POST /api/v1/users']);
     expect(bodyOf('POST', '/api/v1/users')).toMatchObject({ username: dedicatedUser.username, enabled: true });
     expect(readLedger().find((l) => l.uuid === ref.uuid)).toMatchObject({ type: 'users', name: dedicatedUser.username, event: 'created' });
-    // The same run asks again: found in the ledger, nothing more is sent.
     server.reset();
     expect((await ensureRestrictedUser(api, 'T', dedicatedUser)).uuid).toBe(ref.uuid);
     expect(wire()).toEqual([]);
@@ -381,7 +364,6 @@ test('the DED `users` ledger line is written only after a 2xx create — a refus
     core.failCreateWithUuid = 500;
     await expect(ensureRestrictedUser(api, 'T', dedicatedUser)).rejects.toThrow(/creating the DED user/);
     expect(readLedger().filter((l) => l.type === 'users')).toEqual([]);
-    // The 2xx case still records (the first test of this group).
     core.failCreateWithUuid = undefined;
     const ref = await ensureRestrictedUser(api, 'T', dedicatedUser);
     expect(readLedger().find((l) => l.uuid === ref.uuid)).toMatchObject({ type: 'users', name: dedicatedUser.username, event: 'created' });
@@ -398,7 +380,7 @@ test('ensureRestrictedUser: a user of that name this run did not create is not a
     expect(wire()).toEqual([]);
     expect(readLedger().filter((l) => l.type === 'users')).toEqual([]);
     // Any other error is not turned into a skip.
-    core.users.clear();
+    core.users.delete(U(901));
     core.duplicateStatus = 500;
     const skipped: string[] = [];
     const ref = await ensureRestrictedUserOrSkip(api, 'T', dedicatedUser, (r) => skipped.push(r));
@@ -406,9 +388,21 @@ test('ensureRestrictedUser: a user of that name this run did not create is not a
     expect(skipped).toEqual([]);
 });
 
+test('a users or roles list at its cap or empty proves nothing: the list reads, the DED user lookup and a delete read-back throw', async () => {
+    const user = await createOwnUser(api, 'T', 'capped');
+    for (let i = 0; i < 999; i++) core.users.set(U(5000 + i), { uuid: U(5000 + i), username: `someone-${i}`, enabled: true, roles: [] });
+    expect(core.users.size).toBe(1001);
+    server.reset();
+    await expect(usersOrRolesNamed(api, 'users', user.name)).rejects.toThrow(/answered 1001 rows .*may be truncated/);
+    await expect(ensureRestrictedUser(api, 'T', { username: 'qa-restricted-account', password: GEN_PW_1 })).rejects.toThrow(/the users list: \/api\/v1\/users answered 1001 rows/);
+    expect(wire(), 'no DED user is created on a list that proves nothing').toEqual([]);
+    await expect(deleteOwnUserOrRole(api, 'users', user, 'T', 'unit')).rejects.toThrow(/answered 1000 rows .*may be truncated/);
+    expect(readLedger().filter((l) => l.uuid === user.uuid).map((l) => l.event), 'no `deleted` line without a proof').toEqual(['created']);
+    core.roles.clear();
+    await expect(listAll(api, 'roles')).rejects.toThrow('the roles list: /api/v1/roles answered an empty list; it proves nothing');
+});
+
 test('applyFixture: the fixture role is built from its document, becomes DED\'s only role and the barrier sees it in force; the next fixture replaces it', async () => {
-    // A run-prefixed account name stands in for DED here: the guard recognises an own object by the run prefix, and DED's real
-    // name has none (guard request GR-3). Everything else is the real flow.
     core.dedicatedUsername = runName('ded');
     const dedicatedUser = { username: core.dedicatedUsername, password: GEN_PW_2 };
     const user = await ensureRestrictedUser(api, 'T', dedicatedUser);
@@ -421,12 +415,10 @@ test('applyFixture: the fixture role is built from its document, becomes DED\'s 
     expect(core.users.get(user.uuid)!.roles).toEqual([f1.uuid]);
     expect(made.role.uuid, 'the role that is now in force, for the sign-in re-check').toBe(f1.uuid);
     expect((await sw.profile())!.allowedActions).toEqual([{ resource: 'certificates', actions: ['detail', 'list'] }]);
-    // F0 (no permissions) replaces it as the ONLY role; the barrier waits for an empty action list.
     await applyFixture(api, sw, 'F0', {}, 'T');
     const f0 = [...core.roles.values()].find((r) => r.name === runName('rbac-f0'))!;
     expect(core.users.get(user.uuid)!.roles).toEqual([f0.uuid]);
     expect((await sw.profile())!.allowedActions).toEqual([]);
-    // Disable / enable go through the guard as the admin; DED's token is refused while disabled (the fake's profile 401).
     expect((await sw.setEnabled(false)).status).toBe(200);
     expect(await sw.profile()).toBeUndefined();
     expect((await sw.setEnabled(true)).status).toBe(200);
@@ -438,7 +430,6 @@ test('ensureRbacObjects: two own RA profiles under the pre-existing authority, t
     expect(refs.authorityUuid).toBe(A_EJBCA);
     expect([refs.p1.name, refs.p2.name, refs.g1.name, refs.g2.name]).toEqual([runName('rbac-p1'), runName('rbac-p2'), runName('rbac-g1'), runName('rbac-g2')]);
     expect(Object.keys(refs.certs).sort()).toEqual(['c1', 'c2', 'c3', 'cg1', 'cg12', 'cg2']);
-    // The source RA profile (pre-existing) is only READ; both own RA profiles are created under the authority and enabled.
     expect(wire().filter((w) => w.includes(R_SRC))).toEqual([]);
     expect(wire().filter((w) => w.startsWith('POST /api/v1/authorities/'))).toHaveLength(2);
     expect(wire().filter((w) => w.endsWith('/enable'))).toHaveLength(2);
@@ -452,12 +443,38 @@ test('ensureRbacObjects: two own RA profiles under the pre-existing authority, t
     expect(types.filter((t) => t === 'raProfiles')).toHaveLength(2);
     expect(types.filter((t) => t === 'groups')).toHaveLength(2);
     expect(types.filter((t) => t === 'certificates')).toHaveLength(6);
-    // Idempotent through the ledger.
     server.reset();
     const again = await ensureRbacObjects(api, 'T');
     expect(again.p1.uuid).toBe(refs.p1.uuid);
     expect(again.certs.cg12.uuid).toBe(refs.certs.cg12.uuid);
     expect(wire()).toEqual([]);
+});
+
+test('ensureRbacObjects: a ledgered certificate whose PATCH was lost gets its RA profile again; one already in place is left alone', async () => {
+    core.failNextCertPatch = true;
+    await expect(ensureRbacObjects(api, 'T'), 'the PATCH of the first certificate fails that call').rejects.toThrow();
+    server.reset();
+    const refs = await ensureRbacObjects(api, 'T');
+    const c1 = refs.certs.c1.uuid;
+    expect(wire().filter((w) => w === `PATCH /api/v1/certificates/${c1}`), 'the lost PATCH is sent again').toHaveLength(1);
+    expect(core.certs.get(c1)!.raProfile).toEqual({ uuid: refs.p1.uuid });
+    server.reset();
+    await ensureRbacObjects(api, 'T');
+    expect(wire(), 'every certificate carries its plan: nothing is sent').toEqual([]);
+});
+
+test('ensureRbacObjects: groups are compared as a set; a ledgered certificate missing one of its groups gets them again', async () => {
+    const refs = await ensureRbacObjects(api, 'T');
+    const cg12 = refs.certs.cg12.uuid;
+    core.certs.get(cg12)!.groups = [{ uuid: refs.g2.uuid }, { uuid: refs.g1.uuid }];
+    server.reset();
+    await ensureRbacObjects(api, 'T');
+    expect(wire(), 'the same groups in another order are in place').toEqual([]);
+    core.certs.get(cg12)!.groups = [{ uuid: refs.g1.uuid }];
+    server.reset();
+    await ensureRbacObjects(api, 'T');
+    expect(wire(), 'one group missing: the plan is sent again').toEqual([`PATCH /api/v1/certificates/${cg12}`]);
+    expect(core.certs.get(cg12)!.groups).toEqual([{ uuid: refs.g1.uuid }, { uuid: refs.g2.uuid }]);
 });
 
 test('ensureRbacObjects: no healthy CA → RaProfileSourceMissing with the named deploy gate; nothing is created', async () => {

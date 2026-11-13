@@ -1,17 +1,9 @@
 /**
- * Claims — the objects one request names, and the proof that each of them is the run's own.
- *
- * WHAT: `Claims` collects every uuid a mutation names (a path target, a typed body field, a top-level uuid list, any
- * other uuid in the body) together with the ledger type its line must have. `assertOwnAll` then proves each one: a
- * probe uuid passes, every other uuid needs a ledger `created` line of this run, of exactly the type the route acts on,
- * and a live read of the object. `assertOwnApprovalDecision` proves an approval before it may be decided.
- * WHY: a request may only change what the run created. The type match stops an id-named `approvals` line from
- * authorising a request on an RA profile, and one uuid named as two different resources in one request is refused.
- * HOW: the guard builds one Claims per mutation, adds the targets, the typed fields and the list, and calls
- * `assertOwnAll` once; the refusal kind is `ownership` or `derived` when the ledger or the live read says no, `request`
- * when the request itself names a resource the suite has no ledger type for.
+ * claims — the objects one request names, and the proof that each is the run's own: a probe uuid, or a ledger `created`
+ * line of this run of exactly the type the route acts on plus a live read.
  */
-import { assertOwn, assertOwnLive, isIdNamed } from '../ledger/ownership';
+import { assertOwn, assertOwnLive, checkOwnership, derivedDeletable, isIdNamed } from '../ledger/ownership';
+import type { LedgerLine } from '../ledger/ledger';
 import { approvalLiveProblem } from './approvals';
 import { isCanonicalUuid } from './uuids';
 import { PathTarget } from './targets';
@@ -19,16 +11,10 @@ import { listBodyRoute } from './routes';
 import type { GuardState } from './guardState';
 import type { Refuse } from './refuse';
 
-/** The uuids a request names and, for a target, the ledger type the route acts on (undefined: a body association). */
 export interface Claim {
-    /** The ledger type the uuid's line must have (undefined: any own type). */
     type?: string;
-    /** Where the request named it, for the refusal (`the request acts on raProfiles`, `the body field groupUuids names groups`). */
     why?: string;
-    /**
-     * Named in a body the server does not read as JSON (`text/plain`, a non-JSON Buffer): no field or list types it, so
-     * only a LIVE-checked ledger type may back it — an id-named line is refused.
-     */
+    /** Named in text the server does not read as JSON: only a live-checked ledger type may back it, an id-named line is refused. */
     free?: boolean;
 }
 
@@ -38,21 +24,18 @@ export class Claims {
     constructor(
         private readonly state: GuardState,
         private readonly refuse: Refuse,
-        /** Body associations: every canonical uuid found in the body or query (`free`: in text the server does not read as JSON). */
         associations: Iterable<string> = [],
         free = false,
     ) {
         this.claimed = new Map([...associations].map((u): [string, Claim] => [u, free ? { free } : {}]));
     }
 
-    /** One claim; the same uuid with two different types in one request is refused. */
     add(uuid: string, type: string | undefined, why: string): void {
         const prior = this.claimed.get(uuid);
         if (prior?.type !== undefined && type !== undefined && prior.type !== type) this.refuse('one uuid named as two different resources in one request', 'request', { uuid });
         this.claimed.set(uuid, type !== undefined ? { ...prior, type, why } : (prior ?? {}));
     }
 
-    /** Adds the targets: a non-probe target of a resource without a ledger type, or one uuid as two types, is refused. */
     targets(targets: PathTarget[], what: string): void {
         for (const t of targets) {
             if (t.type === undefined && !this.state.probes.has(t.uuid)) {
@@ -63,7 +46,6 @@ export class Claims {
         }
     }
 
-    /** The typed body fields (BODY_FIELD_TYPES); a field of a resource without a ledger type takes probes only. */
     fields(typed: Array<[string, string | null, string]>): void {
         for (const [uuid, type, field] of typed) {
             if (this.state.probes.has(uuid)) continue;
@@ -75,14 +57,12 @@ export class Claims {
     }
 
     /**
-     * A top-level uuid list body on a route with a path target or on a create is typed by
-     * LIST_BODY_TYPES (own with that ledger type, or a probe; null: probes only); on any other such route a
-     * non-probe uuid in it is refused. Bulk routes (no path target) are typed by BULK_ROUTES instead.
+     * A top-level uuid list is typed by LIST_BODY_TYPES (own with that type,
+     * or a probe); on any other such route a non-probe uuid is refused.
      */
     list(method: string, apiPath: string, list: unknown[]): void {
         const route = listBodyRoute(method, apiPath);
-        // A LIST_BODY_TYPES body is `List<String>`; a nested list, an object, a number or null
-        // would escape the type check (it falls back to any own type), so it is refused like bulkRouteTargets does.
+        // A nested list, object, number or null would escape the type check, so it is refused.
         if (route && list.some((e) => typeof e !== 'string')) {
             this.refuse(`the list body of ${route.path} holds an element that is not a string (its body is ${route.dto.split(' ')[0]})`, 'request');
         }
@@ -98,27 +78,22 @@ export class Claims {
         for (const uuid of named) this.add(uuid, route!.type as string, `the list body of ${route!.path} names ${route!.type}`);
     }
 
-    /** The claims in the order they were made. */
     entries(): Array<[string, Claim]> {
         return [...this.claimed];
     }
 }
 
-/**
- * Every named uuid must be own (or a probe); a TARGET must have a ledger line of exactly the resource type the
- * route acts on (an id-named `approvals` line cannot authorise an RA profile route), and so must a
- * uuid under a typed body field (BODY_FIELD_TYPES, `groupUuids` → groups); any other body
- * association (type undefined) may be any own object.
- */
+/** Every named uuid must be own or a probe; a target and a typed body field need a ledger line of exactly the resource type. */
 export async function assertOwnAll(state: GuardState, claims: Claims, helper: string, refuse: Refuse): Promise<void> {
     const live = state.liveOptions();
-    // The ledger options keep `env` (REG_RESTRICTED_USERNAME is read through it); `tier` is set by assertOwnLive.
     const { tier: _tier, ...ledgerOpts } = live;
     for (const [uuid, claim] of claims.entries()) {
         if (state.probes.has(uuid)) continue;
         const line = assertOwn({ uuid }, helper, ledgerOpts);
-        if (line.derived) {
-            refuse('a derived object (made by the platform for the run) is removed only by the run-end teardown, after its creation-time and adoption checks', 'derived', { uuid });
+        const merged = line.derived ? await mergedKeyProblem(state, line, helper) : undefined;
+        if (merged) {
+            refuse('a derived object (made by the platform for the run) is removed only by the run-end teardown, after its creation-time ' +
+                `and adoption checks (${merged})`, 'derived', { uuid });
         }
         if (claim.type !== undefined && line.type !== claim.type) {
             refuse(`the ledger records it as ${line.type}, but ${claim.why} (an ownership claim counts only for the ` +
@@ -133,10 +108,31 @@ export async function assertOwnAll(state: GuardState, claims: Claims, helper: st
 }
 
 /**
- * The approval's `approvals` line of this run names an own certificate and an own approval profile
- * (`parents.certificate`, `parents.approvalProfile`: own, non-derived lines of exactly those types, read live), and
- * the approval's live detail names exactly those two (a read through the wrapped context, like every live check).
+ * Why a derived key (or an item of one) is not a key core merged a planted private key into, or undefined when it is: its live token
+ * profile is an own token profile of the run and core made it at or after the line's createdAfter, so it holds only the run's token object.
  */
+async function mergedKeyProblem(state: GuardState, line: LedgerLine, helper: string): Promise<string | undefined> {
+    const live = state.liveOptions();
+    const { tier: _tier, ...ledgerOpts } = live;
+    const keyUuid = line.type === 'keyItems' ? line.parents?.key : line.type === 'keys' ? line.uuid : undefined;
+    if (typeof keyUuid !== 'string') return 'not a key or a key item';
+    const keyLine = assertOwn({ uuid: keyUuid }, helper, ledgerOpts);
+    if (keyLine.type !== 'keys' || !keyLine.derived) return 'its key is no derived key of the run';
+    const body = (await assertOwnLive(state.api, 'keys', { uuid: keyUuid }, helper, live)).body ?? {};
+    if (line.type === 'keyItems' && !(Array.isArray(body.items) && body.items.some((i: { uuid?: unknown }) => i?.uuid === line.uuid))) {
+        return 'its live key does not hold this item';
+    }
+    const profile = typeof body.tokenProfileUuid === 'string' ? body.tokenProfileUuid : undefined;
+    const profileLine = profile ? checkOwnership({ uuid: profile }, ledgerOpts) : undefined;
+    const ownProfile = profileLine?.own && profileLine.line?.type === 'tokenProfiles' && !profileLine.line.derived;
+    if (!ownProfile) return 'its key is in no token profile of the run';
+    await assertOwnLive(state.api, 'tokenProfiles', { uuid: profile! }, helper, live);
+    const created = typeof body.creationTime === 'string' ? body.creationTime : undefined;
+    if (!derivedDeletable(keyLine, created)) return `core made its key at ${created ?? 'an unknown time'}, not after ${keyLine.createdAfter}`;
+    return undefined;
+}
+
+/** The approval's line names an own certificate and an own approval profile (read live), and its live detail names exactly those two. */
 export async function assertOwnApprovalDecision(state: GuardState, uuid: string, helper: string, refuse: Refuse): Promise<void> {
     const live = state.liveOptions();
     const { tier: _tier, ...ledgerOpts } = live;

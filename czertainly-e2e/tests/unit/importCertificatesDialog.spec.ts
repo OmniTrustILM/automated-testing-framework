@@ -1,21 +1,18 @@
 /**
- * Offline checks of pages/ImportCertificatesDialog.ts against a static document shaped like the admin UI import
- * dialog: refused files, the alert, the disabled button, the password field and the listed entries. A browser
- * context answers every request itself; nothing leaves the machine.
+ * Offline checks of pages/ImportCertificatesDialog.ts against a static document shaped like the admin UI import dialog:
+ * refused files, the alert, the disabled button, the password field and the listed entries.
  */
 import { Browser, BrowserContext, expect, Page, Route, test } from '@playwright/test';
+import { CertificatePage } from '../../pages/CertificatePage';
 import { ImportCertificatesDialog } from '../../pages/ImportCertificatesDialog';
 import { randomBytes } from 'node:crypto';
 
-// Run-scoped generated test passwords: no password-like literal in the file.
 const GEN_PW_1 = `qa-${randomBytes(9).toString('base64url')}`;
 
 test.describe.configure({ timeout: 60_000 });
 
 const failsFast = async (call: Promise<unknown>): Promise<boolean> => call.then(() => false, () => true);
 const BASE = 'http://127.0.0.1:9/';
-
-// ------------------------------------------------------------------ a context that is the "server"
 
 interface Served {
     inspection: { status: number; body: unknown };
@@ -56,8 +53,6 @@ const newServed = (html: string, patch: Partial<Served> = {}): Served => ({
     extra: () => undefined,
     ...patch,
 });
-
-// ------------------------------------------------------------------ ImportCertificatesDialog
 
 const IMPORT_APP = `<!doctype html><html><body>
 <main><button data-testid="upload-button" id="open">upload</button></main>
@@ -112,70 +107,54 @@ const IMPORT_APP = `<!doctype html><html><body>
 const CSR_ENTRY = { entryReference: 'a'.repeat(64), kind: 'signingRequest', title: 'CN=csr' };
 const CERT_ENTRY = { entryReference: 'b'.repeat(64), kind: 'certificate', title: 'CN=cert' };
 
-test('ImportCertificatesDialog: open, choose a refused file, read the alert / disabled button / password field, retry with a password', async ({ browser }) => {
+test('ImportCertificatesDialog: choose a refused file, read the alert / disabled button / password field, retry with a password', async ({ browser }) => {
     const served = newServed(IMPORT_APP, { inspection: { status: 422, body: ['A PEM file can hold at most one private key.'] } });
     const { context, page } = await serve(browser, served);
     try {
+        await page.goto('/administrator/#/certificates');
+        await new CertificatePage(page).openImportModal();
         const wizard = new ImportCertificatesDialog(page);
-        await wizard.goToList();
-        await wizard.openDialog();
         await expect(wizard.dialog).toBeVisible();
         const answer = await wizard.chooseFile({ name: 'two-keys.pem', mimeType: 'application/x-pem-file', buffer: Buffer.from('hello') });
         expect(answer.status).toBe(422);
         expect(served.inspections[0]).toEqual({ file: Buffer.from('hello').toString('base64') });
-        await wizard.assertRefused('Failed to read the uploaded file (422): A PEM file can hold at most one private key.');
+        const refusal = wizard.dialog.getByRole('alert').filter({ hasText: /^Failed to read the uploaded file/ });
+        await expect(refusal).toHaveCount(1);
+        await expect(refusal).toHaveText('Failed to read the uploaded file (422): A PEM file can hold at most one private key.');
         await wizard.assertNoEntries();
         await wizard.assertSubmitDisabled();
         await wizard.assertPasswordFieldShown();
-        // The wrong text, a missing alert, an enabled button and a hidden password field all fail.
-        expect(
-            await Promise.all([
-                failsFast(wizard.assertRefused('Failed to read the uploaded file (422): another text')),
-                failsFast(wizard.assertRefused('Failed to read the uploaded file (400): A PEM file can hold at most one private key.')),
-                failsFast(wizard.assertNotRefused()),
-                failsFast(wizard.assertDetected(1)),
-                failsFast(wizard.assertPasswordFieldHidden()),
-            ]),
-            'the wrong text / status, a missing refusal, entries that are not there and a hidden password field all fail',
-        ).toEqual([true, true, true, true, true]);
         // Enter in the password field reads the file again WITH the passphrase and never submits.
         const again = await wizard.enterPassword(GEN_PW_1);
         expect(again.status).toBe(422);
         expect(served.inspections[1]).toEqual({ file: Buffer.from('hello').toString('base64'), passphrase: GEN_PW_1 });
-        await wizard.assertRefused('Failed to read the uploaded file (422): A PEM file can hold at most one private key.');
+        await expect(refusal).toHaveText('Failed to read the uploaded file (422): A PEM file can hold at most one private key.');
         await wizard.cancel();
     } finally {
         await context.close();
     }
 });
 
-test('ImportCertificatesDialog: a 200 lists the entries; a signing request is disabled with its reason; the alert and the password field are absent', async ({ browser }) => {
+test('ImportCertificatesDialog: a 200 lists the entries; a signing request leaves Import disabled, a certificate enables it and the import lists its result', async ({ browser }) => {
     const served = newServed(IMPORT_APP, { inspection: { status: 200, body: { containerDigest: 'x', entries: [CSR_ENTRY] } } });
     const { context, page } = await serve(browser, served);
     try {
+        await page.goto('/administrator/#/certificates');
+        await new CertificatePage(page).openImportModal();
         const wizard = new ImportCertificatesDialog(page);
-        await wizard.goToList();
-        await wizard.openDialog();
-        await wizard.pasteContent('-----BEGIN CERTIFICATE REQUEST-----');
-        await wizard.assertDetected(1);
-        await wizard.assertSigningRequest('Certificate requests are not imported');
-        await wizard.assertNotRefused();
-        await wizard.assertPasswordFieldHidden();
-        expect(await Promise.all([failsFast(wizard.assertRefused('x')), failsFast(wizard.assertPasswordFieldShown()), failsFast(wizard.assertSigningRequest('another reason'))])).toEqual([true, true, true]);
+        await wizard.chooseFile({ name: 'request.csr', mimeType: 'application/pkcs10', buffer: Buffer.from('csr') });
+        await expect(wizard.detectedContent).toContainText('Detected content – 1 entry');
+        await wizard.assertSubmitDisabled();
+        expect(await Promise.all([failsFast(wizard.assertNoEntries()), failsFast(wizard.assertPasswordFieldShown())]), 'listed entries and a hidden password field fail').toEqual([true, true]);
 
-        // A certificate entry is no signing request: its checkbox is enabled, the button too.
         served.inspection = { status: 200, body: { containerDigest: 'y', entries: [CERT_ENTRY] } };
-        await wizard.pasteContent('-----BEGIN CERTIFICATE-----');
-        await wizard.assertDetected(1);
-        expect(await Promise.all([failsFast(wizard.assertSigningRequest('Certificate requests are not imported')), failsFast(wizard.assertSubmitDisabled())])).toEqual([true, true]);
-        // Import (only specs that import their own objects use it): one request, the results region lists the badges.
-        served.inspection = { status: 200, body: { containerDigest: 'y', entries: [CERT_ENTRY] } };
+        await wizard.chooseFile({ name: 'cert.pem', mimeType: 'application/x-pem-file', buffer: Buffer.from('cert') });
+        expect(await failsFast(wizard.assertSubmitDisabled())).toBe(true);
         await context.route('**/api/v1/certificates/import', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ results: [{ badge: 'Imported' }] }) }));
-        const imported = await wizard.submit();
-        expect(imported.status).toBe(200);
+        const imported = await wizard.submitForResponse();
+        expect(imported.status()).toBe(200);
         await wizard.assertResults(['Imported']);
         expect(await failsFast(wizard.assertResults(['Already in inventory']))).toBe(true);
-        await wizard.done();
     } finally {
         await context.close();
     }

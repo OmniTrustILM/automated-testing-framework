@@ -1,24 +1,6 @@
 /**
- * API-CERT-41, 42, 43, 45, 46, 48, 50, 51, 52 — Certificate search filters over the run's own certificate seed. ilm#428.
- *
- * WHAT: 1. Text, datetime, list and enum, collection (group, owner) and custom attribute conditions each return the exact seed rows of
- *          their row table (searchTables), with the total; GREATER_OR_EQUAL and LESSER on one expiry split the seeds into two disjoint
- *          sets.
- *       2. The refusals of the filter engine are 422 JSON arrays of strings with fixed texts (a condition the field does not advertise, a
- *          missing or empty value, an invalid regex, a bad duration, a non-numeric number or count, an attribute identifier without its
- *          suffix, a non-numeric key length); a date that does not parse and COUNT_EQUAL / COUNT_NOT_EQUAL with an unparsable value
- *          must be a 4xx, not today's 500 (core#2504, core#2562: test.fail).
- *       3. The five seed attributes publish the condition set of their type; over all certificates EMPTY plus NOT_EMPTY and EQUALS plus
- *          NOT_EQUALS add up to the total, any-of is bounded, AND narrows and contradictions give nothing.
- *       4. Complement pairs (CONTAINS / NOT_CONTAINS, EQUALS / NOT_EQUALS, EMPTY / NOT_EMPTY on property and custom fields) are
- *          disjoint and cover all 24 seeds; filters are ANDed, order-independent and idempotent.
- * WHY: the filter matrix of the search field types decides what every certificate list shows (core#741, core#813, core#1030, core#1117;
- *      ilm#428, ilm#442). NOT_EQUALS and NOT_CONTAINS are complements including objects without a value. A refusal is a 4xx, never a 5xx.
- * HOW: the run's 24-certificate seed (groups, an owner and five custom attributes of different types) is planned once and shared; exact row
- *      sets come from the row tables with the Common Name prefix filter, so other objects of the tier cannot change a result. The
- *      search is a read. A row with a known bug is `test.fail()` placed right before the failing step; a row that fixes today's
- *      behaviour carries a pin and is never P1. The all-data invariant test is driven by the live catalogue and skips custom
- *      attributes that are disabled (core#2507).
+ * API-CERT-41, 42, 43, 45, 46, 48, 50, 51, 52 — Certificate search filters over the run's own certificate seed
+ * (ilm#428). A row with a known bug (its core# id is in the row) has `test.fail()` right before the failing step.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { expectRefused } from '../../../utils/regression/errorContract';
@@ -49,10 +31,6 @@ async function expectRow(api: GuardedApi, m: CertificateSeed, row: FilterRow, ma
 }
 
 test.describe('certificate search filters', { tag: tags.api }, () => {
-    /**
-     * One table row as one Playwright test (inside the describe so the suite tag is inherited): pins and known bugs are carried by the
-     * row (a pin is never P1). `markBug` is `test.fail()` placed right before the failing step by `expectRow`.
-     */
     function rowTest(id: string, row: FilterRow, rule: string, run: (api: GuardedApi, m: CertificateSeed, markBug: () => void) => Promise<void>): void {
         test(`${row.title}`,
             testMeta({ id, row: row.row, prio: row.pin ? 'P3' : 'P1', issue: ISSUE, pin: row.pin, bug: row.bug, rule }),
@@ -64,13 +42,9 @@ test.describe('certificate search filters', { tag: tags.api }, () => {
             });
     }
 
-    // ------------------------------------------------------------------ text conditions
-
     for (const row of TEXT_ROWS) {
         rowTest('API-CERT-41', row, 'string conditions; ilm#428 step 3', async (api, m, markBug) => expectRow(api, m, row, markBug));
     }
-
-    // ------------------------------------------------------------------ datetime conditions
 
     for (const row of DATE_ROWS) {
         rowTest('API-CERT-42', row, 'datetime conditions; core#1030; ilm#428 step 4', async (api, m, markBug) => expectRow(api, m, row, markBug));
@@ -90,14 +64,14 @@ test.describe('certificate search filters', { tag: tags.api }, () => {
 
     test.describe('robustness: a date that does not parse is never a 5xx', () => {
         for (const r of DATE_REFUSALS) {
-            // Rule: a datetime that does not parse is a caller error (4xx). Today the engine answers 500 (core#2504, open).
+            // Rule: a datetime that does not parse is a caller error (4xx).
             test(`${r.title} should answer a 4xx, not today\'s 500`,
                 testMeta({ id: 'API-CERT-42', row: r.row, prio: 'P1', issue: ISSUE, bug: r.bug, rule: 'a date that does not parse is refused (core#2504 open)' }),
                 async ({ api, own }, testInfo) => {
                     const m = await certificateSeedPlan(api, testInfo, own.spec);
                     const p = (await searchSeedCertificates(api, m, [propertyFilter('NOT_AFTER', 'EQUALS', r.value(m))])).probe;
+                    expect(p.status, `${r.row}: a date that does not parse must not be accepted: ${p.text.slice(0, 200)}`).toBeGreaterThanOrEqual(400);
                     test.fail(true, `${r.bug}: ${p.status} today (500 expected to become a 4xx)`);
-                    expect(p.status, `${r.row}: ${p.text.slice(0, 200)}`).toBeGreaterThanOrEqual(400);
                     expect(p.status, `${r.row}: never a 5xx`).toBeLessThan(500);
                 });
         }
@@ -112,8 +86,6 @@ test.describe('certificate search filters', { tag: tags.api }, () => {
                 expectRefused(p, { status: 422, text: r.text, among: true, what: `IN_NEXT ${JSON.stringify(r.value)}` });
             });
     }
-
-    // ------------------------------------------------------------------ list and enum conditions
 
     for (const row of LIST_ROWS) {
         rowTest('API-CERT-43', row, 'list conditions (enum lists compare the code; any-of / none-of); ilm#428 step 5', async (api, m, markBug) => {
@@ -131,8 +103,6 @@ test.describe('certificate search filters', { tag: tags.api }, () => {
             });
     }
 
-    // ------------------------------------------------------------------ collection and owner fields (from the seed's own PATCH calls)
-
     for (const row of COLLECTION_ROWS) {
         rowTest('API-CERT-45', row, 'collection fields (EQUALS any-of / NOT_EQUALS none-of, EMPTY, COUNT_*; OWNER null handling); core#1117; ilm#428 step 5', async (api, m, markBug) => expectRow(api, m, row, markBug));
     }
@@ -146,15 +116,12 @@ test.describe('certificate search filters', { tag: tags.api }, () => {
             async ({ api, own }, testInfo) => {
                 const m = await certificateSeedPlan(api, testInfo, own.spec);
                 if (r.bug) {
-                    // Control, a hard assertion: a whole count on the same condition is accepted, so only the unparsable value is in
-                    // question.
                     const control = (await searchSeedCertificates(api, m, [propertyFilter('GROUP_NAME', r.condition, 1)])).probe;
                     expect(control.status, `${r.row} control (${r.condition} 1): ${control.text.slice(0, 300)}`).toBe(200);
                 }
                 const p = (await searchSeedCertificates(api, m, [propertyFilter('GROUP_NAME', r.condition, r.value)])).probe;
                 if (r.bug) {
-                    // A hard assertion before the marker: the request is not ACCEPTED. A future 200 fails loudly here instead of passing as
-                    // an expected failure.
+                    // A hard assertion before the marker: the request is not ACCEPTED.
                     expect(p.status, `${r.row}: the request must not be accepted: ${p.text.slice(0, 300)}`).toBeGreaterThanOrEqual(400);
                     test.fail(true, `${r.bug}: ${r.condition} does not parse its value, so an unparsable value answers 500 instead of a 4xx`);
                 }
@@ -188,8 +155,6 @@ test.describe('certificate search filters', { tag: tags.api }, () => {
             });
     }
 
-    // ------------------------------------------------------------------ attribute-sourced filters on all five types
-
     test('the five seed attributes publish the absolute condition set of their type',
         testMeta({ id: 'API-CERT-46', row: 'catalogue', prio: 'P1', issue: ISSUE, rule: ['the filter matrix of the search field types (core SearchFieldTypeEnum / SearchHelper.prepareSearchForJSON); ilm#428', 'condition counts: string 10, number 8, date 10, boolean 4, multi-select list 4'] }),
         async ({ api, own }, testInfo) => {
@@ -218,15 +183,11 @@ test.describe('certificate search filters', { tag: tags.api }, () => {
         rowTest('API-CERT-46', row, 'attribute filters by EXISTS; NOT_EQUALS / NOT_CONTAINS are complements incl. objects without a value; core#741, #813; ilm#428 steps 6, 7', async (api, m, markBug) => expectRow(api, m, row, markBug));
     }
 
-    // ------------------------------------------------------------------ the 422 set of the filter engine
-
     interface Refusal {
         row: string;
         title: string;
-        /** The request body's filter; `m` is the run's certificate seed. */
         filter: (m: CertificateSeed) => Json;
         text: RegExp;
-        /** The listing to ask (default: certificates). */
         url?: string;
     }
     const REFUSALS: Refusal[] = [
@@ -263,18 +224,15 @@ test.describe('certificate search filters', { tag: tags.api }, () => {
             expectRefused(p, { status: 422, text: /^Filter field value abc cannot be parsed as a Number\.$/, among: true, what: 'CKI_LENGTH GREATER abc' });
         });
 
-    // ------------------------------------------------------------------ invariants over ALL data
-
     test('over all certificates, EMPTY plus NOT_EMPTY and EQUALS plus NOT_EQUALS add up to the total',
         testMeta({ id: 'API-CERT-50', prio: 'P1', issue: ISSUE, rule: ['metamorphic invariants of the filters over all data (the three validation fields excluded: core#2503, API-CERT-49); core#741; ilm#428, ilm#442', 'driven by the live catalogue: EMPTY + NOT_EMPTY = total, EQUALS v + NOT_EQUALS v = total, any-of <= sum, AND narrows, contradictions = 0'] }),
         async ({ api, own }, testInfo) => {
-            // About 3 requests per field and sampled value over every source of the catalogue: minutes on a large tier.
             test.setTimeout(EVENT_DELIVERY_MS);
             const catalogue = await readCatalogue(api);
             let fields = catalogueFields(catalogue);
             await test.step('Leave out the custom attributes that are disabled', async () => {
-                // A disabled custom attribute is still offered by the catalogue and its EMPTY answers everything (core#2507, open): the
-                // enabled definitions are the ones `GET /v1/attributes/custom/resources/certificates` lists.
+                // A disabled custom attribute is still offered by the
+                // catalogue and its EMPTY answers everything (core#2507, open)
                 const enabled = await send(api, 'GET', '/api/v1/attributes/custom/resources/certificates');
                 const enabledIds = new Set((readJsonOk<Json[]>(enabled, 'custom attributes of certificates') ?? []).map((d) => `${d.name}|${String(d.contentType).toUpperCase()}`));
                 const disabled = fields.filter((r) => r.source === 'custom' && !enabledIds.has(r.field.fieldIdentifier));
@@ -295,10 +253,7 @@ test.describe('certificate search filters', { tag: tags.api }, () => {
             expect(violations, describeViolations(violations)).toEqual([]);
         });
 
-    // ------------------------------------------------------------------ the complement relations on the run's own certificate seed
-
     interface Pair {
-        /** The row key: what the pair compares. */
         row: string;
         name: string;
         a: (m: CertificateSeed) => Filter[];
@@ -345,8 +300,6 @@ test.describe('certificate search filters', { tag: tags.api }, () => {
                 expect([...a.ids, ...b.ids].sort(), 'the union').toEqual([...(pair.domain ?? all24)(m)].sort());
             });
     }
-
-    // ------------------------------------------------------------------ AND semantics
 
     test('NOT_AFTER from the 25-day seed\'s expiry and before the 120-day seed\'s returns the three between',
         testMeta({ id: 'API-CERT-52', row: 'window', prio: 'P1', issue: ISSUE, rule: 'filters are ANDed (core#741)' }),

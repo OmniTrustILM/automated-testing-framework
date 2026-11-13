@@ -1,12 +1,7 @@
 /**
- * fakeCertificateListApp — a stand-in of the admin UI certificate list with a fake list API.
- *
- * WHAT: the DOM contract FilterWidget and CertificateListPage rely on (test ids, roles, header ids and aria-sort, portalled
- * selects, the date picker, badges, the empty cell, the pager, the bulk toolbar), served with a fake list API over the
- * seed plan's certificates.
- * WHY: the page objects' logic (choose, add, badge, remove, sort, page) must be proven offline, without a tier.
- * HOW: a browser context routes the page and the list API to in-memory data (`fakeData`); it proves the page objects'
- * logic, not the product, so the filter tables are proven elsewhere (the table unit tests and the live rows).
+ * fakeCertificateListApp — a stand-in of the admin UI certificate list with a fake list API. Provides a DOM shaped like
+ * the admin UI list (test ids, roles, header ids and aria-sort, portalled selects, the date picker, badges, the empty
+ * cell, the pager, the bulk toolbar), served with a fake list API over the seed plan's certificates.
  */
 import type { Browser, BrowserContext, Page } from '@playwright/test';
 import { SEED_A_DEFAULT_ORDER, CertificateSeedPlan, planCertificateSeed } from '../../../utils/regression/inventory/seedFull';
@@ -16,8 +11,6 @@ import { satisfiesFilter } from '../../../utils/regression/inventory/oracles/val
 import type { Scalar } from '../../../utils/regression/inventory/oracles/values';
 
 export const BASE = 'http://127.0.0.1:9';
-
-// ------------------------------------------------------------------ data
 
 export interface FakeRow extends JsonObject {
     uuid: string;
@@ -45,7 +38,6 @@ export function fakeData(clock: Date = new Date('2026-10-14T10:00:00Z')): FakeDa
             commonName: c.commonName,
             serialNumber: `0${id.slice(1)}ab`,
             issuerCommonName: issuer,
-            // an issued seed links its issuer's row, as the FE does (certificateTableHelpers.tsx:65-70)
             ...(c.issuedBy ? { issuerCertificateUuid: uuidOf(c.issuedBy) } : {}),
             notBefore: c.notBefore,
             notAfter: c.notAfter,
@@ -122,18 +114,12 @@ export function fakeCatalogue(data: FakeData): CatalogueGroup[] {
     ] as unknown) as CatalogueGroup[];
 }
 
-// ------------------------------------------------------------------ the fake list API
-
 const durationMs = (iso: string): number => {
     const m = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(iso);
     if (!m) throw new Error(`bad duration ${iso}`);
     return (((Number(m[1] ?? 0) * 24 + Number(m[2] ?? 0)) * 60 + Number(m[3] ?? 0)) * 60 + Number(m[4] ?? 0)) * 1000;
 };
 
-/**
- * The conditions the fake models per field: anything else throws, so a test that needs a condition the fake never
- * implemented fails loudly instead of getting an answer nobody derived.
- */
 const MODELLED: Record<string, readonly string[]> = {
     COMMON_NAME: ['CONTAINS', 'NOT_CONTAINS', 'EQUALS', 'NOT_EQUALS', 'EMPTY', 'NOT_EMPTY', 'STARTS_WITH', 'ENDS_WITH', 'MATCHES', 'NOT_MATCHES'],
     NOT_AFTER: ['GREATER_OR_EQUAL', 'LESSER', 'EQUALS', 'EMPTY', 'NOT_EMPTY', 'IN_NEXT', 'IN_PAST'],
@@ -144,7 +130,6 @@ const MODELLED: Record<string, readonly string[]> = {
     GROUP_NAME: ['EQUALS', 'NOT_EQUALS', 'EMPTY', 'NOT_EMPTY'],
 };
 
-/** The fake's routing of a filter to the one evaluator of the filter semantics (`satisfiesFilter`); only the time windows are its own. */
 function matchesFilter(row: FakeRow, f: JsonObject, now: number): boolean {
     const condition = String(f.condition);
     if (!MODELLED[String(f.fieldIdentifier)]?.includes(condition)) throw new Error(`the fake list API does not model ${f.fieldIdentifier} ${f.condition}`);
@@ -186,10 +171,6 @@ const sortKeyOf = (row: FakeRow, field: string, direction: 'asc' | 'desc'): stri
     throw new Error(`the fake list API cannot sort by ${field}`);
 };
 
-/**
- * The list answer for a request body: filters ANDed, sort (empty last both ways, uuid tie-break), paging; default order = created
- * descending.
- */
 export function listAnswer(data: FakeData, body: JsonObject): { status: number; json: unknown } {
     const now = data.clock.getTime();
     let rows = [...data.rows];
@@ -226,15 +207,12 @@ export function listAnswer(data: FakeData, body: JsonObject): { status: number; 
     };
 }
 
-// ------------------------------------------------------------------ serving
-
 export interface Served {
     page: Page;
     context: BrowserContext;
     data: FakeData;
     /** Every certificate list request body the fake received, in order. */
     listRequests: JsonObject[];
-    /** Replaces the rows the fake serves (e.g. to plant a `null` word in a name). */
     setRows(rows: FakeRow[]): void;
     close(): Promise<void>;
 }
@@ -269,8 +247,6 @@ export async function serveInventory(browser: Browser, opts: { data?: FakeData; 
         close: () => context.close(),
     };
 }
-
-// ------------------------------------------------------------------ the app (vanilla JS)
 
 const APP_CSS = `
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
@@ -549,7 +525,7 @@ const APP_JS = String.raw`
           display: S.draft.cond ? label('FilterConditionOperator', S.draft.cond) : '', isSelected: function (o) { return o.value === S.draft.cond; },
           onPick: function (o) { S.draft = { source: S.draft.source, field: S.draft.field, cond: o.value, value: undefined }; S.cal = null; } }),
         h('div', {}, h('label', { for: 'valueSelect' }, 'Filter Value'), valueControl()),
-        h('button', { id: 'addFilter', type: 'button', disabled: addDisabled(), onclick: onAdd }, S.badge === -1 ? 'Add' : 'Update')),
+        h('button', { id: 'addFilter', type: 'button', disabled: addDisabled(), onclick: onAdd }, S.badge === -1 ? 'Apply' : 'Update')),
       h('div', {}, S.filters.map(badge)),
       h('div', { 'data-testid': 'switch-archived-switch' }, h('label', { for: 'archived-switch' }, 'Include archived'),
         h('label', { for: 'archived-switch' }, h('input', { type: 'checkbox', id: 'archived-switch', class: 'sr-only', 'data-testid': 'switch-archived-switch-input', checked: S.archived,
@@ -636,7 +612,7 @@ const APP_JS = String.raw`
 
   function render() {
     root.replaceChildren(
-      h('nav', { 'data-testid': 'sidebar-sticky' }, h('ul', {}, h('li', {}, h('a', { href: '#/' }, 'Dashboard')), h('li', {}, h('a', { href: '#/certificates' }, 'Certificates')))),
+      h('nav', { 'data-testid': 'sidebar-sticky' }, h('ul', {}, h('li', {}, h('a', { href: '#/', 'data-testid': 'sidebar-dashboard' }, 'Dashboard')), h('li', {}, h('a', { href: '#/certificates', 'data-testid': 'sidebar-certificates' }, 'Certificates')))),
       h('main', {}, location.hash.indexOf('/certificates') >= 0 ? (S.loaded ? [filterWidget(), listWidget()] : h('div', { 'data-testid': 'table-skeleton' }, 'loading')) : h('div', {}, 'Dashboard')));
     renderPortal();
   }

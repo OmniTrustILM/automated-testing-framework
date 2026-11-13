@@ -33,16 +33,8 @@ test.describe('@smoke auth', () => {
     });
 
     await test.step('assert sidebar items', async () => {
-      // Scope to direct-child <a>/<button> of the main <ul>, so nested links inside
-      // expanded parent menus (e.g. Dashboard > Certificates) don't collide with
-      // top-level items of the same name (e.g. top-level Certificates).
-      const topLevelUl = sidebarNav.locator('ul').first();
       for (const item of sidebarItems) {
-        const tag = item.role === 'link' ? 'a' : 'button';
-        await expect(
-          topLevelUl.locator(`:scope > li > ${tag}, :scope > li > div > ${tag}`)
-            .filter({ hasText: item.name })
-        ).toBeVisible();
+        await expect(sidebarNav.getByTestId(item.testId), item.name).toBeVisible();
       }
     });
 

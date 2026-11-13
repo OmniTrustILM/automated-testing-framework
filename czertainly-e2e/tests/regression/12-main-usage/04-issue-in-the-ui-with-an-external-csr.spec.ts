@@ -1,27 +1,13 @@
 /**
- * REG-USE-04 — A certificate issued in the web UI from an external CSR (release checklist: Usage 4). ilm#429.
- *
- * WHAT: 1. Add Certificate → Request now → the run RA profile → Key Source External → a valid CSR → Create → the certificate is
- *          Issued within 180 s; after a reload the Details show the CN and the RA profile, the Request tab shows the pkcs10 request, the
- *          History tab has the issue entry, and the other tabs open without an error; the API shows the CSR's public key.
- *       2. A garbage CSR in the same form → inline validation and a "Failed to issue certificate (4xx)" alert; the page stays on the add
- *          form (a test of its own).
- *       3. (REG-USE-04.1) A CSR with DNS and IP SANs → issued with the requested SANs (the Details SAN widget), the stored request keeps
- *          them, and the History says "Issued using RA Profile <name>".
- * WHY: issuing from an external CSR is the central usage flow; the issued certificate must carry the CSR's key and SANs. What the CA
- *      accepts as a SAN is the CA's decision, so the SAN oracle is exact on EJBCA-NG and DNS-values-only on connectors whose template
- *      decides the SAN extension.
- * HOW: the RA profile is the run's own. Every certificate is recorded in the ledger from the create answer, before the redirect is waited
- *      for (also when the page shows the "accepted with warnings" panel or the step throws), with its linked key recorded twice
- *      (idempotent) to catch a key core links late, and is deleted by the run-end teardown. The IP SAN is a documentation address (RFC
- *      5737).
+ * REG-USE-04 — A certificate issued in the web UI from an external CSR (release checklist: Usage 4; ilm#429). Add
+ * Certificate with Key Source External issues the certificate within 180 s, and the API shows the CSR's public key.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { CertificateAddPage } from '../../../pages/CertificateAddPage';
 import { CertificatePage } from '../../../pages/CertificatePage';
 import { dismissToasts } from '../../../pages/ui/toast';
 import { CERTIFICATE_DETAILS_TABS } from '../../../utils/constants';
-import { csrWithSan, parseCertificate, publicKeyPemOf, sameSans, sansOfDetail } from '../../../utils/regression/pkiBuilders';
+import { csrWithSan, decodedIpSan, parseCertificate, publicKeyPemOf, sameSans, sansOfDetail } from '../../../utils/regression/pkiBuilders';
 import { getCertificate, serverCreatedAfter } from '../../../utils/regression/apiReads';
 import { authorityConnectorName } from '../../../utils/regression/config/authorities';
 import { recordingIssued } from '../../../utils/regression/issuedRecords';
@@ -35,13 +21,13 @@ import { escapeRegExp } from '../../../utils/regression/text';
 test.describe('Certificate issue in the web UI with an external key', { tag: tags.regression }, () => {
     test('requesting now with an uploaded CSR issues the certificate with its key and its tabs open',
         testMeta({
-            id: 'REG-USE-04', prio: 'P1', issue: 'ilm#429',
+            id: 'REG-USE-04', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: ['release checklist Usage 4: Add Certificate, Request now, the RA profile, Key Source External, a pasted CSR; the issued certificate carries the CSR key and its tabs open'],
         }),
         async ({ signedIn: page, api, own, live, ownRaProfile }, testInfo) => {
             const ra = ownRaProfile;
-            // The form selects this RA profile: prove it is a live object of this run first (an issue-only parent is only used, never
-            // changed).
+            // The form selects this RA profile: prove it is a live object of this run first (an issue-only parent is
+            // only used, never changed).
             if (ra.kind === 'own') await live('raProfiles', ra);
             const cn = runCommonName('ui');
             const csr = csrWithSan(cn, [cn]);
@@ -57,8 +43,6 @@ test.describe('Certificate issue in the web UI with an external key', { tag: tag
                 await certPage.pasteCsr(csr.pem);
                 const { result } = await recordingIssued(api, cn, createdAfter, own.spec, 'issued via UI', async () => {
                     const addPage = new CertificateAddPage(page);
-                    // The create answer is recorded before the redirect is waited for; the page then opens the certificate (or the warnings
-                    // panel).
                     await submitFormCreateRecorded(addPage, own, 'issue', { cn, note: 'issued via UI', ra });
                     return addPage.waitForCreatedCertificate({ acceptWarnings: true });
                 });
@@ -67,9 +51,7 @@ test.describe('Certificate issue in the web UI with an external key', { tag: tag
             });
 
             await test.step('Issuance completes (state issued)', async () => {
-                // Issued within the issue budget (the CA answers synchronously or through status polling).
                 await waitIssued(api, uuid);
-                // Second recording of the derived key (idempotent): catches a key core links only after the first recording.
                 await own.derivedKey(uuid, createdAfter);
             });
 
@@ -86,7 +68,7 @@ test.describe('Certificate issue in the web UI with an external key', { tag: tag
             });
 
             await test.step('Other tabs open without errors', async () => {
-                await certPage.assertTabsOpenWithoutError(CERTIFICATE_DETAILS_TABS);
+                await certPage.verifyOtherTabsOpenWithoutError(CERTIFICATE_DETAILS_TABS);
             });
 
             await test.step('API: issued by the run RA profile with the CSR key', async () => {
@@ -98,13 +80,11 @@ test.describe('Certificate issue in the web UI with an external key', { tag: tag
 
     test('a garbage CSR in the Add Certificate form shows the validation and creates no certificate',
         testMeta({
-            id: 'REG-USE-04', row: 'garbage-csr', prio: 'P1', issue: 'ilm#429',
+            id: 'REG-USE-04', row: 'garbage-csr', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: ['Add Certificate, Request now, Key Source External: a pasted garbage CSR is refused inline and by the create answer (4xx) and the page stays on the form'],
         }),
         async ({ signedIn: page, live, ownRaProfile }) => {
             const ra = ownRaProfile;
-            // The form selects this RA profile: prove it is a live object of this run first (an issue-only parent is only used, never
-            // changed).
             if (ra.kind === 'own') await live('raProfiles', ra);
             const certPage = new CertificatePage(page);
 
@@ -128,7 +108,7 @@ test.describe('Certificate issue in the web UI with an external key', { tag: tag
 
     test('a garbage CSR in the Add Certificate form shows the inline message under File content',
         testMeta({
-            id: 'REG-USE-04', row: 'inline-csr-message', prio: 'P1', issue: 'ilm#429', needs: 'utils-service',
+            id: 'REG-USE-04', row: 'inline-csr-message', prio: 'P1', issue: 'ilm#429', needs: ['utils-service', 'ca'],
             rule: ['Add Certificate, Request now, Key Source External: a pasted garbage CSR shows the inline "issue with certification request" message under File content'],
         }),
         async ({ signedIn: page, live, ownRaProfile }) => {
@@ -150,26 +130,23 @@ test.describe('Certificate issue in the web UI with an external key', { tag: tag
             });
         });
 
-    test('requesting now with a CSR carrying DNS and IP SANs issues them and shows them in Details and History',
+    test('requesting now with DNS and IP SANs issues the SANs the CA keeps, shown in Details and History',
         testMeta({
-            id: 'REG-USE-04.1', prio: 'P1', issue: 'ilm#429',
+            id: 'REG-USE-04.1', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'Request now + External: v2 issue, redirect to the detail, Issued after reload, CSR key',
                 'history "Issued using RA Profile <name>"; SAN content reaches the CA (what it accepts is the CA\'s decision)',
-                'the issued certificate carries the requested SANs',
+                'the issued certificate carries the requested SANs: the exact set (IP too) on a connector listed for exact SANs, else the DNS names only; the san-oracle annotation names the mode',
+                'the stored request\'s IP SANs are compared by address: core renders a CSR IP SAN as octet hex (its own registration matcher compares them so too); the request-san-rendering annotation records it',
             ],
         }),
         async ({ signedIn: page, api, own, live, ownRaProfile }, testInfo) => {
-            // UI flow + issuance (180 s) + the tab checks.
             test.setTimeout(UI_ISSUE_FLOW_MS);
             const ra = ownRaProfile;
-            // The form selects this RA profile: prove it is a live object of this run first (an issue-only parent is only used, never
-            // changed).
             if (ra.kind === 'own') await live('raProfiles', ra);
             const san = sanOracle(await authorityConnectorName(api, ra.authorityUuid));
             testInfo.annotations.push({ type: 'san-oracle', description: san.describe() });
 
-            // A time suffix keeps the name unique under --repeat-each.
             const cn = ownCommonName('ui-san');
             // 192.0.2.0/24 is TEST-NET-1 (RFC 5737): a documentation address, never a real host.
             const sans = { dns: [cn, `alt.${cn}`], ip: ['192.0.2.10'] };
@@ -186,28 +163,26 @@ test.describe('Certificate issue in the web UI with an external key', { tag: tag
                 await certPage.pasteCsr(csr.pem);
                 const { result } = await recordingIssued(api, cn, createdAfter, own.spec, 'issued via UI with DNS + IP SANs (REG-USE-04.1)', async () => {
                     const addPage = new CertificateAddPage(page);
-                    // The create answer is recorded before the redirect is waited for; the page then opens the certificate (or the warnings
-                    // panel).
                     await submitFormCreateRecorded(addPage, own, 'issue', { cn, note: 'issued via UI with DNS + IP SANs (REG-USE-04.1)', ra });
                     return addPage.waitForCreatedCertificate({ acceptWarnings: true });
                 });
-                // Lenient validation: the request-attribute set of the copied RA profile decides whether e.g. the IP SAN is a warning.
                 if (result.warnings.length) testInfo.annotations.push({ type: 'issue-warnings', description: result.warnings.join(' | ') });
                 return result.uuid;
             });
 
             await test.step('Issuance completes (state issued, within 180 s)', async () => {
                 await waitIssued(api, uuid);
-                // Second recording of the derived key (idempotent): catches a key core links only after the first recording.
                 await own.derivedKey(uuid, createdAfter);
             });
 
             await test.step('API: the issued certificate carries the CSR\'s SANs and key; the stored request keeps the CSR\'s SANs', async () => {
                 const cert = await getCertificate(api, uuid);
                 san.expectIssued(cert, sans);
-                // On a profile whose request-attribute set drops the IP SAN ("SAN iPAddress … is not allowed by the request-attribute
-                // set", accepted with warnings) the stored request keeps the DNS SANs only: the SAN oracle of the CA / profile decides.
-                const stored = sansOfDetail(cert.certificateRequest?.subjectAlternativeNames);
+                const asStored = sansOfDetail(cert.certificateRequest?.subjectAlternativeNames);
+                if (asStored.ip.some((ip) => ip.startsWith('#'))) {
+                    testInfo.annotations.push({ type: 'request-san-rendering', description: `the stored request shows its IP SANs as octet hex: ${JSON.stringify(asStored.ip)}` });
+                }
+                const stored = { ...asStored, ip: asStored.ip.map(decodedIpSan) };
                 san.expectSans(stored, sans);
                 if (!sameSans(stored, sans)) testInfo.annotations.push({ type: 'san-oracle-request', description: `stored request SANs ${JSON.stringify(stored)} differ from the CSR's ${JSON.stringify(sans)}: the request-attribute set of the profile decides` });
                 expect(publicKeyPemOf(parseCertificate(cert.certificateContent)), 'public key = CSR key').toBe(csr.publicKeyPem);

@@ -1,12 +1,7 @@
 /**
- * timestamping.teardown — the tear-down project of the timestamping block (the `teardown` of `timestamping-setup`).
- *
- * WHAT: one test that deletes every object the block's setup and specs recorded in this run (utils/timestamping/
- * blockTeardown.ts), in the run-end teardown's delete order and through its own-object guard.
- * WHY: one tear-up fills the environment for the block, one tear-down empties it again right after the block; the
- * run-end teardown is the safety net for anything left.
- * HOW: Playwright runs a teardown project after its setup project and every project depending on it, failed or not.
- * Red when an object could not be deleted (named by type and uuid); the run-end teardown then retries it.
+ * timestamping.teardown — the teardown project of the timestamping block (the `teardown` of `timestamping-setup`). One
+ * test deletes every object the block's setup and specs recorded in this run (utils/timestamping/blockTeardown.ts), in
+ * the run-end teardown's delete order and through its own-object guard.
  */
 import { test as teardown, expect } from '../../fixtures/testFixtures';
 import { getAuthenticatedApiContext } from '../../utils/auth/apiContext';
@@ -22,8 +17,6 @@ teardown('the block deletes everything its setup and specs created', devTests({ 
         type: 'teardown',
         description: outcome.status === 'done' ? `deleted ${outcome.deleted}, kept ${outcome.kept}` : `skipped: ${outcome.reason}`,
     });
-    // The independent proof, read-only: the signing profiles, TSP profiles and time-quality configurations the tier held before the block are
-    // the same now (count and hash). Only when the setup took a baseline; a tier that cannot list them skips with the reason.
     if (!readBaseline()) {
         testInfo.annotations.push({ type: 'inventory check', description: 'skipped: no baseline: the setup took none (the tier was unavailable, or the setup did not run)' });
         return;

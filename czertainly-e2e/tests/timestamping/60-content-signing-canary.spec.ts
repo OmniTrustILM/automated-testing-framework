@@ -7,12 +7,7 @@ import { ledgerSpec, primaryFamily, runStartedAt } from '../../utils/timestampin
 import { devTests } from '../../utils/timestamping/tags';
 import { describeOutcome, requestTimestamp } from '../../utils/timestamping/tsp';
 
-/**
- * Content signing and timestamping share the signing engine and the signing-record subsystem,
- * so a change on the content-signing side can silently alter what timestamping records or
- * whether it records at all. These are the canaries for that shared ground; the content-signing
- * flow itself is out of scope while its certificate-eligibility rules are still being defined.
- */
+/** Canaries for the ground content signing and timestamping share: the signing engine and the signing records. */
 test.describe('content-signing canary', devTests(), () => {
   test('a timestamp produces a signing record that traces back to its token', devTests(), async ({ admin, tsp }) => {
     const primary = primaryFamily();
@@ -24,8 +19,6 @@ test.describe('content-signing canary', devTests(), () => {
     expect(outcome.reply?.granted, describeOutcome(outcome)).toBe(true);
 
     const serial = outcome.reply!.serialNumberHex!;
-    // The record policy defaults to DEFERRED_DURABLE, so the write lands shortly after the
-    // response the client already has.
     const records = await waitFor(
       () => admin.listSigningRecords(200, set.signingProfile.uuid),
       (all) => all.some((record) => record.timestampTokenSerialNumbers?.includes(serial)),
@@ -61,12 +54,10 @@ test.describe('content-signing canary', devTests(), () => {
       ['immediate', 'deferred_durable', 'best_effort'],
       `persistence mode was '${policy!.persistenceMode}'`,
     ).toContain(String(policy!.persistenceMode).toLowerCase());
-    // A timestamp has no document and no DTBS to keep; those flags belong to content signing.
     expect(policy!.recordSignedDocument, 'timestamping does not record a signed document').toBe(false);
   });
 
   test('the platform still advertises all three signing workflow types', devTests(), async ({ admin }) => {
-    // /v1/enums answers with a map of enum name -> { code -> entry }.
     const enums = await admin.get<Record<string, Record<string, { code: string }>>>('/v1/enums');
     const workflowTypes = enums.SigningWorkflowType;
     expect(workflowTypes, 'SigningWorkflowType is published in the enum catalogue').toBeDefined();
@@ -84,10 +75,6 @@ test.describe('content-signing canary', devTests(), () => {
   }, testInfo) => {
     const primary = primaryFamily();
     const set = primary.nonQualified;
-    // A well-formed content-signing request on purpose: an incomplete one would be rejected
-    // by request validation and prove nothing. This reaches the capability gate — the
-    // boundary between content signing and timestamping that the content-signing work moves.
-    // A run-prefixed name, recorded right after an (unexpected) successful create, so the teardown removes it.
     const name = runName(`content-signing-${Date.now().toString(36)}`);
     const response = await admin.raw('POST', '/v1/signingProfiles', {
       name,
@@ -124,8 +111,7 @@ test.describe('content-signing canary', devTests(), () => {
 
   test('every timestamp issued during this run carries its token serial number', devTests(), async ({ admin, tsp }) => {
     const primary = primaryFamily();
-    // Scoped to this run rather than the whole table: the database survives between runs and
-    // holds records written by older platform versions, which are not this suite's business.
+    // Scoped to this run: the database keeps records of older runs and platform versions.
     const since = runStartedAt();
     const sets = [primary.nonQualified, primary.qualified];
     const issued: string[] = [];
@@ -138,7 +124,6 @@ test.describe('content-signing canary', devTests(), () => {
       issued.push(outcome.reply!.serialNumberHex!);
     }
 
-    // The records of the run's own signing profiles: on a shared tier the table holds other clients' records too.
     const records: SigningRecordListItem[] = await waitFor(
       async () => (await Promise.all(sets.map((set) => admin.listSigningRecords(1000, set.signingProfile.uuid)))).flat(),
       (all) => issued.every((serial) => all.some((record) => record.timestampTokenSerialNumbers?.includes(serial))),

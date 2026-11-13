@@ -1,16 +1,6 @@
 /**
- * uiSubmitCreate — `submitCreate` hands back the create answer before any redirect, and `setSwitch` proves the state it sets.
- *
- * WHAT: (1) a stand-in form whose Create button POSTs and whose route never changes: `submitCreate` returns status, uuid,
- *       request, body and the shared `ApiAnswer` at once, `waitForDetailRoute` is the step that fails, and it returns the
- *       uuid once the route arrives (also for a two-uuid route); the double-click probe sends two requests and answers the
- *       first. (2) `setSwitch` clicks the label of a hidden input, never forces it, and fails when the state does not follow.
- * WHY: the ledger line is written between the two steps; a created object must never be off the ledger because a redirect
- *      timed out. A forced check on a hidden input can leave the form's state unchanged.
- *       The wait is proven to be registered BEFORE the click (a synchronous request is answered before `click()` returns), and a
- *       double click that gets two different uuids returns the first answer's.
- * HOW: a loopback-addressed context answers every request itself; the unit config's short expect timeout keeps the
- *      "redirect never comes" and "switch never follows" cases quick.
+ * uiSubmitCreate — `submitCreate` hands back the create answer
+ * before any redirect, and `setSwitch` proves the state it sets.
  */
 import { expect, test } from '@playwright/test';
 import { submitCreate, waitForDetailRoute } from '../../pages/ui/detailRoute';
@@ -37,9 +27,9 @@ test('submitCreate returns the answer although the redirect never comes; waitFor
             return route.fulfill({ contentType: 'text/html', body: form });
         });
         const page = await context.newPage();
-        await page.goto('administrator/#/things');
+        await page.goto('/administrator/#/things');
         const dialog = page.getByRole('dialog', { name: 'Create Thing' });
-        const created = await submitCreate(page, dialog, { endpoint: '/v1/things' });
+        const created = await submitCreate(page, dialog.getByTestId('progress-button').last(), { endpoint: '/v1/things' });
         expect(created).toMatchObject({ status: 201, uuid: U1, body: { name: 'qa-reg-x' } });
         expect(created.request.method()).toBe('POST');
         expect(created.answer).toMatchObject({ status: 201, json: { uuid: U1 } });
@@ -57,7 +47,6 @@ test('submitCreate returns the answer although the redirect never comes; waitFor
 const switchPage = (follows: boolean) => `<!doctype html><html><body><div id="scope"><label for="flag">Flag</label>
   <label for="flag"><input type="checkbox" id="flag" data-testid="switch-flag-input" style="position:absolute;opacity:0;width:1px;height:1px" ${follows ? '' : 'onclick="event.preventDefault()"'}></label></div></body></html>`;
 
-/** A form whose Create handler sends a SYNCHRONOUS request: the answer is complete before `click()` returns. */
 const syncForm = `<!doctype html><html><body><main><div role="dialog" aria-label="Create Thing">
   <button data-testid="progress-button" onclick="const x = new XMLHttpRequest(); x.open('POST', '/api/v1/things', false); x.send('{}')">Create</button>
   </div></main></body></html>`;
@@ -69,8 +58,8 @@ test('submitCreate registers the wait before the click: an answer that is comple
             ? route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ uuid: U1 }) })
             : route.fulfill({ contentType: 'text/html', body: syncForm })));
         const page = await context.newPage();
-        await page.goto('administrator/#/things');
-        const created = await submitCreate(page, page.getByRole('dialog', { name: 'Create Thing' }), { endpoint: '/v1/things', timeout: 3_000 });
+        await page.goto('/administrator/#/things');
+        const created = await submitCreate(page, page.getByRole('dialog', { name: 'Create Thing' }).getByTestId('progress-button').last(), { endpoint: '/v1/things', timeout: 3_000 });
         expect(created.uuid).toBe(U1);
     } finally {
         await context.close();
@@ -88,8 +77,8 @@ test('a double click that is answered with two different uuids returns the first
             return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ uuid }) });
         });
         const page = await context.newPage();
-        await page.goto('administrator/#/things');
-        const twice = await submitCreate(page, page.getByRole('dialog', { name: 'Create Thing' }), { endpoint: '/v1/things', doubleClick: true });
+        await page.goto('/administrator/#/things');
+        const twice = await submitCreate(page, page.getByRole('dialog', { name: 'Create Thing' }).getByTestId('progress-button').last(), { endpoint: '/v1/things', doubleClick: true });
         expect(twice.uuid, 'the first answer is the one returned').toBe(U1);
         await expect.poll(() => posts).toBe(2);
     } finally {

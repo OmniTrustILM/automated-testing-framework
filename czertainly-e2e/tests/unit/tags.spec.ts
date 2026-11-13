@@ -1,12 +1,6 @@
 /**
  * tags — the tag builders and `testMeta()`: every tag spelled in utils/regression/tags.ts, the tag rules enforced when a
  * test's details are built, the `rule` annotations and the @slow tag as the AST reader sees it.
- *
- * WHAT: spells every tag with its builder, refuses malformed references, builds the Playwright details of one ledger
- * row (tags and annotations) and checks that `testBlocks` reads the same id and tags back.
- * WHY: the run filters, the ledger and the reports are keyed by these tags; a misspelled or missing tag silently drops
- * a test from a filter.
- * HOW: pure unit cases over `tags` / `testMeta`; the spec sources are inline strings.
  */
 import { test, expect } from '@playwright/test';
 import { testBlocks } from '../../utils/regression/specLint/parseSpec';
@@ -73,8 +67,6 @@ test('REG-DISC-04: b', testMeta({ id: 'REG-DISC-04', prio: 'P2', issue: 'ilm#430
 test('REG-DISC-05: c', { tag: ['@regression', '@slow'] }, async () => {});`);
     expect(blocks.map((b) => b.tags.includes('@slow'))).toEqual([true, true, true]);
 });
-
-// ------------------------------------------------------------------ testMeta rule annotations
 
 test('testMeta({ rule }) adds one `rule` annotation per cited rule after the ledger id', () => {
     const m = testMeta({ id: 'REG-CFG-07.a', prio: 'P1', issue: 'ilm#427', bug: 'core#2297', rule: ['release plan CFG-07 N1', 'core#2297'] });

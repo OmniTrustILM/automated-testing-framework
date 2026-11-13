@@ -1,7 +1,6 @@
 /**
- * acmeOrders — one ACME order of an own certificate through the RA-profile directory: the run's ACME profile on an own
- * RA profile with one new account, new-order → finalize → settled (every certificate the order makes and its linked
- * key are recorded, also when the finalize or the wait throws), and the CA-policy wording of an EC refusal.
+ * acmeOrders — one ACME order of an own certificate through the RA-profile directory (new account, new-order → finalize → settled); every
+ * certificate the order makes and its linked key are recorded, also when finalize or the wait throws.
  */
 import { expect } from '@playwright/test';
 import { AcmeClient, AcmeResponse } from '../protocols/acmeClient';
@@ -13,25 +12,22 @@ import { sanOracleFor } from '../ownCertificates';
 import { ensureAcmeOnRaProfile } from '../ownRaProfiles';
 import { ecRefusalWording, GeneratedCsr } from '../pkiBuilders';
 import { createdAfterMarker, OwnRef } from '../ledger/ledger';
-import { runName } from '../ledger/runState';
+import { ownCommonName, runName } from '../ledger/runState';
+import { ACME_ORDER_DOMAIN } from '../config/acmeProfiles';
 
-/** A settled order as the ACME client reads it. */
 export type AcmeOrder = Awaited<ReturnType<AcmeClient['waitForOrder']>>;
 
 export interface AcmeRun {
     client: AcmeClient;
     acmeProfile: OwnRef & { identifier: string };
-    /** The run ACME profile as the API reads it (`retryInterval`, `validity` in seconds). */
     profile: { retryInterval?: number; validity?: number };
-    /** The new-account answer of the shared account (its Retry-After is part of the order-detail oracle). */
     account: AcmeResponse;
-    /** The SAN oracle of the CA behind the run RA profile (exact on EJBCA-NG, DNS values elsewhere). */
     sanMode: 'exact' | 'dns';
     connector: string;
 }
 /**
- * The ACME profile on an own RA profile, its settings, and ONE new account (recorded under a run-prefixed name). Without
- * a CA the RA-profile helper throws `RaProfileSourceMissing` (the caller turns it into a skip with `orSkipWithoutCa`).
+ * The ACME profile on an own RA profile, its settings and one new account;
+ * without a CA the RA-profile helper throws `RaProfileSourceMissing`.
  */
 export async function startAcmeRun(api: GuardedApi, spec: string): Promise<AcmeRun> {
     const { raProfile, acmeProfile, directoryUrl } = await ensureAcmeOnRaProfile(api, spec);
@@ -45,25 +41,24 @@ export async function startAcmeRun(api: GuardedApi, spec: string): Promise<AcmeR
     return { client, acmeProfile, profile, account, sanMode: sanOracleFor(connector), connector };
 }
 
-/** The inventory certificates of a common name (read-only). */
 async function certificatesNamed(api: GuardedApi, commonName: string): Promise<string[]> {
     const rows = await searchCertificates(api, [{ fieldSource: 'property', fieldIdentifier: 'COMMON_NAME', condition: 'EQUALS', value: commonName }], 100);
     return rows.map((r) => String(r.uuid));
 }
 
-/**
- * Order → finalize → settle. Ledger first: every certificate of the identifier and its linked key (derived,
- * `createdAfter` from the new-order response's Date). `mine` are the certificates THIS order made (not in the inventory
- * before the order).
- */
-export async function orderAndFinalize(api: GuardedApi, run: AcmeRun, csr: GeneratedCsr, spec: string) {
-    const identifier = run.acmeProfile.identifier;
+/** A unique run-prefixed name the run's ACME profile pre-authorizes, for one order (`label` says which). */
+export const acmeOrderName = (label: string): string => ownCommonName('acme-' + label, ACME_ORDER_DOMAIN);
+
+/** Order → finalize → settle, ledger first; `mine` are the certificates THIS order made. */
+export async function orderAndFinalize(
+    api: GuardedApi, run: AcmeRun, csr: GeneratedCsr, spec: string, identifier: string = run.acmeProfile.identifier,
+) {
     const before = new Set(await certificatesNamed(api, identifier));
     const order = await run.client.newOrder([identifier]);
     expect(order.status, JSON.stringify(order.body)).toBe(201);
     const createdAfter = order.date ? createdAfterMarker(order.date) : await serverCreatedAfter(api);
-    // The finalize and the wait run inside the recording: a finalize that throws after the server issued, or a
-    // wait that times out, still leaves the certificate and its key in the ledger before the error surfaces.
+    // Inside the recording: a finalize that throws after the server issued,
+    // or a timed-out wait, still leaves the certificate and key in the ledger.
     const { result: { fin, done }, uuids } = await recordingIssued(api, identifier, createdAfter, spec, 'issued via ACME (REG-USE-05.1 / 05.2)', async () => {
         const f = await run.client.finalize(order.body.finalize, csr.derBase64Url);
         const d = f.status < 300 ? await run.client.waitForOrder(order.location!) : undefined;
@@ -72,9 +67,19 @@ export async function orderAndFinalize(api: GuardedApi, run: AcmeRun, csr: Gener
     return { order, fin, done, uuids, mine: uuids.filter((u) => !before.has(u)) };
 }
 
+/** Why an order ended invalid: its `error` and the failed history events of the certificates it made. */
+export async function invalidOrderReason(api: GuardedApi, done: AcmeOrder | undefined, mine: string[]): Promise<string> {
+    const parts = done?.error ? [String(done.error.detail ?? '')] : [];
+    for (const u of mine) {
+        const h = await apiJson<Array<{ status?: string; message?: string }>>(api, 'GET', `/api/v1/certificates/${u}/history`);
+        parts.push(...h.filter((x) => x.status === 'FAILED').map((x) => String(x.message ?? '')));
+    }
+    return parts.filter(Boolean).join(' | ');
+}
+
 /**
- * Why THIS order's issuance was refused, in CA-policy words about the key: the finalize problem's detail,
- * the order's own `error` and the history of the certificates this order made — never the history of the name.
+ * Why THIS order's issuance was refused, in CA-policy words about the key: the finalize detail, the order's `error` and the history of the
+ * certificates this order made.
  */
 export async function ecRefusal(api: GuardedApi, fin: AcmeResponse, done: AcmeOrder | undefined, mine: string[]): Promise<string | undefined> {
     const parts: string[] = [];

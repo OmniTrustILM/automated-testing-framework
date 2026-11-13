@@ -1,37 +1,15 @@
 /**
- * specLint/rules — the rule table of the deny-by-default lint.
- *
- * WHAT: `RULES` lists every rule of the lint as one entry `{ rule, scope, hits }`: `hits(node, bindings, context)`
- * returns the nodes of ONE syntax node that break the rule (usually none). The rule names and what each one forbids are
- * described in the header of rawMutations.ts. The five module-specifier checks (spec-import, raw-process, raw-network,
- * test-import, util-import) are written once in `moduleRules` and used by every import form: `import`, `import x =
- * require()`, `require()`, `import()` and `export ... from`.
- * WHY: a rule is one small, separately testable function, and adding one is a one-entry change instead of another
- * branch inside a 400-line visitor. The order of the table is the order in which findings of one node are reported;
- * the unit cases and the lint of the real tree depend on it, so a new entry goes at the end unless it must come first.
- * HOW: `rawMutations` visits every node once and asks each active entry (scope 'spec' only for files linted as
- * specs). Entries with `allow` are skipped for the files named there.
- *
- * Adding a rule (with a temporary allow-list while the code is cleaned up):
- *   1. add the name to `RawMutationRule` (rawMutations.ts) and describe it in that file's header;
- *   2. append `{ rule: 'new-rule', scope: 'spec', allow: ['tests/regression/01-x/01-y.spec.ts', ...], hits }` to
- *      RULES, with `allow` listing every file that violates it today (paths relative to czertainly-e2e);
- *   3. add a positive and a negative case in tests/unit/rawMutations.spec.ts (the allow-list needs no case of its
- *      own: rawMutations.spec.ts proves it with a stand-in rule);
- *   4. clean one file, delete its line from `allow`; when `allow` is empty remove the field.
- * The allow-list only ever shrinks. specGuards.spec.ts lints the whole tree with the table, so a violation outside the
- * list fails the unit run at once.
+ * specLint/rules — the rule table of the deny-by-default lint (what each rule forbids: rawMutations.ts).
+ * A new rule: add its name to `RawMutationRule`, append the entry with an `allow` list of today's violators (it only shrinks), add a
+ * positive and a negative unit case.
  */
 import type * as TS from 'typescript';
 import { Bindings, GUARD_FACTORIES, builtinName, isFsModule, type LintContext } from './bindings';
 import type { RawMutationRule } from './rawMutations';
 
 export interface Rule {
-    /** The rule name reported for every returned node. */
     rule: RawMutationRule;
-    /** 'spec' rules apply to files linted as specs only; 'all' rules also to the helpers. */
     scope: 'spec' | 'all';
-    /** Files (relative to czertainly-e2e, forward slashes) where the rule is tolerated for now. */
     allow?: readonly string[];
     hits(n: TS.Node, b: Bindings, ctx: LintContext): readonly TS.Node[];
 }
@@ -42,22 +20,16 @@ const NONE: Hits = [];
 const MUTATING_METHODS = new Set(['post', 'put', 'patch', 'delete']);
 const EXTRACTED = new Set(['post', 'put', 'patch', 'delete', 'fetch']);
 const UTILS_MODULE = /(^|\/)utils\/[A-Za-z]+Utils$/;
-/** Named imports a REG / API file may take from utils/*Utils.ts (creates, reads, waits, generators, uploads, ensures). */
 const UTIL_IMPORT_ALLOWED = /^(create|find|get|list|wait|generate|upload|ensure)[A-Z0-9_]/;
-/** Allowed by prefix but changing pre-existing objects: never importable. */
 const UTIL_IMPORT_DENIED = new Set(['ensureConnectorRegistered']);
-/** Network modules a spec may not import: they bypass every API context. */
 const RAW_NETWORK = new Set(['http', 'https', 'http2', 'net', 'tls', 'undici', '@kubernetes/client-node']);
 const isRawNetworkModule = (spec: string, resolved: string): boolean =>
     RAW_NETWORK.has(builtinName(spec)) || /(^|\/)utils\/k8sClient$/.test(resolved);
 /**
- * Modules a spec may import `test` from: the fixtures (smoke-sized and spec-facing), an area fixture (`fixtures/areas/<name>`,
- * which itself extends the spec-facing fixtures once and is linted like a spec: tests/unit/specGuards.spec.ts), or the API
- * template's re-export. Matched against the root-relative resolved path (the lint gets root-relative file names), so a
- * `fixtures/areas` folder anywhere else does not qualify.
+ * Modules a spec may import `test` from: the fixtures, an area fixture
+ * (`fixtures/areas/<name>`, linted like a spec) or the API template's re-export.
  */
 const TEST_SOURCES = /^(fixtures\/testFixtures|fixtures\/regressionFixtures|fixtures\/areas\/[a-z][A-Za-z0-9]*|utils\/api\/apiCase)$/;
-/** An area fixture module (root-relative, without extension). */
 const AREA_FIXTURE = /^fixtures\/areas\/[a-z][A-Za-z0-9]*$/;
 /** Node built-ins a spec may import: no network, no processes, no module loaders, no VM / workers. */
 const SPEC_BUILTINS = new Set(['assert', 'buffer', 'crypto', 'fs', 'fs/promises', 'os', 'path', 'string_decoder', 'timers', 'timers/promises', 'url', 'util', 'zlib']);
@@ -76,16 +48,10 @@ const REQUEST_OPTIONS = new Set(['data', 'params', 'headers', 'timeout', 'failOn
 const REQUEST_CALLS = new Set(['get', 'post', 'put', 'patch', 'delete', 'fetch']);
 /** The guard's inner modules: they read, check, claim and send, and only the guard may compose them (createGuard.ts). */
 const GUARD_INTERNAL = /(^|\/)utils\/regression\/guard\/(sendRequest|guardState|readRequest|checkRequest|claims)(\.ts|\.js)?$/;
-/** Files that may use the callback-target registration (guard/callbackTargets.ts): the guard's folder, the lint's own rules, the unit tests and the timestamping preflight. */
-const CALLBACK_TARGET_ALLOWED = /^(utils\/regression\/guard\/|utils\/regression\/specLint\/|tests\/unit\/|utils\/timestamping\/provision\/preflight\.ts$)/;
-/** The registration's name and its module, as a string (a bracket access, `require`, `import()`, `from '…'`, an alias spelled as text). */
+const CALLBACK_TARGET_ALLOWED = /^(utils\/regression\/guard\/|utils\/regression\/specLint\/|tests\/unit\/|utils\/(timestamping|keyOnboarding)\/provision\/preflight\.ts$)/;
 const CALLBACK_TARGET_TEXT = /^registerCallbackTarget$|(^|\/)callbackTargets(\.ts|\.js)?$/;
 
-/**
- * `registerCallbackTarget` (the identifier in any form: call, alias, destructuring, named import, `ns.registerCallbackTarget`) and every string
- * naming it or its module (`x['registerCallbackTarget']`, `require('…/guard/callbackTargets')`, `import * as m from`, `import()`), outside the files
- * that may register a callback parent. Whoever can call it can make the guard accept a callback on any pre-existing connector.
- */
+/** `registerCallbackTarget` in any form and any string naming it or its module, outside the files that may register a callback parent. */
 function callbackTargetHits(n: TS.Node, _b: Bindings, ctx: LintContext): Hits {
     if (CALLBACK_TARGET_ALLOWED.test(ctx.fileName.replace(/\\/g, '/'))) return NONE;
     const { ts } = ctx;
@@ -94,35 +60,22 @@ function callbackTargetHits(n: TS.Node, _b: Bindings, ctx: LintContext): Hits {
     return NONE;
 }
 
-/** Files that may import them: the guard's own folder and the unit tests. */
 const GUARD_INTERNAL_ALLOWED = /^(utils\/regression\/guard|tests\/unit)\//;
-/**
- * Fixtures `test.use` must not replace in a spec: a context, the environment, the tokens, and every spec-facing fixture of
- * fixtures/regressionFixtures.ts (`signedIn` is a page, `localApi` a guarded context, `own` / `live` / `needs` carry the ledger and the
- * live-ownership steps, `regressionEnv` the settings).
- */
+/** Fixtures `test.use` must not replace in a spec: contexts, the environment, the tokens and every spec-facing fixture. */
 export const CONTEXT_FIXTURES: ReadonlySet<string> = new Set([
     'api', 'anonymousApi', 'adminToken', 'restrictedToken', 'request', 'env', 'page', 'context', 'browser',
     'own', 'live', 'needs', 'declaredNeeds', 'signedIn', 'localApi', 'workerApi', 'regressionEnv', 'ownRaProfile',
 ]);
-/** Callees that would print a token's text (a leak into a report, a log or an assertion message). */
 const TOKEN_SINKS: Record<string, Set<string>> = { console: new Set(['log', 'info', 'warn', 'error', 'debug', 'trace']), JSON: new Set(['stringify']) };
 const TOKEN_SINK_METHODS = new Set(['log', 'info', 'warn', 'error', 'debug', 'push']);
 const PLAYWRIGHT = '@playwright/test';
 
 const isChildProcess = (spec: string): boolean => spec === 'child_process' || spec === 'node:child_process';
 
-// ------------------------------------------------------------------ module specifiers (every import form)
-
-/** How one import form treats the specifier. */
 interface ModuleForm {
-    /** A specifier that is not a string literal is a spec-import (import equals, require, import()). */
     nonLiteral: boolean;
-    /** What naming `@playwright/test` as a whole module means; the import declaration judges its clause instead. */
     playwright?: 'spec-import' | 'test-import';
-    /** The whole module may not be a utils/*Utils.ts one (require, import()); the import declaration judges its names. */
     utilsWhole: boolean;
-    /** Naming child_process or a network module is a raw-process / raw-network (every form but `export ... from`). */
     rawModules: boolean;
 }
 
@@ -133,7 +86,6 @@ const FORMS: Record<'import' | 'import-equals' | 'export' | 'call', ModuleForm> 
     'call': { nonLiteral: true, playwright: 'test-import', utilsWhole: true, rawModules: true },
 };
 
-/** A relative import of a spec stays in the suite; anything else is a node built-in on the allow-list. */
 function specImportProblem(b: Bindings, spec: string): boolean {
     if (spec.startsWith('.')) {
         const resolved = b.resolveModule(spec);
@@ -147,7 +99,6 @@ function specImportProblem(b: Bindings, spec: string): boolean {
 
 const isUtilsModule = (b: Bindings, spec: string): boolean => UTILS_MODULE.test(b.resolveModule(spec)) || UTILS_MODULE.test(spec);
 
-/** The rules one module specifier breaks, for the import form it appears in. */
 function moduleRules(b: Bindings, ctx: LintContext, spec: string | undefined, form: ModuleForm): RawMutationRule[] {
     const out: RawMutationRule[] = [];
     if (spec !== undefined && GUARD_INTERNAL.test(b.resolveModule(spec)) && !GUARD_INTERNAL_ALLOWED.test(ctx.fileName.replace(/\\/g, '/'))) out.push('guard-internal');
@@ -166,7 +117,6 @@ interface ModuleHit {
     node: TS.Node;
 }
 
-/** `import { x } from 'm'`: the specifier rules plus the rules of the names taken. */
 function importDeclarationHits(n: TS.ImportDeclaration, b: Bindings, ctx: LintContext): ModuleHit[] {
     const { ts, isSpec } = ctx;
     const spec = (n.moduleSpecifier as TS.StringLiteral).text;
@@ -176,7 +126,6 @@ function importDeclarationHits(n: TS.ImportDeclaration, b: Bindings, ctx: LintCo
     for (const rule of moduleRules(b, ctx, spec, FORMS.import)) if (!((rule === 'spec-import' || rule === 'guard-internal') && typeOnly)) out.push({ rule, node: n });
     const valueNames = clause && !typeOnly && clause.namedBindings && ts.isNamedImports(clause.namedBindings) ? clause.namedBindings : undefined;
     if (isSpec && spec === PLAYWRIGHT && valueNames) {
-        // Types only: `test` / `request` have their own rules; any other lower-case value (expect, chromium, devices ...) is refused.
         for (const el of valueNames.elements) {
             const name = (el.propertyName ?? el.name).text;
             if (!el.isTypeOnly && /^[a-z_$]/.test(name) && name !== 'test' && name !== 'request') out.push({ rule: 'spec-import', node: el });
@@ -189,7 +138,6 @@ function importDeclarationHits(n: TS.ImportDeclaration, b: Bindings, ctx: LintCo
     return out;
 }
 
-/** `test` taken from anything but the fixtures; a namespace / default import of `@playwright/test`. */
 function testImportHits(n: TS.ImportDeclaration, b: Bindings, ctx: LintContext): ModuleHit[] {
     const { ts } = ctx;
     const spec = (n.moduleSpecifier as TS.StringLiteral).text;
@@ -198,7 +146,6 @@ function testImportHits(n: TS.ImportDeclaration, b: Bindings, ctx: LintContext):
     if (!(ctx.isSpec && clause && !clause.isTypeOnly)) return out;
     const named = clause.namedBindings;
     if (spec === PLAYWRIGHT && (clause.name || (named && ts.isNamespaceImport(named)))) out.push({ rule: 'test-import', node: clause });
-    // An area fixture hands a spec `test` and `expect` only (its other names are its own; utils/regression/specLint/areaFixtures.ts).
     const fromArea = AREA_FIXTURE.test(b.resolveModule(spec));
     if (fromArea && (clause.name || (named && ts.isNamespaceImport(named)))) out.push({ rule: 'test-import', node: clause });
     if (named && ts.isNamedImports(named)) {
@@ -212,7 +159,6 @@ function testImportHits(n: TS.ImportDeclaration, b: Bindings, ctx: LintContext):
     return out;
 }
 
-/** The `request` factory of `@playwright/test` (a raw context), also from a type-only clause. */
 function requestImportHits(n: TS.ImportDeclaration, ctx: LintContext): ModuleHit[] {
     const named = n.importClause?.namedBindings;
     if ((n.moduleSpecifier as TS.StringLiteral).text !== PLAYWRIGHT || !named || !ctx.ts.isNamedImports(named)) return [];
@@ -221,7 +167,6 @@ function requestImportHits(n: TS.ImportDeclaration, ctx: LintContext): ModuleHit
         .map((node) => ({ rule: 'raw-context' as const, node }));
 }
 
-/** A utils/*Utils.ts module: named imports by allow-list only, no namespace / default import. */
 function utilImportHits(n: TS.ImportDeclaration, b: Bindings, ctx: LintContext): ModuleHit[] {
     const spec = (n.moduleSpecifier as TS.StringLiteral).text;
     const clause = n.importClause;
@@ -240,10 +185,8 @@ function utilImportHits(n: TS.ImportDeclaration, b: Bindings, ctx: LintContext):
     return out;
 }
 
-/** Each node is asked by several table entries: its module hits are worked out once (a node belongs to one parse). */
 const moduleMemo = new WeakMap<TS.Node, ModuleHit[]>();
 
-/** The module rules of one node, whatever import form it is; the table entries pick their own rule from it. */
 function moduleHits(n: TS.Node, b: Bindings, ctx: LintContext): ModuleHit[] {
     let hits = moduleMemo.get(n);
     if (!hits) moduleMemo.set(n, (hits = computeModuleHits(n, b, ctx)));
@@ -265,23 +208,17 @@ function computeModuleHits(n: TS.Node, b: Bindings, ctx: LintContext): ModuleHit
     return [];
 }
 
-/** `require(x)` or `import(x)`. */
 function isModuleCall(n: TS.CallExpression, b: Bindings, ctx: LintContext): boolean {
     const c = n.expression;
     if (c.kind === ctx.ts.SyntaxKind.ImportKeyword) return true;
     return ctx.ts.isIdentifier(c) && c.text === 'require' && !b.isApiJsonCallee(c);
 }
 
-/** The nodes of one rule among the module hits of a node (every import form). */
 const moduleHitsOf = (rule: RawMutationRule) => (n: TS.Node, b: Bindings, ctx: LintContext): Hits =>
     moduleHits(n, b, ctx).filter((h) => h.rule === rule).map((h) => h.node);
 
-/** A table entry for one rule of the module forms. */
 const moduleRule = (rule: RawMutationRule, scope: Rule['scope']): Rule => ({ rule, scope, hits: moduleHitsOf(rule) });
 
-// ------------------------------------------------------------------ token-use
-
-/** The token reference sits in a template, a concatenation or an object literal. */
 function tokenInValue(ts: typeof TS, p: TS.Node, x: TS.Node): boolean {
     if (ts.isTemplateSpan(p)) return true;
     if (ts.isBinaryExpression(p) && p.operatorToken.kind === ts.SyntaxKind.PlusToken) return true;
@@ -289,7 +226,6 @@ function tokenInValue(ts: typeof TS, p: TS.Node, x: TS.Node): boolean {
     return ts.isShorthandPropertyAssignment(p) || ts.isSpreadAssignment(p);
 }
 
-/** The token reference is an argument of a sink: `expect(t)`, `String(t)`, `console.log(t)`, `.push(t)`. */
 function tokenInSink(ts: typeof TS, call: TS.CallExpression): boolean {
     const c = call.expression;
     if (ts.isIdentifier(c) && (c.text === 'expect' || c.text === 'String')) return true;
@@ -310,17 +246,13 @@ function tokenUseHits(n: TS.Node, b: Bindings, ctx: LintContext): Hits {
     return ts.isCallExpression(p) && p.expression === x ? [n] : NONE;
 }
 
-// ------------------------------------------------------------------ identifiers and property accesses
-
 const identifierNamed = (...names: string[]): Rule['hits'] => (n, _b, ctx) => (ctx.ts.isIdentifier(n) && names.includes(n.text) ? [n] : NONE);
 
-/** The receiver of a call: `x.m(...)` where `x` is the node. */
 const isReceiverOfCall = (ts: typeof TS, n: TS.Node): boolean => {
     const p = n.parent;
     return (ts.isPropertyAccessExpression(p) || ts.isElementAccessExpression(p)) && p.expression === n && ts.isCallExpression(p.parent) && p.parent.expression === p;
 };
 
-/** The `request` fixture of a test used as anything but the receiver of a call or an argument of a guard factory. */
 function requestFixtureUseHits(n: TS.Node, b: Bindings, ctx: LintContext): Hits {
     const { ts } = ctx;
     if (!ts.isIdentifier(n) || !b.isRequestFixtureName(n) || ts.isBindingElement(n.parent)) return NONE;
@@ -329,35 +261,26 @@ function requestFixtureUseHits(n: TS.Node, b: Bindings, ctx: LintContext): Hits 
     return !isReceiverOfCall(ts, n) && !factoryArg ? [n] : NONE;
 }
 
-/** `page.request` used as anything but the receiver of a call. */
 function pageRequestHits(n: TS.Node, b: Bindings, ctx: LintContext): Hits {
     return (ctx.ts.isPropertyAccessExpression(n) || ctx.ts.isElementAccessExpression(n)) && b.isPageRequest(n) && !isReceiverOfCall(ctx.ts, n) ? [n] : NONE;
 }
 
-/** Response and context members that carry cookies or credentials. */
 const STATE_MEMBERS = new Set(['headers', 'allHeaders', 'headersArray', 'storageState']);
-/** Header names that carry a credential: never read in a spec. */
 const SECRET_HEADER = /^(set-cookie|cookie|authorization|proxy-authorization|x-api-key)$/i;
-/** The verdict helpers whose `headers` option a spec may fill from a response (they read the content type and Allow only). */
-/** Function members that call the function they hang on. */
 const INVOKERS = new Set(['call', 'apply', 'bind']);
 const HEADER_VERDICTS = new Set(['checkRefusedMethod']);
 
 /**
- * `.headers()` / `.allHeaders()` / `.headersArray()` / `.storageState()` called in a spec, on any receiver (an APIResponse
- * handed out under another name included): refused, except a header assertion, that is `x.headers()['content-type']` with a
- * literal name that carries no credential, and the `headers` option of a verdict helper (`checkRefusedMethod({ headers:
- * res.headers() })`). Cookies and storage state never belong in a spec.
+ * `.headers()` / `.allHeaders()` / `.headersArray()` / `.storageState()` on any receiver: refused, except a header assertion with a literal
+ * credential-free name and the `headers` option of a verdict helper.
  */
 function responseStateHits(n: TS.Node, _b: Bindings, ctx: LintContext): Hits {
     const { ts } = ctx;
-    // `const { headers } = res`, `{ headers: h }`, `{ 'storageState': s }`: the member is taken out as a function.
     if (ts.isBindingElement(n) && ts.isObjectBindingPattern(n.parent)) {
         const key = n.propertyName ?? n.name;
         const text = ts.isIdentifier(key) || ts.isStringLiteralLike(key) ? key.text : undefined;
         return text !== undefined && STATE_MEMBERS.has(text) ? [n] : NONE;
     }
-    // `res.headers.call(res)` / `.apply` / `.bind` (also with brackets): the member is invoked without a direct call.
     if (ts.isPropertyAccessExpression(n) || ts.isElementAccessExpression(n)) {
         const member = ts.isPropertyAccessExpression(n) ? n.name.text : ts.isStringLiteralLike(n.argumentExpression) ? n.argumentExpression.text : undefined;
         if (member === undefined || !STATE_MEMBERS.has(member)) return NONE;
@@ -382,7 +305,6 @@ function responseStateHits(n: TS.Node, _b: Bindings, ctx: LintContext): Hits {
     return [pc.call];
 }
 
-/** A call of a state member, by dot or by a literal bracket key: `x.headers()` / `x['headers']()`. */
 function stateCallee(ts: typeof TS, n: TS.Node): { call: TS.CallExpression; name: string } | undefined {
     if (!ts.isCallExpression(n)) return undefined;
     const c = n.expression;
@@ -390,7 +312,6 @@ function stateCallee(ts: typeof TS, n: TS.Node): { call: TS.CallExpression; name
     return name !== undefined && STATE_MEMBERS.has(name) ? { call: n, name } : undefined;
 }
 
-/** `x.post` / `.put` / `.patch` / `.delete` / `.fetch` taken without calling it, on a receiver that is not guarded. */
 function methodExtractionHits(n: TS.Node, b: Bindings, ctx: LintContext): Hits {
     const { ts } = ctx;
     if (!ts.isPropertyAccessExpression(n)) return NONE;
@@ -399,7 +320,6 @@ function methodExtractionHits(n: TS.Node, b: Bindings, ctx: LintContext): Hits {
     return n.name.text === 'delete' && b.isCollection(n.expression) ? NONE : [n];
 }
 
-/** An fs write on an fs binding: `fs.writeFile`, `fs['x']`, `const { rmSync } = fs`. */
 function fsWriteNodeHits(n: TS.Node, b: Bindings, ctx: LintContext): Hits {
     const { ts } = ctx;
     if (ts.isPropertyAccessExpression(n)) return FS_WRITE.test(n.name.text) && b.isFsBinding(n.expression) ? [n] : NONE;
@@ -413,7 +333,6 @@ function fsWriteNodeHits(n: TS.Node, b: Bindings, ctx: LintContext): Hits {
     return NONE;
 }
 
-/** `process.binding(...)`, `process.mainModule` and friends: module loaders past the allow-list. */
 function loaderMemberHits(n: TS.Node, b: Bindings, ctx: LintContext): Hits {
     const { ts } = ctx;
     if (ts.isPropertyAccessExpression(n)) return LOADER_MEMBERS.has(n.name.text) && b.isProcessRef(n.expression) ? [n] : NONE;
@@ -421,9 +340,6 @@ function loaderMemberHits(n: TS.Node, b: Bindings, ctx: LintContext): Hits {
     return NONE;
 }
 
-// ------------------------------------------------------------------ dynamic code and env writes
-
-/** Inside a type (an annotation, an interface): `Function` there is a type, not the constructor. */
 function inTypePosition(ts: typeof TS, n: TS.Node): boolean {
     for (let p: TS.Node | undefined = n.parent; p; p = p.parent) {
         if (p.kind >= ts.SyntaxKind.FirstTypeNode && p.kind <= ts.SyntaxKind.LastTypeNode) return true;
@@ -433,7 +349,6 @@ function inTypePosition(ts: typeof TS, n: TS.Node): boolean {
     return false;
 }
 
-/** The name of a declaration or of a property (`{ eval: 1 }`, `x.eval` stays a reference). */
 function isDeclarationName(ts: typeof TS, n: TS.Identifier): boolean {
     const p = n.parent;
     return (ts.isPropertyAssignment(p) || ts.isMethodDeclaration(p) || ts.isPropertyDeclaration(p) || ts.isPropertySignature(p) ||
@@ -454,7 +369,6 @@ function dynamicCodeHits(n: TS.Node, b: Bindings, ctx: LintContext): Hits {
     return out;
 }
 
-/** `process.env` handed to a function as a whole (it can write any key), unless the callee only reads or is a suite helper. */
 function envHandedAwayHits(n: TS.CallExpression, b: Bindings, ctx: LintContext): Hits {
     const { ts } = ctx;
     if (!n.arguments.some((a) => b.isProcessEnv(a))) return NONE;
@@ -467,7 +381,6 @@ function envHandedAwayHits(n: TS.CallExpression, b: Bindings, ctx: LintContext):
     return reader || writer || helper ? NONE : [n];
 }
 
-/** `Object.assign` / `defineProperty` / `Reflect.set` ... on `process.env` or one of its keys. */
 function envWriterCallHits(n: TS.CallExpression, b: Bindings, ctx: LintContext): Hits {
     const { ts } = ctx;
     const c = n.expression;
@@ -489,15 +402,12 @@ function envWriteHits(n: TS.Node, b: Bindings, ctx: LintContext): Hits {
     return ts.isDeleteExpression(n) && b.isEnvTarget(n.expression) ? [n] : NONE;
 }
 
-// ------------------------------------------------------------------ guarded contexts
-
 function guardedReassignHits(n: TS.Node, b: Bindings, ctx: LintContext): Hits {
     const { ts } = ctx;
     if (!(ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isIdentifier(n.left))) return NONE;
     return b.isGuardedSymbol(b.sym(n.left)) && !b.isGuarded(n.right) ? [n] : NONE;
 }
 
-/** `recv.<method>(args)`: the dynamic-method / raw-request-use / context-method / fetch-method verdicts. */
 function methodVerdict(call: TS.CallExpression, b: Bindings, ctx: LintContext, recv: TS.Expression, method: string | undefined): RawMutationRule | undefined {
     if (method === undefined) return b.isGuarded(recv) ? undefined : 'dynamic-method';
     const m = method.toLowerCase();
@@ -512,7 +422,6 @@ function methodVerdict(call: TS.CallExpression, b: Bindings, ctx: LintContext, r
     return m === 'fetch' ? fetchVerdict(call, b, ctx, recv) : undefined;
 }
 
-/** `route.fetch({ method })` takes its options first; `ctx.fetch(url, { method })` second. */
 function fetchVerdict(call: TS.CallExpression, b: Bindings, ctx: LintContext, recv: TS.Expression): RawMutationRule | undefined {
     const first = call.arguments[0] && b.unwrap(call.arguments[0]);
     const verb = call.arguments.length === 1 && first && ctx.ts.isObjectLiteralExpression(first) ? b.methodOf(first) : b.methodOf(call.arguments[1]);
@@ -520,7 +429,6 @@ function fetchVerdict(call: TS.CallExpression, b: Bindings, ctx: LintContext, re
     return verb === 'POST' && b.urlAllowed(call.arguments[0]) ? undefined : 'fetch-method';
 }
 
-/** apiJson* and send(ctx, method, url): a guarded context, a GET, or an allow-listed literal POST. */
 function jsonVerdict(call: TS.CallExpression, b: Bindings, rule: 'apiJson' | 'send-method'): RawMutationRule | undefined {
     const [context, methodArg, url] = call.arguments;
     if (b.isGuarded(context)) return undefined;
@@ -529,7 +437,6 @@ function jsonVerdict(call: TS.CallExpression, b: Bindings, rule: 'apiJson' | 'se
     return rule;
 }
 
-/** The one request rule a call breaks, if any: the callee decides which verdict applies. */
 function callVerdict(call: TS.CallExpression, b: Bindings, ctx: LintContext): RawMutationRule | undefined {
     const { ts } = ctx;
     const c = call.expression;
@@ -544,7 +451,6 @@ function callVerdict(call: TS.CallExpression, b: Bindings, ctx: LintContext): Ra
     return c.text === 'send' && call.arguments.length >= 2 ? jsonVerdict(call, b, 'send-method') : undefined;
 }
 
-/** Each call is asked by six table entries: its verdict is worked out once (a node belongs to one parse). */
 const callMemo = new WeakMap<TS.Node, RawMutationRule | undefined>();
 
 function memoisedCallVerdict(call: TS.CallExpression, b: Bindings, ctx: LintContext): RawMutationRule | undefined {
@@ -558,14 +464,10 @@ const callRule = (rule: RawMutationRule): Rule => ({
     hits: (n, b, ctx) => (ctx.ts.isCallExpression(n) && memoisedCallVerdict(n, b, ctx) === rule ? [n] : NONE),
 });
 
-// ------------------------------------------------------------------ spec-only call rules
-
-/** A call `x.<name>(...)` as the property-access callee, or undefined. */
 function propertyCallee(ts: typeof TS, n: TS.Node): { call: TS.CallExpression; callee: TS.PropertyAccessExpression } | undefined {
     return ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) ? { call: n, callee: n.expression } : undefined;
 }
 
-/** `.extend(...)`, and `test.use(...)` overriding a context fixture. */
 function fixtureExtendHits(n: TS.Node, b: Bindings, ctx: LintContext): Hits {
     const { ts } = ctx;
     const pc = propertyCallee(ts, n);
@@ -579,7 +481,6 @@ function fixtureExtendHits(n: TS.Node, b: Bindings, ctx: LintContext): Hits {
     return overrides ? [call] : NONE;
 }
 
-/** An options object with a key the guard does not forward. */
 function requestOptionHits(n: TS.Node, _b: Bindings, ctx: LintContext): Hits {
     const { ts } = ctx;
     const pc = propertyCallee(ts, n);
@@ -597,7 +498,6 @@ function requestOptionHits(n: TS.Node, _b: Bindings, ctx: LintContext): Hits {
     return bad ? [pc.call] : NONE;
 }
 
-/** `route.continue(...)` / `route.fulfill(...)` with a `method` (or options that are not a literal). */
 function routeMethodHits(n: TS.Node, b: Bindings, ctx: LintContext): Hits {
     const { ts } = ctx;
     const pc = propertyCallee(ts, n);
@@ -608,11 +508,9 @@ function routeMethodHits(n: TS.Node, b: Bindings, ctx: LintContext): Hits {
     return literalWithoutMethod ? NONE : [pc.call];
 }
 
-// ------------------------------------------------------------------ the table
-
 /**
- * The rules in the order their findings are reported for one node. Several names appear twice because one name covers
- * different node kinds and another rule sits between them for a node kind they share.
+ * The rules in the order their findings are reported for one node (one
+ * name can appear twice because another rule sits between its node kinds).
  */
 export const RULES: readonly Rule[] = [
     { rule: 'token-use', scope: 'spec', hits: tokenUseHits },

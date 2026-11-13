@@ -1,7 +1,6 @@
 /**
- * The guard judges what is SENT, on the wire (a real Playwright context, a loopback fake core): a URL with a control,
- * space or non-ASCII character is refused before parsing, the path as written must be the path sent (no dot segments),
- * non-canonical uuid forms are refused, and reads go to BASE_URL's origin only, so the token never reaches another host.
+ * The guard judges what is SENT, on the wire (a real Playwright context, a loopback fake core): a URL with a control or non-ASCII character
+ * is refused before parsing, and reads go to BASE_URL's origin only.
  */
 import { APIRequestContext, expect, test } from '@playwright/test';
 import { allowedRawPost } from '../../utils/regression/guard/rawPost';
@@ -65,7 +64,6 @@ registerGuardRig(
 
 const guard = () => guardApiWithSeams(raw, { lines, runId: RUN, tier: null, env: { BASE_URL } });
 
-/** The refusal kind of a guarded call, or 'sent' when it went through. */
 async function outcome(call: Promise<unknown>): Promise<RefusalKind | 'sent' | string> {
     try {
         await call;
@@ -90,15 +88,14 @@ test('characterisation: without the guard, Playwright strips tab / LF, trims spa
     expect(await sent(`/api/v1/roles/${F.slice(0, 18)}\t${F.slice(18)}/users`)).toEqual([`PATCH /api/v1/roles/${F}/users`]);
     expect(await sent(` /api/v1/roles/${F}`)).toEqual([`PATCH /api/v1/roles/${F}`]);
     expect(await sent(`/api/v1/roles/${F}\t`)).toEqual([`PATCH /api/v1/roles/${F}`]);
-    // ... and dot segments are normalised.
     expect(await sent('/api/v1/protocols/acme/x/.\t./.\t./.\t./auditLogs/purge')).toEqual(['PATCH /api/v1/auditLogs/purge']);
-    // A data object is sent as JSON.stringify(data): toJSON wins (the guard walks JSON.parse(JSON.stringify(data))).
     A.reset();
     await raw.fetch('/api/v1/x', { method: 'PATCH', data: { toJSON: () => ['FROM-TOJSON'] } as unknown as object });
     expect(A.mutations()[0].body).toBe('["FROM-TOJSON"]');
 });
 
-// control characters: a foreign uuid with a trailing space / tab / NUL / \\u0001 / LF / CR, or a tab inside it, never reaches the server
+// control characters: a foreign uuid with a trailing space / tab / NUL / \\u0001 / LF / CR, or a tab inside it, never
+// reaches the server.
 test('control characters: a foreign uuid with trailing space, tab, NUL, LF or CR never reaches the server', async () => {
     const g = guard();
     const F = FOREIGN_ROLE;
@@ -126,12 +123,12 @@ test('control characters: a foreign uuid with trailing space, tab, NUL, LF or CR
     }
     expect(wire(A), 'no mutation reached the server').toEqual([]);
     expect(A.arrived, 'not even a read: refused before the live check').toEqual([]);
-    // Control: the own role, written plainly, is deleted.
     await g.delete(`/api/v1/roles/${OWN_ROLE}`);
     expect(wire(A)).toEqual([`DELETE /api/v1/roles/${OWN_ROLE}`]);
 });
 
-// dot segments: dot segments (plain, tab-split, encoded, backslash) never move a protocol / read POST onto a platform endpoint
+// dot segments: dot segments (plain, tab-split, encoded, backslash)
+// never move a protocol / read POST onto a platform endpoint.
 test('dot segments (plain, tab-split, encoded, backslash) never reach a platform endpoint via POST', async () => {
     const g = guard();
     const targets = ['auditLogs/purge', 'cboms/sync', 'local/admins'];
@@ -152,7 +149,6 @@ test('dot segments (plain, tab-split, encoded, backslash) never reach a platform
         }
     }
     expect(A.arrived, 'nothing reached the server').toEqual([]);
-    // The raw-context path: allowedRawPost refuses before the raw context is ever asked.
     let rawCalled = false;
     const attempt = async () => {
         const u = allowedRawPost('/api/v1/protocols/acme/x/.\t./.\t./.\t./auditLogs/purge', { env: { BASE_URL } });
@@ -172,7 +168,7 @@ test('dot segments (plain, tab-split, encoded, backslash) never reach a platform
     ]);
 });
 
-// origin: GET / fetch, raw read POSTs and apiJson on an authenticated context never carry the token to another host
+// origin: GET / fetch, raw read POSTs and apiJson on an authenticated context never carry the token to another host.
 test('origin: GET, fetch, read POSTs and apiJson on an authenticated context never leak the token', async () => {
     const g = guard();
     const elsewhere = `${B.origin}/api/v1/roles`;
@@ -185,16 +181,13 @@ test('origin: GET, fetch, read POSTs and apiJson on an authenticated context nev
     await withProcessEnv({ BASE_URL }, async () => {
         await expect(apiJson(raw, 'GET', elsewhere), 'regressionApi apiJson GET with a raw context').rejects.toThrow(/origin is not BASE_URL/);
         await expect(apiJson(raw, 'POST', `${B.origin}/api/v1/certificates`, { filters: [] }), 'apiJson raw read POST').rejects.toThrow(/origin is not BASE_URL/);
-        // Controls on the own origin: a relative GET and a read POST through the raw context.
         await apiJson(raw, 'GET', `/api/v1/roles/${OWN_ROLE}`);
         await apiJson(raw, 'POST', '/api/v1/certificates', { filters: [] });
     });
     expect(B.arrived, 'the other host saw nothing — no request, no Authorization, no client certificate').toEqual([]);
     expect(A.arrived.map((a) => `${a.method} ${a.url}`)).toEqual([`GET /api/v1/roles/${OWN_ROLE}`, 'POST /api/v1/certificates']);
     expect(A.arrived[0].headers.authorization, 'the token goes to BASE_URL\'s origin').toBe('Bearer SECRET-TOKEN');
-    // The ACME client sends no credentials: its directory may name another host (unauthenticated: true).
     expect(allowedRawPost(`${B.origin}/api/v1/protocols/acme/raProfile/x/new-order`, { env: { BASE_URL }, unauthenticated: true })).toContain(B.origin);
-    // A guarded GET on the own origin (control).
     await g.get(`${A.origin}/api/v1/roles/${OWN_ROLE}`);
     expect(A.arrived.at(-1)?.url).toBe(`/api/v1/roles/${OWN_ROLE}`);
 });
@@ -212,7 +205,6 @@ interface Case {
     bodyWithout?: string;
 }
 
-/** The adversarial table, with the guard's verdict per row. */
 function adversarialTable(): Case[] {
     const OTHER = B.origin;
     const own = (u: string) => `/api/v1/roles/${OWN_ROLE}${u}`;
@@ -280,8 +272,6 @@ function adversarialTable(): Case[] {
         { name: 'events, no object', method: 'POST', url: '/api/v1/workflows/events', data: { triggerUuids: [] }, expect: 'request' },
         { name: 'events, objectUuid blank', method: 'POST', url: '/api/v1/workflows/events', data: { objectUuid: ' ', triggerUuids: [] }, expect: 'request' },
         { name: 'events, objectUuid=true + own triggers', method: 'POST', url: '/api/v1/workflows/events', data: { objectUuid: true, triggerUuids: [OWN_ROLE] }, expect: 'request' },
-        // An object-level event association is an allow-listed CREATE (POST_CREATE); its object is own.
-        // `objectUuid` is typed by its sibling `resource` (the DTO requires it); without one it takes probes only.
         { name: 'events, own objectUuid in a string body, EMPTY triggerUuids', method: 'POST', url: '/api/v1/workflows/events',
             data: JSON.stringify({ resource: 'certificates', objectUuid: OWN_CERT, triggerUuids: [] }), expect: 'sent', arrived: 'POST /api/v1/workflows/events' },
         { name: 'events, own objectUuid without its resource code', method: 'POST', url: '/api/v1/workflows/events',
@@ -295,7 +285,6 @@ function adversarialTable(): Case[] {
         { name: 'auth logout POST (no explicit list)', method: 'POST', url: '/api/v1/auth/logout', expect: 'request' },
         { name: 'audit log purge', method: 'DELETE', url: '/api/v1/auditLogs/purge', expect: 'request' },
         { name: 'notifications read-all', method: 'PUT', url: '/api/v1/notifications/readAll', expect: 'request' },
-        // A path-less mutation off the create / bulk allow-lists is refused, whatever its body names.
         { name: 'an unknown path with an own top-level list', method: 'POST', url: '/api/v1/anything/else', data: [OWN_ROLE], expect: 'request' },
         { name: 'method override via _method', method: 'DELETE', url: `/api/v1/roles/${OWN_ROLE}?_method=PUT`, expect: 'request' },
         { name: 'method override, lower-case header', method: 'POST', url: own('/x'), data: {}, options: { headers: { 'x-http-method-override': 'DELETE' } }, expect: 'request' },
@@ -314,7 +303,6 @@ function adversarialTable(): Case[] {
         { name: 'query TAB inside a uuid', method: 'PATCH', url: `${own('')}?x=${FOREIGN_USER.slice(0, 18)}\t${FOREIGN_USER.slice(18)}`, expect: 'request' },
         { name: 'query NEWLINE inside a uuid', method: 'PATCH', url: `${own('')}?x=${FOREIGN_USER.slice(0, 18)}\n${FOREIGN_USER.slice(18)}`, expect: 'request' },
         { name: 'query percent-encoded uuid (decoded like the server does)', method: 'PATCH', url: `${own('')}?x=%30${FOREIGN_USER.slice(1)}`, expect: 'ownership' },
-        // Base64 counts as a uuid only under a uuid-shaped key.
         { name: 'query URL-safe base64 uuid under a uuid-shaped key', method: 'PATCH', url: `${own('')}?keyUuid=${b64url22(FOREIGN_KEY)}`, expect: 'request' },
         { name: 'query 22-character value under another key (an enum value, a name)', method: 'PATCH', url: `${own('')}?x=${b64url22(FOREIGN_KEY)}`,
             expect: 'sent', arrived: `PATCH ${own('')}?x=${b64url22(FOREIGN_KEY)}` },
@@ -342,7 +330,6 @@ function adversarialTable(): Case[] {
         { name: 'a fake probe uuid not issued by probeUuid()', method: 'DELETE', url: `/api/v1/roles/${FOREIGN_ROLE}`, expect: 'ownership' },
         { name: 'GET with a method-override header', method: 'GET', url: '/api/v1/roles', options: { headers: { 'x-http-method-override': 'DELETE' } }, expect: 'request' },
         { name: 'lower-case method delete, foreign', method: 'delete', url: `/api/v1/roles/${FOREIGN_ROLE}`, expect: 'ownership' },
-        // GET, HEAD, POST, PUT, PATCH and DELETE only.
         { name: 'unknown verb OPTIONS', method: 'OPTIONS', url: `/api/v1/roles/${FOREIGN_ROLE}`, expect: 'request' },
         { name: 'unknown verb PROPPATCH', method: 'PROPPATCH', url: `/api/v1/roles/${FOREIGN_ROLE}`, expect: 'request' },
         { name: 'GET (control)', method: 'GET', url: `/api/v1/roles/${FOREIGN_ROLE}`, expect: 'sent', arrived: `GET /api/v1/roles/${FOREIGN_ROLE}` },
@@ -386,12 +373,10 @@ test('issue body: a foreign key in an issue body is refused in every encoding; n
     ];
     for (const [name, value, kind] of encodings) expect(await outcome(g.post(path, { data: { request: 'x', keyUuid: value } })), name).toBe(kind);
     expect(wire(A)).toEqual([]);
-    // Control: without the key the own certificate is issued.
     await g.post(path, { data: { request: 'x' } });
     expect(wire(A)).toEqual([`POST ${path}`]);
 });
 
-// bulk endpoints: path-less platform endpoints and nested / empty lists are refused; nothing reaches the server
 test('bulk endpoints: path-less platform endpoints and nested or empty lists are refused unsent', async () => {
     const g = guard();
     const cases: Array<[string, string, string, unknown]> = [
@@ -406,7 +391,6 @@ test('bulk endpoints: path-less platform endpoints and nested or empty lists are
     ];
     for (const [name, method, url, data] of cases) expect(await outcome(g.fetch(url, { method, data: data as object })), name).toBe('request');
     expect(wire(A)).toEqual([]);
-    // PATCH /v1/notifications (mark as read) is no bulk route; an allow-listed bulk route with an own list is sent.
     expect(await outcome(g.patch('/api/v1/notifications', { data: [OWN_ROLE] }))).toBe('request');
     await g.patch('/api/v1/raProfiles/disable', { data: [OWN_RA] });
     expect(wire(A)).toEqual(['PATCH /api/v1/raProfiles/disable']);

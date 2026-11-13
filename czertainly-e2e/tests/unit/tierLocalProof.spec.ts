@@ -1,7 +1,7 @@
 /**
  * The local-tier proof binds the instance, not just a port: the bind address of the published port, the docker endpoint
  * (DOCKER_HOST or the current context, a loopback TCP / SSH endpoint only with the local daemon id) and the final
- * in-container round trip. Every seam is injected or a fake: no docker, no ILM environment.
+ * in-container round trip.
  */
 import { expect, request, test } from '@playwright/test';
 import * as fs from 'fs';
@@ -51,7 +51,6 @@ const verdict = (f: () => unknown): string => {
     }
 };
 
-// bind addresses: a loopback core counts 0.0.0.0, [::], 127.x and ::1 only; a private core its own address or every interface
 test('bind addresses: a loopback core counts 0.0.0.0, [::], 127.x and ::1; a private core its own address', () => {
     expect(publishedBindings('0.0.0.0:8280->8080/tcp, [::]:8280->8080/tcp, :::8281->8080/tcp, 192.168.1.10:8282->8080/tcp, 127.0.0.1:8000-8001->9000-9001/tcp, 5432/tcp')).toEqual([
         { address: '0.0.0.0', hostPort: 8280, containerPort: 8080 }, { address: '::', hostPort: 8280, containerPort: 8080 },
@@ -127,7 +126,6 @@ test('tier probes: the config-level probes (seams injected, never docker)', () =
         .toEqual([false, false, false, true, true]);
 });
 
-// tier probes: the instance proof (eight numbered checks), ending with the in-container round trip (seams injected)
 test('tier probes: the instance proof of eight checks ends with the in-container round trip', async ({}, testInfo) => {
     const e = env({ REG_STATE_DIR: testInfo.outputPath('state') });
     const role = { uuid: '11111111-2222-4333-8444-555555555555', name: `${RUN}-instance-x` };
@@ -174,13 +172,10 @@ test('tier probes: the instance proof of eight checks ends with the in-container
         if (!ok) wrong.push(`${name}: ${got.slice(0, 200)}`);
     }
     expect(wrong).toEqual([]);
-    // The last in-container read: the container's own port on 127.0.0.1, the admin certificate as a header.
     expect(insideCalls.at(-1)).toEqual(['c0ffee', `http://127.0.0.1:8080/api/v1/roles/${role.uuid}`, { 'ssl-client-cert': 'CERT' }]);
-    // A core URL with a path prefix and https keeps both inside the container.
     insideCalls.length = 0;
     await prove({ ...e, REG_LOCAL_CORE_URL: 'https://localhost:8443/core/' }, coreWith(found));
     expect(insideCalls[0][1]).toBe(`https://127.0.0.1:8080/core/api/v1/roles/${role.uuid}`);
-    // P7 a shared tier: nothing is created or read.
     const before = created;
     await proveLocalInstance(reader(MARKER), { ...e, TIER_KIND: 'shared' }, { createRole, probe: () => { throw new Error('no probe expected'); } });
     expect(created).toBe(before);

@@ -1,16 +1,6 @@
 /**
- * API-AUTH-11, API-AUTH-18 — Duplicate user and role names are refused with a conflict. ilm#427.
- *
- * WHAT: 1. POST an existing username again → refused, exactly one user carries the name; the answer should be a 409 {message} naming
- *          the username and saying "already exists" (core#2297: today a 500, test.fail on that step).
- *       2. POST an own role's name, `admin` and `auditor` again → each refused, the role list unchanged, system roles untouched; the
- *          answer should be a 409 {message} naming the role (core#2297, test.fail on that step).
- * WHY: user and role names are unique, also against the system role names; the platform convention for "already exists" is a 409 with a
- *      message. The auth service answers 400, which surfaces as a 500 (known bug core#2297, open). The hard assertions (refused,
- *      exactly one object, nothing created behind the refusal) stay outside `test.fail()`, which is set right before the status and
- *      message step, so the test turns red once the bug is fixed and the marker must go.
- * HOW: own run objects (a disabled user, an own role) and the existing system roles `admin` / `auditor`, which are only read; a
- *      system role the build lacks is skipped, never created. An accepted duplicate is recorded in the ledger before the assertion.
+ * API-AUTH-11, API-AUTH-18 — Duplicate user and role names are refused with a conflict (ilm#427). Both answers should be
+ * a 409 naming the user or role; today they are a 500 (core#2297, open).
  */
 import { ACCOUNT_STEPS_TEST_MS, SEVERAL_STEPS_TEST_MS } from '../../../utils/regression/timeouts';
 import { expect, test } from '../../../fixtures/regressionFixtures';
@@ -40,7 +30,8 @@ test.describe('Duplicate user and role names', { tag: tags.api }, () => {
                 expect(named.map((u) => u.uuid), 'exactly one user carries the username').toEqual([user.uuid]);
             });
 
-            // The known bug covers only the answer (500 "Internal server error." instead of a conflict naming the username).
+            // The known bug covers only the answer (500 "Internal
+            // server error." instead of a conflict naming the username).
             test.fail(true, 'core#2297: a duplicate username answers 500 "Internal server error." instead of a 409 naming the username');
             await test.step('A 409 {message} names the username and says it already exists (known bug core#2297)', async () => {
                 expect(second.status).toBe(409);
@@ -61,8 +52,7 @@ test.describe('Duplicate user and role names', { tag: tags.api }, () => {
         async ({ api, own }, testInfo) => {
             test.setTimeout(ACCOUNT_STEPS_TEST_MS);
             const role = await test.step('Own role', async () => own.role('dup'));
-            // Only a name that exists RIGHT NOW is a duplicate: a build without the `auditor` system role (before core#1911) would
-            // CREATE a role named `auditor` here, which carries no run prefix and could not be cleaned up.
+            // Only a name that exists now is a duplicate: creating a missing `auditor` role would leave an object nobody can clean up.
             const candidates = [role.name, 'admin', 'auditor'];
             const before = await test.step('Before: which of the names exist (the system ones are read, never touched)', async () => {
                 const all = await listAll(api, 'roles');

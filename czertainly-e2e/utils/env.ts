@@ -1,28 +1,14 @@
 /**
- * env.ts — single source of truth for test configuration.
- *
- * WHAT: loads `.env` via dotenv, builds a typed `TestEnv` object, validates it.
- * WHY: tests stay decoupled from raw `process.env` strings and get fail-fast errors
- *      when something is missing, instead of mysterious failures deep in a test.
- * HOW: `loadEnv()` reads env vars, applies defaults where it makes sense, calls
- *      `required()` for vars every test needs (baseUrl, credentials). Smoke-only
- *      vars live in nested `env.smoke` and are validated as a group: every smoke
- *      var must be present, otherwise loadEnv throws and the whole suite fails red.
- *
- *      `SMOKE_PERSIST=true` makes globalSetup reuse a previously-written state
- *      file (no re-provisioning) and globalTeardown preserve it. Strict env
- *      validation still applies in both modes.
+ * env.ts — loads `.env` and builds the validated, typed `TestEnv`.
+ * Every smoke var must be present, otherwise `loadEnv` throws. `SMOKE_PERSIST=true` reuses the state file and keeps it at teardown.
  */
 
 import { loadDotenv } from './envFile';
-import { assertAuthModeAllowed } from './regression/tier';
-// Reads REG_ENV_FILE when set (and then NEVER the working directory's .env), else ./.env; existing variables win, so
-// what a REG / API config loaded and froze at load time cannot be changed here. API_ENV_FILE is NOT read
-// here: the REG / API configs resolve it and pin REG_ENV_FILE, a smoke run never follows it.
+import { assertAuthModeAllowed } from './regression/tier/localProof';
+// REG_ENV_FILE, when set, is the only env file read; existing variables win. API_ENV_FILE is not read here.
 loadDotenv();
 
-// header: local development stack — the frontend dev proxy injects the client certificate (ssl-client-cert),
-// no identity provider; API calls send the same header when AUTH_CLIENT_CERT is set.
+// header: local development stack: the frontend dev proxy injects the client certificate; no identity provider.
 type AuthMode = 'local' | 'oidc' | 'header';
 
 export type TestEnv = {
@@ -64,27 +50,20 @@ export type SmokeEnv = {
   acmeSolver: AcmeSolver;     // ACME_SOLVER_GATEWAY, else ACME_INGRESS_CLASS — how the solver is routed
 };
 
-/** How cert-manager routes the HTTP-01 challenge to its solver in the runner's cluster. */
 export type AcmeSolver =
   | { kind: 'ingress'; ingressClassName: string }
   | { kind: 'gateway'; gatewayName: string };
 
 /**
- * A cluster's ingress controller reads either Ingress objects or Gateway API routes, and a solver
- * of the other kind is never served. ACME_SOLVER_GATEWAY names a Gateway in the run's namespace
- * and selects an HTTPRoute solver; without it the solver is an Ingress of ACME_INGRESS_CLASS.
+ * A solver of the kind the cluster's ingress controller does not serve is never reached; ACME_SOLVER_GATEWAY selects an HTTPRoute solver,
+ * else an Ingress of ACME_INGRESS_CLASS.
  */
 export function acmeSolverFrom(gatewayName?: string, ingressClass?: string): AcmeSolver {
   if (gatewayName) return { kind: 'gateway', gatewayName };
   return { kind: 'ingress', ingressClassName: ingressClass || 'nginx' };
 }
 
-/**
- * The platform has to reach the HTTP-01 solver by name, and the solver's Ingress lives in the
- * runner's cluster. When that is the cluster the environment under test is served from, a name
- * next to BASE_URL's host is already covered by its wildcard DNS: `fe-pr-1.preview.example.com`
- * gives `preview.example.com`, and the solver answers on `smk005-<ts>.preview.example.com`.
- */
+/** The solver's name must sit under the cluster's wildcard DNS: `fe-pr-1.preview.example.com` gives `preview.example.com`. */
 export function parentDomainOf(baseUrl: string): string {
   const labels = new URL(baseUrl).hostname.split('.');
   return labels.slice(1).join('.');
@@ -103,7 +82,7 @@ export function loadEnv(): TestEnv {
   if (authMode !== 'local' && authMode !== 'oidc' && authMode !== 'header') {
     throw new Error(`AUTH_MODE must be 'local', 'oidc' or 'header', but got: ${process.env.AUTH_MODE}`);
   }
-  // header mode trusts a dev proxy to inject an admin client certificate: only on a loopback / TIER_LOCAL_HOSTS stack.
+  // header mode trusts a dev proxy: only on a loopback / TIER_LOCAL_HOSTS stack.
   assertAuthModeAllowed(process.env);
 
   const env: TestEnv = { // build up the object
@@ -140,9 +119,7 @@ export function loadEnv(): TestEnv {
     },
   };
 
-  // Strict smoke validation — every smoke env var must be present, otherwise the
-  // whole suite fails red. There's no bypass; if you don't have full secrets, get
-  // them from the team. SMOKE_PERSIST only affects state reuse, not validation.
+  // No bypass: every smoke env var must be present. SMOKE_PERSIST affects only state reuse.
   const missing = getMissingSmokeVars(env);
   if (missing.length > 0) {
     throw new Error(`Smoke env incomplete: ${missing.join(', ')}.`);
@@ -151,14 +128,7 @@ export function loadEnv(): TestEnv {
   return env;
 }
 
-/**
- * Returns names of SMK-required env vars that are currently missing.
- * Called by loadEnv() itself to enforce strict validation — if anything's missing,
- * loadEnv throws and the whole suite fails red.
- *
- * Field names in SmokeEnv use camelCase and are converted to SCREAMING_SNAKE_CASE
- * to match the .env variable names (e.g. ejbcaWsUrl → EJBCA_WS_URL).
- */
+/** Names of the SMK-required env vars that are missing (camelCase field names as SCREAMING_SNAKE_CASE). */
 export function getMissingSmokeVars(env: TestEnv): string[] {
   const toEnvVarName = (key: string): string =>
     key.split(/(?=[A-Z])/).join('_').toUpperCase();

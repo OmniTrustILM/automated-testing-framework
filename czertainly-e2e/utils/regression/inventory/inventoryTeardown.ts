@@ -1,7 +1,6 @@
 /**
- * Run-end teardown handlers of the inventory types named by id: OID registry entries. runTeardown
- * loads it through the registry's handler map; the handler proves the live object is this run's before it deletes it (through
- * the guard) and proves it is gone afterwards. OID entries are removed on a proven local stack only.
+ * inventoryTeardown — run-end teardown of OID registry entries (inventory types named by id); the handler proves the live object is this
+ * run's before deleting it through the guard, and only on a proven local stack.
  */
 import { assertNotDryRun } from '../run/flags';
 import { guardApi } from '../guard/createGuard';
@@ -13,7 +12,6 @@ import { isLocalTier } from '../tier/kind';
 import { pollUntil } from '../wait';
 import type { JsonObject } from '../json';
 
-/** The absence poll of the handler: five reads, `ctx.pollMs` apart (1 s), the first error raised. */
 const absencePoll = (ctx: TeardownContext) => ({ attempts: 5, intervalMs: ctx.pollMs ?? 1000, timeoutMs: 60_000, tolerateErrors: 0, onTimeout: 'return' as const });
 
 const oidEntries: TeardownHandler = {
@@ -45,5 +43,4 @@ const oidEntries: TeardownHandler = {
     },
 };
 
-/** The raw handlers; runTeardown wraps each with wrapHandlerWithGuard when it loads this module. */
 export const teardownHandlers: Record<string, TeardownHandler> = { oidEntries };

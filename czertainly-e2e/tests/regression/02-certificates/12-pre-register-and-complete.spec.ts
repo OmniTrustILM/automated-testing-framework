@@ -1,20 +1,7 @@
 /**
- * REG-CERT-12, REG-CERT-13 — Pre-register a certificate and complete it (release checklist: Certificates 12 and 13). ilm#429.
- *
- * WHAT: 1. Add Certificate → Pre-register (REG-CERT-12) → key source and CSR are hidden; Challenge and Issuance window are shown.
- *       2. Common name and a 12+ character challenge, Create → a Registered certificate with an Active registration, 0 failed
- *          attempts, an expiry of now plus the default window, and Complete enabled.
- *       3. The challenge appears nowhere: not on the page, not in the detail JSON, not in the history.
- *       4. Pre-register without a challenge → Registered, no Registration widget.
- *       5. Complete with a wrong secret (REG-CERT-13) → "The certificate registration challenge is invalid.", 1 failed attempt, still
- *          Registered.
- *       6. Complete with the right secret and a CSR → Issued, 0 failed attempts, the public key is the CSR's.
- * WHY: pre-registration lets an operator reserve a certificate and let someone else complete it with a secret; the secret must
- *      never be shown, and a wrong one must be counted and refused.
- * HOW: the registration settings are read, never set. Every certificate is recorded in the ledger from the answer of the Create
- *      request, before the page waits for its redirect or anything is asserted (by common name when the answer names no
- *      object); the platform-made key after the issuance. The
- *      authority is the run's own RA profile; the Complete dialog acts only after the live ownership check.
+ * REG-CERT-12, REG-CERT-13 — Pre-register a certificate and complete it (release checklist: Certificates 12 and 13;
+ * ilm#429). Pre-register with and without a challenge, then complete: a wrong secret is refused and the certificate
+ * stays Registered; the right secret and a CSR issue it with the CSR's public key.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { CertificateAddPage } from '../../../pages/CertificateAddPage';
@@ -32,11 +19,10 @@ import { testMeta, tags } from '../../../utils/regression/tags';
 import { ISSUE_MS, LIFECYCLE_MS, REGISTERED_WAIT_MS, REGISTRATION_EXPIRY_TOLERANCE_MS } from '../../../utils/regression/timeouts';
 import { waitForCertificateState } from '../../../utils/regression/wait/certificateState';
 
-
 test.describe('Pre-register and complete in the web UI', { tag: tags.regression }, () => {
     test('a pre-registration with a challenge is Registered with an Active registration and hides the secret',
         testMeta({
-            id: 'REG-CERT-12', prio: 'P1', issue: 'ilm#429',
+            id: 'REG-CERT-12', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'fe#1693 / fe#1944 (Pre-register hides key and CSR, shows the optional Challenge and Issuance window; Complete enabled for REGISTERED with an ACTIVE registration; the action is called "Pre-register", not "Request later")',
                 'the secret is stored encrypted and never returned; expiresAt = now + defaultIssuanceWindowDays; the authorization row exists only with a secret; platform-level: registered at once',
@@ -60,15 +46,13 @@ test.describe('Pre-register and complete in the web UI', { tag: tags.regression 
                 await addPage.assertRegisterFields();
             });
 
-            // "Now" of the expiry rule is the server's clock (the Date header of a read made right before Create, the runner's clock
-            // when the answer has none), so a runner whose clock is off does not use up the tolerance.
+            // The expiry rule's "now" is the server's clock, so a runner clock that is off does not use up the tolerance.
             const clock = await apiJsonWithDate(api, 'GET', '/api/v1/settings/platform');
             const serverNow = (clock.serverAt ?? clock.startedAt).getTime();
             const uuid = await test.step('CN in Request Attributes, a 12+ character challenge, Create → the detail of a Registered certificate', async () => {
                 await addPage.fillRequestCommonName(cn);
                 await addPage.fillChallenge(secret);
                 await submitFormCreateRecorded(addPage, own, 'register', { cn: cn, note: 'pre-registered via UI with a challenge', ra: ra });
-                // This row accepts the "accepted with warnings" panel (the certificate is opened from it).
                 const id = (await addPage.waitForCreatedCertificate({ acceptWarnings: true })).uuid;
                 await waitForCertificateState(api, id, 'registered', REGISTERED_WAIT_MS, { failOn: ['failed', 'rejected', 'issued'] });
                 return id;
@@ -95,7 +79,7 @@ test.describe('Pre-register and complete in the web UI', { tag: tags.regression 
 
     test('a pre-registration without a challenge is Registered and shows no Registration widget',
         testMeta({
-            id: 'REG-CERT-12', row: 'without a challenge', prio: 'P1', issue: 'ilm#429',
+            id: 'REG-CERT-12', row: 'without a challenge', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'the authorization row exists only with a secret: a registration without a challenge has no Registration widget (fe#1693 / fe#1944)',
             ],
@@ -115,7 +99,6 @@ test.describe('Pre-register and complete in the web UI', { tag: tags.regression 
                 await certPage.selectRaProfile(ra.name);
                 await addPage.fillRequestCommonName(plainCn);
                 await submitFormCreateRecorded(addPage, own, 'register', { cn: plainCn, note: 'pre-registered via UI without a challenge', ra: ra });
-                // This row accepts the "accepted with warnings" panel (the certificate is opened from it).
                 const id = (await addPage.waitForCreatedCertificate({ acceptWarnings: true })).uuid;
                 await waitForCertificateState(api, id, 'registered', REGISTERED_WAIT_MS, { failOn: ['failed', 'rejected', 'issued'] });
                 expect((await getCertificate(api, id)).registration ?? null).toBeNull();
@@ -127,14 +110,13 @@ test.describe('Pre-register and complete in the web UI', { tag: tags.regression 
 
     test('the Complete dialog counts a wrong secret and issues with the right secret and a CSR',
         testMeta({
-            id: 'REG-CERT-13', prio: 'P2', issue: 'ilm#429',
+            id: 'REG-CERT-13', prio: 'P2', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'wrong secret: 422 "The certificate registration challenge is invalid.", failedAttempts + 1, state stays REGISTERED; a verified secret resets the counter (Complete dialog)',
                 'complete = issue with the operator\'s CSR and the secret; after the first issuance the authorization is retained, attempts 0',
             ],
         }),
         async ({ signedIn: page, api, own, live, ownRaProfile }) => {
-            // The UI registration, two dialog rounds and the issuance (180 s).
             test.setTimeout(LIFECYCLE_MS);
             const ra = ownRaProfile;
             const certPage = new CertificatePage(page);
@@ -153,7 +135,6 @@ test.describe('Pre-register and complete in the web UI', { tag: tags.regression 
                 await addPage.fillRequestCommonName(cn);
                 await addPage.fillChallenge(secret);
                 await submitFormCreateRecorded(addPage, own, 'register', { cn: cn, note: 'pre-registered via UI with a challenge', ra: ra });
-                // This row accepts the "accepted with warnings" panel (the certificate is opened from it).
                 const id = (await addPage.waitForCreatedCertificate({ acceptWarnings: true })).uuid;
                 await waitForCertificateState(api, id, 'registered', REGISTERED_WAIT_MS, { failOn: ['failed', 'rejected', 'issued'] });
                 return id;

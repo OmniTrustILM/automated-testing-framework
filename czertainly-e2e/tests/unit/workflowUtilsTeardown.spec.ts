@@ -1,8 +1,6 @@
 /**
- * The run-end teardown handlers of utils/regression/events/workflowTeardown.ts and notificationTeardown.ts, loaded the way runTeardown
- * loads them (HANDLER_MODULES, wrapped by wrapHandlerWithGuard) against an in-memory core: workflow and notification objects are read,
- * deleted and proven absent (a foreign object is refused); an own scope's event association is cleared and proven, a foreign one or a
- * platform line is never cleared; DELETE_ORDER removes actions before the executions they use.
+ * The run-end teardown handlers of utils/regression/events/workflowTeardown.ts and notificationTeardown.ts, loaded the
+ * way runTeardown loads them.
  */
 import { APIRequestContext, expect, test } from '@playwright/test';
 import { LiveObjectMissing, OwnObjectViolation } from '../../utils/regression/ledger/ownership';
@@ -18,9 +16,7 @@ class FakeCore {
     calls: string[] = [];
     posts: Json[] = [];
     settings: Json = { eventsMapping: {} };
-    /** `<resource>/<uuid>` → event → trigger uuids. */
     assoc = new Map<string, Record<string, string[]>>();
-    /** The clear answers 2xx but changes nothing (a core that accepted the replace without applying it). */
     clearsNothing = false;
 
     set(path: string, body: Json): this {
@@ -81,8 +77,6 @@ async function run(core: FakeCore, l: LedgerLine, ledger: LedgerLine[] = [l]): P
     }
 }
 
-// ------------------------------------------------------------------ workflow objects and notifications
-
 const BY_URL: Array<[string, string]> = [
     ['triggers', '/api/v1/workflows/triggers'], ['rules', '/api/v1/workflows/rules'], ['conditions', '/api/v1/workflows/conditions'],
     ['executions', '/api/v1/workflows/executions'], ['actions', '/api/v1/workflows/actions'],
@@ -109,8 +103,6 @@ test('a workflow object that is not there is "route or object missing", never "d
     expect((await run(core, l)).error).toBeInstanceOf(LiveObjectMissing);
     expect(core.mutations()).toEqual([]);
 });
-
-// ------------------------------------------------------------------ eventAssociations
 
 test('an own scope listing own triggers is cleared with an empty replace and proven by the association map', async () => {
     const group = line('groups');
@@ -192,8 +184,6 @@ test('a platform line is never cleared: absence is proven read-only; a still-bou
     expect(bound.mutations()).toEqual([]);
 });
 
-// ------------------------------------------------------------------ order of the teardown
-
 test('the planned order puts associations before triggers, triggers before rules, notification profiles before instances', () => {
     const lines = [
         line('notificationInstances'), line('rules'), line('triggers'), line('notificationProfiles'), line('conditions'),
@@ -207,8 +197,8 @@ test('the planned order puts associations before triggers, triggers before rules
     expect(at('notificationProfiles')).toBeLessThan(at('notificationInstances'));
 });
 
-// DELETE_ORDER deletes triggers -> rules -> conditions -> actions -> executions, then notification profiles -> instances.
-// The step numbers belong to the guard's teardown (runTeardown.spec pins them), so this test finds the steps by type.
+// DELETE_ORDER deletes triggers -> rules -> conditions ->
+// actions -> executions, then notification profiles -> instances.
 test('DELETE_ORDER deletes actions before the executions they use, then notification profiles before instances', () => {
     const deleteStepOf = (t: string) => DELETE_ORDER.find((s) => s.types.includes(t))!;
     const chain = DELETE_ORDER.find((s) => s.types.includes('actions'))!;

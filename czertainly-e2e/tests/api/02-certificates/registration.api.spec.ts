@@ -1,25 +1,7 @@
 /**
- * API-CERT-21, 22, 23 — Platform-level pre-registration through the v2 API. ilm#429.
- *
- * WHAT: 1. Register with a CN and a challenge → 200; the certificate becomes registered with an active registration, no failed attempt and
- *          an expiry of now plus the default issuance window; the secret is never echoed, stored in the detail or written to the
- *          history; without a secret there is no registration block.
- *       2. The "Certificate registered" event fires for a challenge-protected registration and not for one without a challenge.
- *       3. Register with an invalid bearer token → 401 (not on a local stack).
- *       4. A CN with RFC 4514 special characters registers with an escaped subject DN (core#2258, core#2509: test.fail while open).
- *       5. Complete a registered certificate with the right secret and a CSR → issued with the CSR key, the registered identity kept, the
- *          authorization still active, the window cleared; without a challenge a CSR alone completes.
- *       6. Completion refuses a wrong secret (422, failed attempts counted, history "attempt N"), a missing or blank secret (422, no
- *          attempt), no CSR, a secret without an active authorization and an already issued certificate; the right secret afterwards
- *          issues and resets the counter.
- * WHY: a registration reserves an identity and a challenge-protected right to complete it (core#1820; ilm#279 for the wrong-secret rule).
- *      The secret is stored encrypted and never returned. The Certificate Registered event fires only with a challenge. The subject DN
- *      built from request attributes must be well-formed and RFC 4514 escaped.
- * HOW: registration creates new own certificates only, recorded in the ledger before any assertion. The event rows observe through an own
- *      trigger on an own clone of the run RA profile (the run RA profile is shared by other specs and is never associated) and skip while
- *      a platform-level trigger on the event would act on these certificates too. The rows skip when the tier's registration settings
- *      cannot hold a challenge (completion table: maxFailedAttempts must exceed 2, because two wrong secrets are sent before the right
- *      one; settings are read, never set). The register call has no path and is not on the guard's list yet.
+ * API-CERT-21, 22, 23 — Platform-level pre-registration through
+ * the v2 API (ilm#429). Rules: core#1820; ilm#279 (wrong secret).
+ * Settings are read, never set; the event rows use an own trigger on an own clone of the run's RA profile.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { historyMessages, historyOf } from '../../../utils/regression/lifecycle/certificateHistory';
@@ -45,13 +27,12 @@ import { cloneRunRaProfile, OwnRaProfile } from '../../../utils/regression/ownRa
 import type { GuardedApi } from '../../../utils/regression/guard/types';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-/** How long a firing of an event is awaited. */
 const FIRING_WAIT = { timeoutMs: EVENT_FIRING_WAIT_MS };
 
 test.describe('Certificate pre-registration through the v2 API', { tag: tags.api }, () => {
     test('registering with a CN and a challenge gives a registered certificate and never echoes the secret',
         testMeta({
-            id: 'API-CERT-21', prio: 'P1', issue: 'ilm#429', needs: 'registration-settings',
+            id: 'API-CERT-21', prio: 'P1', issue: 'ilm#429', needs: ['registration-settings', 'ca'],
             rule: [
                 'REGISTERED placeholder; the secret is stored encrypted and never returned; expiresAt defaults to defaultIssuanceWindowDays; core#1820 (platform-level on EJBCA-NG and MS ADCS NG)',
                 'requested → pending_registration → registered; the "Certificate Registered" event fires only with a challenge; requestAttributeWarnings always empty; expiresAt only with a secret',
@@ -95,13 +76,6 @@ test.describe('Certificate pre-registration through the v2 API', { tag: tags.api
             });
         });
 
-    // The two event arms observe through an own trigger on `Certificate registered`, associated on an own clone of the run RA
-    // profile (the run RA profile is shared by the run's other specs and is never associated): a firing in that scope is the event.
-    // A platform-level trigger on the event would act on these certificates too, so the arms skip then; the gate is read first.
-    /**
-     * An own clone of the run RA profile with an own trigger on `Certificate registered` associated on it; firings in its scope are the
-     * event.
-     */
     async function ownRegisteredObserver(api: GuardedApi, own: OwnObjects, suffix: string): Promise<{ ra: OwnRaProfile; scope: { resource: 'raProfiles'; objectUuid: string } }> {
         const clone = await cloneRunRaProfile(api, own.spec, suffix);
         const attr = await own.customAttribute(`${suffix}-mark`, { resources: ['certificates'] });
@@ -148,8 +122,6 @@ test.describe('Certificate pre-registration through the v2 API', { tag: tags.api
                 return r;
             });
             await test.step('A later challenge-protected registration bounds the wait; the one without a challenge never fired', async () => {
-                // A later challenge-protected registration in the same scope bounds the wait: once its firing is finished, the
-                // registration before it has been handled too; a short grace window then holds the absence.
                 const after = await registerOwnCertificate(api, observer.ra, own.spec, { suffix: 'c21evs', secret: newChallenge(), note: 'API-CERT-21 event arm: the registration after the one without a challenge' });
                 expect(after.answer.status, after.answer.text.slice(0, 300)).toBe(200);
                 const page = await waitForFinishedFirings(api, { event: EVENT.registered, scope, pageSize: 50 }, 2, FIRING_WAIT);
@@ -166,43 +138,38 @@ test.describe('Certificate pre-registration through the v2 API', { tag: tags.api
 
     test('register refuses an invalid bearer token with 401',
         testMeta({
-            id: 'API-CERT-21', row: 'no-credentials', prio: 'P1', issue: 'ilm#429',
+            id: 'API-CERT-21', row: 'no-credentials', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: ['no valid credentials → 401 on register; not asserted on a local stack, where the dev proxy (AUTH_MODE=header) or the localhost identity may authenticate the call'],
         }),
         async ({ api, own, ownRaProfile }) => {
             test.skip(isLocalTier(), 'local stack: the dev proxy (AUTH_MODE=header) or the localhost identity may authenticate a call with an invalid bearer token, so the 401 is not asserted there');
-            // The name is built (and checked) before the request: a failing name check cannot leave an accepted register unrecorded.
             const name = ownCommonName('c21-anon');
             const a = await sendRaw(api, 'POST', `${opsBase(ownRaProfile)}/certificates/register`, { csrAttributes: [], attributes: [] }, { headers: { authorization: 'Bearer invalid' }, identityOverride: true });
-            // Ledger first: a register accepted without credentials made a certificate of this run.
             own.probe('certificates', a, { name, note: 'register accepted with an invalid bearer', parents: { raProfile: ownRaProfile.uuid, authority: ownRaProfile.authorityUuid } });
             expect(a.status, a.text.slice(0, 200)).toBe(401);
         });
 
     test('a CN with RFC 4514 special characters registers with an escaped subject DN',
         testMeta({
-            id: 'API-CERT-21', row: 'rfc4514', prio: 'P1', issue: 'ilm#429', bug: ['core#2258', 'core#2509'],
-            rule: ['core#2258 / core#2509 (the subject DN built from request attributes must be well-formed and RFC 4514 escaped; open bugs, marked with test.fail)', 'csrAttributes project to the subject'],
+            id: 'API-CERT-21', row: 'rfc4514', prio: 'P1', issue: 'ilm#429', needs: 'ca', bug: ['core#2258', 'core#2509'],
+            rule: ['core#2258 / core#2509 (the subject DN built from request attributes must be well-formed and RFC 4514 escaped; open bugs, marked with test.fail)', 'csrAttributes project to the subject', 'a refusal is never a 5xx (asserted before the marker; today core refuses the unescaped DN with a 4xx)'],
         }),
         async ({ api, own, ownRaProfile }) => {
             test.setTimeout(MANY_STEPS_TEST_MS);
             const ra = ownRaProfile;
             const cn = checkedCommonName(specialCharCn(ownName('c21dn')));
-            // The bugs break the register itself (422 "Invalid subject DN … badly formatted directory string"), so the marker sits right
-            // before it; the setup above runs outside it. The test turns red when the bugs are fixed (then drop the pin).
-            test.fail(true, 'core#2258 / core#2509: the subject DN built from request attributes is malformed and not RFC 4514 escaped (open)');
             const r = await registerOwnCertificate(api, ra, own.spec, { suffix: 'c21dn', cn, secret: newChallenge(), note: 'API-CERT-21 special-character CN (core#2258 / core#2509)' });
+            expect(r.answer.status, `never a 5xx: ${r.answer.text.slice(0, 300)}`).toBeLessThan(500);
+            test.fail(true, 'core#2258 / core#2509: the subject DN built from request attributes is malformed and not RFC 4514 escaped (open)');
             expect(r.answer.status, r.answer.text.slice(0, 300)).toBe(200);
             await waitForCertificateState(api, r.cert!.uuid, 'registered', QUICK_STATE_WAIT_MS, { failOn: ['failed', 'rejected', 'issued'] });
             const detail = await getCertificate(api, r.cert!.uuid);
-            // RFC 4514 §2.4: a comma and a plus inside a value are escaped with a backslash. The CN keeps the run prefix at its start
-            // (a leading space would make the teardown refuse the certificate).
             expect(String(detail.subjectDn)).toContain(`CN=${cn.split(',')[0]}\\, O= QA\\+Team`);
         });
 
     test('completing a registered certificate with the right secret and a CSR issues it with the CSR key',
         testMeta({
-            id: 'API-CERT-22', prio: 'P1', issue: 'ilm#429',
+            id: 'API-CERT-22', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'complete = POST …/{c}/issue with request, format, authorizationSecret; the registered identity is preserved',
                 'after the first issuance the window is cleared and the authorization is retained ACTIVE for renew / rekey; a verified secret resets the counter',
@@ -246,7 +213,7 @@ test.describe('Certificate pre-registration through the v2 API', { tag: tags.api
 
     test('completion refuses a wrong secret, a missing secret, no CSR and an issued certificate',
         testMeta({
-            id: 'API-CERT-23', prio: 'P1', issue: 'ilm#429',
+            id: 'API-CERT-23', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'wrong secret: 422 "The certificate registration challenge is invalid.", failedAttempts + 1 committed before the rejection, history "Certificate registration challenge verification failed (attempt N)"; missing / blank: 422 "…challenge is required." with no attempt; a verified secret resets the counter',
                 'no CSR: "A certificate signing request is required to issue a registered certificate. Certificate: …"; a secret against no active authorization: "An authorization secret was presented but the certificate has no active registration authorization to verify it against."; an issued certificate: "Cannot issue certificate with state Issued."',
@@ -256,8 +223,7 @@ test.describe('Certificate pre-registration through the v2 API', { tag: tags.api
         async ({ api, own, ownRaProfile, needs }) => {
             test.setTimeout(LIFECYCLE_MS);
             const ra = ownRaProfile;
-            // Two wrong secrets are sent before the right one: a tier whose maxFailedAttempts is 2 or less would LOCK the
-            // authorization and the table could not be judged (settings are read, never set).
+            // Two wrong secrets are sent before the right one; a tier allowing 2 or fewer attempts would lock the authorization.
             await needs.registrationSettings({ minFailedAttempts: 3 });
             // 422, exactly one message that contains the text (the rest of the message names the certificate).
             const refused = (a: ApiAnswer, text: string) => {

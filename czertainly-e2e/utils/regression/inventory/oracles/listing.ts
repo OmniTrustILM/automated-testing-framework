@@ -1,12 +1,6 @@
 /**
- * listing — reading a listing for the oracles.
- *
- * WHAT: Reading a listing for the oracles: the `ListingSpec` of a resource, one page or every page through a `Transport`
- *       (the guarded `api` fixture in the specs, a fake listing in the unit tests), the baseline walk, and the one re-read
- *       that absorbs a concurrent change of the tier (a second mismatch fails). Read-only on the target.
- * WHY: The same oracles run against the guarded API in a spec and against a fake listing in a unit test.
- * HOW: A `Transport` hides the difference; `ListingSpec` describes a resource, `loadBaseline` walks it, `ListingRun` carries the four
- * values every oracle needs, and one re-read absorbs a concurrent change (a second mismatch fails). Read-only.
+ * listing — reading a listing for the oracles (read-only on the target): a `Transport` hides whether the guarded `api` or a fake listing
+ * answers; one re-read absorbs a concurrent change of the tier.
  */
 import type { GuardedApi } from '../../guard/types';
 import { send, readAnswer } from '../searchApi';
@@ -16,7 +10,6 @@ import type { ListRow } from '../listInvariants';
 import { FieldMap } from './values';
 import { ApiAnswer } from '../../apiReads';
 
-/** Collects what a run checked and what it noted (absorbed re-reads, skipped arms), for the test annotations. */
 export class RunLog {
     readonly steps: string[] = [];
     readonly notes: string[] = [];
@@ -28,7 +21,6 @@ export class RunLog {
     }
 }
 
-/** Runs `fn`; on an InvariantViolation runs it ONCE more from scratch (a concurrent change); a second violation fails with both texts. */
 export async function retryOnceWithReread<T>(label: string, log: RunLog, fn: () => Promise<T>): Promise<T> {
     try {
         return await fn();
@@ -44,11 +36,7 @@ export async function retryOnceWithReread<T>(label: string, log: RunLog, fn: () 
     }
 }
 
-// ====================================================================================================================
-// 5. Listings: transport, pages, baseline
-// ====================================================================================================================
 
-/** What every oracle of one listing run needs: how to read it, what it is, what it held at the start, and where to report. */
 export interface ListingRun {
     transport: Transport;
     spec: ListingSpec;
@@ -62,7 +50,6 @@ export interface Transport {
     get(url: string): Promise<ApiAnswer>;
 }
 
-/** The transport of the specs: reads and read-only POSTs through the guarded `api` fixture (the guard judges every request). */
 export function transportThroughGuard(api: GuardedApi): Transport {
     return {
         postRead: (url, body) => send(api, 'POST', url, { data: body }),
@@ -72,20 +59,15 @@ export function transportThroughGuard(api: GuardedApi): Transport {
 
 export interface ListingSpec {
     name: string;
-    /** POST: `/api/v1/keys`, `/api/v1/discoveries/list`, `/api/v1/auditLogs`. */
     searchUrl: string;
-    /** GET: the searchable-fields catalogue. */
     catalogueUrl: string;
-    /** The member of the answer holding the rows (`cryptographicKeys`, `discoveries`, `items`). */
     rowsMember: string;
     rowKey: (row: ListRow) => string;
     configurable: boolean;
-    /** The listing's resource label in "Sorting is not supported for the <label> listing." (Resource.getLabel). */
     refusalLabel: string;
     fields: FieldMap[];
-    /** Filters attached to every request (the audit log's closed window). */
     baseFilters?: Filter[];
-    /** Most rows a baseline or a filtered set is read in full (the area budget: 1000 for keys). */
+    /** Most rows a baseline or filtered set is read in full. */
     maxWalkRows: number;
 }
 
@@ -102,7 +84,6 @@ export interface ListingPage {
     totalPages: number;
     itemsPerPage: number;
     pageNumber: number;
-    /** The server's clock (Date header of the answer), epoch ms. */
     serverNow?: number;
 }
 
@@ -120,7 +101,6 @@ export const requestBody = (spec: ListingSpec, req: PageRequest): Record<string,
     ...(req.sort ? { sort: req.sort } : {}),
 });
 
-/** One page of a listing (200 required); a refusal throws ListingError with the status and the first 300 characters. */
 export async function listingPage(t: Transport, spec: ListingSpec, req: PageRequest = {}): Promise<ListingPage> {
     const body = requestBody(spec, req);
     const p = await t.postRead(spec.searchUrl, body);
@@ -144,11 +124,9 @@ export const listingTotal = async (t: Transport, spec: ListingSpec, filters: Fil
 export interface RowSet {
     rows: ListRow[];
     total: number;
-    /** `rows` holds every row of the filtered set (total <= cap). */
     complete: boolean;
 }
 
-/** The rows of a filtered (and optionally sorted) set, page by page up to `cap`; a complete set must hold exactly `total` distinct rows. */
 export async function fetchRows(t: Transport, spec: ListingSpec, filters: Filter[], cap: number, sort?: Sort): Promise<RowSet> {
     const size = Math.min(100, cap);
     const first = await listingPage(t, spec, { filters, size, page: 1, sort });
@@ -171,10 +149,7 @@ export interface Baseline {
     complete: boolean;
 }
 
-/**
- * The unfiltered listing: when it fits the budget, every page walked with invariants.walkPages (totalItems = sum of pages,
- * totalPages = ceil(total / size), no row on two pages); else its first `maxWalkRows` rows only (`complete: false`).
- */
+/** The unfiltered listing: every page walked when it fits the budget, else its first `maxWalkRows` rows (`complete: false`). */
 export async function loadBaseline(t: Transport, spec: ListingSpec, pageSize = 100): Promise<Baseline> {
     const head = await listingPage(t, spec, { size: 1 });
     if (head.total === 0) return { rows: [], total: 0, complete: true };

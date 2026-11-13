@@ -1,43 +1,33 @@
 /**
- * parsing — the request-parsing rows of the error-contract spec.
- *
- * WHAT: The request-parsing rows of the error-contract spec: the JSON parsing battery, the content-type and Accept rows,
- *       TRACE, and the wrong-method rows (with the ones the guard refuses before sending).
- * WHY: Malformed bodies, content types and methods are where a framework migration changes behaviour first.
- * HOW: Data rows for the JSON parsing battery, content-type and Accept, TRACE and wrong-method cases, marking the ones the guard refuses
- * before sending.
+ * parsing — the request-parsing rows of the error-contract spec: the JSON
+ * battery, content-type and Accept rows, TRACE and wrong-method rows.
  */
 import { ERROR_MESSAGES, searchBody } from './cases';
 import { Answer, Expectation, JSON_TYPE, findLeaks, parsed, preview, shapeProblems } from './checks';
 import { Ctx, Req } from './requests';
 
-// ------------------------------------------------------------------ API-GEN-05: the JSON parsing battery
 
 type JsonTarget = 'certificates' | 'groups';
 
 export interface JsonRow {
-    /** `<target>.<case>` */
     id: string;
     target: JsonTarget;
-    /** The raw bytes (a Buffer: a string body that is not JSON is re-quoted by the guard). */
+    /** The raw bytes (a string body that is not JSON would be re-quoted by the guard). */
     data: Buffer;
     /**
-     * `p1`: the documented refusal; `control`: a well-formed request that must NOT be refused (the 400s are the defect's, not the
-     * body's); `pin`: today's behaviour where no written rule exists (never P1).
+     * `p1`: documented refusal; `control`: a well-formed request that must not be refused; `pin`: today's behaviour where no rule is
+     * written (never P1).
      */
     kind: 'p1' | 'control' | 'pin';
     expect: Expectation;
     rule: string;
-    /** Pins: the open question that flips the pin. */
     pin?: string;
-    /** The guard refuses this body (a duplicate key on a create): the row is a `test.fixme`. */
     guardRefused?: string;
     echo?: readonly string[];
 }
 
 const nest = (depth: number, leaf = '1'): string => '['.repeat(depth) + leaf + ']'.repeat(depth);
 
-/** The search page shape (CertificateResponseDto): used by the control and pin rows that are answered 200. */
 function searchPageProblems(p: { status: number; json: unknown }): string[] {
     if (p.status !== 200) return [];
     const j = p.json as { certificates?: unknown; itemsPerPage?: unknown; pageNumber?: unknown } | undefined;
@@ -47,11 +37,8 @@ function searchPageProblems(p: { status: number; json: unknown }): string[] {
 const unreadable: Expectation = { status: 400, message: ERROR_MESSAGES.unreadable };
 
 /**
- * The parsing battery of API-GEN-05 on `POST /api/v1/certificates` (a read) and `POST /api/v1/groups` (refused, creates nothing). Oracles:
- * the 400 text of the inventory API status matrix, observed on both builds by the ilm#442 `js.*` probes (trailing comma, comment, NaN,
- * filters as an object / string, nesting); derived from Jackson for the rest. Two rows contradict the written error-shape rule and are
- * pins: a duplicate key is NOT refused (Jackson keeps the last value: the `js.dup-key` probe answered 200 on both builds), and a leading
- * BOM is skipped by Jackson (status pinned from the first probe).
+ * The parsing battery on `POST /api/v1/certificates` (a read) and `POST /api/v1/groups` (refused). Two rows are pins: a duplicate key is
+ * not refused and a leading BOM is skipped (Jackson).
  */
 export function jsonBattery(ctx: Ctx): JsonRow[] {
     const m = ctx.marker;
@@ -60,7 +47,6 @@ export function jsonBattery(ctx: Ctx): JsonRow[] {
     const t = (s: string): Buffer => Buffer.from(s, 'utf8');
     const bom = Buffer.from([0xef, 0xbb, 0xbf]);
     const rows: JsonRow[] = [
-        // --- POST /api/v1/certificates (read-only)
         { id: 'certificates.control', target: 'certificates', kind: 'control', data: t(`{${base}}`), expect: { status: 200, extra: searchPageProblems }, rule: 'a well-formed search body is answered 200 (the control of the refusals below)' },
         { id: 'certificates.trailing-comma', target: 'certificates', kind: 'p1', data: t(`{${base},}`), expect: unreadable, rule: 'a trailing comma → 400 "Unable to read HTTP message" (ilm#442 js.trailing-comma)' },
         { id: 'certificates.trailing-comma-marker', target: 'certificates', kind: 'p1', data: t(`{${base},"note":"${m}",}`), expect: unreadable, echo: [m], rule: 'the parser\'s message quotes the token it stopped at, a body can carry a secret: the answer never echoes it (ExceptionHandlingAdvice.java)' },
@@ -79,7 +65,6 @@ export function jsonBattery(ctx: Ctx): JsonRow[] {
         { id: 'certificates.includeArchived-yes', target: 'certificates', kind: 'p1', data: t(`{${base},"includeArchived":"yes"}`), expect: unreadable, rule: '`includeArchived: "yes"` → 400 (a string that is no boolean)' },
         { id: 'certificates.duplicate-keys', target: 'certificates', kind: 'pin', pin: 'json-duplicate-keys', data: t('{"itemsPerPage":10,"itemsPerPage":20,"pageNumber":1,"filters":[]}'), expect: { status: 200, extra: searchPageProblems }, rule: 'a duplicate key is not refused: Jackson keeps the last value (ilm#442 js.dup-key answered 200 on both builds); the documented rule says 400 — conflict, open question' },
         { id: 'certificates.bom', target: 'certificates', kind: 'pin', pin: 'json-byte-order-mark', data: Buffer.concat([bom, t(`{${base}}`)]), expect: { status: [200, 400], extra: (p) => (p.status === 200 ? searchPageProblems(p) : []) }, rule: 'a leading UTF-8 BOM is skipped by Jackson (200) or refused (400): status pinned from the first probe, never 5xx' },
-        // --- POST /api/v1/groups (refused: every body is rejected before any write; an accidental 2xx is recorded)
         { id: 'groups.trailing-comma', target: 'groups', kind: 'p1', data: t(`{"name":"${group}","description":"${m}",}`), expect: unreadable, echo: [m], rule: 'a trailing comma → 400, nothing created' },
         { id: 'groups.comment-block', target: 'groups', kind: 'p1', data: t(`/*c*/{"name":"${group}"}`), expect: unreadable, rule: 'a block comment → 400, nothing created' },
         { id: 'groups.comment-line', target: 'groups', kind: 'p1', data: t(`// c\n{"name":"${group}"}`), expect: unreadable, rule: 'a line comment → 400, nothing created' },
@@ -99,23 +84,19 @@ export function jsonBattery(ctx: Ctx): JsonRow[] {
     return rows;
 }
 
-/** The `Req` of a JSON row. */
 export const jsonReq = (r: JsonRow): Req => ({ method: 'POST', url: r.target === 'certificates' ? '/api/v1/certificates' : '/api/v1/groups', data: r.data });
 
-// ------------------------------------------------------------------ API-GEN-06: Content-Type and Accept
 
 export interface ContentTypeRow {
     id: string;
-    /** What is sent as the content type; `none`: a body with no content type header (Playwright then sends application/octet-stream). */
+    /** The content type sent; `none`: no header (Playwright then sends application/octet-stream). */
     contentType: string;
     url: string;
     resource: string;
-    /** `guard`: refused by the guard today (the reason); undefined: sendable now. */
     guardRefused?: string;
     data: string;
 }
 
-/** A search body / a blank-name group: whatever answers them, nothing can be created or changed. */
 const SEARCH_TEXT = JSON.stringify(searchBody());
 const BLANK_GROUP_TEXT = '{"name":""}';
 
@@ -127,16 +108,13 @@ export const CONTENT_TYPE_ROWS: readonly ContentTypeRow[] = [
     { id: 'no-content-type.create', contentType: 'none', url: '/api/v1/groups', resource: 'groups', data: BLANK_GROUP_TEXT, guardRefused: 'the guard sets content-type: application/json on every body it sends (snapshot: `headers[\'content-type\'] = JSON_CONTENT`); a body with no content type cannot be expressed' },
 ];
 
-/** The request of a content-type row (a string body; under text/plain the guard sends it as written). */
 export const contentTypeReq = (r: ContentTypeRow): Req => ({
     method: 'POST', url: r.url, data: r.data,
     ...(r.contentType === 'none' ? {} : { headers: { 'content-type': r.contentType } }),
 });
 
-/** The Accept probe: a JSON endpoint asked for XML (status pinned from the first probe). */
 export const ACCEPT_XML: Req = { method: 'GET', url: '/api/v1/groups', headers: { accept: 'application/xml' } };
 
-/** API-GEN-06 `[accept-xml]`: a 4xx (with the contract shape when it has a body), or a 200 whose body is JSON; never a 5xx. */
 export function acceptProblems(a: Answer): string[] {
     const out: string[] = [];
     if (a.status >= 200 && a.status < 300) {
@@ -150,21 +128,18 @@ export function acceptProblems(a: Answer): string[] {
     return out;
 }
 
-// ------------------------------------------------------------------ API-GEN-07: refused methods
 
 export interface TraceRow {
     id: string;
     url: string;
 }
 
-/** TRACE on plain read paths (the guard sends TRACE as a bodyless read; a path that persists for a GET is refused outright). */
 export const TRACE_ROWS: readonly TraceRow[] = [
     { id: 'trace.info', url: '/api/v1/info' },
     { id: 'trace.certificates', url: '/api/v1/certificates' },
     { id: 'trace.groups', url: '/api/v1/groups' },
 ];
 
-/** A GET on a path that only defines POST: a defined path with a method it does not define (HttpRequestMethodNotSupportedException). */
 export const WRONG_METHOD_GETS: readonly string[] = [
     '/api/v1/auditLogs', '/api/v1/auditLogs/export', '/api/v1/auditLogs/purge', '/api/v1/inspections', '/api/v1/keys',
 ];
@@ -176,15 +151,11 @@ export interface GuardRefusedMethodRow {
     why: string;
 }
 
-/**
- * Requests the guard sends since the guard learned the sentinels: the unknown-method sentinel QAPROBE and the two no-handler pairs (every
- * one is answered by the handler mapping, no handler runs).
- */
+/** Sentinel requests: the unknown method QAPROBE and two no-handler pairs, answered by the handler mapping. */
 export const METHOD_FIXME_ROWS: readonly GuardRefusedMethodRow[] = [
     { id: 'unknown-method.groups', method: 'QAPROBE', url: '/api/v1/groups', why: 'an unknown method: the guard sends only the sentinels TRACE and QAPROBE; PROPFIND / FOO / lower-case stay refused, so the row uses QAPROBE' },
     { id: 'wrong-method.POST-statistics', method: 'POST', url: '/api/v1/statistics', why: 'a mutation without a uuid in the path that is neither an allow-listed create nor a bulk route' },
     { id: 'wrong-method.DELETE-info', method: 'DELETE', url: '/api/v1/info', why: 'a mutation without a uuid in the path that is neither an allow-listed create nor a bulk route' },
 ];
 
-/** The wrong-method answer: a 4xx with the API-GEN-01 body shape (never 5xx). */
 export const wrongMethodExpectation = (method: string): Expectation => ({ status: [400, 405], message: new RegExp(`^Request method '${method}' is not supported`) });

@@ -1,11 +1,9 @@
 /**
- * Unit tests of utils/regression/inventory/groupProbes.ts: the history text of a group change and the group
- * changes of a certificate history. No environment, no network.
+ * Unit tests of utils/regression/inventory/groupProbes.ts: the history
+ * text of a group change and the group changes of a certificate history.
  */
 import { expect, test } from '@playwright/test';
 import { changeKey, groupChanges, groupEventCount, parseGroupChange } from '../../utils/regression/inventory/groupProbes';
-
-// ------------------------------------------------------------------ the group history
 
 test('parseGroupChange: "<old> -> <new>", each side group names joined with ", " in no defined order, "undefined" = no group; a message without the arrow is not a change', () => {
     expect(parseGroupChange('undefined -> a')).toEqual({ from: [], to: ['a'] });

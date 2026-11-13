@@ -1,8 +1,6 @@
 /**
- * The shared block tear-down (utils/devBlocks/blockTeardown.ts): the `after` step that removes what a block made
- * outside the platform runs only when every ledger object of the block is gone — after a clean delete, or when nothing
- * is left — and never after a failed delete, under the dry run or with API_DELETE_OWN off. The selection by prefix keeps
- * two blocks apart.
+ * The shared block tear-down (utils/devBlocks/blockTeardown.ts): the `after` step that removes what a block made outside
+ * the platform runs only when every ledger object of the block is gone.
  */
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import type { LedgerLine } from '../../utils/regression/ledger/ledger';

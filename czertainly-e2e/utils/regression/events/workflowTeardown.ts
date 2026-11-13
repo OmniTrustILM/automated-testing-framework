@@ -1,25 +1,7 @@
 /**
- * workflowTeardown — how the run-end teardown removes the workflow objects the events area creates (own objects only, deleted at run end).
- *
- * WHAT: the teardown handlers of the ledger types `triggers`, `rules`, `conditions`, `executions`, `actions` and
- * `eventAssociations`. The resource-type registry names this module for them, and runTeardown wraps every handler with
- * `wrapHandlerWithGuard`: the dry run is checked, then the live object is read through `assertOwnLive` (ledger line of this
- * run on this tier, live run-prefixed name) before `remove` sees it. Spec-facing helpers (create, associate, history)
- * live beside this file in utils/regression/events/; nothing a spec needs is exported from here.
- *
- * WHY: a workflow object is deleted only after the live check proved it this run's, and its absence is proven by a read, so
- * a wrong uuid in the ledger can never reach a foreign object.
- *
- * HOW: deletion rule: `deleteAndVerify` sends the DELETE only for an object read with 200 in this step and proves absence
- * with a detail GET (404). Core refuses to delete a part that another part still references ("Cannot delete rule
- * <name>. It is associated to following triggers: …"), so the order matters: associations → triggers → rules → conditions →
- * actions → executions. runTeardown's DELETE_ORDER step 8 follows that order (actions BEFORE executions); the other way round
- * an execution an own action still uses is refused and the run ends red.
- *
- * `eventAssociations` lines are id-named (no live read): a synthetic uuid, the (event, resource) pair in `note`, the object in
- * `parents.object` (a `platform` line has no object: the handler only proves, read-only, that none of the run's triggers is still bound
- * platform-wide). The handler clears the scope of an OWN object only (the object's ledger line must be live, and every trigger still listed
- * there must be the run's own), by the same replace with an empty list the API offers, and proves it with the association map.
+ * workflowTeardown — run-end teardown of the workflow objects the events area creates (own objects only).
+ * Deletes in the order associations, triggers, rules, conditions, actions, executions (core refuses to delete a referenced part), sends a
+ * DELETE only for an object read with 200 in this step and proves absence with a 404.
  */
 import type { LedgerLine } from '../ledger/ledger';
 import { checkOwnership } from '../ledger/ownership';
@@ -31,7 +13,6 @@ const parentOf = (line: LedgerLine, key: string): string | undefined => {
     return Array.isArray(v) ? v[0] : v;
 };
 
-/** DELETE `/api/v1/workflows/<kind>/<uuid>`; the same URL proves absence. */
 const workflowObject = (kind: string, what: string): TeardownHandler => ({
     action: `delete (DELETE /v1/workflows/${kind}/{uuid}), absence proven by GET`,
     async remove(ctx: TeardownContext, line: LedgerLine) {
@@ -39,7 +20,6 @@ const workflowObject = (kind: string, what: string): TeardownHandler => ({
     },
 });
 
-/** `<event>|<resource>|<object uuid> <free text>` (eventAssociations.associationKey) → the event and resource of a line. */
 export function parseAssociationNote(note: string | undefined): { event: string; resource: string; objectUuid: string } | undefined {
     const key = (note ?? '').split(' ')[0];
     const [event, resource, objectUuid] = key.split('|');
@@ -59,7 +39,7 @@ const eventAssociations: TeardownHandler = {
         const objectUuid = parentOf(line, 'object');
         if (!parsed) throw new Error(`association ${line.uuid}: the ledger line names no (event, resource, object); not touched`);
         if (parsed.resource === 'platform') {
-            // Never cleared here (a platform-wide replace is a @local spec's own step, with its restore): only proven absent, read-only.
+            // Never cleared here (a platform-wide replace is a @local spec's own step); only proven absent, read-only.
             const res = await ctx.api.get('/api/v1/settings/events');
             if (!res.ok()) throw new Error(`GET /v1/settings/events answered ${res.status()}`);
             const listed = ((((await res.json()) ?? {}) as { eventsMapping?: Record<string, string[]> }).eventsMapping?.[parsed.event] ?? []) as string[];
@@ -85,7 +65,6 @@ const eventAssociations: TeardownHandler = {
     },
 };
 
-/** The raw handlers; runTeardown wraps each with wrapHandlerWithGuard when it loads this module. */
 export const teardownHandlers: Record<string, TeardownHandler> = {
     triggers: workflowObject('triggers', 'trigger'),
     rules: workflowObject('rules', 'rule'),

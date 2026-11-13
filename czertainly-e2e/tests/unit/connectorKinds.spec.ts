@@ -1,14 +1,5 @@
 /**
  * connectorKinds — the connector finder, the shape readers and the needs that depend on which connectors a tier has.
- *
- * WHAT: `matchesSpec` and the readers of a connector detail (groups, interfaces, features, shape problems, the info shape, the inventory
- *       line); `findRegisteredConnector` and `findVaultConnector` against a loopback fake core; the needs `crypto-v1`, `vault-connector`,
- *       `ejbca-connector` and `adcs-connector`, each shown with a tier that meets it (undefined), one that does not (the named reason) and
- *       a read that fails (the resolver throws, so the test fails and does not skip).
- * WHY: a row that skips because a connector is absent must decide it from reads before it writes, and must not skip on a failed read; the
- *      read-only probe of the main flow relies on the shape readers to say what is wrong with a connector.
- * HOW: the fake core serves the connector list and the v2 details the test sets and answers 404 for every other path; nothing but GET
- *      reaches it.
  */
 import { expect, test } from '@playwright/test';
 import type { GuardedApi } from '../../utils/regression/guard/types';
@@ -56,8 +47,6 @@ registerFakeCore(() => core, (rig: FakeCoreRig) => ({ server, api } = rig), { cl
 
 const env = { baseUrl: process.env.BASE_URL, authMode: 'local', username: 'admin', password: 'unused' } as TestEnv;
 const need = (name: Needs) => resolveNeed(name, { api, env });
-
-// ------------------------------------------------------------------ the pure readers
 
 test('groupsOf, interfaceCodes and featuresByInterface read a detail: kinds sorted, codes lower-cased, a missing feature list is empty', () => {
     const detail = { ...v1({ discoveryProvider: ['Z', 'IP-Hostname'] }), ...v2([{ code: 'Info' }, { code: 'metrics', features: ['openMetrics'] }]) };
@@ -107,8 +96,6 @@ test('inventoryLine: a v1 connector by function groups and kinds, a v2 one by in
     expect(inventoryLine('X', undefined, {})).toBe('X: version unknown interfaces (none)');
     expect(inventoryLine('Y', 2, v2([{ code: 'info' }], [{ functionGroupCode: 'g', kinds: ['k'] }]))).toBe('Y: v2 interfaces info; function groups g[k]');
 });
-
-// ------------------------------------------------------------------ the finders and the needs
 
 test('findRegisteredConnector returns a matching connector whatever its state, and undefined when none matches', async () => {
     core.serveConnectors(
@@ -162,8 +149,6 @@ test('vault-connector is met by a connected Vault connector with a secret interf
     await expect(need('vault-connector')).rejects.toThrow(/→ 500/);
     expect(server.mutations()).toEqual([]);
 });
-
-// ------------------------------------------------------------------ the credential kind read
 
 test('kindConnector skips only when the kind is not offered (404) and throws on any other failed read', async () => {
     const path = `/api/v1/connectors/${U(1)}/attributes/credentialProvider/ApiKey`;

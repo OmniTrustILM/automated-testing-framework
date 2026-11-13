@@ -1,7 +1,6 @@
 /**
- * The pure parts of the rbac/ folder, no server and no browser: jwtTools (decode, tamper, forge, the token variants), identities (profile
- * shape, second-identity and local-Keycloak preflights, the anonymous target, the 401 leak check), authApi's permission body, and
- * permissionMatrix's decision table (fixture documents, the certificate and administration tables, consistency).
+ * The pure parts of the rbac/ folder, no server and no browser:
+ * jwtTools (decode, tamper, forge, the token variants), identities.
  */
 import { internalLeaks } from '../../utils/regression/errorContract';
 import { expect, test } from '@playwright/test';
@@ -11,10 +10,7 @@ import { ANONYMOUS_VARIANTS, buildVariant, claimOf, decodeJwt, echoesToken, sign
 import { base64Url } from '../../utils/regression/text';
 import { accessDeniedProblems, cellPair, cellStatus, CERT_KEYS, DENY_NUANCES, expectedResourceActions, Fixture, fixtureDocument, FIXTURES, MATRIX_A_DETAIL, MATRIX_A_LIST, MATRIX_A_PROFILE, MATRIX_B_ISSUE_P1, MATRIX_B_ISSUE_P2, MATRIX_B_RA_CREATE, MATRIX_B_RA_DETAIL_P1, MATRIX_B_RA_DETAIL_P2, MATRIX_B_RA_LIST, MATRIX_B_ROLES_LIST, NESTED_GATE_FIXTURES } from '../../utils/regression/rbac/permissionMatrix';
 import { randomBytes } from 'node:crypto';
-// Run-scoped generated test passwords: no password-like literal in the file.
 const GEN_PW_1 = `qa-${randomBytes(9).toString('base64url')}`;
-
-// ------------------------------------------------------------------ jwtTools
 
 const REAL_ISSUER = 'https://idp.example.test/realms/qa';
 const validToken = (): string => signWithThrowawayKey({ kid: 'key-1' }, { iss: REAL_ISSUER, sub: 'subject-1', username: 'qa-user', jti: 'jti-1', exp: 4_000_000_000 });
@@ -39,7 +35,6 @@ test('tamperSignature changes the FIRST signature character and so the signature
     expect(sigBytes(tampered).equals(sigBytes(t)), 'the decoded signature differs').toBe(false);
     const sig = t.split('.')[2];
     expect(sig.length).toBe(342);
-    // The last base64url character holds 2 data bits and 4 padding bits: a neighbour with the same two data bits decodes identically.
     const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
     const last = alphabet.indexOf(sig[sig.length - 1]);
     const sibling = alphabet[(last & 0b110000) | ((last & 0b1111) === 0 ? 1 : 0)];
@@ -106,8 +101,6 @@ test('echoesToken: a refusal that repeats the token (or any JWT-shaped run) is c
     expect(echoesToken(`{"message":"bad ${t.slice(0, 40)}"}`, t)).toBe(true);
     expect(echoesToken('see eyJhbGciOiJSUzI1NiJ9.eyJ1c2VybmFtZSI6InFhIn0.sig', undefined)).toBe(true);
 });
-
-// ------------------------------------------------------------------ identities
 
 const PROFILE = {
     uuid: '00000000-0000-4000-8000-000000000001', username: 'qa-user', enabled: true, roles: [{ uuid: '00000000-0000-4000-8000-000000000002', name: 'admin' }],
@@ -182,8 +175,6 @@ test('leaksInternals: stack traces, exception classes, source references and the
     expect(leaksInternals('see Foo.java:42')).toBe('a source file reference');
 });
 
-// ------------------------------------------------------------------ permissionMatrix
-
 const REFS = {
     p1: { uuid: '00000000-0000-4000-8000-0000000000a1', name: 'p1' }, p2: { uuid: '00000000-0000-4000-8000-0000000000a2', name: 'p2' },
     g1: { uuid: '00000000-0000-4000-8000-0000000000b1', name: 'g1' }, g2: { uuid: '00000000-0000-4000-8000-0000000000b2', name: 'g2' },
@@ -236,7 +227,6 @@ test('matrix A is internally consistent: every listed certificate has a 200 deta
         const asserted = new Set([...MATRIX_A_LIST[f].present, ...MATRIX_A_LIST[f].absent]);
         expect(CERT_KEYS.filter((k) => !asserted.has(k)).sort(), `${f}: the H-1 rows`).toEqual(['c3', 'cg1', 'cg12', 'cg2']);
     }
-    // Every 403 of matrix A names its pair (first gate Detail / Certificate, second gate Members / RA Profile).
     for (const k of CERT_KEYS) for (const f of FIXTURES) {
         const c = MATRIX_A_DETAIL[k][f];
         if (cellStatus(c) === 403) expect(cellPair(c), `${k} ${f}`).toBeDefined();

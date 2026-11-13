@@ -1,6 +1,6 @@
 /**
- * Unit tests of the RA-profile schema helpers: the required attributes of a schema, the authority order and the
- * lazy choice of an authority with a required attribute. No environment, no network.
+ * Unit tests of the RA-profile schema helpers: the required attributes of a schema, the authority order and the lazy
+ * choice of an authority with a required attribute.
  */
 import { expect, test } from '@playwright/test';
 import { authorityCandidates, chooseAuthorityWithRequiredAttribute, requiredRaProfileAttributes } from '../../utils/regression/inventory/raProfileSchema';

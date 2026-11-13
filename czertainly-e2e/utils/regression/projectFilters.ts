@@ -1,26 +1,15 @@
 /**
- * projectFilters — the tier rules (`@local` exclusion, `@phaseB` switch) ANDed into every Playwright project.
- *
- * WHY: Playwright 1.58 resolves `grep` / `grepInvert` per project as `takeFirst(project, config)`: a project's own value
- * REPLACES the config-level one. A project with `grep: /@p1/` would silently drop a config-level `grepInvert: /@local/`
- * and the `@phaseB` grep. So the rules are not set on the config alone; `withTierFilters()` folds them into every
- * project as single RegExps:
- *   grep       = allOf(projectGrep, phaseBGrep)      (phaseBGrep only when REG_PHASE=B; not on infrastructure projects)
- *   grepInvert = anyOf(projectInvert, localInvert)    (localInvert unless TIER_KIND=local; on every project)
- * `describeLocalOnly()` stays as the second guard inside each `@local` spec.
- *
- * `resolveProjectFilters()` mirrors Playwright's takeFirst so a unit test can check what a config really selects.
+ * projectFilters — the tier rules (`@local` exclusion, `@phaseB` switch) ANDed into every Playwright project: a project's own
+ * `grep` / `grepInvert` replaces the config-level one, so `withTierFilters()` folds the rules into each project.
  */
 import { isLocalTier } from './tier/kind';
 import { settings } from './run/settings';
 
-/** `@local` and every `@local:<x>` variant. */
 export const LOCAL_TAG = /@local\b/;
 export const PHASE_B_TAG = /@phaseB\b/;
 
 type Grep = RegExp | RegExp[] | undefined;
 
-/** True when REG_PHASE=B: the run targets the migrated build, and only `@phaseB` tests are selected. */
 export function isMigratedBuildPhase(env: NodeJS.ProcessEnv = process.env): boolean {
     return settings(env).phase === 'B';
 }
@@ -34,14 +23,12 @@ function sources(grep: Grep): string[] {
     });
 }
 
-/** A RegExp that matches when ANY of the given patterns matches (an array argument is itself an OR). */
 export function anyOf(...greps: Grep[]): RegExp | undefined {
     const parts = greps.flatMap(sources);
     if (!parts.length) return undefined;
     return new RegExp(parts.map((s) => `(?:${s})`).join('|'));
 }
 
-/** A RegExp that matches when EVERY given pattern matches somewhere in the title (an array argument is an OR). */
 export function allOf(...greps: Grep[]): RegExp | undefined {
     const parts = greps.filter((g) => !!g && (!Array.isArray(g) || g.length > 0)).map((g) => anyOf(g)!.source);
     if (!parts.length) return undefined;
@@ -54,7 +41,6 @@ export interface TierRules {
     grepInvert?: RegExp;
 }
 
-/** The rules of this run: exclude `@local` unless TIER_KIND=local; select only `@phaseB` when REG_PHASE=B. */
 export function tierRules(env: NodeJS.ProcessEnv = process.env): TierRules {
     return {
         grep: isMigratedBuildPhase(env) ? PHASE_B_TAG : undefined,
@@ -69,9 +55,8 @@ interface FilterableProject {
 }
 
 /**
- * Every project with the tier rules folded in. `infrastructure` names projects (snapshot, non-interference) that are not
- * ledger rows: they keep running in Phase B (the `@phaseB` grep is not applied to them), but `@local` is excluded
- * there as everywhere else.
+ * Every project with the tier rules folded in; `infrastructure` projects
+ * (snapshot, non-interference) keep running in Phase B but exclude `@local`.
  */
 export function withTierFilters<T extends FilterableProject>(
     projects: T[],
@@ -99,7 +84,6 @@ export interface ResolvedFilter {
 
 const asList = (g: RegExp | RegExp[]): RegExp[] => (Array.isArray(g) ? g : [g]);
 
-/** What Playwright 1.58 resolves per project: `takeFirst(project.grep, config.grep, /.* /)`, likewise for grepInvert. */
 export function resolveProjectFilters(config: {
     grep?: RegExp | RegExp[];
     grepInvert?: RegExp | RegExp[];
@@ -112,7 +96,6 @@ export function resolveProjectFilters(config: {
     });
 }
 
-/** Playwright's title matcher: the invert wins, then any grep pattern must match the title (with tags). */
 export function selectsTest(filter: ResolvedFilter, titleWithTags: string): boolean {
     const hit = (list: RegExp[]) => list.some((re) => {
         re.lastIndex = 0;

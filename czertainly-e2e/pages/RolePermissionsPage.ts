@@ -1,109 +1,143 @@
 /**
- * RolePermissionsPage — the permissions editor of one role.
- *
- * WHAT: the editor opened from a role (`#/roles/permissions/<uuid>`): the resources with their action checkboxes, the object-level
- *       permissions of a resource (add an object, allow actions on it), and Save with the request it sends.
- * WHY: REG-CFG-08 grants resource-level and object-level permissions and compares what the editor sends and shows with what the
- *      platform stores; an object-level permission must not widen to the whole resource (fe-administrator#2283). `save` returns
- *      the answer and the body sent, so the spec asserts the request and then the stored state.
- * HOW: a resource by the button that carries its label (the label spells "Ra Profiles" or "RA Profiles"), an action by its
- *      checkbox label inside the resource; an object checkbox by its id `<object uuid>_<action>` is clicked as an event, because
- *      the wrapper button around it stops the propagation of a click; Save waits for the request that is not a read.
+ * RolePermissionsPage — the permissions editor of one role: resource actions, object-level permissions and Save (REG-CFG-08).
+ * An object checkbox is clicked as an event, because the wrapper button around it stops the click. Save waits only for a write to the role
+ * that `goToEditor` opened.
  */
 import { expect, Locator, Page } from '@playwright/test';
 import type { ApiAnswer } from '../utils/regression/apiReads';
-import { setSwitch, submitButtonOf } from './ui/form';
-import { actAndWaitForApi, answerFrom, UUID } from './ui/waitForResponse';
+import { setSwitch } from './ui/form';
+import { actAndWaitForApi, answerFrom } from './ui/waitForResponse';
 
-/** What a save sent and what the platform answered. */
 export interface SavedPermissions {
     answer: ApiAnswer;
-    /** The JSON body of the save request: `{ allowAllResources, resources: [{ name, actions, objects }] }`. */
     sent: { allowAllResources?: boolean; resources: Array<{ name: string; actions: string[]; objects?: Array<{ uuid: string; allow: string[] }> }> };
-    /** The request body as text, for an attachment. */
     sentText: string;
 }
+
+const ROLE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export class RolePermissionsPage {
     readonly page: Page;
     readonly main: Locator;
+
+    // Resources: the allow-all switch and the resource buttons (each opens its action checkboxes)
     readonly allResourcesSwitch: Locator;
-    /** The RA profile resource, whose label is spelled either way. */
+    readonly certificatesResource: Locator;
     readonly raProfilesResource: Locator;
+
+    // Object Action Permissions of the open resource
+    /** The product gives this button no test id and no accessible name: the icon class is the handle. */
+    readonly addObjectButton: Locator;
+
+    // Edit Object Level Permissions dialog
+    readonly objectPermissionsDialog: Locator;
+    readonly objectDialogSaveButton: Locator;
+
+    // Save
+    readonly saveButton: Locator;
+
+    /** The role uuid last opened by `goToEditor`; `save` accepts a write for this uuid only. */
+    private roleUuid: string | undefined;
 
     constructor(page: Page) {
         this.page = page;
         this.main = page.locator('main');
+
         this.allResourcesSwitch = page.locator('[id="allResources"]');
+        this.certificatesResource = this.resource('Certificates');
         this.raProfilesResource = this.resource('Ra Profiles').or(this.resource('RA Profiles')).first();
+
+        this.addObjectButton = this.main.getByRole('heading', { name: 'Object Action Permissions' }).locator('..').locator('button:has(svg.lucide-plus)').first();
+
+        this.objectPermissionsDialog = page.getByRole('dialog', { name: 'Edit Object Level Permissions' });
+        this.objectDialogSaveButton = this.objectPermissionsDialog.getByRole('button', { name: 'Save', exact: true });
+
+        this.saveButton = this.main.getByTestId('progress-button').last();
     }
 
-    /** Opens the editor of a role and waits for the resource list. */
-    async goToEditor(roleUuid: string): Promise<void> {
-        await this.page.goto(`administrator/#/roles/permissions/${roleUuid}`);
-        await expect(this.resource('Certificates')).toBeVisible();
-    }
-
-    /** The resource's button (opens its actions). */
     resource(label: string): Locator {
         return this.main.getByRole('button').filter({ has: this.page.getByText(label, { exact: true }) }).first();
     }
 
-    /** The action checkbox of the open resource. */
     action(label: string): Locator {
         return this.main.getByLabel(label, { exact: true }).first();
     }
 
-    /** The "allow all resources" switch is off (a role starts without it). */
+    objectRowCheckbox(objectName: string): Locator {
+        return this.objectPermissionsDialog.locator('tr', { has: this.page.getByRole('cell', { name: objectName, exact: true }) }).getByRole('checkbox');
+    }
+
+    objectActionCheckbox(objectUuid: string, action: string): Locator {
+        return this.page.locator(`[id="${objectUuid}_${action}"]`);
+    }
+
+    /** The uuid must be a live own role. */
+    async goToEditor(roleUuid: string): Promise<void> {
+        if (!ROLE_UUID.test(roleUuid)) {
+            throw new Error(`RolePermissionsPage.goToEditor: role uuid is not a uuid: ${roleUuid}`);
+        }
+        this.roleUuid = roleUuid;
+        await this.page.goto(`/administrator/#/roles/permissions/${roleUuid}`);
+        await expect(this.certificatesResource).toBeVisible();
+    }
+
     async assertAllResourcesOff(): Promise<void> {
         await expect(this.allResourcesSwitch).not.toBeChecked();
     }
 
-    /** Opens the resource (its actions show). */
     async openResource(resource: Locator): Promise<void> {
         await resource.click();
     }
 
-    /** Ticks each action of the open resource (resource level) and proves that it is ticked. */
     async allowActions(actions: readonly string[]): Promise<void> {
         for (const a of actions) await setSwitch(this.main, this.action(a), true);
     }
 
-    /** Every action is ticked in the open resource. */
     async assertActionsChecked(actions: readonly string[]): Promise<void> {
         for (const a of actions) await expect(this.action(a), `${a} is ticked`).toBeChecked();
     }
 
-    /** The open resource's "Add object" button (an icon only) → the object-level dialog → the object's row ticked → Save. */
     async addObject(objectName: string): Promise<void> {
-        const heading = this.main.getByRole('heading', { name: 'Object Action Permissions' });
-        // The product gives this button no test id and no accessible name (a tooltip only): the icon class is the handle.
-        await heading.locator('..').locator('button:has(svg.lucide-plus)').first().click();
-        const dialog = this.page.getByRole('dialog', { name: 'Edit Object Level Permissions' });
-        await expect(dialog).toBeVisible();
-        await dialog.locator('tr', { has: this.page.getByRole('cell', { name: objectName, exact: true }) }).getByRole('checkbox').check();
-        await dialog.getByRole('button', { name: 'Save', exact: true }).click();
-        await expect(dialog).toBeHidden();
+        await this.addObjectButton.click();
+        await expect(this.objectPermissionsDialog).toBeVisible();
+        await this.objectRowCheckbox(objectName).check();
+        await this.objectDialogSaveButton.click();
+        await expect(this.objectPermissionsDialog).toBeHidden();
     }
 
-    /** Ticks the actions of one object (each checkbox sits in a wrapper button that stops the propagation: the input gets the click). */
+    /** Each checkbox sits in a wrapper button that stops the click: the input gets the click. */
     async allowOnObject(objectUuid: string, actions: readonly string[]): Promise<void> {
         for (const a of actions) {
-            const box = this.page.locator(`[id="${objectUuid}_${a}"]`);
+            const box = this.objectActionCheckbox(objectUuid, a);
             if (!(await box.isChecked())) await box.dispatchEvent('click');
             await expect(box, `${a} is ticked on the object`).toBeChecked();
         }
     }
 
-    /** The editor as a picture (the object rows), for an attachment. */
     async screenshot(): Promise<Buffer> {
         return this.page.screenshot();
     }
 
-    /** Clicks Save and returns the answer of the save request together with the body it sent; the stored state is read after it. */
+    /**
+     * Clicks Save and returns the answer with the body sent. Only a non-GET to
+     * this role's permissions counts: another role's write is not this save.
+     */
     async save(): Promise<SavedPermissions> {
+        const roleUuid = this.roleUuid;
+        if (!roleUuid) {
+            throw new Error('RolePermissionsPage.save: goToEditor must open a live own role before Save');
+        }
         const startedAt = Date.now();
-        const response = await actAndWaitForApi(this.page, { method: (m) => m !== 'GET', path: new RegExp(`/api/v1/roles/${UUID}/permissions`) }, () => submitButtonOf(this.main).click());
+        const pathOfOwnRole = new RegExp(`/api/v1/roles/${roleUuid}/permissions(?:\\?|$)`);
+        const response = await actAndWaitForApi(
+            this.page,
+            { method: (m) => m !== 'GET', path: pathOfOwnRole },
+            () => this.saveButton.click(),
+        );
+        const pathname = new URL(response.url()).pathname;
+        if (!pathname.includes(`/roles/${roleUuid}/permissions`)) {
+            throw new Error(`RolePermissionsPage.save: expected a write to role ${roleUuid}, got ${pathname}`);
+        }
         const sentText = response.request().postData() ?? '';
         return { answer: await answerFrom(response, startedAt), sent: JSON.parse(sentText || '{"resources":[]}'), sentText };
     }

@@ -1,16 +1,7 @@
 /**
- * REG-CFG-03 — An RA profile on the run's MS ADCS authority created through the UI (release checklist: Configuration 3). ilm#436.
- *
- * WHAT: 1. RA Profiles → + → Create RA Profile: name, the run's authority, a certificate template loaded from the CA.
- *       2. Create → the detail page opens; the profile is Disabled.
- *       3. Enable → Enabled.
- *       4. The API shows it enabled, on the run authority, with the chosen template.
- *       5. The detail tabs Protocols, Attributes, Validation and Events open without an error.
- * WHY: an RA profile is the unit every issuance goes through; profiles are created disabled and must be enabled from the detail.
- * HOW: create-only: only the RA profile this test created is enabled; nothing is deleted. The authority is the run's own (created
- *      if needed); the template is read from the CA. The test needs a connected MS ADCS authority whose connector answers its
- *      live health, otherwise it skips with the named blocker. The create answer is put in the ledger (`own.record`) before
- *      the redirect is waited for.
+ * REG-CFG-03 — An RA profile on the run's MS ADCS authority created through the UI (release checklist: Configuration 3;
+ * ilm#436). Creates the profile (Disabled), enables it, and checks in the API that it is enabled, on the run authority,
+ * with the chosen template.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { RaProfilePage } from '../../../pages/RaProfilePage';
@@ -21,7 +12,6 @@ import { lookupInList, submitRecordingByNameOnFailure } from '../../../utils/reg
 import { testMeta, tags } from '../../../utils/regression/tags';
 import { RA_PROFILE_CREATE_MS } from '../../../utils/regression/timeouts';
 
-
 test.describe('RA profile configuration', { tag: tags.regression }, () => {
     test('an RA profile created in the UI on the MS ADCS authority starts disabled and can be enabled',
         testMeta({
@@ -29,8 +19,7 @@ test.describe('RA profile configuration', { tag: tags.regression }, () => {
             rule: ['an RA profile on the MS ADCS authority with a template from the CA; RA profiles are created disabled and enabled from the detail'],
         }),
         async ({ signedIn: page, api, own }) => {
-            // Needs a connected MS ADCS authority whose connector answers its LIVE health (adcsBlocker); else the named
-            // environment blocker (deploy gate, never a pass) and the CA-agnostic run RA profile takes over. Reads only, before any create.
+            // Needs a connected MS ADCS authority whose connector answers its LIVE health (adcsBlocker)
             const blocker = await adcsBlocker(api);
             test.skip(!!blocker, blocker ?? '');
             const authority = await test.step('Prerequisite: the run MS ADCS authority', async () => ensureAuthority(api, own.spec));
@@ -53,7 +42,6 @@ test.describe('RA profile configuration', { tag: tags.regression }, () => {
                 const answer = await submitRecordingByNameOnFailure(
                     { type: 'raProfiles', name, spec: own.spec, note, parents: { authority: authority.uuid }, lookup: lookupInList(api, '/api/v1/raProfiles') },
                     () => dialog.submitCreate({ timeout: RA_PROFILE_CREATE_MS }));
-                // Ledger before assertion: from the create answer, before the redirect is waited for.
                 const created = own.record('raProfiles', answer, { name, note, parents: { authority: authority.uuid } });
                 await raProfiles.waitForDetail({ timeout: RA_PROFILE_CREATE_MS });
                 return created;

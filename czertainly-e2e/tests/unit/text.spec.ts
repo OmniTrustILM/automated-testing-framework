@@ -1,5 +1,6 @@
 /**
- * Unit tests of the one unique suffix (utils/regression/text.ts) and the one name builder built on it (ledger/runState.ts).
+ * Unit tests of the one unique suffix (utils/regression/text.ts) and the one name builder built on it
+ * (ledger/runState.ts).
  */
 import { expect, test } from '@playwright/test';
 import { uniqueSuffix } from '../../utils/regression/text';

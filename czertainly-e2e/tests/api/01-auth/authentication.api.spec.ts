@@ -1,26 +1,11 @@
 /**
- * API-AUTH-01, 02, 03, 06 — Who may call the API: no credentials, a valid bearer, tampered and forged bearers, a disabled user. ilm#426.
- *
- * WHAT: 1. No credentials: every protected read and every create, update and delete answers 401 with a body free of internals; health
- *          and GET branding stay open; nothing is created.
- *       2. A valid identity reads its own profile (JSON, its own name, the default listings, no ANY / NONE); the profile's username
- *          equals the username claim of the bearer; a refused HTTP method with valid credentials answers 400 on the main build.
- *       3. Bearers built from nothing and the valid token altered in one place are each refused with 401, between two controls that
- *          answer 200 with the untouched token.
- *       4. A disabled user's token is refused on the next request; enabling the user restores it.
- * WHY: no or failed authentication always ends as 401 (never 200, 403, 404, 405 or 500); only health, connector registration and GET
- *      branding are public. A bearer is verified by signature, issuer, time and audience; a disabled user is refused for every
- *      method. A red test means a protected call got through or answered with the wrong status; the refused-method row is a known bug
- *      on the migrated build (core#2502, test.fail there).
- * HOW: bearer variants built from nothing run everywhere; tampered ones need a bearer token and skip in header mode; the disabled-user
- *      row needs the dedicated second identity and one core replica (own objects only). Anonymous calls go through the local core's own
- *      port where a header-mode proxy would authenticate them. A role an anonymous call manages to create is recorded in the ledger before
- *      the assertion; the refused-method row skips with a named reason when the ingress answers before core.
+ * API-AUTH-01, 02, 03, 06 — Who may call the API: no credentials, valid, tampered and forged bearers, a disabled user
+ * (ilm#426).
  */
 import { FEW_CALLS_TEST_MS, MANY_STEPS_TEST_MS, SEVERAL_STEPS_TEST_MS } from '../../../utils/regression/timeouts';
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { INGRESS_SKIP_MESSAGE, checkRefusedMethod } from '../../../utils/regression/errorContract';
-import { getBuildInfo, isMigratedBuild } from '../../../utils/regression/coreBuild';
+import { getBuildInfo } from '../../../utils/regression/coreBuild';
 import { expectHealthGroupUp, PROBE_PATHS } from '../../../utils/regression/platform/connectorApi';
 import { anonymousTarget, callAs, callWithAuthorization, coreReplicas, isNotGrantableAction, leaksInternals, parseProfile, readProfile, replicaBlocker, restrictedIdentity } from '../../../utils/regression/rbac/identities';
 import { ANONYMOUS_VARIANTS, buildVariant, claimOf, echoesToken, TOKEN_VARIANTS, TOKENLESS_VARIANTS, TokenVariant } from '../../../utils/regression/rbac/jwtTools';
@@ -34,7 +19,6 @@ import { answerOf } from '../../../utils/regression/apiReads';
 const DEFAULT_LISTINGS = ['dashboard', 'approvals', 'certificates', 'keys', 'secrets'];
 
 test.describe('Authentication of API callers', { tag: tags.api }, () => {
-    // ------------------------------------------------------------------ API-AUTH-01
 
     test('no credentials answer 401 on every protected read, and health and branding stay open',
         testMeta({
@@ -95,7 +79,6 @@ test.describe('Authentication of API callers', { tag: tags.api }, () => {
             const created = await test.step('POST /v1/roles with a valid body and no credentials → 401', async () => {
                 const started = Date.now();
                 const answer = await answerOf(await anonymousApi.post('/api/v1/roles', { data: { name, description: 'API-AUTH-01 anonymous probe', customAttributes: [] } }), started);
-                // Ledger before assertion: a role an anonymous caller managed to create is this run's object.
                 own.probe('roles', answer, { name, note: 'role created without credentials (API-AUTH-01[mutations])' });
                 expect(answer.status, answer.text.slice(0, 200)).toBe(401);
                 expect(leaksInternals(answer.text)).toBeUndefined();
@@ -118,8 +101,6 @@ test.describe('Authentication of API callers', { tag: tags.api }, () => {
                 expect(await usersOrRolesNamed(api, 'roles', created)).toEqual([]);
             });
         });
-
-    // ------------------------------------------------------------------ API-AUTH-02
 
     test('a valid identity gets its profile: JSON, its own name, the default listings, no ANY / NONE',
         testMeta({
@@ -158,36 +139,29 @@ test.describe('Authentication of API callers', { tag: tags.api }, () => {
             expect(String(claimOf(adminToken!.bearer(), 'username')).toLowerCase()).toBe(profile.username.toLowerCase());
         });
 
-    test('a refused HTTP method with valid credentials answers 400 on the main build',
+    test('TRACE with valid credentials is refused with 405',
         testMeta({
-            id: 'API-AUTH-02', row: 'method', prio: 'P1', issue: 'ilm#426', bug: 'core#2502',
+            id: 'API-AUTH-02', row: 'method', prio: 'P1', issue: 'ilm#426',
             rule: [
-                'TRACE or any method outside the firewall allow list: 400 baseline, 401 migrated (core#2502, open); ilm#424 "status codes stay the same"',
-                'the credential state decides the status; only meaningful where the ingress lets the method reach core (otherwise the test skips)',
-                'core#2502: the migrated build answers 401 to a refused method',
+                'TRACE with valid credentials is refused with 405, never 401 (core#2502, fixed); ilm#424 "status codes stay the same"',
+                'an nginx-based gateway refuses TRACE itself with 405, so on a tier the row checks what a client gets; core\'s own answer is checked only where the answered-by annotation names core',
             ],
         }),
         async ({ api }, testInfo) => {
             test.setTimeout(FEW_CALLS_TEST_MS);
             const build = await getBuildInfo(api);
             testInfo.annotations.push({ type: 'build', description: `core ${build.version ?? '?'} branch ${build.branch ?? '?'}` });
-            const migrated = await isMigratedBuild(api, testInfo);
             const res = await api.fetch('/api/v1/auth/profile', { method: 'TRACE' });
-            // Whose answer is it (as in API-GEN-32[method])? An ingress that refuses TRACE before core (405, a proxy `Server`
-            // header, a non-JSON body) says nothing about core: skip with the named reason. The body is never printed (a proxy could
-            // echo the bearer); the verdict's problems and the skip detail are status codes, byte counts and a proxy name only.
+            // As in API-GEN-32[method]; the body is never printed (a proxy could echo the bearer).
             const verdict = checkRefusedMethod({ status: res.status(), headers: res.headers(), bodyText: await res.text() });
             if (verdict.outcome === 'skip') {
                 testInfo.annotations.push({ type: 'ingress-answer', description: verdict.why });
                 test.skip(true, INGRESS_SKIP_MESSAGE);
                 return;
             }
-            // The known bug only on the migrated build (the build marker from /v1/info; REG_BUILD overrides it): core answers 401 there.
-            test.fail(migrated, 'core#2502: the migrated build answers 401 to a refused method');
-            expect(verdict.problems, 'a refused method with valid credentials answers 400 with an empty body (core, not the ingress)').toEqual([]);
+            testInfo.annotations.push({ type: 'answered-by', description: verdict.answeredBy });
+            expect(verdict.problems, 'TRACE with valid credentials is refused with 405').toEqual([]);
         });
-
-    // ------------------------------------------------------------------ API-AUTH-03
 
     for (const variant of TOKENLESS_VARIANTS) {
         test(`a bearer built from nothing (${variant}) is refused with 401 between two controls`,
@@ -237,8 +211,6 @@ test.describe('Authentication of API callers', { tag: tags.api }, () => {
                 expect((await readProfile(api)).username, 'control after: the untouched token still answers 200').toBe(me.username);
             });
     }
-
-    // ------------------------------------------------------------------ API-AUTH-06
 
     test('a disabled user\'s token is refused on the next request, and re-enabling restores it',
         testMeta({

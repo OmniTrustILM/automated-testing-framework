@@ -1,11 +1,6 @@
 /**
- * Every test or hook that reaches a CA-dependent creator is gated before it creates anything: a tier without a healthy CA SKIPS
- * the row with the deploy gate, it never fails with `RaProfileSourceMissing`.
- *
- * Name-based and simple. A test is gated when it declares the `ca` need (`testMeta({ needs })`, on the test or its describe), takes
- * the `ownRaProfile` fixture, wraps the work in `orSkipWithoutCa`, uses one of the `…OrSkip` creators or asks `needs.ca()` /
- * `needs.require('ca', …)` first. A spec-local helper that calls a creator counts as a creator in that spec, unless it wraps
- * `orSkipWithoutCa` itself. Specs of tests/regression, tests/api, tests/timestamping and tests/key-onboarding are read.
+ * Every test or hook that reaches a CA-dependent creator is gated before it creates anything: a tier without a healthy
+ * CA SKIPS the row with the deploy gate, it never fails with `RaProfileSourceMissing`. Name-based and simple.
  */
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
@@ -16,17 +11,14 @@ import { testBlocks, typescript } from '../../utils/regression/specLint/parseSpe
 const ROOT = path.resolve(__dirname, '..', '..');
 const SCANNED = ['tests/regression', 'tests/api', 'tests/timestamping', 'tests/key-onboarding'];
 
-/** Helpers that throw `RaProfileSourceMissing` (directly or through a helper below) when no healthy CA can be copied. */
 const CREATORS = [
     'cloneRunRaProfile', 'createOwnRaProfile', 'createOwnRaProfileLike', 'ensureRunRaProfile', 'ensureOwnRaProfile',
     'ensureProtocolRaProfile', 'ensureAcmeOnRaProfile', 'openApprovalGate', 'ensureProtocolCaCertificate', 'ensureRbacObjects',
     'startAcmeRun', 'buildRig',
 ];
 
-/** What gates a body by itself. */
 const GATED_IN_BODY = /\b(ownRaProfile|orSkipWithoutCa|ensureRunRaProfileOrSkip|createOwnRaProfileOrSkip)\b|\bneeds\s*\.\s*ca\s*\(|\bneeds\s*\.\s*require\s*\([^)]*['"]ca['"]/;
 
-/** Justified exceptions: `<file>:<test or hook title>` → why it is safe. Keep empty unless a reason is written here. */
 const EXCEPTIONS: Record<string, string> = {};
 
 const filesUnder = (dir: string): string[] => {
@@ -40,7 +32,6 @@ const filesUnder = (dir: string): string[] => {
 
 const word = (names: Iterable<string>): RegExp => new RegExp(`\\b(${[...names].join('|')})\\b`);
 
-/** The creators plus the spec-local helpers that reach one without gating it themselves (fixed point). */
 function creatorsOf(ts: typeof TS, sf: TS.SourceFile): Set<string> {
     const locals = new Map<string, string>();
     const collect = (n: TS.Node): void => {
@@ -62,7 +53,6 @@ function creatorsOf(ts: typeof TS, sf: TS.SourceFile): Set<string> {
     return set;
 }
 
-/** Hook declarations (`test.beforeAll(…)` and the like) with their text and line. */
 function hooksOf(ts: typeof TS, sf: TS.SourceFile): Array<{ title: string; body: string; line: number }> {
     const out: Array<{ title: string; body: string; line: number }> = [];
     const visit = (n: TS.Node): void => {
@@ -76,7 +66,6 @@ function hooksOf(ts: typeof TS, sf: TS.SourceFile): Array<{ title: string; body:
     return out;
 }
 
-/** `<file>:<line> <title>` of every test or hook that calls a creator without a gate. */
 function ungated(rel: string, src: string): string[] {
     const ts = typescript();
     const sf = ts.createSourceFile(rel, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);

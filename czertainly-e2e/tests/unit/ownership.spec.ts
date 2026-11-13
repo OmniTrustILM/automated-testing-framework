@@ -1,17 +1,13 @@
 /**
- * Unit tests for the own-object guard and the run id it depends on.
- *
- * Ownership needs the ledger "created" line of THIS run and no later "deleted" line; the run prefix is a second check
- * on top and never enough alone. `assertOwnLive` adds the live object (a fake API here): its live name must carry the
- * run prefix too. Derived objects carry no prefix and are owned through createdAfter. The run id has seconds and a
- * random suffix, so two runs started in the same minute never share a prefix; a hand-set id is validated and locked.
+ * Unit tests for the own-object guard and the run id it depends on. Ownership needs the ledger "created" line of THIS
+ * run and no later "deleted" line; the run prefix is a second check on top and never enough alone.
  */
 import { APIRequestContext, test, expect } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { parseFlag } from '../../utils/regression/run/flags';
 import {
-    absenceOf, assertOwn, assertOwnLive, cachedLedger, carriesRunPrefix, derivedDeletable, fullListRow, ID_NAMED, isOwnObject, WorkaroundNote, LiveObjectMissing, mayDeleteOwn, OwnObjectViolation, checkOwnership,
+    absenceOf, assertFullList, assertOwn, assertOwnLive, cachedLedger, carriesRunPrefix, derivedDeletable, fullListRow, ID_NAMED, isOwnObject, WorkaroundNote, LiveObjectMissing, mayDeleteOwn, OwnObjectViolation, checkOwnership,
     resetLedgerCacheForTests, restrictedUsername,
 } from '../../utils/regression/ledger/ownership';
 import { createdAfterMarker, LedgerLine, parseLedger, serverDate } from '../../utils/regression/ledger/ledger';
@@ -52,7 +48,6 @@ test('the prefix is checked on top of the ledger line', () => {
     const o = checkOwnership({ uuid: 'u-1' }, { lines, runId: RUN });
     expect(o.own).toBe(false);
     expect(o.reason).toMatch(/does not start with/);
-    // Only the ledger's own name decides; a name the caller passes in can neither rescue nor sink a line.
     expect(isOwnObject({ uuid: 'u-1', name: `${RUN}-forged` }, { lines: [line({ name: 'hand-made-role' })], runId: RUN }), 'a prefixed ref name cannot rescue an unprefixed ledger line').toBe(false);
     expect(isOwnObject({ uuid: 'u-1', name: 'renamed' }, { lines: [line({})], runId: RUN }), 'the ledger name decides, the live check covers renames').toBe(true);
     expect(isOwnObject({ uuid: 'u-1' }, { lines: [line({ name: `${RUN}.example.test` })], runId: RUN }), 'a DNS name of the run').toBe(true);
@@ -106,7 +101,6 @@ test('the tier identity of the line is checked when one is given', () => {
     expect(checkOwnership({ uuid: 'u-1' }, { lines: [line({})], runId: RUN, tier: 'aaaaaaaaaaaa' }).reason).toMatch(/no tier identity/);
 });
 
-/** A fake request context answering detail GETs from `objects` (uuid → body; missing → 404). */
 function liveApi(objects: Record<string, Record<string, unknown>>): { api: APIRequestContext; gets: string[] } {
     const gets: string[] = [];
     const api = fakeContext({
@@ -135,7 +129,6 @@ test('assertOwnLive: ledger first, then the live name must carry the run prefix'
     expect(String(e)).toMatch(/raProfiles ra-1: its live name does not start with/);
     expect(String(e)).not.toContain('Production RA');
 
-    // No ledger line: refused before any request.
     const none = liveApi({ 'ra-9': { name: `${RUN}-ra` } });
     await expect(assertOwnLive(none.api, 'raProfiles', { uuid: 'ra-9' }, 'x', opts)).rejects.toThrow(OwnObjectViolation);
     expect(none.gets).toEqual([]);
@@ -143,11 +136,9 @@ test('assertOwnLive: ledger first, then the live name must carry the run prefix'
     // Gone: LiveObjectMissing (route or object missing), not a silent pass.
     await expect(assertOwnLive(liveApi({}).api, 'raProfiles', { uuid: 'ra-1' }, 'x', opts)).rejects.toThrow(LiveObjectMissing);
 
-    // A wrong type for the line is refused.
     await expect(assertOwnLive(ok.api, 'roles', { uuid: 'ra-1' }, 'x', opts)).rejects.toThrow(/ledger records it as raProfiles/);
 });
 
-// assertOwnLive: users are checked by username, certificates by commonName; derived and id-named lines by the ledger
 test('assertOwnLive checks users by username and certificates by commonName; derived lines by ledger', async () => {
     const lines = [
         line({ type: 'users', uuid: 'us-1', name: `${RUN}-user` }),
@@ -178,8 +169,7 @@ function pathApi(routes: Record<string, { status: number; body?: unknown }>): { 
     return { api, gets };
 }
 
-// assertOwnLive with the known core defect where a role or user detail answers 5xx: it is decided by the full list only; other
-// types stay strict
+// assertOwnLive with the known core defect where a role or user detail answers 5xx: it is decided by the full list only.
 test('assertOwnLive: a 5xx role or user detail is decided by the full list only; other types stay strict', async () => {
     const lines = [line({ type: 'roles', uuid: 'r-1', name: `${RUN}-role` }), line({ type: 'groups', uuid: 'g-1', name: `${RUN}-group` })];
     const notes: WorkaroundNote[] = [];
@@ -189,29 +179,24 @@ test('assertOwnLive: a 5xx role or user detail is decided by the full list only;
     const live = await assertOwnLive(listed.api, 'roles', { uuid: 'r-1' }, 'x', opts);
     expect([live.via, live.body?.name]).toEqual(['list', `${RUN}-role`]);
     expect(listed.gets).toEqual(['/api/v1/roles/r-1', '/api/v1/roles']);
-    // Listed under a foreign name: refused like a renamed detail.
     const renamed = pathApi({ '/api/v1/roles/r-1': { status: 500 }, '/api/v1/roles': { status: 200, body: [{ uuid: 'r-1', name: 'Administrators' }] } });
     await expect(assertOwnLive(renamed.api, 'roles', { uuid: 'r-1' }, 'x', opts)).rejects.toThrow(OwnObjectViolation);
     // Not listed: missing (core#2511 for a deleted role), never a silent pass.
     const gone = pathApi({ '/api/v1/roles/r-1': { status: 500 }, '/api/v1/roles': { status: 200, body: [{ uuid: 'r-2', name: 'x' }] } });
     await expect(assertOwnLive(gone.api, 'roles', { uuid: 'r-1' }, 'x', opts)).rejects.toThrow(/answered 500 \(known bug core#2511\) and \/api\/v1\/roles does not list it/);
     expect(notes.map((n) => n.bug)).toEqual(['core#2511', 'core#2511', 'core#2511']);
-    // The list unreadable: the error propagates (nothing proven).
     const down = pathApi({ '/api/v1/roles/r-1': { status: 500 }, '/api/v1/roles': { status: 502 } });
     await expect(assertOwnLive(down.api, 'roles', { uuid: 'r-1' }, 'x', opts)).rejects.toThrow(/answered 502/);
-    // Another type: a 5xx is an error, no list is read.
     const group = pathApi({ '/api/v1/groups/g-1': { status: 500 } });
     await expect(assertOwnLive(group.api, 'groups', { uuid: 'g-1' }, 'x', opts)).rejects.toThrow(/GET groups g-1 answered 500/);
     expect(group.gets).toEqual(['/api/v1/groups/g-1']);
 });
 
-// absenceOf: 404 proves absence; a 5xx only through the full list of roles / users; fullListRow refuses a capped list
 test('absenceOf: 404 proves absence; a 5xx only via the full role or user list; a capped list refused', async () => {
     const detail = '/api/v1/roles/r-1';
     expect((await absenceOf(pathApi({}).api, 'roles', 'r-1', detail)).absent).toBe(true);
     const gone = await absenceOf(pathApi({ [detail]: { status: 500 }, '/api/v1/roles': { status: 200, body: [{ uuid: 'r-2' }] } }).api, 'roles', 'r-1', detail);
     expect([gone.absent, gone.knownBug?.bug]).toEqual([true, 'core#2511']);
-    // An empty list, or rows without a string uuid, prove nothing.
     const empty = await absenceOf(pathApi({ [detail]: { status: 500 }, '/api/v1/roles': { status: 200, body: [] } }).api, 'roles', 'r-1', detail);
     expect([empty.absent, empty.detail]).toEqual([false, 'GET answered 500; roles r-1: /api/v1/roles answered an empty list; it proves nothing']);
     const still = await absenceOf(pathApi({ [detail]: { status: 500 }, '/api/v1/roles': { status: 200, body: [{ uuid: 'R-1' }] } }).api, 'roles', 'r-1', detail);
@@ -223,6 +208,22 @@ test('absenceOf: 404 proves absence; a 5xx only via the full role or user list; 
     const capped = pathApi({ '/api/v1/users': { status: 200, body: Array.from({ length: 1000 }, (_, i) => ({ uuid: `u-${i}` })) } });
     await expect(fullListRow(capped.api, 'users', 'x')).rejects.toThrow(/1000 rows .*may be truncated/);
     await expect(fullListRow(capped.api, 'groups', 'x')).rejects.toThrow(/no authoritative full list/);
+});
+
+test('assertFullList: a roles or users list at the cap, empty, not a list or with a row without a uuid proves nothing; other lists pass', () => {
+    const rows = (n: number) => Array.from({ length: n }, (_, i) => ({ uuid: `u-${i}` }));
+    expect(() => assertFullList('/api/v1/users', rows(999), 'w')).not.toThrow();
+    expect(() => assertFullList('/api/v1/users', rows(1000), 'w')).toThrow('w: /api/v1/users answered 1000 rows (one page holds at most 1000); it may be truncated and proves nothing');
+    expect(() => assertFullList('/api/v1/roles', [], 'w')).toThrow('w: /api/v1/roles answered an empty list; it proves nothing');
+    expect(() => assertFullList('/api/v1/roles', { roles: [] }, 'w')).toThrow('w: /api/v1/roles did not answer a list');
+    expect(() => assertFullList('/api/v1/roles', [{ uuid: 'r-1' }, { name: 'admin' }], 'w')).toThrow(/without a string uuid/);
+    for (const spelling of ['/api/v1/users/', '/api/v1/users?itemsPerPage=5', 'https://tier.example.test/api/v1/users']) {
+        expect(() => assertFullList(spelling, rows(1000), 'w'), spelling).toThrow(/may be truncated/);
+    }
+    for (const other of ['/api/v1/groups', '/api/v1/credentials', '/api/v1/users/u-1/roles']) {
+        expect(() => assertFullList(other, rows(1000), 'w')).not.toThrow();
+        expect(() => assertFullList(other, [], 'w')).not.toThrow();
+    }
 });
 
 test('createdAfter comes from the server clock minus the margin and the request time', () => {
@@ -329,10 +330,6 @@ test('id-named types rest on the ledger; a type that is neither read live nor id
     await expect(assertOwnLive(api, 'raProfile', { uuid: 'u-1' }, 'test', { lines: typo, runId: RUN, tier: null })).rejects.toThrow(/unknown ledger type "raProfile"/);
 });
 
-// ------------------------------------------------------------------ the dedicated identity's ILM user
-
-// a users line named REG_RESTRICTED_USERNAME is own with a created line of this run; never by name alone, for another type, or
-// without the variable
 test('a users line named REG_RESTRICTED_USERNAME is own with a created line, never by name alone', () => {
     const env = { REG_RESTRICTED_USERNAME: ' QA-DED-User ' };
     const ded = line({ type: 'users', uuid: 'u-ded', name: 'qa-ded-user' });
@@ -341,7 +338,6 @@ test('a users line named REG_RESTRICTED_USERNAME is own with a created line, nev
     expect(restrictedUsername({ REG_RESTRICTED_USERNAME: '  ' })).toBeUndefined();
     expect(isOwnObject({ uuid: 'u-ded' }, { lines: [ded], runId: RUN, env })).toBe(true);
     expect(checkOwnership({ uuid: 'u-ded' }, { lines: [ded], runId: RUN, env }).reason).toBe('created by this run');
-    // u2: the env unset or empty → the prefix rule, named in the reason.
     for (const e of [{}, { REG_RESTRICTED_USERNAME: '' }]) {
         const o = checkOwnership({ uuid: 'u-ded' }, { lines: [ded], runId: RUN, env: e });
         expect(o.own).toBe(false);
@@ -351,13 +347,11 @@ test('a users line named REG_RESTRICTED_USERNAME is own with a created line, nev
     for (const type of ['roles', 'groups', 'certificates']) {
         expect(isOwnObject({ uuid: 'x' }, { lines: [line({ type, uuid: 'x', name: 'qa-ded-user' })], runId: RUN, env }), type).toBe(false);
     }
-    // u4: no created line of THIS run (name alone, another run, another tier), or a later deleted line.
     expect(isOwnObject({ uuid: 'u-other', name: 'qa-ded-user' }, { lines: [ded], runId: RUN, env })).toBe(false);
     expect(isOwnObject({ uuid: 'u-ded' }, { lines: [{ ...ded, runId: OTHER }], runId: RUN, env })).toBe(false);
     expect(isOwnObject({ uuid: 'u-ded' }, { lines: [{ ...ded, tier: 'bbbb' }], runId: RUN, tier: 'aaaa', env })).toBe(false);
     expect(isOwnObject({ uuid: 'u-ded' }, { lines: [ded, { ...ded, event: 'deleted', at: '2026-10-13T12:05:00.000Z' }], runId: RUN, env })).toBe(false);
     expect(isOwnObject({ uuid: 'u-ded' }, { lines: [{ ...ded, derived: true, createdAfter: undefined }], runId: RUN, env }), 'a derived line without createdAfter').toBe(false);
-    // carriesRunPrefix itself: the type gates the second form; the process env is the default seam.
     expect(carriesRunPrefix('qa-ded-user', RUN, 'users', env)).toBe(true);
     expect(carriesRunPrefix('qa-ded-user', RUN, 'roles', env)).toBe(false);
     expect(carriesRunPrefix('qa-ded-user', RUN, undefined, env)).toBe(false);
@@ -374,7 +368,7 @@ test('a users line named REG_RESTRICTED_USERNAME is own with a created line, nev
     }
 });
 
-// the live username must equal the configured name (any case); a differing live name, or a roles line of that name, is refused
+// the live username must equal the configured name (any case)
 test('the live username must equal the configured name in any case; a differing name is refused', async () => {
     const env = { REG_RESTRICTED_USERNAME: 'qa-ded-user' };
     const ded = line({ type: 'users', uuid: 'u-ded', name: 'qa-ded-user' });

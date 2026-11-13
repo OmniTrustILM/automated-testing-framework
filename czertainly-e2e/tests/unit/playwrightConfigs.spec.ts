@@ -1,8 +1,5 @@
 /**
- * playwrightConfigs — the regression and API configs loaded with a fake environment: the resolved project filters
- * (no `@local` test without TIER_KIND=local and a proven local core, REG_PHASE=B, a named env file that is missing),
- * the run-end teardown as globalTeardown, the API gate / P1 / rest projects, and a real `--list` over the fixture
- * folder tests/unit/fixtures/list-filter (child processes; a fake `docker`, a throw-away loopback core).
+ * playwrightConfigs — the regression and API configs loaded with a fake environment.
  */
 import { test, expect } from '@playwright/test';
 import { spawn, spawnSync } from 'child_process';
@@ -12,10 +9,7 @@ import * as path from 'path';
 import { ResolvedFilter, resolveProjectFilters, selectsTest } from '../../utils/regression/projectFilters';
 
 const ROOT = path.resolve(__dirname, '..', '..');
-/** Tests that start a child process (a Playwright CLI run or a throw-away core): `npm run test:unit:quick` leaves them out. */
 const INTEGRATION = '@integration';
-
-// ------------------------------------------------------------------ resolved project filters of both configs
 
 const CONFIGS = ['playwright.regression.config.ts', 'playwright.api.config.ts'];
 const RUN_ENV_KEYS = [
@@ -33,10 +27,6 @@ function emptyEnvFile(dir: string): string {
     return file;
 }
 
-/**
- * A fake `docker` (REG_DOCKER_BIN): `docker context inspect` names a local socket (the endpoint of the
- * current context is judged), `docker ps --format '{{json .}}'` lists one container publishing `port` on loopback.
- */
 function fakeDocker(dir: string, port: number | undefined): string {
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, 'fake-docker');
@@ -57,7 +47,6 @@ interface LoadedConfig {
     projects: Array<{ name: string; grep?: RegExp; grepInvert?: RegExp; use?: { defaultBrowserType?: string } }>;
 }
 
-/** Evaluate a config module afresh under `env` (no .env file is read), then restore the process environment. */
 function loadConfig(file: string, env: Record<string, string>, testInfoDir: string): LoadedConfig {
     const saved = Object.fromEntries(RUN_ENV_KEYS.map((k) => [k, process.env[k]]));
     for (const k of RUN_ENV_KEYS) delete process.env[k];
@@ -74,7 +63,6 @@ function loadConfig(file: string, env: Record<string, string>, testInfoDir: stri
     }
 }
 
-/** A throw-away "local core" in a child process (the config's probe is synchronous, so it cannot be in this process). */
 async function fakeLocalCore(): Promise<{ url: string; stop: () => void }> {
     const script = "const s=require('http').createServer((q,r)=>{if(q.url.startsWith('/api/v1/info')){r.setHeader('content-type','application/json');" +
         "r.end(JSON.stringify({app:{name:'core',version:'0.0.0-test'},build:{branch:'main',commitId:'abc',timestamp:'t'},db:{}}))}else{r.statusCode=404;r.end()}});" +
@@ -87,7 +75,6 @@ async function fakeLocalCore(): Promise<{ url: string; stop: () => void }> {
     return { url: `http://127.0.0.1:${port}`, stop: () => child.kill() };
 }
 
-/** A loopback port nobody listens on. */
 async function closedPort(): Promise<number> {
     const srv = net.createServer();
     await new Promise<void>((r) => srv.listen(0, '127.0.0.1', () => r()));
@@ -116,7 +103,8 @@ for (const file of CONFIGS) {
         expect(resolved.some((f) => selectsTest(f, title('@p1'))), 'control: a shared-safe P1 test is still selected').toBe(true);
     });
 
-    // ${file}: TIER_KIND=local with a loopback BASE_URL, a live loopback core and a container proof lets @local tests through
+    // ${file}: TIER_KIND=local with a loopback BASE_URL, a live
+    // loopback core and a container proof lets @local tests through.
     test(`${file}: TIER_KIND=local with loopback core and container proof admits @local`, { tag: INTEGRATION }, async ({}, testInfo) => {
         test.setTimeout(30_000);
         const core = await fakeLocalCore();
@@ -129,7 +117,7 @@ for (const file of CONFIGS) {
         }
     });
 
-    // ${file}: TIER_KIND=local with a live core but no container publishing its port, or no docker CLI, refuses to load
+    // ${file}: TIER_KIND=local with a live core but no container publishing its port, or no docker CLI, refuses to load.
     test(`${file}: TIER_KIND=local without a container on the core port refuses`, { tag: INTEGRATION }, async ({}, testInfo) => {
         test.setTimeout(30_000);
         const core = await fakeLocalCore();
@@ -165,7 +153,6 @@ for (const file of CONFIGS) {
         expect(() => loadConfig(file, { AUTH_MODE: 'header', BASE_URL: 'https://qa.example.com' }, testInfo.outputDir)).toThrow(/AUTH_MODE=header/);
     });
 
-    // ${file}: REG_PHASE=B narrows the row projects to @phaseB, infrastructure keeps running
     test(`${file}: REG_PHASE=B narrows rows to @phaseB, infrastructure keeps running`, ({}, testInfo) => {
         const resolved = resolveProjectFilters(loadConfig(file, { REG_PHASE: 'B' }, testInfo.outputDir));
         const byName = (n: string) => resolved.find((f) => f.name === n) as ResolvedFilter;
@@ -175,7 +162,6 @@ for (const file of CONFIGS) {
         expect(selectsTest(byName('snapshot'), title('@p1'))).toBe(true);
         expect(selectsTest(byName('non-interference'), title('@p1'))).toBe(true);
         expect(selectsTest(byName('snapshot'), title('@p1 @local')), '@local stays out of infrastructure too').toBe(false);
-        // The regression config's run-setup project makes the run objects in Phase B too; the API config has none.
         expect(resolved.some((f) => f.name === 'run-setup'), 'only the regression config has a run-setup project').toBe(file === 'playwright.regression.config.ts');
         if (file === 'playwright.regression.config.ts') {
             expect(selectsTest(byName('run-setup'), title('@p1'))).toBe(true);
@@ -189,7 +175,6 @@ for (const file of CONFIGS) {
     });
 }
 
-// the API config wires the gate, the first API project and the rest projects (the gate has a browser)
 test('the API config wires the gate, the first project and the rest projects, and the gate has a browser', ({}, testInfo) => {
     const cfg = loadConfig('playwright.api.config.ts', {}, testInfo.outputDir);
     const resolved = resolveProjectFilters(cfg);
@@ -204,8 +189,6 @@ test('the API config wires the gate, the first project and the rest projects, an
     expect(cfg.projects.find((p) => p.name === 'gate')?.use?.defaultBrowserType).toBe('chromium');
 });
 
-// ------------------------------------------------------------------ the real --list over a fixture folder
-
 const FIXTURE_DIR = path.join('tests', 'unit', 'fixtures', 'list-filter');
 
 interface Listed {
@@ -214,7 +197,6 @@ interface Listed {
     tags: string[];
 }
 
-/** `playwright test -c <fixture config> --list --reporter=json` in a child process with a clean run environment. */
 function listFixture(config: string, outDir: string, extraEnv: Record<string, string> = {}): Listed[] {
     const env: NodeJS.ProcessEnv = {};
     for (const [k, v] of Object.entries(process.env)) {

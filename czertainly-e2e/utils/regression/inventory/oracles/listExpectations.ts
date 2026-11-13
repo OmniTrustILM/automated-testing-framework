@@ -1,26 +1,17 @@
 /**
- * listExpectations — pure checkers over listing reads.
- *
- * WHAT: Pure checkers over listing reads that utils/regression/inventory/listInvariants.ts does not have: count partitions,
- *       set equality, continuation, the block of empty values, mirror order, text order without knowing the collation,
- *       tie-break and instant order. Each names the field, the neighbouring rows or the sets when it fails.
- * WHY: Some list rules (partitions, continuation, mirror order, tie-break) are not covered by `listInvariants`.
- * HOW: Each checker names the field, the neighbouring rows or the sets when it fails; text order is checked without knowing the collation.
+ * listExpectations — pure checkers over listing reads that listInvariants.ts does not have (count partitions, set equality, continuation,
+ * empty values last, mirror, text order, tie-break, instant order); each names the field and the rows or sets when it fails.
  */
 import { InvariantViolation } from '../listInvariants';
 import type { ListRow } from '../listInvariants';
 import { FieldMap, satisfiesFilter } from './values';
 
-// ====================================================================================================================
-// 4. Pure checkers (besides listInvariants.ts)
-// ====================================================================================================================
 
 const preview = (ids: Iterable<string>, max = 8): string => {
     const list = [...ids];
     return `[${list.slice(0, max).join(', ')}${list.length > max ? `, … ${list.length - max} more` : ''}]`;
 };
 
-/** The parts add up to the total (a partition by counts). */
 export function expectCountsAdd(label: string, parts: Array<[string, number]>, total: number): void {
     const sum = parts.reduce((n, [, c]) => n + c, 0);
     if (sum !== total) throw new InvariantViolation(`${label}: ${parts.map(([n, c]) => `${n} ${c}`).join(' + ')} = ${sum}, expected ${total}`);
@@ -40,13 +31,11 @@ export function expectSubset(label: string, sub: ListRow[], sup: ListRow[], key:
     if (outside.length) throw new InvariantViolation(`${label}: ${outside.length} row(s) outside the superset ${preview(outside)}`);
 }
 
-/** A and B returns exactly the intersection of A and B (filters are ANDed, FilterPredicatesBuilder.java). */
 export function expectIntersection(label: string, a: ListRow[], b: ListRow[], ab: ListRow[], key: (r: ListRow) => string): void {
     const inB = new Set(b.map(key));
     expectKeysEqual(label, ab, a.filter((r) => inB.has(key(r))), key);
 }
 
-/** Pages of one size, concatenated, are the first rows of one big request, in the same order. */
 export function expectContinuation(label: string, pages: ListRow[][], whole: ListRow[], key: (r: ListRow) => string): void {
     const flat = pages.flat().map(key);
     const big = whole.map(key);
@@ -63,7 +52,6 @@ export function expectSameOrder(label: string, a: ListRow[], b: ListRow[], key: 
     if (x.length !== y.length || at >= 0) throw new InvariantViolation(`${label}: two identical requests answered different orders (first difference at row ${at < 0 ? Math.min(x.length, y.length) : at})`);
 }
 
-/** Once a row without a value appears, no row with a value follows (empty values last). */
 export function expectNullsLast(label: string, rows: ListRow[], isNull: (r: ListRow) => boolean, key: (r: ListRow) => string): void {
     let firstNull = -1;
     rows.forEach((r, i) => {
@@ -75,7 +63,6 @@ export function expectNullsLast(label: string, rows: ListRow[], isNull: (r: List
     });
 }
 
-/** asc and desc list the same values in opposite order (ties may reorder, so the VALUE sequences are compared). */
 export function expectMirror(label: string, asc: ListRow[], desc: ListRow[], valueOf: (r: ListRow) => string | undefined): void {
     const a = asc.map(valueOf).filter((v): v is string => v !== undefined);
     const d = desc.map(valueOf).filter((v): v is string => v !== undefined).reverse();
@@ -89,8 +76,8 @@ const collator = new Intl.Collator('en');
 export const codeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 /**
- * Text order without knowing the collation: equal strings are fine; two [a-z0-9] strings must follow the code-unit order;
- * any other pair is accepted when EITHER the code-unit order OR the `en` collator order is right.
+ * Text order without knowing the collation: [a-z0-9] pairs follow code-unit order; any other pair passes when either the code-unit or the
+ * `en` collator order is right.
  */
 export function textOrdered(prev: string, cur: string, dir: 'asc' | 'desc'): boolean {
     if (prev === cur) return true;
@@ -99,7 +86,6 @@ export function textOrdered(prev: string, cur: string, dir: 'asc' | 'desc'): boo
     return codeUnit(lo, hi) <= 0 || collator.compare(lo, hi) <= 0;
 }
 
-/** Non-null text values non-decreasing (`asc`) / non-increasing (`desc`) per `textOrdered`; rows without a value are skipped here. */
 export function expectOrderedText(label: string, rows: ListRow[], valueOf: (r: ListRow) => string | undefined, dir: 'asc' | 'desc', key: (r: ListRow) => string): void {
     let prev: { v: string; r: ListRow } | undefined;
     for (const r of rows) {
@@ -110,7 +96,6 @@ export function expectOrderedText(label: string, rows: ListRow[], valueOf: (r: L
     }
 }
 
-/** Equal sort values are ordered by key ascending (core SortOrderBuilder tieBreak appends `uuid asc` in both directions). */
 export function expectTieBreakAscending(label: string, rows: ListRow[], valueOf: (r: ListRow) => string | undefined, key: (r: ListRow) => string): number {
     let groups = 0;
     for (let i = 1; i < rows.length; i++) {
@@ -123,7 +108,6 @@ export function expectTieBreakAscending(label: string, rows: ListRow[], valueOf:
     return groups;
 }
 
-/** Every returned row satisfies the filter (the row-level predicate). */
 export function expectRowsSatisfy(label: string, rows: ListRow[], field: Pick<FieldMap, 'get'>, condition: string, value: unknown, key: (r: ListRow) => string): void {
     const bad = rows.filter((r) => !satisfiesFilter(field.get(r), condition, value));
     if (bad.length) {
@@ -132,7 +116,6 @@ export function expectRowsSatisfy(label: string, rows: ListRow[], field: Pick<Fi
     }
 }
 
-/** Every instant of the LOWER set is not after any instant of the UPPER set (the two halves of a datetime partition are ordered). */
 export function expectInstantOrder(label: string, lowerSet: ListRow[], upperSet: ListRow[], valueOf: (r: ListRow) => number | undefined): void {
     const lo = lowerSet.map(valueOf).filter((v): v is number => v !== undefined);
     const hi = upperSet.map(valueOf).filter((v): v is number => v !== undefined);
@@ -142,7 +125,6 @@ export function expectInstantOrder(label: string, lowerSet: ListRow[], upperSet:
     if (maxLo > minHi) throw new InvariantViolation(`${label}: the lower half reaches ${new Date(maxLo).toISOString()}, the upper half starts at ${new Date(minHi).toISOString()}`);
 }
 
-/** A window predicate for IN_PAST / IN_NEXT: every instant lies in [from, to] widened by the skew tolerance. */
 export function expectInstantsWithin(label: string, rows: ListRow[], valueOf: (r: ListRow) => number | undefined, from: number, to: number, toleranceMs: number): void {
     const bad = rows.filter((r) => {
         const t = valueOf(r);

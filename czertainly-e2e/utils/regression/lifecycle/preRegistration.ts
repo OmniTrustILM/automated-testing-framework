@@ -1,12 +1,6 @@
 /**
- * preRegistration — platform-level pre-registration of own certificates.
- *
- * WHAT: platform-level pre-registration of own certificates (`…/certificates/register`, with or without a
- *       challenge), the registration block of a detail, the registration and validation settings of the tier (read, never
- *       set), and the re-validation of an own certificate. The placeholder a register makes is recorded before any assertion.
- * WHY: A placeholder certificate registered with or without a challenge must be recorded and completed like any own certificate.
- * HOW: The register call, the registration block of a detail, the registration and validation settings (read, never set) and re-validation;
- * the placeholder is recorded before any assertion.
+ * preRegistration — platform-level pre-registration of own certificates: the register call, the registration block of a detail, the tier's
+ * settings (read, never set) and re-validation; the placeholder is recorded before any assertion.
  */
 import type { APIRequestContext } from '@playwright/test';
 import { apiJson, getCertificate, ApiAnswer } from '../apiReads';
@@ -21,11 +15,11 @@ import { runId } from '../ledger/runState';
 import { opsBase } from './certificateLabels';
 import { certificateName } from '../ownCertificates';
 import { createdAfterOfAnswer, sendRaw } from './rawAnswers';
+import { randomBytes } from 'crypto';
 import { uniqueSuffix } from '../text';
 
 const logger = new Logger('Lifecycle');
 
-/** The parts of an attribute definition a request attribute copies. */
 interface AttributeDefinitionRef {
     uuid?: string;
     name?: string;
@@ -33,7 +27,6 @@ interface AttributeDefinitionRef {
     version?: string;
 }
 
-/** The registration and validation settings of `GET /v1/settings/platform` (the only members read here). */
 interface PlatformCertificateSettings {
     certificates?: {
         registration?: { defaultIssuanceWindowDays?: number; maxFailedAttempts?: number };
@@ -41,30 +34,19 @@ interface PlatformCertificateSettings {
     };
 }
 
-// ------------------------------------------------------------------ register and complete (pre-registration)
 
-/** A challenge secret: 12–255 printable ASCII; run-prefixed so a log line never looks like a real secret. */
-export const newChallenge = (): string => `${runId()}-s-${Math.random().toString(36).slice(2, 10)}${uniqueSuffix()}`;
+export const newChallenge = (): string => `${runId()}-s-${randomBytes(4).toString('hex')}${uniqueSuffix()}`;
 
-/** The platform default CN definition (core `CsrAttributes`, a fixed uuid). */
 export const DEFAULT_CN_DEFINITION: Readonly<AttributeDefinitionRef> = { uuid: '9abaeba0-973d-11ed-a8fc-0242ac120002', name: 'commonName', contentType: 'string', version: 'v3' };
 
-/**
- * Pure: the request attribute carrying `cn` for a CN definition. A v3 request attribute's content items are polymorphic
- * on their own `contentType` (interfaces BaseAttributeContentV3.java, no default subtype), so every v3 item carries
- * it; without it core answers 400 "Unable to read HTTP message". A v2 item has no such member.
- */
+/** The request attribute carrying `cn`; a v3 item must carry its own `contentType` or core answers 400 "Unable to read HTTP message". */
 export function cnAttributeOf(def: AttributeDefinitionRef, cn: string): JsonObject {
     const version = requestVersion(def, 'v3');
     const contentType = def.contentType ?? 'string';
     return { version, uuid: def.uuid, name: def.name, contentType, content: [version === 'v3' ? { data: cn, contentType } : { data: cn }] };
 }
 
-/**
- * The `commonName` request attribute of the RA profile's resolved request-attribute set
- * (`GET /v1/certificates/csr/attributes?raProfileUuid=`), as a request attribute carrying `cn`. Without the set (an
- * RA profile the suite may not query) the platform default definition is used.
- */
+/** The `commonName` request attribute of the RA profile's resolved attribute set, or the platform default when the set is not readable. */
 export async function commonNameRequestAttribute(api: APIRequestContext, ra: Pick<RaLike, 'uuid'>, cn: string): Promise<JsonObject> {
     let def: AttributeDefinitionRef = DEFAULT_CN_DEFINITION;
     try {
@@ -79,11 +61,8 @@ export async function commonNameRequestAttribute(api: APIRequestContext, ra: Pic
 
 export interface RegisterOptions {
     suffix?: string;
-    /** The challenge; `undefined` registers without one (no authorization row). */
     secret?: string;
-    /** ISO date of the issuance window (only with a secret). */
     expiresAt?: string;
-    /** Replaces the CN request attribute (negatives: special characters, two identities, …). */
     cn?: string;
     body?: JsonObject;
     note?: string;
@@ -93,15 +72,13 @@ export interface Registration {
     answer: ApiAnswer;
     cn: string;
     secret?: string;
-    /** The placeholder the platform made (recorded), when the answer carried a uuid. */
     cert?: OwnRef;
     createdAfter?: string;
 }
 
 /**
- * `POST …/certificates/register` (platform-level pre-registration) with the CN as `csrAttributes` and an
- * optional challenge; the placeholder is recorded before any assertion. GUARD REQUEST (lifecycle-shared-patches
- * README): the route is a create and must be on the guard's POST_CREATE list; until then the guard refuses it.
+ * `POST …/certificates/register` with the CN as `csrAttributes` and an optional challenge; the placeholder is recorded first. The route
+ * must be on the guard's POST_CREATE list.
  */
 export async function registerOwnCertificate(api: GuardedApi, ra: RaLike, spec: string, opts: RegisterOptions = {}): Promise<Registration> {
     const cn = opts.cn ?? certificateName(opts.suffix ?? 'reg');
@@ -116,23 +93,18 @@ export async function registerOwnCertificate(api: GuardedApi, ra: RaLike, spec: 
     return { answer, cn, secret: opts.secret, cert, createdAfter: createdAfterOfAnswer(answer) };
 }
 
-/** The `registration` block of a certificate detail (`CertificateRegistrationDetailDto`), or undefined. */
 export async function registrationOf(api: APIRequestContext, uuid: string): Promise<{ state?: string; expiresAt?: string; failedAttempts?: number } | undefined> {
     const cert = await getCertificate(api, uuid);
     return cert.registration ?? undefined;
 }
 
-/** `defaultIssuanceWindowDays` / `maxFailedAttempts` of the tier (read, never set; core defaults 7 / 5 when unset). */
 export async function registrationDefaults(api: APIRequestContext): Promise<{ defaultIssuanceWindowDays: number; maxFailedAttempts: number }> {
     const settings = await apiJson<PlatformCertificateSettings | undefined>(api, 'GET', '/api/v1/settings/platform');
     const r = settings?.certificates?.registration ?? {};
     return { defaultIssuanceWindowDays: Number(r.defaultIssuanceWindowDays ?? 7), maxFailedAttempts: Number(r.maxFailedAttempts ?? 5) };
 }
 
-/**
- * Whether certificate validation runs for the certificates of an RA profile (a preflight): the RA profile's own
- * `certificateValidationSettings.enabled`, else the platform `certificates.validation.enabled`; undefined = not readable.
- */
+/** Whether validation runs for an RA profile's certificates (profile setting, else platform setting); undefined = not readable. */
 export async function validationEnabledFor(api: APIRequestContext, ra: Pick<RaLike, 'uuid'>): Promise<boolean | undefined> {
     const profile = await apiJson<{ certificateValidationSettings?: { enabled?: unknown } } | undefined>(api, 'GET', `/api/v1/raProfiles/${ra.uuid}`).catch(() => undefined);
     const own = profile?.certificateValidationSettings?.enabled;
@@ -142,14 +114,10 @@ export async function validationEnabledFor(api: APIRequestContext, ra: Pick<RaLi
     return typeof platform === 'boolean' ? platform : undefined;
 }
 
-/**
- * `GET /v1/certificates/{own}/validate`: re-runs the validation of an OWN certificate (a side-effect GET the guard admits on own objects
- * only).
- */
+/** `GET /v1/certificates/{own}/validate`: re-runs validation of an OWN certificate (a side-effect GET). */
 export async function revalidate(api: GuardedApi, cert: OwnRef): Promise<JsonObject> {
     await assertOwnLive(api, 'certificates', cert, 'revalidate');
     return apiJson<JsonObject>(api, 'GET', `/api/v1/certificates/${cert.uuid}/validate`);
 }
 
-/** |a − b| in milliseconds of two ISO / Date values. */
 export const msBetween = (a: string | Date, b: string | Date): number => Math.abs(new Date(a).getTime() - new Date(b).getTime());

@@ -1,11 +1,7 @@
 /**
- * uiDetailRoute — the route readers of pages/ui/detailRoute.ts.
- *
- * WHAT: `uuidFromHash` reads the uuid of `#/<route>/detail/<uuid>` (with or without a trailing tab segment or query), the
- *       second uuid of a two-id route (`segments: 2`) and requires the version of a versioned route (`version: true`); it
- *       refuses another route and anything that is not a canonical uuid.
- * WHY: a create's uuid must never be taken from a truncated id, a run of dashes or a route that lost its version.
- * HOW: pure, no browser: a stand-in with a `url()`.
+ * uiDetailRoute — the route readers of pages/ui/detailRoute.ts. `uuidFromHash` reads the uuid of
+ * `#/<route>/detail/<uuid>` (with or without a trailing tab segment or query), the second uuid of a two-id route
+ * (`segments: 2`) and requires the version of a versioned route (`version: true`).
  */
 import { expect, test } from '@playwright/test';
 import { detailUuidIfOn, uuidFromHash } from '../../pages/ui/detailRoute';

@@ -1,7 +1,7 @@
 /**
  * rolePage — offline checks of pages/RolePage.ts against a served stand-in roles list (every request of a
- * loopback-addressed context is answered by the test, nothing leaves the browser): a role counts as not listed only after
- * the list showed its rows, and the list is read fresh each time.
+ * loopback-addressed context is answered by the test, nothing leaves the
+ * browser): a role counts as not listed only after the list showed its rows.
  */
 import { expect, test } from '@playwright/test';
 import { RolePage } from '../../pages/RolePage';
@@ -15,8 +15,8 @@ test('RolePage.assertNotListed after reloadList: absent once rows show; present 
         const rolePage = new RolePage(page);
         await rolePage.reloadList();
         await rolePage.assertNotListed('qa-reg-x-role-delete');
-        // The same hash route again: the document the "server" answers NOW must be the one that is judged (a same-hash goto
-        // is no navigation, so without the reload the first render would stay).
+        // The same hash route again: the document the "server" answers NOW must be the one that is judged (a same-hash
+        // goto is no navigation, so without the reload the first render would stay).
         serve(listPage('List of Roles', 'roles', ['Administrators', 'qa-reg-x-role-delete']));
         await rolePage.reloadList();
         expect(await failsFast(rolePage.assertNotListed('qa-reg-x-role-delete'))).toBe(true);

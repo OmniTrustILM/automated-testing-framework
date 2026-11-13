@@ -1,12 +1,12 @@
 /**
  * The pure helpers of the events area: workflow request builders (trigger body, Set field items, condition items), the
- * association ledger notes, the event labels, the absence window, and the notification request attributes (the Java
- * name-based uuid of the webhook template attribute, e-mail / webhook attributes, ISO-8601 durations). No network: a change
- * in a builder fails here before it fails a run against a tier.
+ * association ledger notes, the event labels, the absence window, and the notification request.
  */
 import { expect, test } from '@playwright/test';
 import { durationSeconds } from '../../utils/regression/events/notificationProfiles';
-import { emailAttributes, nameUuidFromBytes, webhookAttributes, webhookTemplateAttribute, WEBHOOK_TEMPLATE_UUID } from '../../utils/regression/events/notificationAttributes';
+import { emailAttributes, webhookAttributes, webhookTemplateAttribute } from '../../utils/regression/events/notificationAttributes';
+import { findNotificationConnector } from '../../utils/regression/events/notificationConnector';
+import type { GuardedApi } from '../../utils/regression/guard/types';
 import { associationKey } from '../../utils/regression/events/eventAssociations';
 import { assertHeldFor, firingsOfObject } from '../../utils/regression/events/eventHistory';
 import { EVENT, EVENT_LABEL } from '../../utils/regression/events/eventVocabulary';
@@ -15,10 +15,10 @@ import { errorShapeOf, errorTexts } from '../../utils/regression/events/workflow
 import { parseAssociationNote } from '../../utils/regression/events/workflowTeardown';
 import { runId } from '../../utils/regression/ledger/runState';
 import { contentOf } from './helpers/contentOf';
+import { fakeResponse } from './helpers/fakeResponse';
+import { partialOf } from './helpers/guardRig';
 
 type Json = Record<string, any>;
-
-// ------------------------------------------------------------------ workflow builders
 
 test('a trigger with an event is type event; without one it is manual and carries no event', () => {
     const withEvent = triggerBody({ event: EVENT.actionPerformed, rules: [{ uuid: 'r1' }], actions: [{ uuid: 'a1' }] });
@@ -36,7 +36,6 @@ test('Set field items: group list, owner (or null), RA profile, custom attribute
     expect(setOwnerAction('u1')).toMatchObject({ fieldIdentifier: 'OWNER', data: 'u1' });
     expect(setOwnerAction(null).data).toBeNull();
     expect(setRaProfileAction('p1')).toMatchObject({ fieldIdentifier: 'RA_PROFILE_NAME', data: 'p1' });
-    // core ActionServiceImpl: `<name>|<CONTENT TYPE ENUM NAME>`, the data a string
     expect(setCustomAttributeAction('marker', 'string', 42)).toEqual({ fieldSource: 'custom', fieldIdentifier: 'marker|STRING', data: '42' });
     expect(sendNotificationItem('np1')).toEqual({ notificationProfileUuid: 'np1' });
 });
@@ -71,8 +70,6 @@ test('error texts: array bodies, message bodies, anything else', () => {
     expect(errorShapeOf(sent({ other: 1 }))).toBe('other');
 });
 
-// ------------------------------------------------------------------ absence window
-
 test('assertHeldFor reads through the whole window and once at its end; a violation fails at the first read that sees it', async () => {
     let reads = 0;
     const startedAt = Date.now();
@@ -93,19 +90,12 @@ test('assertHeldFor reads through the whole window and once at its end; a violat
     expect(Date.now() - t0, 'failed long before the window ended').toBeLessThan(1_000);
 });
 
-// ------------------------------------------------------------------ notification builders
-
-test('nameUuidFromBytes is Java UUID.nameUUIDFromBytes (version 3, IETF variant)', () => {
-    expect(nameUuidFromBytes(Buffer.from(''))).toBe('d41d8cd9-8f00-3204-a980-0998ecf8427e'); // the well-known empty-input vector
-    const u = nameUuidFromBytes(Buffer.from('abc'));
-    expect(u).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-3[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
-    expect(nameUuidFromBytes(Buffer.from('abc'))).toBe(u);
-});
-
-test('the webhook template attribute: uuid derived per content type, codeblock content with a base64 template', () => {
+test('the webhook template attribute: the connector uuid per content type, codeblock content with a base64 template', () => {
     const json = webhookTemplateAttribute('JSON', '{"a":"${event}"}');
     expect(json.name).toBe('data_contentTemplate_json');
-    expect(json.uuid).toBe(nameUuidFromBytes(Buffer.from(`${WEBHOOK_TEMPLATE_UUID}json`)));
+    expect(json.uuid).toBe('77ddf598-724a-31d4-943b-79ee71c854c5');
+    expect(webhookTemplateAttribute('XML', '<a/>').uuid).toBe('610ed4fa-0b1f-33a9-9a31-0be332673a58');
+    expect(webhookTemplateAttribute('RAW_JSON', '{}').uuid).toBe('07ea053b-3515-3ce8-a8a5-acfca3d4ed15');
     expect(json.contentType).toBe('codeblock');
     expect(contentOf(json)[0].data.language).toBe('json');
     expect(Buffer.from(contentOf(json)[0].data.code, 'base64').toString('utf8')).toBe('{"a":"${event}"}');
@@ -162,4 +152,23 @@ test('firingsOfObject: the firings whose objects include the uuid, in page order
     expect(firingsOfObject(page, 'z')).toEqual([]);
     expect(firingsOfObject({ items: [] }, 'a')).toEqual([]);
     expect(firingsOfObject({ items: [{ ...firing('t0', []), objectHistories: undefined as never /* a firing the platform sent without the field the type requires */ }] }, 'a')).toEqual([]);
+});
+
+test('findNotificationConnector: a healthy connector wins over an unhealthy one listed before it; with none healthy, the first one and why', async () => {
+    const health: Record<string, number> = { first: 503, second: 200 };
+    const rows = ['first', 'second'].map((uuid) => ({ uuid, name: `mail-${uuid}`, status: 'connected',
+        functionGroups: [{ functionGroupCode: 'notificationProvider', kinds: ['EMAIL'] }] }));
+    const api = partialOf<GuardedApi>({
+        get: async (url: string) => {
+            const m = /^\/api\/v[12]\/connectors\/(first|second)(\/health)?$/.exec(url);
+            if (url === '/api/v1/connectors') return fakeResponse({ status: 200, body: rows });
+            if (m && !m[2]) return fakeResponse({ status: 200, body: { uuid: m[1], version: 'v1' } });
+            if (m) return fakeResponse({ status: health[m[1]], body: { status: health[m[1]] === 200 ? 'ok' : 'nok' } });
+            return fakeResponse({ status: 404, body: { message: `no fake route ${url}` } });
+        },
+    });
+    expect(await findNotificationConnector(api, 'EMAIL')).toEqual({ uuid: 'second', name: 'mail-second', kind: 'EMAIL' });
+    health.second = 503;
+    expect(await findNotificationConnector(api, 'EMAIL'), 'none healthy: the first one with the reason').toEqual({ uuid: 'first', name: 'mail-first', kind: 'EMAIL', unhealthy: 'live health 503' });
+    expect(await findNotificationConnector(api, 'WEBHOOK'), 'no connector offers the kind').toBeUndefined();
 });

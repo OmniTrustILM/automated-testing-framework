@@ -1,23 +1,9 @@
 /**
- * provision — the timestamping setup: preflight, per-run provisioning in timestamping-setup.sh order, and the summary.
- *
- * WHAT: `provisionTimestamping(api)` returns the run's `TimestampingSummary`: `unavailable` with the reason when the
- * tier lacks a prerequisite (preflight.ts) or a shared step fails at the tier, else `ready` with every set that could be
- * provisioned and `missingFamilies` for the others. `writeSummary` stores it at `summaryFile()` (mode 0600: it holds
- * no password: those are derived from the run secret). `SETUP_LEDGER_SPEC` is the `spec` of every ledger line written here.
- * WHY: replaces development-environment `scripts/timestamping-setup.sh` for the block: instead of reusing and changing
- * fixed-name objects, each run creates its own (run-prefixed names, a ledger line per object right after its create), and
- * the block teardown, then the run-end teardown, delete them.
- * HOW: shared objects first (vault profile, token, token profile, time-quality configuration, mapped user, role); then per
- * planned family the non-qualified and the qualified set (key → RA profile → certificate → chain → TSP profile → signing
- * profile → link → Basic credential → grants). One token and token profile serve every family, as the developers'
- * suite ran the ML-DSA script on the RSA run's token. A family other than RSA that fails mid-way at the tier is reported
- * in `missingFamilies` with the step and the status; what it created stays in the ledger. The RSA family is required by
- * the plan (the protocol and canary specs run on it): its failure mid-way fails the setup test. Only a TierError becomes
- * a reason: a SetupError (a refused body, a refused identity), a programming error or a guard refusal propagates and
- * fails the setup test. Shared tier or local stack, the same strict guard judges the setup (tests/timestamping/SHARED-TIER.md): the one
- * request it cannot send, marking a not-yet-trusted issuing root CA trusted, needs `opts.localApi` (a proven local stack), else the tier
- * is `unavailable` with that reason.
+ * provision — the timestamping setup: preflight, per-run provisioning, and the summary (no password in it).
+ * `unavailable` with the reason when the tier lacks a prerequisite or a shared step fails at the tier, else `ready` with every provisioned
+ * set and `missingFamilies` for the others.
+ * The RSA family is required: its failure, like any SetupError or guard refusal,
+ * fails the setup test. Marking an untrusted root CA trusted needs `opts.localApi`.
  */
 import * as fs from 'fs';
 import { writeJsonAtomic } from '../../devBlocks/provision/summaryFile';
@@ -41,20 +27,14 @@ export { offlineBlocker } from './preflight';
 const logger = new Logger('TimestampingSetup');
 
 export interface ProvisionOptions {
-    /**
-     * A `localStack` guarded context, given only on a proven local stack (the setup test builds it): the two requests the strict `api`
-     * cannot send (SetupContext.localAdmin). Without it the setup never changes or calls a pre-existing object.
-     */
+    /** A `localStack` guard, given only on a proven local stack: without it the setup never changes or calls a pre-existing object. */
     localApi?: GuardedApi;
     cfg?: TimestampingConfig;
     env?: NodeJS.ProcessEnv;
-    /** The waits (unit tests: 0 ms pauses). */
     poll?: Partial<PollSettings>;
-    /** The name stamp of this setup attempt (default: four random base36 characters). */
     stamp?: string;
 }
 
-/** What every set of the run shares. */
 interface Shared {
     pre: Prerequisites;
     vaultProfile: OwnRef;
@@ -63,7 +43,6 @@ interface Shared {
     timeQuality: TimeQuality;
     user: OwnRef;
     role: OwnRef;
-    /** The grants of every completed set (savePermissions replaces the role's whole document). */
     grants: SetGrant[];
 }
 
@@ -72,17 +51,14 @@ const HALVES = [
     { suffix: 'qualified', qualified: true },
 ] as const;
 
-/** What the summary says while a setup attempt runs: a killed or retried attempt never leaves an older `ready` file behind. */
+/** Written while a setup attempt runs, so a killed or retried attempt never leaves an older `ready` file behind. */
 export const SETUP_NOT_FINISHED = 'the timestamping setup has not finished (it is running, or an attempt was stopped before it wrote its summary)';
 
 export function unavailableSummary(reason: string): TimestampingSummary {
     return { status: 'unavailable', runId: runId(), at: new Date().toISOString(), reason };
 }
 
-/**
- * Preflight, then provisioning; see the file header. Every admin request goes through the guarded `api` (the strict guard, shared tier
- * or local); `opts.localApi` serves the two requests only a proven local stack may make.
- */
+/** Every admin request goes through the strict guarded `api`; `opts.localApi` serves the two requests only a proven local stack may make. */
 export async function provisionTimestamping(api: GuardedApi, opts: ProvisionOptions = {}): Promise<TimestampingSummary> {
     const env = opts.env ?? process.env;
     clearBaseline(env);
@@ -99,8 +75,8 @@ export async function provisionTimestamping(api: GuardedApi, opts: ProvisionOpti
     const missingFamilies: Record<string, string> = { ...found.missingFamilies };
     for (const [name, why] of Object.entries(missingFamilies)) logger.warn(`family ${name} skipped: ${why}`);
 
-    // Before anything is created: what the tier holds of the three resources the block adds to (utils/timestamping/inventory.ts). Read-only;
-    // a tier that cannot list them is a skipped check, never a failure.
+    // Before anything is created: what the tier holds of the three resources
+    // the block adds to; a tier that cannot list them is a skipped check.
     const baseline = await takeBaseline(admin, env);
     if (baseline.status === 'skipped') logger.warn(`inventory check skipped: ${baseline.reason}`);
 
@@ -140,7 +116,6 @@ export async function provisionTimestamping(api: GuardedApi, opts: ProvisionOpti
     };
 }
 
-/** Steps 5–10 of the script (1–4 are the preflight's discovery; 11, the --issuer-ca upload, is not ported). */
 async function provisionShared(ctx: SetupContext, pre: Prerequisites): Promise<Shared> {
     const vaultProfile = await step('step 5 (vault profile)', () => createVaultProfile(ctx, pre.vaultInstance, objectName(ctx, 'tsa-vault-profile')));
     const token = await step('step 6 (token)', () => createToken(ctx, pre.connectors.crypto, objectName(ctx, 'tsa-token')));
@@ -151,7 +126,6 @@ async function provisionShared(ctx: SetupContext, pre: Prerequisites): Promise<S
     return { pre, vaultProfile, token, tokenProfile, timeQuality, user, role, grants: [] };
 }
 
-/** Steps 12–21 for both halves of one family. */
 async function provisionFamily(ctx: SetupContext, s: Shared, family: PlannedFamily): Promise<SummarySet> {
     const plan = s.pre.raPlans[family.name];
     const halves: Partial<Record<'nonQualified' | 'qualified', SummarySet['qualified']>> = {};
@@ -160,7 +134,6 @@ async function provisionFamily(ctx: SetupContext, s: Shared, family: PlannedFami
         const at = (n: number, what: string) => `step ${n} (${what}, ${half.suffix})`;
         const keyPair = await step(at(12, 'key pair'), () => createKeyPair(ctx, s.token, s.tokenProfile, family.keyAlgorithm, objectName(ctx, `tsa-${base}`)));
         const raProfile = await step(at(13, 'RA profile'), () => createRaProfile(ctx, s.pre.authority, plan, half.qualified, objectName(ctx, `tsa-${base}`)));
-        // The CN names the EJBCA end entity (usernameGenMethod CN): run-prefixed and unique per setup attempt.
         const commonName = objectName(ctx, `tsa-${base}`);
         const certificate = await step(at(14, 'TSA certificate'), () => issueCertificate(ctx, { commonName, authority: s.pre.authority, raProfile, token: s.token, tokenProfile: s.tokenProfile, keyPair }));
         await step(at(15, 'issuance'), () => waitIssued(ctx, certificate));
@@ -199,7 +172,6 @@ async function provisionFamily(ctx: SetupContext, s: Shared, family: PlannedFami
     };
 }
 
-/** The summary in the shape of the script's `write_json_summary` (types.ts `Provisioning`). */
 function provisioningOf(ctx: SetupContext, s: Shared, sets: Record<string, SummarySet>): Provisioning {
     const c = s.pre.connectors;
     const nu = (r: { name: string; uuid: string }) => ({ name: r.name, uuid: r.uuid });
@@ -224,10 +196,7 @@ function provisioningOf(ctx: SetupContext, s: Shared, sets: Record<string, Summa
     };
 }
 
-/**
- * Writes the summary at `summaryFile()` with mode 0600 (directory created): a temp file in the same directory, chmod,
- * rename, so a reader never sees half a file. It holds no secret (the Basic passwords are derived, utils/timestamping/secrets.ts).
- */
+/** Writes the summary with mode 0600 through a temp file and a rename, so a reader never sees half a file. */
 export function writeSummary(summary: TimestampingSummary, env: NodeJS.ProcessEnv = process.env): string {
     const file = summaryFile(env);
     return writeJsonAtomic(file, summary);

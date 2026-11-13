@@ -1,16 +1,6 @@
 /**
- * certificateTeardownCalls — the three platform calls the certificate and discovery teardown handlers make.
- *
- * WHAT: `revokeThroughAuthority` (the v2 revoke of a certificate through its RA profile), `waitUntilRevoked` (poll the
- * certificate until its state is `revoked`) and `listNewlyDiscoveredInventoryUuids` (the inventory certificates a discovery
- * added as new).
- *
- * WHY: the run-end teardown belongs to the regression framework and depends on nothing in the smoke-era `utils/*Utils.ts`
- * modules; the calls it needs live here, next to the handlers that use them.
- *
- * HOW: plain requests with the context the handler was given (no guard: the handler's own-object check ran before). The
- * revoked wait is `waitForCertificateState` of `wait/certificateState.ts`, which fails fast instead of waiting out the
- * timeout and names the last state, the newest history entries and the elapsed time in its error.
+ * certificateTeardownCalls — the revoke, wait-for-revoked and newly-discovered-certificates calls of the teardown handlers.
+ * Plain requests with the handler's context (no guard: the handler checked ownership before).
  */
 import type { APIRequestContext } from '@playwright/test';
 import { Logger } from '../../Logger';
@@ -22,11 +12,9 @@ export interface RevokeThroughAuthority {
     authorityUuid: string;
     raProfileUuid: string;
     certUuid: string;
-    /** X.509 CRL reason; defaults to "unspecified". */
     reason?: string;
 }
 
-/** `POST /v2/operations/authorities/{a}/raProfiles/{r}/certificates/{c}/revoke`; any answer but 2xx / 204 throws. */
 export async function revokeThroughAuthority(api: APIRequestContext, options: RevokeThroughAuthority): Promise<void> {
     const reason = options.reason || 'unspecified';
     logger.info(`Revoking certificate ${options.certUuid} (reason: ${reason})`);
@@ -38,15 +26,13 @@ export async function revokeThroughAuthority(api: APIRequestContext, options: Re
     }
 }
 
-/** Polls `GET /api/v1/certificates/{uuid}` until the state is `revoked` (the fail-fast rules of `waitForCertificateState`). */
 export async function waitUntilRevoked(api: APIRequestContext, certUuid: string, timeoutMs: number): Promise<void> {
     await waitForCertificateState(api, certUuid, 'revoked', timeoutMs);
 }
 
 /**
- * Inventory UUIDs of the certificates this discovery added. `newlyDiscovered=true` leaves out certificates that were in the
- * inventory before the run: the discovery found them too, but they are not ours to delete. Pages are 1-based. Read it
- * before deleting the discovery: the delete drops this list but keeps the certificates.
+ * Inventory UUIDs of the certificates this discovery added as new (not ours to delete: the ones already in the inventory). Read it before
+ * deleting the discovery.
  */
 export async function listNewlyDiscoveredInventoryUuids(api: APIRequestContext, discoveryUuid: string): Promise<string[]> {
     const uuids: string[] = [];

@@ -1,26 +1,20 @@
 /**
  * keyOnboardingSpecs — static checks over tests/key-onboarding/*.spec.ts (the `@dev-tests` block).
- *
- * WHAT: every spec calls describeLocalOnly; every test and describe carries devTests(…); no provisioning reader runs at
- * module scope; no password-like literal; every recordCreated uses ledgerSpec; every removal from the inventory is
- * followed by a recordDeleted in the same test or hook (a test that expects the refusal, 422, is exempt).
- * WHY: Playwright lists the tests before the setup project writes the summary (a module-scope read would throw), the block
- * must never run off the local stack, a fixed password in source would be guessable, and an object the ledger does not
- * know is left behind by the run-end teardown.
- * HOW: a small string- and template-aware scanner finds the argument span of each call.
+ * Only 25-merge is local-only; every test and describe carries devTests() of a row.
  */
 import { expect, test } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { onboardedKey } from '../../utils/keyOnboarding/provisioning';
+import { devTests, NEEDS_KEY_ONBOARDING } from '../../utils/keyOnboarding/tags';
+import { devBlockProjects } from '../../utils/devBlocks/registry';
+import { resolveProjectFilters, selectsTest } from '../../utils/regression/projectFilters';
 
 const DIR = path.join(__dirname, '..', 'key-onboarding');
 const specs = fs.readdirSync(DIR).filter((f) => f.endsWith('.spec.ts')).sort();
 
-/** Readers of the summary (provisioning.ts): forbidden outside a test, hook or helper body. */
 const READERS = ['readSummary', 'provisioningOrSkip', 'summaryFile'];
 
-/** Index of the closer matching the opener at `open`, skipping strings, templates, comments and escapes. */
 function closerOf(src: string, open: number): number {
     const pairs: Record<string, string> = { '(': ')', '[': ']', '{': '}' };
     const stack: string[] = [pairs[src[open]]];
@@ -65,7 +59,6 @@ const TEST_CALLS = /(?<![.\w])(test(?:\.describe)?)\(/g;
 const BODY_CALLS = /(?<![.\w])(test(?:\.(?:beforeAll|afterAll|beforeEach|afterEach))?)\(/g;
 const HEADER = (call: Call): string => call.args.slice(0, call.args.indexOf('=>'));
 
-/** Spans where a reader may run: bodies of tests / hooks and of function declarations. */
 function bodySpans(src: string): Array<[number, number]> {
     const spans: Array<[number, number]> = calls(src, BODY_CALLS).map((c) => [c.start, c.end]);
     for (const m of src.matchAll(/\bfunction\s+\w+\s*\([^)]*\)[^{]*\{/g)) {
@@ -75,11 +68,36 @@ function bodySpans(src: string): Array<[number, number]> {
     return spans;
 }
 
+test('devTests(): a row carries the need, the setup and teardown tests do not; @local only when asked', () => {
+    expect(devTests().tag).toEqual(['@dev-tests', '@key-onboarding', '@issue:ilm#409', NEEDS_KEY_ONBOARDING]);
+    expect(devTests({ infrastructure: true }).tag).toEqual(['@dev-tests', '@key-onboarding', '@issue:ilm#409']);
+    expect(devTests({ local: true }).tag).toEqual(['@dev-tests', '@key-onboarding', '@issue:ilm#409', NEEDS_KEY_ONBOARDING, '@local']);
+    for (const f of ['key-onboarding.setup.ts', 'key-onboarding.teardown.ts']) {
+        const src = fs.readFileSync(path.join(DIR, f), 'utf8');
+        expect(src, `${f}: infrastructure`).toContain('devTests({ infrastructure: true })');
+        expect(src.includes('describeLocalOnly'), `${f}: not local-only`).toBe(false);
+    }
+});
+
+test('a shared tier leaves out @local rows, a local stack selects them; no spec of the block is @local', () => {
+    const title = (opts: Parameters<typeof devTests>[0] = {}) => `a row ${devTests(opts).tag.join(' ')}`;
+    const rows = (env: NodeJS.ProcessEnv) => resolveProjectFilters({ projects: devBlockProjects('key-onboarding', env) }).find((p) => p.name === 'key-onboarding')!;
+    const shared = rows({});
+    expect(selectsTest(shared, title())).toBe(true);
+    expect(selectsTest(shared, title({ local: true }))).toBe(false);
+    const local = rows({ TIER_KIND: 'local' });
+    expect(selectsTest(local, title({ local: true }))).toBe(true);
+    expect(selectsTest(local, title())).toBe(true);
+    for (const spec of specs) {
+        const src = fs.readFileSync(path.join(DIR, spec), 'utf8');
+        expect(src.includes('devTests({ local: true })'), spec).toBe(false);
+    }
+});
+
 test('the block has its four specs, in file order', () => {
     expect(specs.map((s) => s.slice(0, 2))).toEqual(['10', '20', '25', '30']);
 });
 
-/** The end of the innermost test or hook body that contains `at` (the end of the source for a module-scope call). */
 function bodyEnd(src: string, at: number): number {
     const spans = calls(src, BODY_CALLS).filter((c) => at > c.start && at < c.end).sort((a, b) => b.start - a.start);
     return spans.length ? spans[0].end : src.length;
@@ -88,16 +106,17 @@ function bodyEnd(src: string, at: number): number {
 for (const spec of specs) {
     const src = fs.readFileSync(path.join(DIR, spec), 'utf8');
 
-    test(`${spec}: calls describeLocalOnly(test) before any test`, () => {
-        const at = src.indexOf('describeLocalOnly(test)');
-        expect(at, 'describeLocalOnly(test) is called').toBeGreaterThan(-1);
-        expect(at, 'before the first test or describe').toBeLessThan(src.search(/(?<![.\w])test(\.describe)?\(/));
+    const details = 'devTests()';
+
+    test(`${spec}: not local-only (no describeLocalOnly, no localApi): the strict guard only`, () => {
+        expect(src.includes('describeLocalOnly'), 'describeLocalOnly is not used').toBe(false);
+        expect(/\blocal(Api|Admin)\b/.test(src), 'the strict guard only').toBe(false);
     });
 
-    test(`${spec}: every test and describe carries devTests(…)`, () => {
+    test(`${spec}: every test and describe carries ${details}`, () => {
         const tests = calls(src, TEST_CALLS);
         expect(tests.length, 'the spec declares tests').toBeGreaterThan(0);
-        const untagged = tests.filter((c) => !HEADER(c).includes('devTests(')).map((c) => src.slice(c.start, c.start + 80).split('\n')[0]);
+        const untagged = tests.filter((c) => !HEADER(c).includes(details)).map((c) => src.slice(c.start, c.start + 80).split('\n')[0]);
         expect(untagged).toEqual([]);
     });
 
@@ -146,10 +165,9 @@ test('the scanner understands the shapes the specs use', () => {
     expect(HEADER(found[0])).toContain('devTests(');
 });
 
-// The ledger name of an onboarded key is the platform's own answer; a result without it fails instead of a guessed name.
 test('onboardedKey: the uuid and name of an onboarded result, or a clear failure when the answer lacks either', () => {
     const uuid = '55555555-5555-4555-8555-555555555555';
-    expect(onboardedKey({ keyHandle: 'h1', onboarded: true, intoExistingKey: false, keyUuid: uuid, keyName: 'qa-reg-x-ko-rsa' })).toEqual({ uuid, name: 'qa-reg-x-ko-rsa' });
-    expect(() => onboardedKey({ keyHandle: 'h2', onboarded: true, intoExistingKey: false, keyName: 'n' })).toThrow(/h2 reports onboarded without a key uuid/);
-    expect(() => onboardedKey({ keyHandle: 'h3', onboarded: true, intoExistingKey: false, keyUuid: uuid })).toThrow(/h3 reports onboarded without a key name/);
+    expect(onboardedKey({ keyPairMeta: [{ uuid: 'm', name: 'label', content: [{ data: 'h1' }] }], onboarded: true, intoExistingKey: false, keyUuid: uuid, keyName: 'qa-reg-x-ko-rsa' })).toEqual({ uuid, name: 'qa-reg-x-ko-rsa' });
+    expect(() => onboardedKey({ keyPairMeta: [{ uuid: 'm', name: 'label', content: [{ data: 'h2' }] }], onboarded: true, intoExistingKey: false, keyName: 'n' })).toThrow(/h2 reports onboarded without a key uuid/);
+    expect(() => onboardedKey({ keyPairMeta: [{ uuid: 'm', name: 'label', content: [{ data: 'h3' }] }], onboarded: true, intoExistingKey: false, keyUuid: uuid })).toThrow(/h3 reports onboarded without a key name/);
 });

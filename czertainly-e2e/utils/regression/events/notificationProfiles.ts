@@ -1,10 +1,6 @@
 /**
- * notificationProfiles — own notification profiles: create, probe, read, update and delete.
- *
- * WHAT: Builds the profile body for each recipient type, creates own profiles (recorded before any assertion), probes a create that may be
- * refused, reads versions, updates and deletes own profiles.
- * WHY: Profiles decide who receives a notification; their recipient rules are the behaviour under test and must be created create-only.
- * HOW: Every change first passes the live own-object check; the run-end teardown is notificationTeardown.ts.
+ * notificationProfiles — own notification profiles: create, probe, read,
+ * update and delete; every change first passes the live own-object check.
  */
 
 import { GuardedApi } from '../guard/types';
@@ -19,7 +15,6 @@ import { listInstances } from './notificationInstances';
 
 export type RecipientCode = 'user' | 'group' | 'role' | 'owner' | 'none' | 'default' | 'object';
 
-/** `NotificationDataCategory` code → label, as the profile detail page prints the categories (interfaces `NotificationDataCategory`). */
 export const CATEGORY_LABEL: Record<string, string> = {
     customAttributes: 'Custom attributes',
     metadata: 'Metadata',
@@ -30,11 +25,9 @@ export const CATEGORY_LABEL: Record<string, string> = {
 
 export interface ProfileOptions {
     recipientType: RecipientCode;
-    /** USER / GROUP / ROLE need uuids (of OWN objects: the guard types them); OWNER / NONE / DEFAULT / OBJECT carry none. */
     recipients?: Array<{ uuid: string }>;
     instance?: { uuid: string };
     internal?: boolean;
-    /** ISO-8601 days and hours (`P1DT12H`). */
     frequency?: string;
     repetitions?: number;
     categories?: string[];
@@ -59,7 +52,6 @@ export interface OwnProfile extends OwnRef {
     body: JsonObject;
 }
 
-/** Creates an own profile (ledger before assertion); throws on a refusal: a positive step. */
 export async function createOwnProfile(api: GuardedApi, spec: string, suffix: string, o: ProfileOptions): Promise<OwnProfile> {
     const name = ownName(suffix);
     const { name: _name, ...body } = profileBody(name, o);
@@ -67,14 +59,12 @@ export async function createOwnProfile(api: GuardedApi, spec: string, suffix: st
     return { ...ref, body: answer.json };
 }
 
-/** An internal-only profile (no instance, no connector): the only kind a shared-tier firing may use (nothing is delivered). */
 export const createOwnInternalProfile = (api: GuardedApi, spec: string, suffix: string, o: { recipientType: Exclude<RecipientCode, 'none' | 'default' | 'object'>; recipients?: Array<{ uuid: string }> }): Promise<OwnProfile> =>
     createOwnProfile(api, spec, suffix, { recipientType: o.recipientType, ...(o.recipients ? { recipients: o.recipients } : {}), internal: true });
 
 /**
- * Ledger before assertion for a REFUSED create that may still have persisted something (a 404 raised after the save, a
- * partial create): every instance / profile of this run's prefix with exactly this name that the ledger does not know yet is
- * recorded, so the teardown removes it and the assertion that follows is about the refusal, not about a leftover.
+ * Ledger for a REFUSED create that may still have persisted something: records every instance / profile of this run's prefix with exactly
+ * this name that the ledger does not know, so the teardown removes it.
  */
 export async function recordNamed(api: GuardedApi, kind: 'instances' | 'profiles', name: string, spec: string): Promise<string[]> {
     if (!name.startsWith(`${runId()}-`)) return [];
@@ -85,12 +75,10 @@ export async function recordNamed(api: GuardedApi, kind: 'instances' | 'profiles
     return found.map((r) => String(r.uuid));
 }
 
-/** A negative probe: POST as is; an accepted one is recorded so the teardown removes it. */
 export async function probeProfile(api: GuardedApi, spec: string, body: JsonObject): Promise<ApiAnswer> {
     return probeCollectionCreate(api, spec, { type: 'notificationProfiles', path: '/api/v1/notificationProfiles', body, note: 'profile create probe' });
 }
 
-/** Every profile of the tier, all pages of `GET /v1/notificationProfiles` (read-only). */
 export async function listProfiles(api: GuardedApi): Promise<JsonObject[]> {
     const rows: JsonObject[] = [];
     for (let page = 1; ; page++) {
@@ -111,12 +99,10 @@ export async function putOwnProfile(api: GuardedApi, ref: OwnRef, body: JsonObje
     return sendJson(api, 'PUT', `/api/v1/notificationProfiles/${ref.uuid}`, body);
 }
 
-/** `DELETE` of an own profile through `ownCrud.deleteOwn`; a 204 is recorded, a refusal (422, naming what uses it) is returned. */
 export async function deleteOwnProfile(api: GuardedApi, ref: OwnRef, spec: string): Promise<ApiAnswer> {
     return deleteOwn(api, 'notificationProfiles', ref, spec);
 }
 
-/** The seconds of a duration the platform answered: an ISO-8601 string of days / hours (`P1DT12H`) or a number of seconds. */
 export function durationSeconds(value: unknown): number | undefined {
     if (typeof value === 'number') return value;
     if (typeof value !== 'string') return undefined;

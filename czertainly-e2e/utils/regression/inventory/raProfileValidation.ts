@@ -1,12 +1,6 @@
 /**
- * raProfileValidation — RA-profile helpers of the required-attribute API spec.
- *
- * WHAT: RA-profile helpers of the ra-profile-required-attribute API spec: the authority whose RA-profile schema has a required
- *       attribute (read-only), the missing / empty attribute arms, the texts core answers for them, and the create and
- *       validate probes (an accepted create is in the ledger before this returns).
- * WHY: The create form's required attribute is a server rule that must be probed without leaving objects behind.
- * HOW: Finds the authority whose schema has a required attribute (read-only), builds the missing and empty arms, and probes create and
- * validate; an accepted create is recorded before this returns.
+ * raProfileValidation — RA-profile helpers of the required-attribute API spec: the missing and empty attribute arms, core's refusal texts
+ * and create / validate probes (an accepted create is in the ledger first).
  */
 import type { APIRequestContext } from '@playwright/test';
 import { requestVersion } from '../attributeVersion';
@@ -21,56 +15,35 @@ import { ApiAnswer } from '../apiReads';
 import { JsonObject } from '../json';
 import { objectOf } from '../json';
 
-/** The label core prints in "Required attribute <label> not found." (the definition's properties.label, else label, else name). */
 export const labelOf = (def: JsonObject): string => String(objectOf(def?.properties).label ?? def?.label ?? def?.name ?? '');
 
-// ------------------------------------------------------------------ RA profile with a required attribute (API-GEN-28)
 
-/** The attribute versions the request side knows: a definition's version (2 / 'v2' / 3 / 'v3') as a request attribute `version`. */
 export { requestVersion };
 
-/** "Required attribute <label> not found." (AttributeDefinitionUtils:388): the attribute is not in the request. */
 export const requiredAttributeNotFoundText = (label: string): string => `Required attribute ${label} not found.`;
 
-/** "Value of required attribute <label> not set." (AttributeDefinitionUtils:397): the attribute is listed without content. */
 export const requiredAttributeNotSetText = (label: string): string => `Value of required attribute ${label} not set.`;
 
-/** The base attributes without the target attribute: the required one is MISSING from the request. */
 export const missingAttributeCase = (base: readonly JsonObject[], def: JsonObject): JsonObject[] => base.filter((a) => a?.name !== def.name);
 
-/** The base attributes with the target listed WITHOUT content: the required one is EMPTY. */
 export const emptyAttributeCase = (base: readonly JsonObject[], def: JsonObject): JsonObject[] => [
     ...missingAttributeCase(base, def),
     { version: requestVersion(def), uuid: def.uuid, name: def.name, contentType: String(def.contentType).toLowerCase() },
 ];
 
-/**
- * "Content for required Data attribute <name> is not provided." (AttributeEngine): core's own text for a v3 authority, the attribute is not
- * in the request.
- */
+/** Core's own text for a v3 authority: the attribute is not in the request. */
 const engineAttributeNotProvidedText = (name: string): string => `Content for required Data attribute ${name} is not provided.`;
 
-/**
- * "Attribute is required and no content is sent" (AttributeEngine; a pipe and the attribute dump follow): core's own text for a v3
- * authority, the attribute is listed without content.
- */
+/** Core's own text for a v3 authority: the attribute is listed without content. */
 const ENGINE_ATTRIBUTE_NO_CONTENT_TEXT = 'Attribute is required and no content is sent';
 
-/**
- * The connector interface version an authority is bound to: v3 is validated by core's attribute engine, v1 / v2 relay the connector's text.
- */
+/** The connector interface of an authority: v3 is validated by core's attribute engine, v1 / v2 relay the connector's text. */
 export type AuthorityInterface = 'v2' | 'v3';
 
-/**
- * The interface of an authority row of `GET /v1/authorities` (`connectorInterface.version`; null for a legacy connector, which relays like
- * v2).
- */
+/** The interface of an authority row (`connectorInterface.version`; null for a legacy connector, which relays like v2). */
 export const authorityInterfaceOf = (row: JsonObject): AuthorityInterface => (String(objectOf(row?.connectorInterface).version ?? '').toLowerCase() === 'v3' ? 'v3' : 'v2');
 
-/**
- * The oracle of a required-attribute refusal by the authority's interface: `text` is the message that must be present and
- * `names` the attribute reference that message must carry (the label for the connector's text, the attribute name for core's).
- */
+/** The oracle of a required-attribute refusal: the message that must be present and the attribute reference it must carry. */
 export function requiredAttributeOracle(iface: AuthorityInterface, def: JsonObject, arm: 'missing' | 'empty'): { text: string; names: string } {
     if (iface === 'v3') {
         const name = String(def?.name ?? '');
@@ -83,16 +56,13 @@ export function requiredAttributeOracle(iface: AuthorityInterface, def: JsonObje
 export interface RaAuthority {
     uuid: string;
     connectorName: string;
-    /** The connector interface the authority is bound to, read from the authority list. */
     connectorInterface: AuthorityInterface;
-    /** The required data attributes of the authority's RA-profile schema. */
     required: JsonObject[];
 }
 
 /**
- * The first CONNECTED pre-existing authority (by name) whose RA-profile attribute schema
- * (`GET /v1/authorities/{uuid}/attributes/raProfile`, read-only) holds a required data attribute, or the named reason there
- * is none (never creates an authority). At most `max` authorities are read.
+ * The first connected pre-existing authority (by name) whose RA-profile schema has a required data attribute, or the reason there is none;
+ * read-only, at most `max` authorities.
  */
 export async function authorityWithRequiredAttribute(api: APIRequestContext, max = 8): Promise<{ ok: RaAuthority; skip?: undefined } | { ok?: undefined; skip: string }> {
     const rows = readJsonOk<JsonObject[]>(await readAnswer(api, '/api/v1/authorities'), 'GET /v1/authorities');
@@ -114,10 +84,7 @@ export async function authorityWithRequiredAttribute(api: APIRequestContext, max
     return { skip: `no connected pre-existing authority whose RA-profile schema holds a required attribute (${candidates.length ? reasons.join('; ') : 'no connected authority'}); the suite never creates an authority` };
 }
 
-/**
- * Valid RA-profile attributes for an authority, COPIED read-only from an enabled pre-existing RA profile there (the first by
- * name), as request attributes; undefined when the authority has no such RA profile (the arms then start from nothing).
- */
+/** Valid RA-profile attributes copied read-only from the first enabled pre-existing RA profile of the authority; undefined when it has none. */
 export async function validRaAttributes(api: APIRequestContext, authorityUuid: string): Promise<JsonObject[] | undefined> {
     const all = readJsonOk<JsonObject[]>(await readAnswer(api, '/api/v1/raProfiles'), 'GET /v1/raProfiles');
     const source = (Array.isArray(all) ? all : [])
@@ -129,22 +96,16 @@ export async function validRaAttributes(api: APIRequestContext, authorityUuid: s
     return attributes.length ? attributes : undefined;
 }
 
-/**
- * A `POST /v1/authorities/{a}/raProfiles` body: the attributes under test plus the custom attributes the tier requires (core checks them
- * first).
- */
+/** A `POST /v1/authorities/{a}/raProfiles` body: the attributes under test plus the tier's required custom attributes. */
 export async function raProfileBody(api: APIRequestContext, name: string, attributes: JsonObject[]): Promise<JsonObject> {
     return { name, description: 'API-GEN-28 required-attribute probe', attributes, customAttributes: await requiredCustomAttributes(api, 'raProfiles', runName('ca')) };
 }
 
-/**
- * `POST /v1/authorities/{authority}/raProfiles` (the authority is a scope parent); an accepted create is in the ledger before this returns.
- */
+/** `POST /v1/authorities/{authority}/raProfiles`; an accepted create is in the ledger before this returns. */
 export async function probeRaProfile(api: GuardedApi, spec: string, authorityUuid: string, body: JsonObject, note = 'RA profile create probe'): Promise<ApiAnswer> {
     return probeCollectionCreate(api, spec, { type: 'raProfiles', path: `/api/v1/authorities/${authorityUuid}/raProfiles`, body, note, parents: { authority: authorityUuid } });
 }
 
-/** `POST /v1/authorities/{authority}/attributes/raProfile/validate` (a read-only validation POST): status and body never throw. */
 export async function validateRaAttributes(api: GuardedApi, authorityUuid: string, attributes: JsonObject[]): Promise<ApiAnswer> {
     return send(assertGuarded(api, 'validateRaAttributes'), 'POST', `/api/v1/authorities/${authorityUuid}/attributes/raProfile/validate`, { data: attributes });
 }

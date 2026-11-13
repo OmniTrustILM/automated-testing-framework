@@ -1,7 +1,5 @@
 /**
- * TRACE through the guard (the refused-method check of the migration gate), on the wire: a bodyless read held to the GET
- * rules and stricter (no body, no identity header, no text/plain, no redirect, no side-effect-GET path). It may name any
- * object, because it changes nothing; any other unknown method stays refused.
+ * TRACE through the guard (the refused-method check of the migration gate), on the wire.
  */
 import { APIRequestContext, expect, test } from '@playwright/test';
 import { guardApiWithSeams } from '../../utils/regression/guard/createGuard';
@@ -28,7 +26,7 @@ let BASE_URL: string;
 
 registerGuardRig(
     {
-        // TRACE answers 400 with an empty body, like core's firewall on main; a redirect is offered for the hop rule.
+        // TRACE answers 400 with an empty body (any refusal serves the guard checks); a redirect is offered for the hop rule.
         answer: (a) => (a.url === '/api/v1/redirect-me' ? { status: 302, headers: { location: '/api/v1/info' } } : a.method === 'TRACE' ? { status: 400 } : undefined),
     },
     (rig) => {
@@ -50,7 +48,7 @@ async function outcome(call: Promise<unknown>): Promise<RefusalKind | 'sent' | s
     }
 }
 
-// TRACE on an own, a foreign and a plain path is sent (a read changes nothing), bodyless, without following anything
+// TRACE on an own, a foreign and a plain path is sent (a read changes nothing), bodyless, without following anything.
 test('TRACE on an own, a foreign and a plain path is sent bodyless and follows nothing', async () => {
     const g = guard();
     expect(await outcome(g.fetch(`/api/v1/roles/${OWN_ROLE}`, { method: 'TRACE' }))).toBe('sent');
@@ -91,21 +89,21 @@ test('TRACE with a body, odd path, other origin, identity header, redirect or _m
         ['an unknown method stays refused', () => g.fetch('/api/v1/info', { method: 'FOO' })],
     ];
     for (const [name, call] of vectors) expect(await outcome(call()), name).toBe('request');
-    // The refusal of a bodyless text/plain TRACE is the TRACE rule itself, not the generic "text/plain needs a body" one.
+    // The refusal of a bodyless text/plain TRACE is the TRACE
+    // rule itself, not the generic "text/plain needs a body" one.
     const textPlain = await g.fetch('/api/v1/info', { method: 'TRACE', headers: { 'Content-Type': 'text/plain' } }).then(() => undefined, (e: unknown) => e);
     expect(String((textPlain as Error | undefined)?.message)).toMatch(/text\/plain on a GET \/ TRACE/);
     expect(A.arrived, 'nothing refused reached the core').toEqual([]);
     expect(B.arrived, 'nothing reached the other origin').toEqual([]);
 });
 
-// TRACE on a side-effect GET path is refused even on an own object; TRACE never follows the 3xx it gets
+// TRACE on a side-effect GET path is refused even on an own object; TRACE never follows the 3xx it gets.
 test('TRACE on a side-effect GET path is refused even on an own object, and never follows the 3xx it gets', async () => {
     const g = guard();
     expect(await outcome(g.fetch(`/api/v1/certificates/${OWN_CERT}/validate`, { method: 'TRACE' }))).toBe('request');
     expect(await outcome(g.fetch(`/api/v1/certificates/${OWN_CERT}/chain`, { method: 'TRACE' }))).toBe('request');
     expect(await outcome(g.fetch('/api/v1/approvals', { method: 'TRACE' }))).toBe('request');
     expect(A.arrived).toEqual([]);
-    // A GET of the same own certificate's validation is still judged as before (own: sent).
     expect(await outcome(g.get(`/api/v1/certificates/${OWN_CERT}/validate`))).not.toBe('request');
     A.reset();
     const res = await g.fetch('/api/v1/redirect-me', { method: 'TRACE' });
@@ -113,7 +111,7 @@ test('TRACE on a side-effect GET path is refused even on an own object, and neve
     expect(A.arrived.map((a) => `${a.method} ${a.url}`)).toEqual(['TRACE /api/v1/redirect-me']);
 });
 
-// TRACE on a mutation path of a foreign object changes nothing: it is sent as TRACE, never as the mutation
+// TRACE on a mutation path of a foreign object changes nothing: it is sent as TRACE, never as the mutation.
 test('TRACE on a mutation path of a foreign object changes nothing: sent as TRACE, never as the mutation', async () => {
     const g = guard();
     expect(await outcome(g.fetch(`/api/v1/roles/${FOREIGN_ROLE}`, { method: 'TRACE' }))).toBe('sent');

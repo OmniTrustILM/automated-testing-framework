@@ -1,13 +1,6 @@
 /**
- * searchTables — the expected row sets of the certificate filter rows.
- *
- * WHAT: The expected row sets of the certificate filter rows over the full seed, and the sort comparators. Each row has
- *       `expect` (computed by a predicate that states the rule) and `expectedIds` (the same set written down by hand, as ids or as
- *       a count: the second, independent derivation); a unit test checks they agree. A row whose engine behaviour is a filed bug
- *       carries `bug`, a row without a written rule `pin` (a behaviour word or an issue id).
- * WHY: The filter rows must name their expected result twice, once by rule and once by hand, so a wrong rule cannot agree with itself.
- * HOW: Each row has `expect` (a predicate that states the rule) and `expectedIds`; a unit test checks they agree; a known product bug is
- * `bug`, a row without a written rule is `pin`.
+ * searchTables — the expected row sets of the certificate filter rows, and the sort comparators.
+ * Each row states its result twice (`expect` predicate and hand-written `expectedIds`) so a wrong rule cannot agree with itself.
  */
 import type { Filter } from './searchApi';
 import { propertyFilter, customAttributeFilter } from './searchApi';
@@ -16,28 +9,23 @@ import { idsWhere } from './seedFull';
 import { escapeRegExp } from '../text';
 
 export interface FilterRow {
-    /** Row id, e.g. `T-8`. */
     row: string;
     title: string;
-    /** The filters of the row (the isolation filter is added by the caller unless `carriesIsolation`). */
     filters: (m: CertificateSeedPlan, ctx: RowContext) => Filter[];
-    /** Expected seeds, computed by the rule's predicate. */
     expect: (m: CertificateSeedPlan) => CertId[];
-    /** The set written down by hand (ids, or a count when only a count is stated); the unit test checks it against `expect`. */
+    /** Written by hand (ids, or a count); a unit test checks it against `expect`. */
     expectedIds: CertId[] | number;
-    /** The row's own filters already narrow to the seed prefix: the isolation filter is still sent, harmless. */
+    /** The row's filters already narrow to the seed prefix; the isolation filter is still sent. */
     carriesIsolation?: boolean;
-    /** Expected refusal: 422 and the text (RegExp or exact). Then `expect` / `expectedIds` are empty. */
+    /** Expected refusal; then `expect` / `expectedIds` are empty. */
     refusal?: { status: 422 | 400; text: RegExp };
-    /** Known product bug the row's rule contradicts today: the test is `test.fail()` with this `@bug`. */
+    /** Known product bug the rule contradicts: the test is `test.fail()` with this `@bug`. */
     bug?: string;
-    /** Characterisation pin (no written rule): a behaviour word or an issue id; the pinned test is never P1. */
+    /** Characterisation pin (no written rule): a behaviour word or an issue id. */
     pin?: string;
-    /** `includeArchived` to send. */
     includeArchived?: boolean;
 }
 
-/** Catalogue-derived values some rows need (the signature algorithm codes, the RSA public-key code). */
 export interface RowContext {
     signatureSha384?: string;
     signatureSha512?: string;
@@ -49,10 +37,8 @@ const ALL = (m: CertificateSeedPlan): CertId[] => m.certificates.map((c) => c.id
 const P = (m: CertificateSeedPlan, token: string): string => `${m.prefix}${token}`;
 const t = (c: CertificateSeedEntry): string => c.commonName;
 
-/** The notAfter of a seed (the expiry of seed Cnn), as the filter literal `yyyy-MM-ddTHH:mm:ss.SSSZ`. */
 export const notAfterOf = (m: CertificateSeedPlan, id: CertId): string => new Date(m.certificates.find((c) => c.id === id)!.notAfter).toISOString();
 
-// ------------------------------------------------------------------ Text — COMMON_NAME (REG-CERT-41, API-CERT-41)
 
 const cn = (condition: string, value: (m: CertificateSeedPlan) => string | undefined): FilterRow['filters'] => (m) => [propertyFilter('COMMON_NAME', condition, value(m))];
 const containsToken = (m: CertificateSeedPlan, word: string): CertId[] => idsWhere(m, (c) => c.token.includes(word));
@@ -70,17 +56,15 @@ export const TEXT_ROWS: readonly FilterRow[] = [
     { row: 'T-10', title: 'a name NOT_MATCHES "-web$" filter returns the 20 seeds not ending in -web', filters: cn('NOT_MATCHES', () => '-web$'), expect: (m) => idsWhere(m, (c) => !/-web$/.test(t(c))), expectedIds: 20 },
     { row: 'T-11', title: 'a name CONTAINS "delta" filter is case-sensitive and returns only delta-mail', filters: cn('CONTAINS', () => 'delta'), expect: (m) => idsWhere(m, (c) => t(c).includes('delta')), expectedIds: ids('C08'), pin: 'case-sensitive-contains' },
     { row: 'T-12', title: 'a name CONTAINS "Delta" filter is case-sensitive and returns only Delta-web', filters: cn('CONTAINS', () => 'Delta'), expect: (m) => idsWhere(m, (c) => t(c).includes('Delta')), expectedIds: ids('C07'), pin: 'case-sensitive-contains' },
-    // The rule is a literal match (the wildcard trait is the open bug core#2505): C09 only / none.
+    // A literal match (the wildcard trait is the open bug core#2505): C09 only / none.
     { row: 'T-13', title: 'a name CONTAINS "_" filter matches the underscore literally and returns only eps_01', filters: cn('CONTAINS', () => '_'), expect: (m) => idsWhere(m, (c) => t(c).includes('_')), expectedIds: ids('C09'), bug: 'core#2505' },
     { row: 'T-14', title: 'a name CONTAINS "%" filter matches the percent sign literally and returns no seed', filters: cn('CONTAINS', () => '%'), expect: (m) => idsWhere(m, (c) => t(c).includes('%')), expectedIds: 0, bug: 'core#2505' },
 ];
 
-// ------------------------------------------------------------------ Date and datetime — NOT_AFTER / NOT_BEFORE (REG-CERT-42, API-CERT-42)
 
 const na = (condition: string, id: CertId | ((m: CertificateSeedPlan) => string) | undefined): FilterRow['filters'] => (m) =>
     [propertyFilter('NOT_AFTER', condition, id === undefined ? undefined : typeof id === 'function' ? id(m) : notAfterOf(m, id))];
 const naTime = (m: CertificateSeedPlan, id: CertId): number => new Date(m.certificates.find((c) => c.id === id)!.notAfter).getTime();
-/** Seeds whose notAfter is within `days` of the clock (in the future), the IN_NEXT window. */
 const inNext = (m: CertificateSeedPlan, days: number): CertId[] => {
     const now = new Date(m.clock).getTime();
     return idsWhere(m, (c) => new Date(c.notAfter).getTime() >= now && new Date(c.notAfter).getTime() <= now + days * 24 * 3600 * 1000);
@@ -89,7 +73,6 @@ const inPast = (m: CertificateSeedPlan, days: number): CertId[] => {
     const now = new Date(m.clock).getTime();
     return idsWhere(m, (c) => new Date(c.notAfter).getTime() <= now && new Date(c.notAfter).getTime() >= now - days * 24 * 3600 * 1000);
 };
-/** The wall digits of T(C03) with another offset (accepted and dropped today; pinned). */
 const withOffset = (m: CertificateSeedPlan): string => `${notAfterOf(m, 'C03').slice(0, 19)}+02:00`;
 
 export const DATE_ROWS: readonly FilterRow[] = [
@@ -112,23 +95,19 @@ export const DATE_ROWS: readonly FilterRow[] = [
     { row: 'D-15b', title: 'NOT_BEFORE IN_PAST P60D returns the 22 seeds that became valid in the last 60 days', filters: (m) => [propertyFilter('NOT_BEFORE', 'IN_PAST', 'P60D')], expect: (m) => idsWhere(m, (c) => { const now = new Date(m.clock).getTime(); const x = new Date(c.notBefore).getTime(); return x <= now && x >= now - 60 * 24 * 3600 * 1000; }), expectedIds: 22 },
 ];
 
-/** D-3: a datetime value without an offset, and a date-only value: 4xx expected, 500 today (core#2504). */
+/** D-3: a datetime without an offset, and a date-only value: 4xx expected, 500 today (core#2504). */
 export const DATE_REFUSALS: ReadonlyArray<{ row: string; title: string; value: (m: CertificateSeedPlan) => string; bug: string }> = [
     { row: 'D-3a', title: 'NOT_AFTER EQUALS a value without an offset', value: (m) => notAfterOf(m, 'C03').slice(0, 19), bug: 'core#2504' },
     { row: 'D-3b', title: 'NOT_AFTER EQUALS a date-only value', value: (m) => notAfterOf(m, 'C03').slice(0, 10), bug: 'core#2504' },
 ];
 
-/**
- * Bad durations: 422 `Filter field value … cannot be parsed to a Duration.` (the empty value may also answer the "requires at least one
- * value" text).
- */
+/** Bad durations: 422 `Filter field value … cannot be parsed to a Duration.` */
 export const DURATION_REFUSALS: ReadonlyArray<{ row: string; value: string; text: RegExp }> = [
     { row: 'D-14a', value: '30 days', text: /Filter field value 30 days cannot be parsed to a Duration\./ },
     { row: 'D-14b', value: '', text: /(cannot be parsed to a Duration\.|requires at least one value\.)/ },
     { row: 'D-14c', value: 'P', text: /Filter field value P cannot be parsed to a Duration\./ },
 ];
 
-// ------------------------------------------------------------------ List and enum (REG-CERT-43, API-CERT-43)
 
 export const LIST_ROWS: readonly FilterRow[] = [
     { row: 'L-1a', title: 'CERTIFICATE_STATE EQUALS issued returns all 24 seeds', filters: () => [propertyFilter('CERTIFICATE_STATE', 'EQUALS', ['issued'])], expect: ALL, expectedIds: 24 },
@@ -150,7 +129,6 @@ export const LIST_ROWS: readonly FilterRow[] = [
     { row: 'L-8', title: 'PUBLIC_KEY_ALGORITHM EQUALS the catalogue value for RSA returns all 24 seeds', filters: (_m, ctx) => [propertyFilter('PUBLIC_KEY_ALGORITHM', 'EQUALS', [ctx.rsa ?? ''])], expect: ALL, expectedIds: 24 },
 ];
 
-/** L-4: a condition the field does not advertise: 422 with the exact text. */
 export const LIST_REFUSALS: ReadonlyArray<{ row: string; filter: Filter; text: RegExp }> = [
     {
         row: 'L-4',
@@ -159,7 +137,6 @@ export const LIST_REFUSALS: ReadonlyArray<{ row: string; filter: Filter; text: R
     },
 ];
 
-// ------------------------------------------------------------------ Collection (groups) and owner (API-CERT-45)
 
 const inGroup = (c: CertificateSeedEntry, g: 'a' | 'b'): boolean => c.groups.includes(g);
 const gname = (m: CertificateSeedPlan, g: 'a' | 'b'): string => m.groups[g].name;
@@ -175,7 +152,6 @@ export const COLLECTION_ROWS: readonly FilterRow[] = [
     { row: 'G-4b', title: 'GROUP_NAME COUNT_GREATER_THAN 1 returns the two seeds in both groups', filters: () => [propertyFilter('GROUP_NAME', 'COUNT_GREATER_THAN', 1)], expect: (m) => idsWhere(m, (c) => c.groups.length > 1), expectedIds: ids('C03', 'C04') },
     { row: 'G-4c', title: 'GROUP_NAME COUNT_LESS_THAN 1 returns the 16 seeds without a group', filters: () => [propertyFilter('GROUP_NAME', 'COUNT_LESS_THAN', 1)], expect: (m) => idsWhere(m, (c) => c.groups.length < 1), expectedIds: 16 },
     { row: 'G-4d', title: 'GROUP_NAME COUNT_NOT_EQUAL 0 returns the eight seeds that have a group', filters: () => [propertyFilter('GROUP_NAME', 'COUNT_NOT_EQUAL', 0)], expect: (m) => idsWhere(m, (c) => c.groups.length !== 0), expectedIds: 8 },
-    // Other collection fields: no seed has a location or a predecessor / successor.
     { row: 'G-6a', title: 'CERT_LOCATION_NAME EMPTY returns all 24 seeds, none is in a location', filters: () => [propertyFilter('CERT_LOCATION_NAME', 'EMPTY')], expect: ALL, expectedIds: 24 },
     { row: 'G-6b', title: 'PRECEDING_CERTIFICATES COUNT_EQUAL 0 returns all 24 seeds', filters: () => [propertyFilter('PRECEDING_CERTIFICATES', 'COUNT_EQUAL', 0)], expect: ALL, expectedIds: 24 },
     { row: 'G-6c', title: 'SUCCEEDING_CERTIFICATES COUNT_GREATER_THAN 0 returns no seed', filters: () => [propertyFilter('SUCCEEDING_CERTIFICATES', 'COUNT_GREATER_THAN', 0)], expect: () => [], expectedIds: 0 },
@@ -185,11 +161,8 @@ export const COLLECTION_ROWS: readonly FilterRow[] = [
 ];
 
 /**
- * O-2 ("OWNER NOT_CONTAINS zzz vs NOT_MATCHES ^zzz — the documented null asymmetry") cannot run on OWNER: OWNER is a LIST field
- * (core FilterField.java, SearchFieldTypeEnum.LIST), whose conditions are EQUALS / NOT_EQUALS / EMPTY / NOT_EMPTY — the string
- * conditions are refused 422 "Field OWNER does not support the … condition; it supports EQUALS, NOT_EQUALS, EMPTY, NOT_EMPTY."
- * (FilterPredicatesBuilder.requireAdvertisedCondition). The asymmetry (NOT_CONTAINS includes null columns, NOT_MATCHES excludes them,
- * the filter rules) needs a nullable STRING property field no seed can set; it is not asserted.
+ * O-2 (the NOT_CONTAINS / NOT_MATCHES null asymmetry) cannot run on OWNER: it is a LIST field, so string conditions are
+ * refused 422. The asymmetry needs a nullable STRING field no seed can set, so it is not asserted.
  */
 export const OWNER_REFUSALS: ReadonlyArray<{ row: string; condition: string; value: string }> = [
     { row: 'O-2a', condition: 'NOT_CONTAINS', value: 'zzz' },
@@ -198,25 +171,16 @@ export const OWNER_REFUSALS: ReadonlyArray<{ row: string; condition: string; val
 ];
 
 /**
- * COUNT_* conditions with a non-integer value. The intended answer is the same for all four conditions: 422 "Filter field value <v> cannot
- * be parsed as an Integer." (core's own FilterPredicatesBuilderITest expects a ValidationException for COUNT_EQUAL / COUNT_NOT_EQUAL too).
- * Today the GREATER / LESS rows are green because those conditions parse the value, while EQUAL / NOT_EQUAL hand it to the query unparsed
- * and answer 500 (known bug core#2562, so the COUNT_EQUAL and COUNT_NOT_EQUAL string rows carry `bug` and the test calls `test.fail()`
- * right before the failing step). The JSON-number row (1.5 on COUNT_EQUAL): the number is compared with the group count without conversion
- * and answers 500 as well; whatever the refusal text should be, a refusal is a 4xx and never a 5xx, so it asserts that (`anyRefusal`) and
- * has no text.
+ * COUNT_* conditions with a non-integer value: intended answer is 422 "cannot be parsed as an Integer." for all four.
+ * EQUAL / NOT_EQUAL answer 500 today (core#2562, rows carry `bug`); the JSON-number row asserts only "a 4xx, never a 5xx" (`anyRefusal`).
  */
 export interface CountRefusal {
     row: string;
     condition: string;
     value: unknown;
-    /** The refusal text for a 422; absent on an `anyRefusal` row. */
     text?: RegExp;
-    /** The known bug (`<repo>#<n>`): the test is `test.fail()` before the failing step. */
     bug?: string;
-    /** Asserts only "a 4xx, never a 5xx" (no text): the number case, whose refusal text is not specified. */
     anyRefusal?: true;
-    /** The priority when it is not P1 (the number case was a P2 pin and stays in the P2 selection). */
     prio?: 'P2';
 }
 
@@ -229,15 +193,11 @@ export const COUNT_REFUSALS: ReadonlyArray<CountRefusal> = [
     { row: 'G-5f', condition: 'COUNT_EQUAL', value: 1.5, bug: 'core#2562', anyRefusal: true, prio: 'P2' },
 ];
 
-/**
- * Pin: a negative JSON number (-1) on COUNT_EQUAL answers 200 with no seed today (no group count can equal it). Whether it
- * should become a 422 is open; the pin flips when core decides. (The non-whole 1.5 is the JSON-number row of `COUNT_REFUSALS`.)
- */
+/** Pin: a negative JSON number on COUNT_EQUAL answers 200 with no seed today; the pin flips if core decides on a 422. */
 export const COUNT_PINS: ReadonlyArray<{ row: string; condition: string; value: number }> = [
     { row: 'G-5g', condition: 'COUNT_EQUAL', value: -1 },
 ];
 
-// ------------------------------------------------------------------ Custom attributes (API-CERT-46, REG-CERT-44)
 
 type AttrKey = 'txt' | 'num' | 'day' | 'flag' | 'pick';
 const ca = (m: CertificateSeedPlan, key: AttrKey, condition: string, value?: unknown): Filter => customAttributeFilter(m.attributes[key].identifier, condition, value);
@@ -291,14 +251,12 @@ const dayOf = (m: CertificateSeedPlan, id: CertId): string => {
     return d;
 };
 
-/** Attribute-filter edges. The first is a 422, the second 200 with no rows, the third is accepted today (pinned). */
 export const ATTRIBUTE_EDGES = {
     withoutSuffix: (m: CertificateSeedPlan): Filter => customAttributeFilter(m.attributes.txt.name, 'CONTAINS', 'red'),
     withoutSuffixText: (m: CertificateSeedPlan): RegExp => new RegExp(`^Filter field identifier ${escapeRegExp(m.attributes.txt.name)} does not name an attribute\\.$`),
     unknown: (): Filter => customAttributeFilter('qa-no-such-attribute|STRING', 'EQUALS', 'x'),
 };
 
-/** Every row table, for the generic consistency test and the catalogue-driven specs. */
 export const ALL_ROW_TABLES: Readonly<Record<string, readonly FilterRow[]>> = {
     text: TEXT_ROWS,
     date: DATE_ROWS,
@@ -307,13 +265,12 @@ export const ALL_ROW_TABLES: Readonly<Record<string, readonly FilterRow[]>> = {
     attribute: ATTRIBUTE_ROWS,
 };
 
-// ------------------------------------------------------------------ sort comparators (Cmp oracles)
 
 export type SortField = 'NOT_AFTER' | 'NOT_BEFORE' | 'GROUP_NAME' | 'OWNER' | 'num' | 'day' | 'txt' | 'pick';
 
 /**
- * The sort key of a seed for a field and direction, or null (rows without a value sort LAST in both directions).
- * A multi-valued field sorts by its smallest value ascending and its largest descending.
+ * The sort key of a seed, or null; rows without a value sort last in both
+ * directions, multi-valued fields by smallest (asc) / largest (desc).
  */
 export function sortKey(m: CertificateSeedPlan, c: CertificateSeedEntry, field: SortField, dir: 'asc' | 'desc'): string | number | null {
     switch (field) {
@@ -341,9 +298,8 @@ export function sortKey(m: CertificateSeedPlan, c: CertificateSeedEntry, field: 
 }
 
 /**
- * The expected order as GROUPS of equal keys: non-null keys in the requested direction, then every seed without a value
- * as one last group (both directions). Inside a group the order is the engine's uuid tie-break, which the tests pin after
- * the first observation (the uuid tie-break): compare group by group, as sets, and check stability separately.
+ * The expected order as groups of equal keys, nulls as one last group; inside
+ * a group the uuid tie-break decides, so compare group by group as sets.
  */
 export function expectedOrderGroups(m: CertificateSeedPlan, field: SortField, dir: 'asc' | 'desc'): CertId[][] {
     const withKey = m.certificates.map((c) => ({ id: c.id, key: sortKey(m, c, field, dir) }));
@@ -361,21 +317,13 @@ export function expectedOrderGroups(m: CertificateSeedPlan, field: SortField, di
     return groups;
 }
 
-/**
- * The strict expected uuid order: the groups of `expectedOrderGroups`, each group's members by uuid ASCENDING. The uuid
- * tie-break is `asc` whatever the sort direction (core SortOrderBuilder.tieBreak: `criteriaBuilder.asc(uuid)`;
- * "ordered nulls last in both directions, then by uuid", core#2394) — answered from the code. Postgres
- * orders uuids bytewise, which for lower-case canonical text equals string comparison.
- */
+/** The strict expected uuid order: the groups of `expectedOrderGroups`, members by uuid ascending whatever the direction (core#2394). */
 export function expectedUuidOrder(m: Omit<CertificateSeedPlan, 'certificates'> & { certificates: Array<CertificateSeedEntry & { uuid: string }> }, field: SortField, dir: 'asc' | 'desc'): string[] {
     const uuidOf = new Map<CertId, string>(m.certificates.map((c) => [c.id, c.uuid] as [CertId, string]));
     return expectedOrderGroups(m as CertificateSeedPlan, field, dir).flatMap((g) => g.map((id) => uuidOf.get(id)!).sort());
 }
 
-/**
- * Does an actual id sequence follow the groups (each group's members contiguous, in group order, as sets)? Returns the problem or
- * undefined.
- */
+/** Whether an id sequence follows the groups (members contiguous, in group order); returns the problem or undefined. */
 export function orderProblem(actual: readonly CertId[], groups: readonly CertId[][]): string | undefined {
     let i = 0;
     for (const [n, g] of groups.entries()) {

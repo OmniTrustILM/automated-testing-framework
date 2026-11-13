@@ -1,7 +1,5 @@
 /**
- * certificateAddPage — offline checks of pages/CertificateAddPage.ts (the Add Certificate form) on stand-in documents:
- * Create either redirects to the new certificate or shows the "accepted with warnings" panel, and both give the uuid.
- * A failed issue stays on the form and fails the step.
+ * certificateAddPage — offline checks of pages/CertificateAddPage.ts (the Add Certificate form) on stand-in documents.
  */
 import { expect, test } from '@playwright/test';
 import { CertificateAddPage } from '../../pages/CertificateAddPage';
@@ -9,7 +7,6 @@ import { CertificatePage } from '../../pages/CertificatePage';
 
 const failsFast = async (call: Promise<unknown>): Promise<boolean> => call.then(() => false, () => true);
 
-/** The certificate form after Create: `redirect` goes to the detail; `warnings` shows the accepted-with-warnings panel first. */
 const issueForm = (outcome: 'redirect' | 'warnings' | 'error', uuid = 'a1b2c3d4-0000-4000-8000-000000000001') => `<main>
   <form><button type="button" data-testid="progress-button" onclick="${
       outcome === 'redirect'
@@ -46,8 +43,6 @@ test('CertificateAddPage.submitIssueFailingOnWarnings: redirect or warnings pane
         warnings: ["SAN iPAddress '192.0.2.10' is not allowed by the request-attribute set", "Subject RDN 'O' is not allowed by the request-attribute set"],
     });
     expect(page.url()).toMatch(/#\/certificates\/detail\/a1b2c3d4-0000-4000-8000-000000000002$/);
-    // CertificatePage.submitIssue (the smoke specs' call) gives the uuid of the redirect, and FAILS on the warnings panel unless
-    // the row accepts it explicitly.
     await onAddRoute(issueForm('redirect'));
     expect(await cert.submitIssue()).toBe('a1b2c3d4-0000-4000-8000-000000000001');
     await onAddRoute(issueForm('warnings', 'a1b2c3d4-0000-4000-8000-000000000003'));

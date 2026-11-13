@@ -1,17 +1,12 @@
-import { describeLocalOnly } from '../../utils/regression/tier/localProof';
 import { MAX_TOKEN_KEYS_PER_PAGE } from '../../utils/keyOnboarding/adminApi';
-import { expect, labelled, test } from '../../utils/keyOnboarding/fixtures';
+import { expect, identityOf, labelled, test } from '../../utils/keyOnboarding/fixtures';
 import { devTests } from '../../utils/keyOnboarding/tags';
-
-describeLocalOnly(test);
 
 test.describe('Listing the key pairs on a token', devTests(), () => {
   test('the token profile offers key listing', devTests(), async ({ admin, provisioned }) => {
-    const profile = await admin.get<{ keyListAvailable: boolean }>(
-      `/v1/tokens/${provisioned.token.uuid}/tokenProfiles/${provisioned.tokenProfile.uuid}`,
-    );
+    const profiles = await admin.get<Array<{ uuid: string }>>('/v1/tokenProfiles?keyListable=true');
 
-    expect(profile.keyListAvailable).toBe(true);
+    expect(profiles.map((profile) => profile.uuid)).toContain(provisioned.tokenProfile.uuid);
   });
 
   test('lists each planted key pair with whether it can be onboarded', devTests(), async ({ admin, provisioned }) => {
@@ -29,18 +24,18 @@ test.describe('Listing the key pairs on a token', devTests(), () => {
     expect(labelled(keys, provisioned.planted.orphan).reason).toContain('no public key');
   });
 
-  test('lists a key pair without a unique ID as not onboardable and without a handle', devTests(), async ({ admin, provisioned }) => {
+  test('lists a key pair without a usable ID as not onboardable and without metadata', devTests(), async ({ admin, provisioned }) => {
     const keys = await admin.allTokenKeys(provisioned.token.uuid, provisioned.tokenProfile.uuid);
 
     for (const label of [provisioned.planted.noIdEc, ...provisioned.planted.idSharingEc]) {
       const key = labelled(keys, label);
-      expect(key).toMatchObject({ status: 'noUniqueId', keyAlgorithm: 'ECDSA', length: 256 });
-      expect(key.keyHandle).toBeUndefined();
-      expect(key.reason).toContain('without an ID unique to it');
+      expect(key).toMatchObject({ status: 'noUsableId', keyAlgorithm: 'ECDSA', length: 256 });
+      expect(key.keyPairMeta).toBeUndefined();
+      expect(key.reason).toContain('without an ID the platform can address it by');
     }
   });
 
-  test('pages through the token without repeating a key pair', devTests(), async ({ admin, provisioned }) => {
+  test('pages through the token in full pages without repeating a key pair', devTests(), async ({ admin, provisioned }) => {
     const all = await admin.allTokenKeys(provisioned.token.uuid, provisioned.tokenProfile.uuid);
     const pageSize = Math.min(MAX_TOKEN_KEYS_PER_PAGE, Math.max(1, Math.ceil(all.length / 3)));
 
@@ -57,19 +52,20 @@ test.describe('Listing the key pairs on a token', devTests(), () => {
         totalItems: first.totalItems,
         totalPages: Math.ceil(first.totalItems / pageSize),
       });
-      expect(page.items.length).toBeLessThanOrEqual(pageSize);
+      expect(page.items).toHaveLength(Math.min(pageSize, first.totalItems - index * pageSize));
     });
-    const handles = pages.flatMap((page) => page.items.flatMap((key) => key.keyHandle ?? []));
-    expect(new Set(handles).size).toBe(handles.length);
-    expect([...handles].sort()).toEqual(all.flatMap((key) => key.keyHandle ?? []).sort());
+    const identities = pages.flatMap((page) => page.items.flatMap((key) => identityOf(key) ?? []));
+    expect(new Set(identities).size).toBe(identities.length);
+    expect([...identities].sort()).toEqual(all.flatMap((key) => identityOf(key) ?? []).sort());
   });
 
-  test('refuses a page the connector cannot serve', devTests(), async ({ admin, provisioned }) => {
+  test('refuses a page larger than the listing limit', devTests(), async ({ admin, provisioned }) => {
     const response = await admin.raw(
       'GET',
       `/v1/tokens/${provisioned.token.uuid}/tokenProfiles/${provisioned.tokenProfile.uuid}/tokenKeys?pageNumber=1&itemsPerPage=${MAX_TOKEN_KEYS_PER_PAGE + 1}`,
     );
 
-    expect(response.status()).toBe(422);
+    expect(response.status()).toBe(400);
+    expect(await response.text()).toContain(`itemsPerPage must be at most ${MAX_TOKEN_KEYS_PER_PAGE}`);
   });
 });

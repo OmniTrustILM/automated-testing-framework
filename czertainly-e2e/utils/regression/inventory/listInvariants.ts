@@ -1,12 +1,6 @@
 /**
- * listInvariants — filter, sort and paging checks over fetched rows.
- *
- * WHAT: Filter, sort and paging checks over rows that were already fetched (or a page function): empty plus not empty is
- *       the total, a filter returns only matching rows, AND narrows, the order holds with empty values last, pages add up.
- *       A violation throws InvariantViolation naming the field, the condition and the sets or the neighbouring rows.
- * WHY: Whatever data a tier holds, a filter, a sort and a pager obey rules that need no exact counts.
- * HOW: Pure checks over rows or a page function; a violation throws `InvariantViolation` naming the field, the condition and the sets or
- * neighbouring rows; `matchesCondition` delegates to the one filter evaluator.
+ * listInvariants — filter, sort and paging checks over rows already fetched, needing no exact counts; a violation throws InvariantViolation
+ * naming the field, condition and sets.
  */
 
 import { satisfiesFilter } from './oracles/values';
@@ -36,7 +30,6 @@ function preview(ids: Iterable<string>, max = 10): string {
     return `[${list.slice(0, max).join(', ')}${list.length > max ? `, … ${list.length - max} more` : ''}]`;
 }
 
-/** Value at a dotted path (`raProfile.name`, `groups.name` maps over arrays). */
 function valueAt(row: ListRow, field: string): unknown {
     let cur: unknown = row;
     for (const part of field.split('.')) {
@@ -49,9 +42,7 @@ function valueAt(row: ListRow, field: string): unknown {
 const isEmptyValue = (v: unknown): boolean =>
     v === null || v === undefined || v === '' || (Array.isArray(v) && v.filter((x) => !isEmptyValue(x)).length === 0);
 
-// ------------------------------------------------------------------ EMPTY + NOT_EMPTY = total
 
-/** `EMPTY` and `NOT_EMPTY` on one field partition the unfiltered set: the counts add up and the sets are disjoint. */
 export function expectEmptyPlusNotEmptyEqualsTotal(
     sets: { total: number; empty: ListRow[]; notEmpty: ListRow[] },
     field: string,
@@ -71,7 +62,6 @@ export function expectEmptyPlusNotEmptyEqualsTotal(
     }
 }
 
-// ------------------------------------------------------------------ filter property (reference evaluator)
 
 type FilterCondition =
     | 'EQUALS' | 'NOT_EQUALS' | 'CONTAINS' | 'NOT_CONTAINS' | 'STARTS_WITH' | 'ENDS_WITH'
@@ -81,7 +71,6 @@ export interface FilterSpec {
     field: string;
     condition: FilterCondition;
     value?: unknown;
-    /** Reads the field from a row when a dotted path is not enough. */
     get?: (row: ListRow) => unknown;
     ignoreCase?: boolean;
 }
@@ -94,9 +83,8 @@ const asComparable = (v: unknown): number | string => {
 };
 
 /**
- * The reference evaluator: does one row satisfy the filter? Array fields match when any element matches. The rules are
- * the ones of `satisfiesFilter` (the one home of the filter semantics); this adapter only reads the field, turns ISO
- * dates into instants so they compare as time, and applies `ignoreCase` by lower-casing both sides.
+ * The reference evaluator: does one row satisfy the filter? Uses `satisfiesFilter`; this adapter reads the field, turns ISO dates into
+ * instants and applies `ignoreCase`.
  */
 export function matchesCondition(row: ListRow, f: FilterSpec): boolean {
     const raw = f.get ? f.get(row) : valueAt(row, f.field);
@@ -113,7 +101,6 @@ export function matchesCondition(row: ListRow, f: FilterSpec): boolean {
     return satisfiesFilter(values, f.condition, wanted, { caseSensitive: !f.ignoreCase });
 }
 
-/** Every returned row satisfies the filter (the property check; exact sets come from the seed manifest). */
 export function expectFilterProperty(rows: ListRow[], filter: FilterSpec, opts: KeyOption = {}): void {
     const key = opts.key ?? defaultKey;
     const bad = rows.filter((r) => !matchesCondition(r, filter));
@@ -124,9 +111,7 @@ export function expectFilterProperty(rows: ListRow[], filter: FilterSpec, opts: 
     }
 }
 
-// ------------------------------------------------------------------ AND narrows
 
-/** |A and B| <= min(|A|, |B|), A and B is a subset of both, and (given `ba`) the filter order does not change the set. */
 export function expectAndNarrowsResults(a: ListRow[], b: ListRow[], ab: ListRow[], ba?: ListRow[], opts: KeyOption = {}): void {
     const key = opts.key ?? defaultKey;
     const A = new Set(keys(a, key));
@@ -150,24 +135,17 @@ export function expectAndNarrowsResults(a: ListRow[], b: ListRow[], ab: ListRow[
     }
 }
 
-// ------------------------------------------------------------------ sorting
 
 export interface SortOptions extends KeyOption {
-    /** null / undefined / '' after every value (in both directions). Default true. */
     nullsLast?: boolean;
-    /** Equal values must be ordered by uuid ascending. */
     tieBreak?: 'uuid';
-    /** Comparator for two non-null values; default numbers and ISO dates numerically, strings by code point. */
     compare?: (a: unknown, b: unknown) => number;
     get?: (row: ListRow) => unknown;
 }
 
 /**
- * Strings compare by UTF-16 code unit (`<` / `>`), deliberately not with `localeCompare` / `Intl.Collator`: the oracle
- * must not depend on the runner's locale. A server that sorts with a database collation (case-insensitive, accent-
- * folding, "natural" numbers) will differ from this order on such values: pass `compare` with a collator that matches
- * the column's documented collation (e.g. `new Intl.Collator('en', { sensitivity: 'base' }).compare`) rather than
- * loosening the oracle.
+ * Strings compare by UTF-16 code unit, not `localeCompare`, so the oracle does not depend on the runner's locale; pass `compare` for a
+ * column with a database collation.
  */
 const defaultCompare = (a: unknown, b: unknown): number => {
     const x = asComparable(a);
@@ -178,7 +156,6 @@ const defaultCompare = (a: unknown, b: unknown): number => {
     return sx < sy ? -1 : sx > sy ? 1 : 0;
 };
 
-/** Rows are ordered by the field in `dir` with nulls last and (optionally) a stable uuid tie-break. */
 export function expectSorted(rows: ListRow[], field: string, dir: 'asc' | 'desc', opts: SortOptions = {}): void {
     const key = opts.key ?? defaultKey;
     const nullsLast = opts.nullsLast ?? true;
@@ -206,7 +183,6 @@ export function expectSorted(rows: ListRow[], field: string, dir: 'asc' | 'desc'
     }
 }
 
-// ------------------------------------------------------------------ paging
 
 interface ListPage {
     items: ListRow[];
@@ -214,7 +190,6 @@ interface ListPage {
     totalPages?: number;
 }
 
-/** Fetches every page (1-based) and checks totals, page count, page sizes and overlap; returns the union in page order. */
 export async function walkPages(
     search: (pageNumber: number, itemsPerPage: number) => Promise<ListPage>,
     opts: { pageSize: number; maxPages?: number } & KeyOption,
@@ -247,7 +222,6 @@ export async function walkPages(
     return { items: pages.flatMap((p) => p.items), totalItems: total, pages };
 }
 
-/** The pages add up to the unpaged result: same count, same set. */
 export function expectPagingInvariants(pages: ListRow[][], unpaged: ListRow[], opts: KeyOption = {}): void {
     const key = opts.key ?? defaultKey;
     const sum = pages.reduce((n, p) => n + p.length, 0);

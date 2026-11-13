@@ -1,17 +1,12 @@
 /**
- * signing — signs data through Core with an onboarded key and verifies the signature with the key's recorded public key.
- *
- * WHAT: `signThroughCore` answers the signing attributes Core asks for from one signature scheme; `verifiesWithRecordedPublicKey`
- * checks the signature with node's verifier against the public key item Core holds.
- * WHY: a key that was onboarded is only usable when Core can address its private key on the token; a verified signature proves it.
- * HOW: ported from the developers' suite unchanged apart from the provisioning import.
+ * signing — signs data through Core with an onboarded key and verifies the signature with the key's recorded public key,
+ * which proves Core can address the private key on the token.
  */
 import { createPublicKey, verify } from 'crypto';
 import { AdminApi, KeyDetail, KeyItem } from './adminApi';
 import { definitionNamed, requestAttribute, AttributeDefinition } from './attributes';
 import { Provisioning } from './provisioning';
 
-/** One signature scheme, named once for Core's signing attributes and once for node's verifier. */
 const SIGNATURE = {
   coreOptions: { data_rsaSigScheme: 'PKCS1-v1_5', data_sigDigest: 'SHA-256' } as Record<string, string>,
   nodeDigest: 'sha256',
@@ -25,7 +20,6 @@ function itemOf(key: KeyDetail, type: KeyItem['type']): KeyItem {
   return item;
 }
 
-/** Core asks for the signing attributes the key's algorithm takes. Each is answered from the scheme. */
 export async function signThroughCore(
   api: AdminApi,
   provisioned: Provisioning,
@@ -49,7 +43,6 @@ export async function signThroughCore(
   return Buffer.from(response.signatures[0].data, 'base64');
 }
 
-/** Whether the public key Core holds for the key verifies the signature over the data. */
 export function verifiesWithRecordedPublicKey(key: KeyDetail, data: Buffer, signature: Buffer): boolean {
   const publicKeyItem = itemOf(key, 'Public');
   if (!publicKeyItem.keyData) {

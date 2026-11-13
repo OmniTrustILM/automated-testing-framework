@@ -1,11 +1,5 @@
 /**
  * protocols — unit tests of the pure protocol helpers.
- *
- * WHAT: the sscep and openssl cmp output parsers, the CMP PKIMessage reader, the degenerate PKCS#7 and GetCACaps readers,
- *       the ACME problem and stack-text readers, fixed garbage and the protocol CA fixture's pure decisions.
- * WHY: the protocol specs judge what a client tool or a server printed; a reader that misparses an answer would turn a
- *      real refusal into a pass or a pass into a refusal, so each reader is pinned on known output, good and bad.
- * HOW: pure calls on literal output and built messages; no network, no external client, no file.
  */
 import { expect, test } from '@playwright/test';
 import * as crypto from 'crypto';
@@ -20,7 +14,6 @@ import { parseSscepOutput } from '../../utils/regression/protocols/sscepClient';
 import { childEnv, toolCommand } from '../../utils/regression/protocols/externalToolRunner';
 import { acmeHeaders } from '../../utils/regression/protocols/acmeClient';
 
-/** A self-signed EC P-256 certificate (PEM) through @peculiar/x509 (forge cannot make or read one). */
 async function selfSignedEcPem(commonName: string): Promise<string> {
     require('reflect-metadata');
     const x509 = require('@peculiar/x509') as typeof import('@peculiar/x509');
@@ -47,7 +40,6 @@ test.describe('sscep output', () => {
 
 test.describe('openssl cmp output and arguments', () => {
     test('the OpenSSL 3 status line is read: PKIStatus, the PKIFailureInfo list and the quoted StatusString(s)', () => {
-        // crypto/cmp/cmp_status.c OSSL_CMP_CTX_snprint_PKIStatus: "PKIStatus: %s; PKIFailureInfo: a, b; StatusStrings: "x", "y""
         const two = 'CMP error: received error:PKIStatus: rejection; PKIFailureInfo: certRevoked, badCertId; StatusStrings: "CMPSRV100: pki message request cannot be parsed", "second"\nCMP error: ...';
         expect(parseOpensslCmpOutput(two)).toEqual({ pkiStatus: 'rejection', failInfo: ['certRevoked', 'badCertId'], statusStrings: ['CMPSRV100: pki message request cannot be parsed', 'second'] });
         const one = 'PKIStatus: rejection; PKIFailureInfo: badRequest; StatusString: "unsupported"';
@@ -126,7 +118,6 @@ test.describe('CMP PKIMessage reader', () => {
     });
 });
 
-/** The eight keywords the SCEP service advertises (SCEP overview in the platform documentation). */
 const SCEP_CA_CAPS: readonly string[] = ['POSTPKIOperation', 'SHA-1', 'SHA-256', 'SHA-512', 'DES3', 'AES', 'Renewal', 'SCEPStandard'];
 
 test.describe('SCEP helpers', () => {
@@ -196,7 +187,7 @@ test.describe('ACME / HTTP readers', () => {
 
 test.describe('protocol CA fixture decisions', () => {
     test('the provider token name follows the provider alphabet; a shared secret is URL-safe', () => {
-        for (let i = 0; i < 20; i++) expect(providerTokenName()).toMatch(/^[a-zA-Z](?:_?[a-zA-Z0-9]+)*$/);
+        for (let i = 0; i < 20; i++) expect(providerTokenName()).toMatch(/^[a-zA-Z][a-zA-Z0-9]*(?:_[a-zA-Z0-9]+)*$/);
         expect(randomSecret()).toMatch(/^[A-Za-z0-9_-]{20,}$/);
     });
 
@@ -257,8 +248,6 @@ test.describe('protocol CA fixture decisions', () => {
         expect(pickOption({ content: [] }, /x/)).toBeUndefined();
     });
 });
-
-// ------------------------------------------------------------------ acmeClient response headers
 
 test('acmeHeaders: lower-case names, Retry-After, Replay-Nonce, Content-Type, Location and the server Date', () => {
     const h = new Headers({ 'Retry-After': '30', 'Replay-Nonce': 'n1', 'Content-Type': 'application/json', Location: 'https://acme.example.test/order/1', Date: 'Tue, 13 Oct 2026 10:00:00 GMT' });

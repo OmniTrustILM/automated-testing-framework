@@ -1,61 +1,68 @@
 /**
- * RenewDialog — the "Renew Certificate" dialog.
- *
- * WHAT: the "Renew Certificate" dialog: the "Register instead of renewing now" switch, the Challenge field (while a
- *       registration authorization is active), the CSR upload and submit.
- * WHY: REG-CERT-07 renews with a same-key CSR and proves that a challenged registration requires the challenge.
- * HOW: a `CertificateToolbarDialog` (open, close, answer reading are shared); opened from the detail toolbar; with
- *       a platform key the CSR sits behind the "Upload new CSR" switch, with an external key the upload is always
- *       shown; the renew answer carries the successor's uuid.
+ * RenewDialog — the "Renew Certificate" dialog (REG-CERT-07); the answer names the successor's uuid.
+ * With a platform key the CSR sits behind the "Upload new CSR" switch; with an external key the upload is always shown.
  */
 import { expect, Locator, Page } from '@playwright/test';
-import { AnswerWithUuid, CertificateToolbarDialog } from './CertificateToolbarDialog';
+import { Logger } from '../utils/Logger';
+import { CertificateDetailPage } from './CertificateDetailPage';
 import { setSwitch } from './ui/form';
-import { UUID } from './ui/waitForResponse';
+import { actAndReadAnswerWithUuid, AnswerWithUuid, UUID } from './ui/waitForResponse';
 
-export class RenewDialog extends CertificateToolbarDialog {
-    /** The Challenge field (shown only for a certificate with an active registration). */
-    readonly challenge: Locator;
+const logger = new Logger('RenewDialog');
+
+export class RenewDialog {
+    readonly page: Page;
+
+    // Certificate detail page
+    readonly detail: CertificateDetailPage;
+
+    // Renew Certificate dialog
+    readonly dialog: Locator;
+    readonly registerInsteadSwitch: Locator;
+    readonly uploadNewCsrSwitch: Locator;
+    readonly csrTextarea: Locator;
+    readonly challengeInput: Locator;
+    /** The FE marks the field as required with this asterisk, not with an HTML `required` attribute. */
+    readonly challengeRequiredMark: Locator;
     readonly submitButton: Locator;
-    /** The dialog's error line after a refused renew. */
-    readonly error: Locator;
 
     constructor(page: Page) {
-        super(page, 'Renew Certificate', 'renew');
-        this.challenge = this.dialog.getByTestId('text-input-renewAuthorizationSecret');
+        this.page = page;
+
+        this.detail = new CertificateDetailPage(page);
+
+        this.dialog = page.getByRole('dialog', { name: 'Renew Certificate' });
+        this.registerInsteadSwitch = this.dialog.getByTestId('switch-registerSuccessor-input');
+        this.uploadNewCsrSwitch = this.dialog.getByTestId('switch-uploadCsr-input');
+        this.csrTextarea = this.dialog.locator('#__fileUpload__fileContent');
+        this.challengeInput = this.dialog.getByTestId('text-input-renewAuthorizationSecret');
+        this.challengeRequiredMark = this.dialog.getByTestId('label-renewAuthorizationSecret').locator('.text-danger');
         this.submitButton = this.dialog.getByTestId('renewSubmit');
-        this.error = this.errorLine('renewDialogError');
     }
 
-    /**
-     * The Challenge field is shown and marked as required: the FE marks it with the red asterisk of its label, not with an HTML `required`
-     * attribute.
-     */
+    async open(): Promise<void> {
+        logger.info('Opening the Renew Certificate dialog');
+        await this.detail.clickAction('renew');
+        await expect(this.dialog).toBeVisible();
+    }
+
     async assertChallengeRequired(): Promise<void> {
-        await expect(this.challenge).toBeVisible();
-        await expect(this.dialog.getByTestId('label-renewAuthorizationSecret').locator('.text-danger')).toBeVisible();
+        await expect(this.challengeInput).toBeVisible();
+        await expect(this.challengeRequiredMark).toBeVisible();
     }
 
-    /** The "Register instead of renewing now" switch is off: the dialog renews. */
     async assertRegisterOff(): Promise<void> {
-        const sw = this.dialog.getByTestId('switch-registerSuccessor-input');
-        await expect(sw).toBeVisible();
-        await expect(sw).not.toBeChecked();
+        await expect(this.registerInsteadSwitch).toBeVisible();
+        await expect(this.registerInsteadSwitch).not.toBeChecked();
     }
 
-    /**
-     * Paste a CSR. With a platform private key the CSR is optional behind the "Upload new CSR ?" switch; an externally
-     * keyed certificate always shows the upload.
-     */
     async pasteCsr(csrPem: string): Promise<void> {
-        if (await this.dialog.getByTestId('switch-uploadCsr-input').isVisible()) await setSwitch(this.dialog, 'uploadCsr', true);
-        const textarea = this.dialog.locator('#__fileUpload__fileContent');
-        await expect(textarea).toBeVisible();
-        await textarea.fill(csrPem);
+        if (await this.uploadNewCsrSwitch.isVisible()) await setSwitch(this.dialog, 'uploadCsr', true);
+        await expect(this.csrTextarea).toBeVisible();
+        await this.csrTextarea.fill(csrPem);
     }
 
-    /** Submit; returns the answer of `POST …/renew` (its body names the successor: `uuid`). */
     async submit(): Promise<AnswerWithUuid> {
-        return this.answerWithUuid({ method: 'POST', path: new RegExp(`/certificates/${UUID}/renew$`) }, () => this.submitButton.click());
+        return actAndReadAnswerWithUuid(this.page, { method: 'POST', path: new RegExp(`/certificates/${UUID}/renew$`) }, () => this.submitButton.click());
     }
 }

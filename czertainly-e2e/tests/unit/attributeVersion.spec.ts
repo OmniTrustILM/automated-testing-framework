@@ -1,6 +1,6 @@
 /**
- * attributeVersion — `requestVersion` turns core's numeric definition version (3 / 2) and its string forms into
- * "v3" / "v2", and every helper that copies an attribute definition sends the string form. Pure.
+ * attributeVersion — `requestVersion` turns core's numeric definition version (3 / 2) and its string forms into "v3" /
+ * "v2", and every helper that copies an attribute definition sends the string form.
  */
 import { expect, test } from '@playwright/test';
 import type { AttributeDefinition } from '../../utils/regression/platform/cryptoAlgorithmCases';
@@ -12,9 +12,6 @@ type Json = Record<string, any>;
 const NOW = new Date('2026-10-15T13:45:56.789Z');
 const def = (o: Json): Json => ({ uuid: 'aaaaaaaa-0000-4000-8000-000000000001', name: 'attr', properties: { required: true }, ...o });
 
-// ------------------------------------------------------------------ seen on a live tier: version is a NUMBER on the wire
-
-// requestVersion turns core's NUMERIC definition version (3 / 2) and the string forms into "v3" / "v2"; absent follows the fallback
 test('requestVersion turns numeric and string definition versions into v3 / v2; absent uses fallback', () => {
     expect([3, '3', 'v3', 'V3'].map((v) => requestVersion({ version: v }))).toEqual(['v3', 'v3', 'v3', 'v3']);
     expect([2, '2', 'v2'].map((v) => requestVersion({ version: v }))).toEqual(['v2', 'v2', 'v2']);
@@ -23,7 +20,6 @@ test('requestVersion turns numeric and string definition versions into v3 / v2; 
     expect(requestVersion({ version: 7 }, 'v3')).toBe('v3');
 });
 
-// every helper that copies a definition sends the STRING version (numeric fixtures, as core sends them)
 test('every helper that copies a definition sends the string version, given numeric fixtures', () => {
     const required = requiredAttributeItems([def({ contentType: 'string', version: 3 }), def({ contentType: 'string', version: 2, uuid: 'aaaaaaaa-0000-4000-8000-000000000002' }), def({ contentType: 'string', uuid: 'aaaaaaaa-0000-4000-8000-000000000003' })], 'users', 'v', NOW);
     expect(required.map((a) => a.version)).toEqual(['v3', 'v2', 'v3']);

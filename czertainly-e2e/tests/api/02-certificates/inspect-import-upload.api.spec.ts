@@ -1,23 +1,6 @@
 /**
- * API-CERT-64, 65, 68 — Inspection, import and plain upload of certificates. ilm#428.
- *
- * WHAT: 1. Inspection (POST /v1/inspections), one test per input: garbage bytes, an empty file, a DH PARAMETERS block, two private keys in
- *          a PEM, a PKCS#12 without or with a wrong passphrase (the same text), an encrypted PKCS#8 key without or with a wrong
- *          passphrase, a key under another passphrase than its store, 201 certificates and 101 other entries, a malformed or unknown
- *          tokenProfileUuid, a `file` that is not base64 or not a string, no `file` → the fixed refusal (422 array of strings, 400 / 404
- *          {message}); 200 certificates and 100 other entries are accepted; a refused file stores nothing.
- *       2. Plain upload (POST /v1/certificates/upload): PEM, DER, PKCS#7 PEM and DER → 201 {uuid}, state issued, the uploaded
- *          fingerprint and common name; the asynchronous upload → 202 {fingerprint} and the certificate appears.
- *       3. A keystore, a certificate request and garbage uploaded as a certificate → 422 with the fixed text, nothing created.
- *       4. The same certificate twice → 409 and one certificate; the same certificate through /import → 200 `existing` with the
- *          uuid of the uploaded one.
- * WHY: the refusal texts are fixed and the password refusals are non-oracular (a wrong and a missing password give the same text);
- *      the limits are 200 certificates and 100 other entries (core#2137). An import never changes an object that already exists
- *      (core#2414), so the wizard and the plain upload treat an existing certificate alike; the plain upload keeps its 409. PEM, DER
- *      and PKCS#7 uploads must not regress (ilm#248). The published OpenAPI document declares no 409 / 422 for the upload (spec gap).
- * HOW: files are built in memory (importFixtures) with run-prefixed common names and generated passwords; every create is recorded in the
- *      ledger (with its derived key) before the first assertion; required custom attributes of certificates are read first and only
- *      an unfillable one skips. The inspection rows are stored as data and run as a loop.
+ * API-CERT-64, 65, 68 — Inspection, import and plain upload of certificates (ilm#428). Limits: 200 certificates, 100
+ * other entries (core#2137).
  */
 import { ASYNC_UPLOAD_WAIT_MS, MANY_STEPS_TEST_MS } from '../../../utils/regression/timeouts';
 import { expect, test } from '../../../fixtures/regressionFixtures';
@@ -34,7 +17,6 @@ import { testMeta, tags } from '../../../utils/regression/tags';
 import type { GuardedApi } from '../../../utils/regression/guard/types';
 import type { OwnObjects } from '../../../utils/regression/ownObjects';
 import { randomBytes } from 'node:crypto';
-// Run-scoped generated test passwords: no password-like literal in the file.
 const GEN_PW_1 = `qa-${randomBytes(9).toString('base64url')}`;
 const GEN_PW_2 = `qa-${randomBytes(9).toString('base64url')}`;
 const GEN_PW_3 = `qa-${randomBytes(9).toString('base64url')}`;
@@ -43,11 +25,8 @@ const GEN_PW_5 = `qa-${randomBytes(9).toString('base64url')}`;
 
 type Json = Record<string, any>;
 
-// ------------------------------------------------------------------ API-CERT-65: inspection refusals
-
 const RULE_65 = 'fixed refusal texts; non-oracular password refusals; inspection / import status rows; core#2137';
 
-/** The answer one row expects. */
 type Expected =
     | { status: 422; text: string }
     | { status: 400 | 404; message: string }
@@ -55,24 +34,13 @@ type Expected =
 
 interface InspectionRow {
     row: string;
-    /** The behaviour, in the title. */
     title: string;
     behaviour: string;
-    /**
-     * Builds the request body (and the run-prefixed common-name prefix its file carries, for the "nothing stored" check). The
-     * tokenProfileUuid of the unknown-profile row is a probe uuid.
-     */
     build: (probe: () => string) => { body: Record<string, unknown>; prefix?: string; expected: Expected };
 }
 
 const ENTRY_LIMIT_NOTE = 'ContainerAssembler.requireWithinLimits → ContainerLimits';
 
-/**
- * The rows of API-CERT-65 (garbage, empty content, DH-parameters PEM block, two keys in a PEM, PKCS#12 without / with wrong password,
- * encrypted PKCS#8 without / with wrong passphrase, key under another passphrase than its store, 201 certificates, 101 other entries,
- * malformed or unknown `tokenProfileUuid`, non-base64 `file`, missing file) plus the boundary rows 200 certificates / 100 other entries
- * (accepted).
- */
 const INSPECTION_ROWS: InspectionRow[] = [
     {
         row: 'garbage',
@@ -208,7 +176,6 @@ const INSPECTION_ROWS: InspectionRow[] = [
     },
 ];
 
-/** Nothing stored: no certificate whose common name starts with the file's run-prefixed name. */
 async function expectNothingStored(api: GuardedApi, prefix: string): Promise<void> {
     const found = await searchPage(api, { filters: [isolation(prefix)], itemsPerPage: 10, pageNumber: 1, includeArchived: true });
     expect(found.totalItems, `certificates under ${prefix}`).toBe(0);
@@ -222,7 +189,8 @@ test.describe('inspection refusals', { tag: tags.api }, () => {
                 const { body, prefix, expected } = r.build(() => api.probeUuid());
                 const answer = await send(api, 'POST', ROUTES.inspect, { data: body });
 
-                // Never a 5xx; the status and the body shape of the row (errorContract: 422 = array of strings, 400 / 404 = {message}).
+                // Never a 5xx; the status and the body shape of the row (errorContract: 422 = array of strings, 400 /
+                // 404 = {message}).
                 expect(answer.status, `POST /v1/inspections: ${answer.text.slice(0, 300)}`).toBe(expected.status);
                 if (expected.status === 422) {
                     expectImportRefused(answer, expected.text, 'POST /v1/inspections');
@@ -239,36 +207,25 @@ test.describe('inspection refusals', { tag: tags.api }, () => {
     }
 });
 
-// ------------------------------------------------------------------ API-CERT-68: plain upload
-
 const RULE_68 = 'plain upload: fixed refusal texts; wizard `existing` vs plain-upload 409; core#2137 AC (a keystore uploaded as a single certificate is refused with a pointer to the import; PEM / DER / PKCS#7 behave as before)';
 const UPLOAD_SPEC_GAP = 'the published OpenAPI document declares no 409 / 422 for POST /v1/certificates/upload (spec gap; API-GEN-26 owns the schema check)';
 
 const canonicalUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-/**
- * The required custom attributes of certificates (a tier may define some): upload carries them. A failed read of the definitions fails the
- * test; a test that uploads asks `needs.requiredAttributesFillable('certificates')` first, which skips when the suite cannot fill one.
- */
 async function certificateAttributes(api: GuardedApi): Promise<Json[]> {
     return requiredCustomAttributes(api, 'certificates', runName('ca'));
 }
 
-/** The certificates the search finds under a common name (the authoritative read). */
 async function certificatesNamed(api: GuardedApi, commonName: string): Promise<Json[]> {
     return (await searchPage(api, { filters: [propertyFilter('COMMON_NAME', 'EQUALS', commonName)], itemsPerPage: 10, pageNumber: 1, includeArchived: true })).rows;
 }
 
-/**
- * A plain upload that must create a certificate: ledger (and derived key) right after the call, then the 201 contract and the read-back.
- * `attributes` are the required custom attributes when the caller already read them (a test with more than one upload reads them first).
- */
+/** A plain upload that must create a certificate. */
 async function uploadCreating(api: GuardedApi, own: OwnObjects, identity: Identity, file: Buffer, note: string, attributes?: Json[]): Promise<{ uuid: string }> {
     const filled = attributes ?? await certificateAttributes(api);
     const createdAfter = await serverCreatedAfter(api);
     const answer = await send(api, 'POST', ROUTES.upload, { data: uploadBody(file, filled) });
     const uuid = (answer.json as Json | undefined)?.uuid as string | undefined;
-    // Ledger before assertion: a 201 created an object whatever the rest of the test finds.
     own.probe('certificates', answer, { name: identity.cn, note });
     if (answer.status === 201 && uuid) await own.derivedKey(uuid, createdAfter);
     expect(answer.status, `POST /v1/certificates/upload: ${answer.text.slice(0, 300)}`).toBe(201);
@@ -279,7 +236,6 @@ async function uploadCreating(api: GuardedApi, own: OwnObjects, identity: Identi
 /** A refused plain upload: status 422 and exactly one message, and nothing created under the certificate's name. */
 async function uploadRefused(api: GuardedApi, own: OwnObjects, file: Buffer, text: string, prefix: string): Promise<void> {
     const answer = await send(api, 'POST', ROUTES.upload, { data: uploadBody(file, []) });
-    // Ledger first: a refusal that wrongly succeeds created an own certificate (found by its run-prefixed name).
     if (answer.status < 300) await own.recordNamed(prefix, 'accepted although the upload should have been refused');
     expectImportRefused(answer, text, 'POST /v1/certificates/upload');
     expect(await certificatesNamed(api, prefix), `certificates named ${prefix}`).toHaveLength(0);
@@ -289,11 +245,9 @@ interface UploadRow {
     row: string;
     title: string;
     behaviour: string;
-    /** The file the row uploads, from the identity built for it. */
     file: (identity: Identity) => Buffer;
 }
 
-/** A certificate of the run, as the file formats the plain upload takes. */
 const UPLOAD_CREATING: UploadRow[] = [
     { row: 'pem', title: 'a PEM certificate', behaviour: 'a PEM certificate → 201 {uuid}, state issued', file: (i) => Buffer.from(i.pem) },
     { row: 'der', title: 'a DER certificate', behaviour: 'a DER certificate → 201 {uuid}, state issued', file: (i) => i.der },
@@ -306,6 +260,7 @@ test.describe('plain upload', { tag: tags.api }, () => {
         test(`${r.title} gives 201 and reads back with the uploaded fingerprint`,
             testMeta({ id: 'API-CERT-68', row: r.row, prio: 'P1', issue: 'ilm#428', rule: [RULE_68, 'core#2137 AC / ilm#248 Regression Risk: plain PEM / DER / PKCS#7 uploads must not regress', r.behaviour] }),
             async ({ api, own, needs }, testInfo) => {
+                // Read before the first write: an unfillable required attribute skips the test before anything is uploaded.
                 await needs.requiredAttributesFillable('certificates');
                 testInfo.annotations.push({ type: 'spec-gap', description: UPLOAD_SPEC_GAP });
                 const identity = certificate(importCn(`up-${r.row}`));
@@ -330,12 +285,10 @@ test.describe('plain upload', { tag: tags.api }, () => {
             const createdAfter = await serverCreatedAfter(api);
 
             const answer = await send(api, 'POST', ROUTES.uploadAsync, { data: uploadBody(Buffer.from(identity.pem), attributes) });
-            // Ledger before assertion: whatever the answer was, a certificate that already exists under the name is recorded now.
             let uuids: string[] = await own.recordNamed(identity.cn, 'async upload (before the check)').catch(() => []);
             try {
                 expect(answer.status, `POST /v1/certificates/upload/async: ${answer.text.slice(0, 300)}`).toBe(202);
                 expect((answer.json as Json).fingerprint, 'the 202 answers {fingerprint}').toBe(identity.fingerprint);
-                // Ledger from the poll: the certificate is recorded the moment it exists (it is found by its run-prefixed name).
                 await expect
                     .poll(async () => (uuids = await own.recordNamed(identity.cn, 'async upload')).length, { timeout: ASYNC_UPLOAD_WAIT_MS, message: 'the async upload became a certificate' })
                     .toBe(1);
@@ -369,8 +322,6 @@ test.describe('plain upload', { tag: tags.api }, () => {
         testMeta({ id: 'API-CERT-68', row: 'garbage', prio: 'P1', issue: 'ilm#428', rule: [RULE_68, 'CertificateUtil', '422 "Uploaded certificate content has invalid or unsupported format."', 'nothing is created'] }),
         async ({ api, own }, testInfo) => {
             testInfo.annotations.push({ type: 'spec-gap', description: UPLOAD_SPEC_GAP });
-            // A garbage file carries no common name, so a companion certificate cannot be looked up: the refusal itself is the oracle
-            // and the unchanged certificate count of the run's name prefix is checked on a name the file never held.
             await uploadRefused(api, own, garbageBytes(), REFUSAL.uploadInvalid, importCn('up-garbage'));
         });
 
@@ -379,7 +330,6 @@ test.describe('plain upload', { tag: tags.api }, () => {
         async ({ api, own, needs }, testInfo) => {
             testInfo.annotations.push({ type: 'spec-gap', description: UPLOAD_SPEC_GAP });
             const identity = certificate(importCn('up-dup'));
-            // Read before the first write: an unfillable required attribute skips the test before anything is uploaded.
             await needs.requiredAttributesFillable('certificates');
             const attributes = await certificateAttributes(api);
             await uploadCreating(api, own, identity, Buffer.from(identity.pem), 'plain upload (first of a duplicate pair)', attributes);
@@ -408,7 +358,6 @@ test.describe('plain upload', { tag: tags.api }, () => {
                 if (typeof result.certificateUuid === 'string') {
                     own.record('certificates', { status: answer.status, uuid: result.certificateUuid, text: answer.text }, { name: identity.cn, note: 'import created a certificate the upload had already stored' });
                 } else {
-                    // A created result without a uuid: found and recorded by its run-prefixed name.
                     await own.recordNamed(identity.cn, 'import created a certificate the upload had already stored (no uuid in the result)');
                 }
             }

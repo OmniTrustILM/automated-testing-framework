@@ -5,15 +5,7 @@ import { familyOrSkip, provisioningOrSkip } from '../../utils/timestamping/provi
 import { devTests } from '../../utils/timestamping/tags';
 import { describeOutcome, requestTimestamp } from '../../utils/timestamping/tsp';
 
-/**
- * What the two profiles of a family are supposed to differ on. The final test is the guard
- * against a change that quietly stops taking effect: if both profiles produce identical
- * structures, the qualified configuration is being ignored no matter how green the rest looks.
- *
- * Every family is checked separately. A qualified ML-DSA token has to carry the same
- * qcStatements, accuracy and policy OID as a qualified RSA one — the signing key algorithm
- * must not reach the structure of what is signed.
- */
+/** What the two profiles of a family differ on; the last test guards against a qualified configuration that is silently ignored. */
 for (const planned of plannedFamilies()) {
   test.describe(`token structure (${planned.label})`, devTests(), () => {
     let nonQualified: ReplyInfo;

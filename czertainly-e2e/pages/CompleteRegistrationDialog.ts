@@ -1,45 +1,64 @@
 /**
- * CompleteRegistrationDialog — the "Complete Certificate Registration" dialog.
- *
- * WHAT: the "Complete Certificate Registration" dialog of a pre-registered certificate: challenge, CSR, submit and
- *       the dialog's error line.
- * WHY: REG-CERT-13 completes with a wrong secret (refused, one failed attempt) and with the right one; the
- *       completion answer goes back to the spec.
- * HOW: a `CertificateToolbarDialog` (open, close, answer reading are shared); opened from the detail toolbar;
- *       fields by test id, the CSR textarea by its id; only ever used on a certificate this run created.
+ * CompleteRegistrationDialog — the "Complete Certificate Registration" dialog of a pre-registered certificate (REG-CERT-13).
  */
 import { expect, Locator, Page } from '@playwright/test';
-import { CertificateToolbarDialog } from './CertificateToolbarDialog';
 import { ApiAnswer } from '../utils/regression/apiReads';
+import { Logger } from '../utils/Logger';
+import { CertificateDetailPage } from './CertificateDetailPage';
 import { fillText } from './ui/form';
-import { UUID } from './ui/waitForResponse';
+import { actAndReadAnswer, UUID } from './ui/waitForResponse';
 
-export class CompleteRegistrationDialog extends CertificateToolbarDialog {
+const logger = new Logger('CompleteRegistrationDialog');
+
+export class CompleteRegistrationDialog {
+    readonly page: Page;
+
+    // Certificate detail page
+    readonly detail: CertificateDetailPage;
+
+    // Complete Certificate Registration dialog
+    readonly dialog: Locator;
+    readonly challengeInput: Locator;
+    readonly csrTextarea: Locator;
     readonly submitButton: Locator;
-    /** The dialog's error line after a refused completion. */
+    readonly cancelButton: Locator;
     readonly error: Locator;
 
     constructor(page: Page) {
-        super(page, 'Complete Certificate Registration', 'complete');
+        this.page = page;
+
+        this.detail = new CertificateDetailPage(page);
+
+        this.dialog = page.getByRole('dialog', { name: 'Complete Certificate Registration' });
+        this.challengeInput = this.dialog.getByTestId('completeAuthorizationSecret');
+        this.csrTextarea = this.dialog.locator('#completeCsrUpload__fileUpload__fileContent');
         this.submitButton = this.dialog.getByTestId('completeRegisteredSubmit');
-        this.error = this.errorLine('completeRegisteredError');
+        this.cancelButton = this.dialog.getByRole('button', { name: 'Cancel', exact: true });
+        this.error = this.dialog.getByTestId('completeRegisteredError');
     }
 
-    /** The challenge (when the registration has one) and the CSR (Key Source External = upload). */
+    async open(): Promise<void> {
+        logger.info('Opening the Complete Certificate Registration dialog');
+        await this.detail.clickAction('complete');
+        await expect(this.dialog).toBeVisible();
+    }
+
+    async close(): Promise<void> {
+        await this.cancelButton.click();
+        await expect(this.dialog).toBeHidden();
+    }
+
     async fill(opts: { secret?: string; csrPem: string }): Promise<void> {
         if (opts.secret !== undefined) {
-            const secret = this.dialog.getByTestId('completeAuthorizationSecret');
-            await expect(secret).toBeVisible();
-            await fillText(secret, opts.secret);
+            await expect(this.challengeInput).toBeVisible();
+            await fillText(this.challengeInput, opts.secret);
         }
-        const textarea = this.dialog.locator('#completeCsrUpload__fileUpload__fileContent');
-        await expect(textarea).toBeVisible();
-        await textarea.fill(opts.csrPem);
+        await expect(this.csrTextarea).toBeVisible();
+        await this.csrTextarea.fill(opts.csrPem);
     }
 
-    /** Submit; returns the answer of `POST …/certificates/{uuid}/issue`. */
     async submit(): Promise<ApiAnswer> {
         await expect(this.submitButton).toBeEnabled();
-        return this.answerWithUuid({ method: 'POST', path: new RegExp(`/certificates/${UUID}/issue$`) }, () => this.submitButton.click());
+        return actAndReadAnswer(this.page, { method: 'POST', path: new RegExp(`/certificates/${UUID}/issue$`) }, () => this.submitButton.click());
     }
 }

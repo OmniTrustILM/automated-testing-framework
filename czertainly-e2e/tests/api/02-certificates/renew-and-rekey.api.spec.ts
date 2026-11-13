@@ -1,16 +1,6 @@
 /**
- * API-CERT-04, API-CERT-05 — Renew and rekey of an own issued certificate through the v2 API. ilm#429.
- *
- * WHAT: 1. Renew with a CSR on the same key → 200 with the successor's uuid; the successor is issued with the same public key, subject
- *          DN and SAN set and a different serial; the original stays issued; the relation is renewal; the histories say "Renewed using RA
- *          Profile <name>" and "Issued using RA Profile <name>".
- *       2. Rekey with a new key and the same subject → 200; the successor is issued with the new key, the same DN and SANs; the original
- *          stays issued; the relation is rekey and the history says "Rekeyed using RA Profile <name>".
- * WHY: renew keeps the key, rekey replaces it, both only from the issued state, one successor per call, related to the original. A
- *      supplied CSR must carry the certificate's key (renew) or a different key (rekey) and the issued subject. MS ADCS NG cannot renew
- *      without a PKCS#10, so a CSR is always sent.
- * HOW: certificate A is an own certificate issued from an external CSR on the run RA profile; the successor is recorded in the ledger right
- *      after the call (with its derived key) and deleted by the run-end teardown. Two issuances of up to 180 s each plus the reads.
+ * API-CERT-04, API-CERT-05 — Renew and rekey of an own issued certificate through the v2 API (ilm#429). Renew keeps the
+ * key, rekey replaces it, both only from the issued state.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { historyMessages, historyOf, relationsOf } from '../../../utils/regression/lifecycle/certificateHistory';
@@ -24,7 +14,7 @@ import { LIFECYCLE_MS } from '../../../utils/regression/timeouts';
 test.describe('Certificate renew and rekey through the v2 API', { tag: tags.api }, () => {
     test('renewing with a CSR on the same key issues a successor related as renewal',
         testMeta({
-            id: 'API-CERT-04', prio: 'P1', issue: 'ilm#429',
+            id: 'API-CERT-04', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'renew keeps the key; the original stays ISSUED; the successor is issued asynchronously; a supplied CSR must carry the certificate\'s key',
                 'PENDING → RENEWAL on issuance: same DN, issuer and key fingerprint; one successor per call; history "Renewed using RA Profile <name>" / "Issued using RA Profile <name>"',
@@ -32,14 +22,12 @@ test.describe('Certificate renew and rekey through the v2 API', { tag: tags.api 
             ],
         }),
         async ({ api, own, ownRaProfile }) => {
-            // Two issuances (180 s each) plus the reads.
             test.setTimeout(LIFECYCLE_MS);
             const ra = ownRaProfile;
             const a = await test.step('Issue certificate A (own, external CSR)', async () => own.certificate.issue(ra, { suffix: 'c04' }));
             const aDetail = await getCertificate(api, a.uuid);
 
             const renew = await test.step('POST …/{A}/renew with a CSR on the SAME key → 200 {uuid B}', async () => {
-                // The CSR carries the ISSUED subject (the CA may have completed it) and the same key.
                 const csr = csrFromKeyWithSubject(a.keys, String(aDetail.subjectDn), sansOfDetail(aDetail.subjectAlternativeNames));
                 const r = await renewOwnCertificate(api, a, ra, own.spec, { csrDerBase64: csr.derBase64, note: 'API-CERT-04 renew successor' });
                 expect(r.status, r.text.slice(0, 300)).toBe(200);
@@ -80,7 +68,7 @@ test.describe('Certificate renew and rekey through the v2 API', { tag: tags.api 
 
     test('rekeying with a new key and the same subject issues a successor related as rekey',
         testMeta({
-            id: 'API-CERT-05', prio: 'P1', issue: 'ilm#429',
+            id: 'API-CERT-05', prio: 'P1', issue: 'ilm#429', needs: 'ca',
             rule: [
                 'a rekey CSR carries a different public key and the same subject; PENDING → REKEY: same DN and issuer, different key',
                 'history "Rekeyed using RA Profile <name>"; the original stays ISSUED',
@@ -93,7 +81,6 @@ test.describe('Certificate renew and rekey through the v2 API', { tag: tags.api 
             const aDetail = await getCertificate(api, a.uuid);
 
             const rekey = await test.step('POST …/{A}/rekey with a NEW key, same CN and SAN → 200 {uuid B}', async () => {
-                // A new key, the ISSUED subject DN and SAN set (core compares the normalized X500 names).
                 const csr = csrFromKeyWithSubject(newKeyPair(), String(aDetail.subjectDn), sansOfDetail(aDetail.subjectAlternativeNames));
                 const r = await rekeyOwnCertificate(api, a, ra, own.spec, { csrDerBase64: csr.derBase64, note: 'API-CERT-05 rekey successor' });
                 expect(r.status, r.text.slice(0, 300)).toBe(200);

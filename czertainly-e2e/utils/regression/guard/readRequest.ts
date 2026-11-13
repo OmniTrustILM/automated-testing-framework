@@ -1,25 +1,6 @@
 /**
- * readRequest — turns what a caller handed to the guard into one snapshot of plain data.
- *
- * WHAT: the first half of every guarded request. It reads each input exactly once (the options, the URL string, the
- * method, each `params` entry, each header, the body) in steps — readOptions, readMethodAndUrl,
- * readIdentityOverride, readParams, readQuery, readHeaders, readBody, readForwarded and readRedirects — and refuses anything the
- * guard does not forward. The rules it applies, for every method (a refused request is never sent):
- *   a. Options: only `data`, `params`, `headers`, `timeout`, `failOnStatusCode`, `ignoreHTTPSErrors` (and `method` for
- *      `fetch`; `identityOverride` is the guard's own switch and is never forwarded).
- *   b. Headers: `content-type` (`application/json`; protocol media types on a protocol POST; `text/plain` with an
- *      optional `charset=utf-8` on a non-GET with a string or Buffer body and no identity header; the read-POST types of
- *      headers.ts), `accept`, `if-*`. Identity headers only with `identityOverride: true` (401 / 403 negatives). A
- *      method-override header and everything else is refused.
- *   c. URL: written as `/...` or `<scheme>://`, printable ASCII only, resolving exactly like Playwright's
- *      `new URL(url, BASE_URL)` to http(s) without user info on BASE_URL's origin.
- *   d. A `_method` query parameter is refused, in the URL and in `params`.
- * WHY: the guard judges what is SENT and sends what it judged. A getter, `toJSON`, a Proxy or a stateful `toString` read
- * twice could show the judge one thing and Playwright another, so nothing is read twice and nothing but the snapshot
- * goes on to the checks and the wire.
- * HOW: each step is a small function that either returns plain data or calls `refuse`. The refusal label has three
- * stages — before the URL is known, after the method is known, and once the path is known (`guardedApi <METHOD> <path>`)
- * — each built once by `refuserFor`. The order of the steps is the order of the refusals.
+ * readRequest — turns what a caller handed to the guard into one snapshot of plain data; each input is read once and
+ * anything not forwarded is refused, so the judge and Playwright cannot be shown different things.
  */
 import { apiPathOfPathname, hasMethodParam, resolveSentUrl, SentUrl } from './urls';
 import { postRouteKind } from './allowLists';
@@ -30,43 +11,30 @@ import {
 } from './headers';
 import { Refuse, refuserFor } from './refuse';
 
-/** The request the guard judged and sends: every input read once, plain data only. */
 export interface Snapshot {
     method: Method;
-    /** The URL as written (a string), first argument only. */
     url: string;
     sent: SentUrl;
-    /** The query Playwright will send: the URL's, replaced by string / URLSearchParams params, appended by object params. */
     query: URLSearchParams;
-    /** Forwarded params: a string (encodedParams) or a plain string map. */
     params?: string | Record<string, string>;
-    /** Forwarded headers, lower-cased; content-type set to application/json for a body unless a protocol type was given. */
     headers?: Record<string, string>;
     body: BodySnapshot;
-    /** timeout / failOnStatusCode / ignoreHTTPSErrors, as given. */
     pass: Record<string, number | boolean>;
-    /** GET: how many same-origin redirects the guard follows; every other method: 0. */
     maxRedirects: number;
-    /**
-     * The caller asked to send an identity header of its own (never forwarded; judged: the refused-method and no-handler probes refuse it).
-     */
+    /** The caller asked to send an identity header of its own: never forwarded, refused by the probe routes. */
     identityOverride: boolean;
 }
 
-/** How the request reached the guard: a method wrapper (`get`, `post`, …) or `fetch`. */
 export type Entry = { kind: 'wrapper'; method: string } | { kind: 'fetch' };
 
-/** The label of a refusal before the guard knows the method. */
 const WHERE_OPTIONS = 'guardedApi (outside /api)';
 
-/** A plain object (no class instance, no Map / URLSearchParams / Headers): `{}` or `Object.create(null)`. */
 const isPlainRecord = (v: unknown): v is Record<string, unknown> => {
     if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
     const p = Object.getPrototypeOf(v);
     return p === Object.prototype || p === null;
 };
 
-/** Reads one request into a snapshot; throws OwnObjectViolation (kind `request`) for anything the guard does not forward. */
 export function readRequest(env: NodeJS.ProcessEnv, entry: Entry, urlIn: unknown, optionsIn: unknown): Snapshot {
     const o = readOptions(entry, optionsIn, refuserFor(WHERE_OPTIONS));
     const { method, url, sent, where } = readMethodAndUrl(entry, urlIn, o, env);
@@ -74,7 +42,6 @@ export function readRequest(env: NodeJS.ProcessEnv, entry: Entry, urlIn: unknown
     const apiPath = apiPathOfPathname(sent.effective.pathname);
     const routeKind = method === 'POST' && !!apiPath ? postRouteKind(apiPath) : undefined;
     const protocol = routeKind === 'protocol';
-    // A read POST (POST_READ) may declare the three read-POST content types.
     const readPost = routeKind === 'read';
     const identityOverride = readIdentityOverride(o, method, refuse);
     const params = readParams(o.params, refuse);
@@ -85,7 +52,6 @@ export function readRequest(env: NodeJS.ProcessEnv, entry: Entry, urlIn: unknown
     return { method, url, sent, query, params, headers: read.headers, body: read.body, pass, maxRedirects: readRedirects(method), identityOverride };
 }
 
-/** The options: an allow-list of keys, each read once. */
 function readOptions(entry: Entry, optionsIn: unknown, refuse: Refuse): Record<string, unknown> {
     const o: Record<string, unknown> = {};
     if (optionsIn === undefined || optionsIn === null) return o;
@@ -104,10 +70,7 @@ function readOptions(entry: Entry, optionsIn: unknown, refuse: Refuse): Record<s
     return o;
 }
 
-/**
- * The URL string, the method and (c) the URL as sent. `where` is the refusal label of every later step: it names the
- * method and the API path once both are known.
- */
+/** The URL string, the method and the URL as sent; `where` is the refusal label of every later step. */
 function readMethodAndUrl(entry: Entry, urlIn: unknown, o: Record<string, unknown>, env: NodeJS.ProcessEnv): { method: Method; url: string; sent: SentUrl; where: string } {
     const refuseEarly = refuserFor(WHERE_OPTIONS);
     if (typeof urlIn !== 'string') refuseEarly('a URL that is not a string (a String / URL object is refused; pass the string)');
@@ -128,7 +91,6 @@ function readMethodAndUrl(entry: Entry, urlIn: unknown, o: Record<string, unknow
     return { method, url, sent, where: `guardedApi ${method} ${apiPath ?? '(outside /api)'}` };
 }
 
-/** `identityOverride`: a boolean; a refused-method probe runs as the run's own identity, never with an identity header. */
 function readIdentityOverride(o: Record<string, unknown>, method: Method, refuse: Refuse): boolean {
     if (o.identityOverride !== undefined && typeof o.identityOverride !== 'boolean') refuse('identityOverride must be a boolean');
     const identityOverride = o.identityOverride === true;
@@ -136,7 +98,6 @@ function readIdentityOverride(o: Record<string, unknown>, method: Method, refuse
     return identityOverride;
 }
 
-/** `params`: a string, URLSearchParams (read once with toString) or a plain map of primitives (each read once). */
 function readParams(p: unknown, refuse: Refuse): string | Record<string, string> | undefined {
     if (p === undefined) return undefined;
     if (typeof p === 'string') return p;
@@ -153,10 +114,7 @@ function readParams(p: unknown, refuse: Refuse): string | Record<string, string>
     return map;
 }
 
-/**
- * The query Playwright sends: encodedParams (a non-empty string) replaces the URL's query, object params append. (d) A
- * `_method` override is refused in the URL and in the params.
- */
+/** The query Playwright sends: encodedParams replaces the URL's query, object params append; a `_method` override is refused in both. */
 function readQuery(sent: SentUrl, params: string | Record<string, string> | undefined, refuse: Refuse): URLSearchParams {
     const final = new URL(sent.effective.toString());
     if (typeof params === 'string') {
@@ -166,7 +124,6 @@ function readQuery(sent: SentUrl, params: string | Record<string, string> | unde
     return final.searchParams;
 }
 
-/** Headers: each read once, lower-cased, allow-listed (rule b). */
 function readHeaders(
     headersIn: unknown,
     ctx: { protocol: boolean; identityOverride: boolean; readPost: boolean },
@@ -193,21 +150,14 @@ function readHeaders(
 
 const hasIdentityHeader = (headers: Record<string, string>): boolean => Object.keys(headers).some((h) => IDENTITY_HEADERS.has(h));
 
-/**
- * The body as it will be sent: raw text for a 415 negative (`text/plain`, a read-POST type), a protocol POST's string as
- * written, and JSON for everything else.
- */
+/** The body as sent: raw text for a 415 negative or a protocol string, JSON for everything else. */
 function serialiseBody(data: unknown, how: { rawText: boolean; protocolType: boolean }): BodySnapshot | { problem: string } {
     if (how.rawText) return readTextBody(data);
     if (how.protocolType && (typeof data === 'string' || data instanceof String)) return { view: { kind: 'text', text: String(data) }, send: String(data) };
     return readJsonBody(data);
 }
 
-/**
- * The body, serialised once, and the content type that goes with it. A protocol POST that declares its protocol media
- * type sends a string as written; a 415 negative sends `text/plain` or a read-POST type as written, judged as raw text;
- * every other body is JSON.
- */
+/** The body, serialised once, with its content type. */
 function readBody(
     data: unknown,
     headersIn: Record<string, string> | undefined,
@@ -217,8 +167,7 @@ function readBody(
     let headers = headersIn;
     const declared = headers?.['content-type'];
     const protocolType = ctx.protocol && !!declared && PROTOCOL_CONTENT.has(declared.toLowerCase());
-    // A 415 negative: text/plain only on a non-GET request with a string / Buffer
-    // body and without an identity header (even with identityOverride); the body goes as written, judged as raw text.
+    // A 415 negative: only a non-GET with a string / Buffer body and no identity header; judged as raw text.
     const textPlain = declared !== undefined && textPlainType(declared) !== undefined;
     if (textPlain) {
         if (BODYLESS.has(ctx.method)) refuse('text/plain on a GET / TRACE (a 415 negative is a request with a text body)');
@@ -226,9 +175,7 @@ function readBody(
             refuse('an identity header on a text/plain request (a 415 negative runs as the run\'s own identity)');
         }
     }
-    // A read-POST content type (headerProblem admitted it on a POST_READ route only): the body goes as
-    // written like text/plain (Playwright sends a string raw under any non-JSON type), UTF-8, no NUL, no identity
-    // header (even with identityOverride), and its text may not contain `_method` (any case).
+    // A read-POST content type (admitted on a POST_READ route only): sent like text/plain, no NUL, no `_method`, no identity header.
     const readPostContent = declared !== undefined && ctx.readPost && readPostType(declared) !== undefined;
     if (readPostContent && hasIdentityHeader(headers!)) {
         refuse(`an identity header on a ${declared} request (a 415 negative runs as the run's own identity)`);
@@ -248,7 +195,6 @@ function readBody(
     return { body: body as BodySnapshot, headers };
 }
 
-/** The other forwarded options, type-checked. */
 function readForwarded(o: Record<string, unknown>, refuse: Refuse): Record<string, number | boolean> {
     const pass: Record<string, number | boolean> = {};
     const timeout = o.timeout;
@@ -265,5 +211,4 @@ function readForwarded(o: Record<string, unknown>, refuse: Refuse): Record<strin
     return pass;
 }
 
-/** A GET follows same-origin redirects itself (through the URL rules); every other method never follows one. */
 const readRedirects = (method: Method): number => (method === 'GET' ? DEFAULT_MAX_REDIRECTS : 0);

@@ -1,12 +1,6 @@
 /**
- * workerApiRenewal — the worker-scoped admin context renews its token, and a block's worker guard needs a proven local stack.
- *
- * WHAT: (1) `renewingContext` sends to the current context while its token has more than the margin left, opens a new context for
- * the next request when it has less (one renewal for any number of waiting requests), retries after a failed grant, and disposes every
- * context it opened; (2) `withWorkerApi(..., { localStack: true })` refuses off a proven local stack before any request;
- * (3) every ledger type the key onboarding block records is a registry type with a live ownership read.
- * WHY: a worker fixture lives longer than one access token, and the key onboarding hooks are minutes apart.
- * HOW: stub contexts with an injected clock; no network.
+ * workerApiRenewal — the worker-scoped admin context renews its
+ * token, and a block's worker guard needs a proven local stack.
  */
 import { expect, test } from '@playwright/test';
 import type { APIRequestContext } from '@playwright/test';
@@ -56,6 +50,20 @@ test('a failed grant fails that request and the next request tries again', async
     await expect(api.get('/a')).rejects.toThrow('grant failed');
     expect(await api.get('/a')).toBe('ok');
     expect(attempts).toBe(2);
+});
+
+test('a context still opening when dispose runs is closed when it arrives and never handed to the request that waited for it', async () => {
+    const log: string[] = [];
+    let arrive!: () => void;
+    const open = (): Promise<OpenedContext> => new Promise((resolve) => {
+        arrive = () => resolve({ context: stubContext('late', log), expiresAt: Number.POSITIVE_INFINITY });
+    });
+    const api = renewingContext(open);
+    const waiting = api.get('/a');
+    await api.dispose();
+    arrive();
+    await expect(waiting).rejects.toThrow(/disposed/);
+    expect(log, 'disposed on arrival, never used').toEqual(['late dispose']);
 });
 
 test('a context without a token (header mode) is never renewed', async () => {

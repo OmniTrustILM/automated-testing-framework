@@ -1,10 +1,6 @@
 /**
  * The teardown handlers of the timestamping block (utils/timestamping/teardown.ts) as runTeardown loads them (behind the
- * guard), against a stateful fake core that applies core's refusals: call sequence, dry run, the deletion rule (read with
- * 200 first, 404 rules, absence proven by GET), the signing-record round limit, the secrets behind TSP Basic credentials,
- * and the descriptor (utils/timestamping/resourceTypes.ts) against the integrated DELETE_ORDER (the four types joined step 3).
- * The framework tables carry the four types (runTeardown.ts, ownership.ts); the test checks they agree with the
- * descriptor, which also proves the descriptor maps onto the registry shape.
+ * guard), against a stateful fake core that applies core's refusals.
  */
 import * as fs from 'fs';
 import { APIRequestContext, test, expect } from '@playwright/test';
@@ -22,22 +18,16 @@ const RUN = 'qa-reg-20261022-120000-ab12';
 type Json = Record<string, any>;
 interface Reply { status: number; body?: unknown }
 
-// ------------------------------------------------------------------ the stateful fake core
-
 interface SigningProfileRow { name: string; tsp?: string; records: string[]; timestampSourceOf?: string }
 interface TspProfileRow { name: string; defaultSigning?: string; vaultProfile?: string; secrets: string[] }
 interface SecretRow { name: string; state: string }
 
 interface CoreOptions {
-    /** Records per list page (core's maximum is 1000; a small page exercises the rounds). */
     perPage?: number;
-    /** The bulk delete answers success but keeps the records (the loop the round limit ends). */
     keepRecords?: boolean;
     /** The bulk delete answers one message per record it did not delete. */
     bulkMessages?: boolean;
-    /** The first profile DELETE finds this many records that the deferred persistence staged after the last page. */
     lateRecords?: number;
-    /** A DELETE answers 204 and keeps the object (absence proof). */
     ghostDelete?: string[];
     /** Reads of a Basic-credential secret that still answer 200 after its TSP profile is gone (core's queue). */
     secretLag?: number;
@@ -46,6 +36,11 @@ interface CoreOptions {
     secretDeletable?: boolean;
     /** Core queues the explicit delete too: the secret stays readable for this many reads after it, then answers 404. */
     deleteLag?: number;
+    /**
+     * The path-scoped listing returns a record whose `signingProfile.uuid` is not the requested profile (the regression the ownership check
+     * must refuse before any bulk DELETE).
+     */
+    foreignSigningRecord?: { uuid: string; signingProfileUuid: string };
 }
 
 /** A stateful core: signing profiles, TSP profiles, time-quality configurations, signing records and vault secrets. */
@@ -57,7 +52,6 @@ class TimestampingCore {
     /** Basic credentials: the TSP profile, the username and the vault secret behind it. */
     credentials = new Map<string, { tsp: string; username: string; secret: string }>();
     calls: string[] = [];
-    /** Every request with its query string (`calls` drops it). */
     urls: string[] = [];
     private pendingDeletes = new Map<string, number>();
     private pendingSecretReads = new Map<string, number>();
@@ -83,9 +77,13 @@ class TimestampingCore {
             return { status: 200, body: t ? { available: true, uuid: p.tsp, name: t.name } : { available: false } };
         }
         if ((m = /^\/api\/v1\/signingProfiles\/([^/]+)\/signingRecords$/.exec(path)) && method === 'POST') {
-            const p = this.signing.get(m[1]);
+            const profileUuid = m[1];
+            const p = this.signing.get(profileUuid);
             if (!p) return { status: 404 };
-            return { status: 200, body: { items: p.records.slice(0, this.opts.perPage ?? 1000).map((uuid) => ({ uuid })), totalItems: p.records.length } };
+            const page = this.opts.foreignSigningRecord
+                ? [{ uuid: this.opts.foreignSigningRecord.uuid, signingProfile: { uuid: this.opts.foreignSigningRecord.signingProfileUuid, name: 'foreign' } }]
+                : p.records.slice(0, this.opts.perPage ?? 1000).map((uuid) => ({ uuid, signingProfile: { uuid: profileUuid, name: p.name } }));
+            return { status: 200, body: { items: page, totalItems: page.length } };
         }
         if (path === '/api/v1/signingRecords' && method === 'DELETE') {
             const uuids = data as string[];
@@ -199,13 +197,10 @@ class TimestampingCore {
         return { get: call('GET'), post: call('POST'), patch: call('PATCH'), put: call('PUT'), delete: call('DELETE'), dispose: async () => undefined } as unknown as APIRequestContext;
     }
 
-    /** Mutations only (PATCH / DELETE), listings (POST) excluded. */
     writes(): string[] {
         return this.calls.filter((c) => c.startsWith('PATCH ') || c.startsWith('DELETE '));
     }
 }
-
-// ------------------------------------------------------------------ rig
 
 const SIGNING = '11111111-1111-4111-8111-111111111111';
 const TSP = '22222222-2222-4222-8222-222222222222';
@@ -226,7 +221,6 @@ const lines = (): LedgerLine[] => [
 const credentialLine = (): LedgerLine => ({ at: '2026-10-22T12:00:04.000Z', runId: RUN, type: 'tspBasicCredentials', name: `${RUN}-cred`, uuid: CRED, spec: '40-tsp-errors', event: 'created', parents: { tspProfile: TSP } });
 const lineOf = (ledger: LedgerLine[], type: string): LedgerLine => ledger.find((l) => l.type === type)!;
 
-/** A core with the full set: signing profile activated on its TSP profile (also its default), a vault profile with two credentials. */
 function fullCore(opts: CoreOptions = {}, records = 3): TimestampingCore {
     const core = new TimestampingCore(opts);
     core.tqc.set(TQC, { name: `${RUN}-tqc`, usedBy: [SIGNING] });
@@ -267,8 +261,6 @@ async function run(core: TimestampingCore, type: string, ledger: LedgerLine[] = 
     }
 }
 
-// ledger/ownership.ts LIVE_READS carries the descriptor's reads since the integration: assert they agree instead of
-// installing them (an install / delete here would remove the real entries for the specs that run after this file).
 test.beforeAll(() => {
     resetHandlerModulesForTests();
 });
@@ -302,7 +294,6 @@ test.afterEach(() => {
     }
 });
 
-/** The cleanup-failure records the handler wrote (utils/cleanupLedger.ts) in this test. */
 const cleanupFailures = (): Array<{ resource: string; uuid?: string; message: string; blockedBy?: string }> => {
     const file = process.env.CLEANUP_LEDGER_FILE!;
     return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
@@ -310,9 +301,7 @@ const cleanupFailures = (): Array<{ resource: string; uuid?: string; message: st
 
 const indexOfCall = (core: TimestampingCore, call: string, from = 0): number => core.calls.indexOf(call, from);
 
-// ------------------------------------------------------------------ tspProfiles
-
-// the order of the developers' teardown: deactivate on the signing profile, then delete the TSP profile; absence by GET
+// the order of the developers' teardown: deactivate on the signing profile, then delete the TSP profile.
 test('a TSP profile is deactivated on its signing profile, deleted, and its absence is proven by GET', async () => {
     const core = fullCore();
     const { error } = await run(core, 'tspProfiles');
@@ -322,7 +311,6 @@ test('a TSP profile is deactivated on its signing profile, deleted, and its abse
     expect(deactivate, 'deactivate sent').toBeGreaterThan(-1);
     expect(del, 'delete sent').toBeGreaterThan(deactivate);
     expect(indexOfCall(core, `GET /api/v1/tspProfiles/${TSP}`, del), 'absence read after the delete').toBeGreaterThan(del);
-    // the deactivation is proven by a read of the activation
     expect(indexOfCall(core, `GET /api/v1/signingProfiles/${SIGNING}/protocols/tsp`, deactivate)).toBeGreaterThan(deactivate);
     expect(core.writes()).toEqual([`PATCH /api/v1/signingProfiles/${SIGNING}/protocols/tsp/deactivate`, `DELETE /api/v1/tspProfiles/${TSP}`]);
     expect(core.tsp.has(TSP)).toBe(false);
@@ -495,8 +483,6 @@ test('a TSP profile without a vault profile sends no secret listing', async () =
     expect(core.calls.includes('POST /api/v1/secrets')).toBe(false);
 });
 
-// ------------------------------------------------------------------ signingProfiles
-
 test('a signing profile: deactivate, empty its signing records page by page, delete, absence by GET', async () => {
     const core = fullCore({ perPage: 2 }, 5);
     core.tsp.get(TSP)!.defaultSigning = undefined; // the TSP profile's handler is not part of this test
@@ -509,7 +495,6 @@ test('a signing profile: deactivate, empty its signing records page by page, del
     expect(writes[writes.length - 1]).toBe(`DELETE /api/v1/signingProfiles/${SIGNING}`);
     const del = indexOfCall(core, `DELETE /api/v1/signingProfiles/${SIGNING}`);
     expect(indexOfCall(core, `GET /api/v1/signingProfiles/${SIGNING}`, del), 'absence read after the delete').toBeGreaterThan(del);
-    // the last listing before the delete was empty: the proof that nothing is left
     const lastList = core.calls.slice(0, del).lastIndexOf(`POST /api/v1/signingProfiles/${SIGNING}/signingRecords`);
     expect(lastList).toBeGreaterThan(-1);
 });
@@ -523,7 +508,6 @@ test('a signing profile that is not activated gets no deactivate call; one witho
     expect(core.writes()).toEqual([`DELETE /api/v1/signingProfiles/${SIGNING}`]);
 });
 
-// the round limit: core reports every delete done but keeps the records (lib/teardown.sh teardown_signing_records)
 test('records that core keeps end the loop at the round limit, fail the handler and never send the profile delete', async () => {
     const core = fullCore({ keepRecords: true }, 4);
     core.tsp.get(TSP)!.defaultSigning = undefined;
@@ -540,6 +524,18 @@ test('a bulk delete that answers messages is a failure naming the count, not a s
     const { error } = await run(core, 'signingProfiles');
     expect(String(error)).toMatch(/core kept 2 of 2 signing record\(s\)/);
     expect(core.writes().some((w) => w === `DELETE /api/v1/signingProfiles/${SIGNING}`)).toBe(false);
+});
+
+test('a listing that returns a record owned by another signing profile fails closed and never bulk-deletes', async () => {
+    const foreignProfile = 'signing-foreign';
+    const foreignRecord = 'record-foreign';
+    const core = fullCore({ foreignSigningRecord: { uuid: foreignRecord, signingProfileUuid: foreignProfile } }, 1);
+    core.tsp.get(TSP)!.defaultSigning = undefined;
+    const { error } = await run(core, 'signingProfiles');
+    expect(String(error)).toMatch(new RegExp(`listing returned record ${foreignRecord} owned by ${foreignProfile}`));
+    expect(core.writes().some((w) => w === 'DELETE /api/v1/signingRecords')).toBe(false);
+    expect(core.writes().some((w) => w === `DELETE /api/v1/signingProfiles/${SIGNING}`)).toBe(false);
+    expect(core.signing.has(SIGNING)).toBe(true);
 });
 
 test('a record staged after the last page makes core refuse once; the handler empties the profile again and succeeds', async () => {
@@ -585,8 +581,6 @@ test('a listing that answers 5xx fails the handler (a record core did not show i
     await expect(handler('signingProfiles').remove(ctx, lineOf(ledger, 'signingProfiles'))).rejects.toThrow(/listing its signing records answered 500/);
 });
 
-// ------------------------------------------------------------------ timeQualityConfigurations
-
 test('a time-quality configuration is read live, deleted, and its absence proven by GET', async () => {
     const core = fullCore();
     core.signing.clear();
@@ -603,8 +597,6 @@ test('a time-quality configuration a signing profile still references is reporte
     expect(error.blockedBy).toMatch(/signing profile referencing it/);
     expect(core.tqc.has(TQC)).toBe(true);
 });
-
-// ------------------------------------------------------------------ the deletion rule (shared by the four types)
 
 for (const type of ['tspBasicCredentials', 'tspProfiles', 'signingProfiles', 'timeQualityConfigurations']) {
     test(`${type}: 404 without a prior 200 in the step is "route or object missing", nothing is sent`, async () => {
@@ -633,13 +625,11 @@ for (const type of ['tspBasicCredentials', 'tspProfiles', 'signingProfiles', 'ti
         const { wrapHandlerWithGuard } = await import('../../utils/regression/teardown/runTeardown');
         const ctx: TeardownContext = { api: core.api(), runId: RUN, ledger, seen: new Set(), tier: null, warn: () => undefined, pollMs: 1 };
         await expect(wrapHandlerWithGuard(type, teardownHandlers[type]).remove(ctx, lineOf(ledger, type))).rejects.toBeInstanceOf(DryRunRefusal);
-        // even the raw handler, called outside the registry, sends nothing
         await expect(teardownHandlers[type].remove({ ...ctx, seen: new Set([lineOf(ledger, type).uuid]) }, lineOf(ledger, type))).rejects.toBeInstanceOf(DryRunRefusal);
         expect(core.calls).toEqual([]);
     });
 }
 
-// a DELETE answering 404 after the 200 read counts as gone in between; the GET still proves it
 test('a DELETE answering 404 after a 200 read counts as gone in between; the GET still proves it', async () => {
     const core = fullCore({}, 0);
     core.tqc.get(TQC)!.usedBy = [];
@@ -657,7 +647,7 @@ test('a DELETE answering 404 after a 200 read counts as gone in between; the GET
     expect(core.tqc.has(TQC)).toBe(false);
 });
 
-// a foreign object (live name without the run prefix) is refused by the guard before a handler touches it
+// a foreign object (live name without the run prefix) is refused by the guard before a handler touches it.
 test('a foreign object (live name without the run prefix) is refused, nothing is sent', async () => {
     const core = fullCore();
     core.tsp.get(TSP)!.name = 'not-ours';
@@ -666,7 +656,6 @@ test('a foreign object (live name without the run prefix) is refused, nothing is
     expect(core.writes()).toEqual([]);
 });
 
-// on a shared tier a ledger line may point at an object somebody else owns (a wrong uuid, a renamed object): the live name decides, for each type
 test('a pre-existing signing profile or time-quality configuration (live name without the run prefix) is refused too: nothing is sent', async () => {
     const signing = fullCore();
     signing.signing.get(SIGNING)!.name = 'production-signing';
@@ -682,7 +671,6 @@ test('a pre-existing signing profile or time-quality configuration (live name wi
     expect(tqc.tqc.has(TQC), 'the pre-existing configuration is still there').toBe(true);
 });
 
-// idempotent: a second run for an object that is gone ends in "route or object missing" with no request but reads
 test('a second call for an object that is already gone sends no mutation', async () => {
     const core = fullCore();
     expect((await run(core, 'tspProfiles')).error).toBeUndefined();
@@ -691,8 +679,6 @@ test('a second call for an object that is already gone sends no mutation', async
     expect(again.error).toBeInstanceOf(LiveObjectMissing);
     expect(core.writes()).toHaveLength(before);
 });
-
-// ------------------------------------------------------------------ tspBasicCredentials
 
 test('a Basic credential is read live under its TSP profile, deleted through the scoped route, absence by GET, its own secret awaited', async () => {
     const core = credentialCore({ secretLag: 2 });
@@ -723,7 +709,6 @@ test('a credential secret that stays is reported (warning + cleanup-failure reco
 test('a credential whose TSP profile is already gone is done by its profile (goneWith), not a failure; without the profile\'s deleted line it is "missing"', async () => {
     const core = credentialCore();
     const ledger = [...lines(), credentialLine()];
-    // the TSP profile's own handler deletes the profile and, with it, the credential rows
     expect((await run(core, 'tspProfiles', ledger)).error).toBeUndefined();
     expect(core.credentials.has(CRED)).toBe(false);
     const { wrapHandlerWithGuard } = await import('../../utils/regression/teardown/runTeardown');
@@ -751,8 +736,6 @@ test('a credential without a live name that carries the run prefix is refused', 
     expect(String(error)).toMatch(/refusing to touch|live name/);
     expect(core.writes()).toEqual([]);
 });
-
-// ------------------------------------------------------------------ signing profiles recorded without parents
 
 const bareSigningLine = (): LedgerLine => ({ at: '2026-10-22T12:00:05.000Z', runId: RUN, type: 'signingProfiles', name: `${RUN}-sp`, uuid: SIGNING, spec: '60-content-signing-canary', event: 'created' });
 
@@ -785,8 +768,6 @@ test('a TSP profile\'s handler also finds an activated signing profile that has 
     expect(core.writes()).toContain(`PATCH /api/v1/signingProfiles/${SIGNING}/protocols/tsp/deactivate`);
     expect(core.tsp.has(TSP)).toBe(false);
 });
-
-// ------------------------------------------------------------------ the whole chain in the integrated DELETE_ORDER
 
 const rankIn = (table: Array<{ step: number; types: string[] }>, type: string): [number, number] => {
     const step = table.find((s) => s.types.includes(type));
@@ -836,8 +817,6 @@ test('in the wrong order (signing profile first) core refuses and the handler na
     expect(core.tsp.has(TSP) && core.signing.has(SIGNING) && core.tqc.has(TQC)).toBe(true);
 });
 
-// ------------------------------------------------------------------ the descriptor against the proposed placement
-
 test('every descriptor type has a handler in the module it names, and the handler\'s live read is the descriptor\'s detail URL', async () => {
     expect(TIMESTAMPING_RESOURCE_TYPES.map((d) => d.type).sort()).toEqual(Object.keys(teardownHandlers).sort());
     for (const d of TIMESTAMPING_RESOURCE_TYPES) {
@@ -866,12 +845,10 @@ test('every referencedBy pair is satisfied by DELETE_ORDER: the four types joine
     for (const s of DELETE_ORDER) for (const t of s.types) counts.set(t, (counts.get(t) ?? 0) + 1);
     for (const t of TIMESTAMPING_DELETE_STEP_TYPES) expect(counts.get(t), `${t} appears once`).toBe(1);
     expect(DELETE_ORDER.find((s) => s.step === 3)!.types).toEqual(['discoveries', ...TIMESTAMPING_DELETE_STEP_TYPES]);
-    // the block sits before certificates and keys (a signing profile pins its certificate and token profile)
     for (const t of TIMESTAMPING_DELETE_STEP_TYPES) {
         expect(before(DELETE_ORDER, t, 'certificates')).toBe(true);
         expect(before(DELETE_ORDER, t, 'keys')).toBe(true);
     }
-    // within the step: credentials, TSP profile, then signing profile, then time-quality configuration
     expect(TIMESTAMPING_DELETE_STEP_TYPES).toEqual(['tspBasicCredentials', 'tspProfiles', 'signingProfiles', 'timeQualityConfigurations']);
 });
 
@@ -893,15 +870,13 @@ test('deleteAfter / deleteBefore agree with the pairs; the activation is a relea
         expect([...d.deleteBefore].sort(), `${d.type} deleteBefore`).toEqual([...new Set(expectedBefore)].sort());
         for (const p of d.referencedBy) expect(p.b, 'a type lists the pairs it holds').toBe(d.type);
     }
-    // the cycle: signingProfiles ← tspProfiles (default) is a pair; tspProfiles ← signingProfiles (activation) is released by the PATCH
     expect(pairs.some((p) => p.a === 'signingProfiles' && p.b === 'tspProfiles')).toBe(true);
     expect(pairs.some((p) => p.a === 'tspProfiles' && p.b === 'signingProfiles')).toBe(false);
     for (const r of TIMESTAMPING_RELEASES) {
         expect(pairs.some((p) => p.a === r.a && p.b === r.b)).toBe(false);
         expect(r.by).toMatch(/deactivate/);
     }
-    // users / roles are not refused by core over a TSP profile: their existing handlers need no change; the only pair that
-    // names users is the credential's handler order
+    // users / roles are not refused by core over a TSP profile: their existing handlers need no change.
     for (const n of TIMESTAMPING_NOT_REFERENCED) {
         for (const p of pairs.filter((q) => q.a === n.a)) expect(p.core, `${p.a} ← ${p.b} is order only`).toMatch(/^handler order|handler order only/);
     }

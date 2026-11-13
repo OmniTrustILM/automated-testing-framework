@@ -1,12 +1,6 @@
 /**
- * fieldOracles — property oracles per catalogue field.
- *
- * WHAT: Property oracles per catalogue field over whatever data the tier holds (no exact counts): every returned row satisfies
- *       the filter, the exact conditions return the set the baseline implies, the complementary conditions partition the
- *       total, and AND is the intersection. String conditions use the weak case rule; datetimes use partitions only.
- * WHY: The tier's data is unknown, so a field is checked by properties that hold for any data.
- * HOW: Every returned row satisfies the filter, exact conditions return the set the baseline implies, complementary conditions partition
- * the total and AND is the intersection; string conditions use the weak case rule and datetimes use partitions only.
+ * fieldOracles — property oracles per catalogue field, checked by properties that hold for any data (rows satisfy the filter, exact
+ * conditions return the baseline set, complements partition the total).
  */
 import { propertyFilter } from '../searchApi';
 import type { CatalogueField, Filter } from '../searchApi';
@@ -16,17 +10,11 @@ import { FieldMap, Scalar, datetimeLiteral, expectedRows, instantMs, pickSpread,
 import { expectCountsAdd, expectInstantOrder, expectInstantsWithin, expectIntersection, expectKeysEqual, expectRowsSatisfy, expectSubset } from './listExpectations';
 import { ListingRun, RowSet, fetchRows, listingPage, listingTotal } from './listing';
 
-// ====================================================================================================================
-// 6. Field oracles (API-GEN-13 / -14 / -15)
-// ====================================================================================================================
 
 const SKEW_MS = 120_000;
 const DAY_MS = 86_400_000;
 
-/**
- * Every oracle of one mapped property field against the live listing, with the published conditions of its catalogue entry
- * deciding what runs. Throws InvariantViolation / ListingError on the first violation.
- */
+/** Every oracle of one mapped property field against the live listing, driven by the published conditions; throws on the first violation. */
 export async function runFieldOracles(run: ListingRun, field: FieldMap, live: CatalogueField): Promise<void> {
     const { transport: t, spec, baseline: base, log } = run;
     const adv = new Set(live.conditions);
@@ -37,7 +25,6 @@ export async function runFieldOracles(run: ListingRun, field: FieldMap, live: Ca
     const sampleRows = base.rows;
     const here = (c: string, v?: unknown) => `${field.id} ${c}${v === undefined ? '' : ` ${JSON.stringify(v)}`}`;
 
-    /** One filtered set, with the row-level predicate and (for exact conditions on a complete baseline) the exact set checked. */
     const check = async (condition: string, value?: unknown): Promise<RowSet> => {
         const set = await fetchRows(t, spec, f(condition, value), cap);
         expectRowsSatisfy(here(condition, value), set.rows, field, condition, value, key);
@@ -48,7 +35,6 @@ export async function runFieldOracles(run: ListingRun, field: FieldMap, live: Ca
         return set;
     };
 
-    // |EMPTY| + |NOT_EMPTY| = total (API-CERT-50 wording).
     let notEmptyTotal: number | undefined;
     if (adv.has('EMPTY') && adv.has('NOT_EMPTY')) {
         const e = await check('EMPTY');
@@ -63,7 +49,6 @@ export async function runFieldOracles(run: ListingRun, field: FieldMap, live: Ca
     const samples = pickSampleValues(sampleRows, field, 3);
     if (!samples.length) log.note(`${field.id}: no row of the first ${sampleRows.length} carries a value; the value conditions were not exercised`);
 
-    // EQUALS v + NOT_EQUALS v = total.
     if (adv.has('EQUALS') && adv.has('NOT_EQUALS') && field.shape !== 'datetime') {
         for (const v of samples) {
             const eq = await check('EQUALS', v);
@@ -73,7 +58,6 @@ export async function runFieldOracles(run: ListingRun, field: FieldMap, live: Ca
         }
     }
 
-    // STRING: CONTAINS / NOT_CONTAINS complement, STARTS_WITH, ENDS_WITH, MATCHES / NOT_MATCHES partition of the non-null rows.
     if (field.shape === 'text') {
         for (const v of samples.map(String)) {
             const inner = textProbe(v, 'inner');
@@ -103,7 +87,6 @@ export async function runFieldOracles(run: ListingRun, field: FieldMap, live: Ca
         }
     }
 
-    // NUMBER: GREATER n and LESSER_OR_EQUAL n (GREATER_OR_EQUAL n and LESSER n) partition the non-null rows.
     if (field.shape === 'number' && adv.has('GREATER') && adv.has('LESSER_OR_EQUAL') && adv.has('GREATER_OR_EQUAL') && adv.has('LESSER')) {
         for (const n of samples) {
             const gt = await check('GREATER', n);
@@ -116,7 +99,6 @@ export async function runFieldOracles(run: ListingRun, field: FieldMap, live: Ca
         }
     }
 
-    // DATETIME: the literals are copied from the DTO text; partitions and the order of the halves, IN_PAST / IN_NEXT windows.
     if (field.shape === 'datetime' && adv.has('GREATER') && adv.has('LESSER_OR_EQUAL') && adv.has('GREATER_OR_EQUAL') && adv.has('LESSER')) {
         const instant = (r: ListRow): number | undefined => instantMs(field.get(r)[0]);
         for (const raw of samples) {
@@ -133,7 +115,6 @@ export async function runFieldOracles(run: ListingRun, field: FieldMap, live: Ca
         if (adv.has('IN_PAST') && adv.has('IN_NEXT')) await runWindowOracles(run, field, f, cap, instant);
     }
 
-    // COLLECTION: the COUNT_* conditions count the values of the row (0 = none).
     if (adv.has('COUNT_EQUAL') && adv.has('COUNT_NOT_EQUAL') && adv.has('COUNT_GREATER_THAN') && adv.has('COUNT_LESS_THAN')) {
         const counts = [...new Set(sampleRows.map((r) => field.get(r).length))].sort((a, b) => a - b);
         for (const n of pickSpread(counts, 3)) {
@@ -148,7 +129,6 @@ export async function runFieldOracles(run: ListingRun, field: FieldMap, live: Ca
     }
 }
 
-/** IN_PAST / IN_NEXT: nested windows are subsets of each other and every row lies in its window (server clock, ±120 s). */
 async function runWindowOracles(run: ListingRun, field: FieldMap, f: (c: string, v?: unknown) => Filter[], cap: number, instant: (r: ListRow) => number | undefined): Promise<void> {
     const { transport: t, spec, baseline: base, log } = run;
     const key = spec.rowKey;
@@ -173,9 +153,8 @@ async function runWindowOracles(run: ListingRun, field: FieldMap, f: (c: string,
 }
 
 /**
- * Count relations for a catalogue field WITHOUT a verified DTO mapping (attribute fields, fields a newer core adds):
- * |EMPTY| + |NOT_EMPTY| = total; for a list field with published values |EQUALS v| + |NOT_EQUALS v| = total; a boolean,
- * a number and a string get the matching complement / partition. `source` is the catalogue group of the field.
+ * Count relations for a field without a verified DTO mapping (attribute fields, new fields): EMPTY + NOT_EMPTY = total, EQUALS + NOT_EQUALS
+ * = total, matching partitions by type.
  */
 export async function runGenericFieldOracles(run: ListingRun, source: string, live: CatalogueField): Promise<void> {
     const { transport: t, spec, baseline: base, log } = run;
@@ -207,8 +186,6 @@ export async function runGenericFieldOracles(run: ListingRun, source: string, li
     }
 }
 
-// ====================================================================================================================
-// 7. AND, paging ====================================================================================================================
 
 export interface AndPair {
     a: Filter;
@@ -217,8 +194,8 @@ export interface AndPair {
 }
 
 /**
- * Up to `max` pairs of EQUALS filters over two different mapped fields, chosen so the intersection is non-empty and smaller than
- * both sides when the data allows it (a pair of filters that cannot narrow anything proves nothing).
+ * Up to `max` pairs of EQUALS filters over two mapped fields whose
+ * intersection is non-empty and smaller than both sides, when the data allows.
  */
 export function findAndPairs(fields: FieldMap[], rows: ListRow[], liveIds: ReadonlySet<string>, max = 2): AndPair[] {
     const candidates: Array<{ field: FieldMap; v: Scalar; set: Set<ListRow> }> = [];
@@ -245,7 +222,6 @@ export function findAndPairs(fields: FieldMap[], rows: ListRow[], liveIds: Reado
     return out.sort((p, q) => q.score - p.score).slice(0, max).map((o) => o.pair);
 }
 
-/** A AND B = A ∩ B, B AND A = A AND B, both subsets of each side (invariants.expectAndNarrowsResults plus the exact intersection). */
 export async function runAndOracle(run: Omit<ListingRun, 'baseline'>, pair: AndPair): Promise<void> {
     const { transport: t, spec, log } = run;
     const cap = spec.maxWalkRows;

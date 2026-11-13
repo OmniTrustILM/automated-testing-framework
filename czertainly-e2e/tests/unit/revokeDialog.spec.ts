@@ -1,14 +1,12 @@
 /**
- * revokeDialog — offline check of pages/RevokeDialog.ts on a stand-in Revoke dialog whose reason Select opens a
- * listbox of options and closes on Escape, like the admin UI's popover Select: the reason labels are read from the open
- * option list and compared as an exact set.
+ * revokeDialog — offline check of pages/RevokeDialog.ts on a stand-in Revoke dialog whose reason Select opens a listbox
+ * of options and closes on Escape, like the admin UI's popover Select.
  */
 import { expect, test } from '@playwright/test';
 import { RevokeDialog } from '../../pages/RevokeDialog';
 
 const failsFast = async (call: Promise<unknown>): Promise<boolean> => call.then(() => false, () => true);
 
-/** The Revoke dialog with a popover Select: the trigger shows the listbox, Escape hides it again. */
 const revokeDialog = (labels: readonly string[]) => `<main><section><div><h5>Certificate Properties</h5><button data-testid="minus-square-button">r</button></div></section></main>
   <div role="dialog" aria-label="Revoke Certificate"><button data-testid="select-revokeReason-trigger" aria-haspopup="listbox"
     onclick="document.getElementById('reasons').hidden=false">Select</button></div>

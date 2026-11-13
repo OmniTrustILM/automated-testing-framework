@@ -1,11 +1,6 @@
 /**
- * timestampingInventory — the read-only before / after check of the signing profiles, TSP profiles and time-quality configurations
- * (utils/timestamping/inventory.ts): the baseline of the setup, the comparison of the teardown.
- *
- * WHAT: the same tier twice is `same`; a pre-existing row changed, added or gone is `differs`, naming the resource and the counts, never a name;
- * the run's own rows (a `created` ledger line) are left out of both sides; every page is read; a tier without the endpoints (404) is a skipped
- * check with the reason, never a failure, while a refused identity still fails; no baseline (the setup made none) is a skip; the check only reads.
- * HOW: the real guard over a fake request context that serves the three lists and records every request; the ledger is the run's own file.
+ * timestampingInventory — the read-only before / after check of the signing profiles,
+ * TSP profiles and time-quality configurations (utils/timestamping/inventory.ts).
  */
 import { APIRequestContext, expect, test } from '@playwright/test';
 import * as fs from 'fs';
@@ -13,7 +8,7 @@ import { guardApiWithSeams } from '../../utils/regression/guard/createGuard';
 import { recordCreated } from '../../utils/regression/ledger/ledger';
 import { runId } from '../../utils/regression/ledger/runState';
 import { clearBaseline, compareBaseline, digestOf, inventoryFile, readBaseline, takeBaseline } from '../../utils/timestamping/inventory';
-import { Admin, SetupError } from '../../utils/timestamping/provision/transport';
+import { Admin, SetupError, TierError } from '../../utils/timestamping/provision/transport';
 import { withProcessEnv } from './helpers/guardRig';
 
 type Row = Record<string, unknown>;
@@ -107,7 +102,6 @@ test('the run\'s own rows are on neither side: created and deleted rows of this 
     const tier = fresh();
     const a = admin(tier);
     await takeBaseline(a.admin, env());
-    // The block creates a TSP profile (ledger line) and its teardown deletes it again: in between the list holds it.
     recordCreated('tspProfiles', { uuid: U(40), name: `${runId()}-tsp` }, { spec: 'timestamping/setup' });
     tier['TSP profiles'].push({ uuid: U(40), name: `${runId()}-tsp`, enabled: true });
     expect((await compareBaseline(a.admin, env())).status, 'while it exists').toBe('same');
@@ -134,13 +128,11 @@ test('a tier without the endpoints skips with the reason, never fails; a refused
     expect(baseline).toMatchObject({ status: 'skipped', reason: expect.stringMatching(/cannot list the TSP profiles: POST \/v1\/tspProfiles\/list answered HTTP 404/) });
     const outcome = await compareBaseline(admin(fresh()).admin, env());
     expect(outcome).toEqual({ status: 'skipped', reason: expect.stringMatching(/^no baseline: the tier cannot list the TSP profiles/) });
-    // The endpoint disappears between the two reads: skipped too.
     const tier = fresh();
     await takeBaseline(admin(tier).admin, env());
     expect(await compareBaseline(admin({ ...tier, status: { 'POST /v1/timeQualityConfigurations/list': 500 } }).admin, env())).toMatchObject({ status: 'skipped', reason: expect.stringMatching(/time-quality configurations/) });
     // A refused identity is the run's failure, not a tier verdict.
     await expect(takeBaseline(admin({ ...fresh(), status: { 'POST /v1/signingProfiles/list': 401 } }).admin, env())).rejects.toThrow(SetupError);
-    // No baseline file (the setup ended unavailable), or one of an earlier attempt that a retry cleared.
     clearBaseline(env());
     expect(readBaseline(env())).toBeUndefined();
     expect(await compareBaseline(admin(fresh()).admin, env())).toEqual({ status: 'skipped', reason: expect.stringMatching(/^no baseline: the setup took none/) });
@@ -153,3 +145,14 @@ test('digestOf: order and key order do not matter, content does', () => {
     expect(digestOf([{ uuid: U(1), x: [1, { y: 2, z: 2 }] }, { uuid: U(2), b: 1, a: 2 }], new Set()).hash).not.toBe(a.hash);
     expect(digestOf([{ uuid: U(1) }, { uuid: U(2) }], new Set([U(2)])).count).toBe(1);
 });
+
+test('a 2xx answer that is not JSON: a GET is a tier gap (TierError), a write or a search fails the setup (SetupError)', () => inState(async () => {
+    const html = { status: () => 200, ok: () => true, text: async () => '<html>a proxy page</html>', headers: () => ({}) };
+    const raw = {
+        get: async () => html, head: async () => html, fetch: async () => html,
+        dispose: async () => undefined, storageState: async () => ({ cookies: [], origins: [] }),
+    } as unknown as APIRequestContext;
+    const a = new Admin(guardApiWithSeams(raw, { env: env(), runId: runId(), tier: null }));
+    await expect(a.get('/v1/signingProfiles')).rejects.toThrow(TierError);
+    await expect(a.listItems('/v1/signingProfiles/list')).rejects.toThrow(SetupError);
+}));

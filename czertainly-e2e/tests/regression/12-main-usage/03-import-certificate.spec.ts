@@ -1,15 +1,6 @@
 /**
- * REG-USE-03 — Importing certificates through the import dialog (release checklist: Usage 3). ilm#428.
- *
- * WHAT: 1. Paste a new self-signed PEM → detected → Import → the result says "Imported"; the API finds it by fingerprint.
- *       2. The same PEM again → "Already in inventory".
- *       3. A protected PKCS#12 → "File password" is asked for; a wrong password is refused with no entries; the right one lists the
- *          entries and asks for a key destination (token profile); another file clears the password.
- *       4. A CSR file → detected, "requests are not imported", Import disabled; close without importing (a test of its own).
- * WHY: the import dialog is how operators bring existing certificates in; a duplicate must be recognised, a protected container must
- *      not leak its content, and a request is not a certificate.
- * HOW: only the PEM is imported: it is recorded from the import answer together with the key core links to it, and the run CN is recorded
- *      from the inventory if anything throws after the click. The PKCS#12 key is never imported. Passwords are random per run.
+ * REG-USE-03 — Importing certificates through the import dialog (release checklist: Usage 3; ilm#428). A new self-signed
+ * PEM imports and the API finds it by fingerprint; the same PEM again says "Already in inventory".
  */
 import { randomBytes } from 'node:crypto';
 import { expect, test } from '../../../fixtures/regressionFixtures';
@@ -41,11 +32,12 @@ test.describe('Certificate import', { tag: tags.regression }, () => {
             const importedUuid = await test.step('Paste the PEM → detected → Import → recorded from the answer (+ its linked key) → "Imported"', async () => {
                 await certPage.pasteCertificatePem(pem);
                 const createdAfter = await serverCreatedAfter(api);
-                // Whatever throws after the click (a response wait that times out, an answer that does not parse, a key read
-                // that fails) the run CN is recorded from the inventory by recordingIssued.
+                // Whatever throws after the click (a response wait that times out, an answer that does not parse, a key
+                // read that fails) the run CN is recorded from the inventory by recordingIssued.
                 const { result: { answer, created } } = await recordingIssued(api, cn, createdAfter, own.spec, 'imported (self-signed)', async () => {
                     const answer = await certPage.submitImport();
-                    // A body that is not JSON names nothing created: the inventory read of recordingIssued records it instead.
+                    // A body that is not JSON names nothing created: the
+                    // inventory read of recordingIssued records it instead.
                     const text = await answer.text().catch(() => '');
                     const parsed = ((): { results?: Array<{ certificateUuid?: string; certificateOutcome?: string }> } => {
                         try {
@@ -89,7 +81,6 @@ test.describe('Certificate import', { tag: tags.regression }, () => {
         async ({ signedIn: page }, testInfo) => {
             const certPage = new CertificatePage(page);
             const dialog = certPage.importDialog;
-            // Run-scoped random passwords: nothing password-like is a literal in the spec.
             const secret = () => `qa-${randomBytes(12).toString('base64url')}`;
             const passwordA = secret(), passwordB = secret(), wrongPassword = secret();
             const p12a = { name: `${runName('a')}.p12`, mimeType: 'application/x-pkcs12', buffer: selfSignedPkcs12(runName('p12-a'), passwordA) };
@@ -113,8 +104,8 @@ test.describe('Certificate import', { tag: tags.regression }, () => {
 
             await test.step('Right password → entries detected, key destination required', async () => {
                 await dialog.enterPassword(passwordA);
-                await expect(dialog.detected).toBeVisible();
-                await expect(dialog.detected).toContainText(runName('p12-a'));
+                await expect(dialog.detectedContent).toBeVisible();
+                await expect(dialog.detectedContent).toContainText(runName('p12-a'));
                 await expect(dialog.dialog.getByText('Token profile', { exact: false }).first()).toBeVisible();
                 await testInfo.attach('p12-entries', { body: await page.screenshot(), contentType: 'image/png' });
             });
@@ -122,7 +113,7 @@ test.describe('Certificate import', { tag: tags.regression }, () => {
             await test.step('Switching to another file clears the password', async () => {
                 await dialog.chooseFile(p12b);
                 await dialog.assertPasswordFieldShown();
-                await expect(dialog.password).toHaveValue('');
+                await expect(dialog.passwordInput).toHaveValue('');
             });
 
             await test.step('Close without importing', async () => {

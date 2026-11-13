@@ -1,13 +1,6 @@
 /**
- * protocolProfiles — own SCEP and CMP profiles.
- *
- * WHAT: own SCEP and CMP profiles: create (recorded before any assertion), enable, activate on an own RA
- *       profile and deactivate, plus the teardown handlers for `scepProfiles` / `cmpProfiles`. Activation is only sent for an
- *       RA profile and a protocol profile this run created (`assertOwnLive` on both), so the run RA profile and every
- *       pre-existing object stay untouched.
- * WHY: Protocol activation must never touch the run RA profile or a pre-existing profile.
- * HOW: Create (recorded before any assertion), enable, activate and deactivate with `assertOwnLive` on both objects, plus the teardown
- * handlers for `scepProfiles` and `cmpProfiles`.
+ * protocolProfiles — own SCEP and CMP profiles: create, enable, activate on an own RA profile and deactivate, plus the teardown handlers.
+ * Activation is sent only for an RA profile and a protocol profile this run created (`assertOwnLive` on both).
  */
 import * as crypto from 'crypto';
 import { Logger } from '../../Logger';
@@ -28,7 +21,6 @@ const logger = new Logger('ProtocolProfiles');
 
 type ProtocolKind = 'scep' | 'cmp';
 
-/** A random shared secret / challenge password in `[A-Za-z0-9_-]` (never logged, never in a name). */
 export const randomSecret = (bytes = 18): string => crypto.randomBytes(bytes).toString('base64url');
 
 const parentOf = (line: LedgerLine, key: string): string | undefined => {
@@ -36,17 +28,11 @@ const parentOf = (line: LedgerLine, key: string): string | undefined => {
     return Array.isArray(v) ? v[0] : v;
 };
 
-// ------------------------------------------------------------------ SCEP
-
 export interface ScepProfileOptions {
-    /** A planned name; default `ownName(suffix)`. */
     name?: string;
     note?: string;
-    /** An OWN certificate (the protocol CA): the guard needs its ledger line (BODY_FIELD_TYPES caCertificateUuid). */
     caCertificateUuid: string;
-    /** Sets `enableChallengePassword=true` with this password; absent = no password protection. */
     challengePassword?: string;
-    /** An own RA profile as the default RA profile (profile-based URL); absent = none. */
     raProfileUuid?: string;
     includeCaCertificate?: boolean;
     includeCaCertificateChain?: boolean;
@@ -54,10 +40,7 @@ export interface ScepProfileOptions {
     description?: string;
 }
 
-/**
- * `POST /v1/scepProfiles` (ScepProfileRequestDto); the profile is created DISABLED. Recorded (ledger before any assertion); parents: the CA
- * certificate and the default RA profile.
- */
+/** `POST /v1/scepProfiles`; created DISABLED, recorded before any assertion (parents: the CA certificate and the default RA profile). */
 export async function createOwnScepProfile(api: GuardedApi, spec: string, suffix: string, o: ScepProfileOptions): Promise<OwnRef> {
     const { answer: _answer, ...ref } = await createOwn(api, spec, {
         type: 'scepProfiles',
@@ -92,11 +75,9 @@ async function disableOwnScepProfile(api: GuardedApi, scep: OwnRef): Promise<voi
 
 export interface ScepActivation {
     scepAvailable: boolean;
-    /** `…/v1/protocols/scep/raProfile/<ra>/pkiclient.exe`. */
     url?: string;
 }
 
-/** `PATCH …/raProfiles/{own}/protocols/scep/activate/{own scep}` (ActivateScepForRaProfileRequestDto). */
 async function activateScepOnOwnRaProfile(api: GuardedApi, ra: OwnRaProfile, scep: OwnRef): Promise<ScepActivation> {
     await assertOwnLive(api, 'raProfiles', ra, 'activateScepOnOwnRaProfile (RA profile)');
     await assertOwnLive(api, 'scepProfiles', scep, 'activateScepOnOwnRaProfile (SCEP profile)');
@@ -109,18 +90,13 @@ async function deactivateScepOnOwnRaProfile(api: GuardedApi, ra: OwnRaProfile): 
     await apiJson(api, 'PATCH', `/api/v1/authorities/${ra.authorityUuid}/raProfiles/${ra.uuid}/protocols/scep/deactivate`);
 }
 
-/** `GET …/protocols/scep` of an RA profile (read-only). */
 async function scepOnRaProfile(api: GuardedApi, authorityUuid: string, raProfileUuid: string): Promise<ScepActivation & JsonObject> {
     return apiJson<ScepActivation & JsonObject>(api, 'GET', `/api/v1/authorities/${authorityUuid}/raProfiles/${raProfileUuid}/protocols/scep`);
 }
 
-/** The profile-based SCEP URL; `base` = BASE_URL without a trailing slash. */
 export const scepProfileUrl = (base: string, profileName: string): string => `${base.replace(/\/$/, '')}/api/v1/protocols/scep/${profileName}/pkiclient.exe`;
 
-/**
- * Makes `GET …/protocols/scep` of the own RA profile true, activating when it is not (idempotent per RA profile).
- * Returns the URL the server reports.
- */
+/** Makes `GET …/protocols/scep` of the own RA profile true, activating when it is not (idempotent); returns the URL the server reports. */
 export async function ensureScepActiveOnOwnRaProfile(api: GuardedApi, ra: OwnRaProfile, scep: OwnRef): Promise<string> {
     const current = await scepOnRaProfile(api, ra.authorityUuid, ra.uuid);
     if (current.scepAvailable && current.url && (current.uuid === scep.uuid || current.name === scep.name)) return current.url;
@@ -129,30 +105,22 @@ export async function ensureScepActiveOnOwnRaProfile(api: GuardedApi, ra: OwnRaP
     return activated.url;
 }
 
-// ------------------------------------------------------------------ CMP
-
 type CmpVariant = 'v2' | 'v2_3gpp' | 'v3';
 type ProtectionMethod = 'sharedSecret' | 'signature';
 
 export interface CmpProfileOptions {
-    /** A planned name; default `ownName(suffix)`. */
     name?: string;
     note?: string;
     variant?: CmpVariant;
     requestProtectionMethod?: ProtectionMethod;
     responseProtectionMethod?: ProtectionMethod;
-    /** Needed when the request protection is sharedSecret. */
     sharedSecret?: string;
-    /** Needed when the response protection is signature (an OWN certificate). */
     signingCertificateUuid?: string;
     raProfileUuid?: string;
     description?: string;
 }
 
-/**
- * `POST /v1/cmpProfiles` (CmpProfileRequestDto); created DISABLED. Default: v2 / sharedSecret / sharedSecret. Recorded before any
- * assertion.
- */
+/** `POST /v1/cmpProfiles`; created DISABLED, default v2 / sharedSecret / sharedSecret, recorded before any assertion. */
 export async function createOwnCmpProfile(api: GuardedApi, spec: string, suffix: string, o: CmpProfileOptions = {}): Promise<OwnRef> {
     const request = o.requestProtectionMethod ?? 'sharedSecret';
     const response = o.responseProtectionMethod ?? 'sharedSecret';
@@ -192,11 +160,9 @@ async function disableOwnCmpProfile(api: GuardedApi, cmp: OwnRef): Promise<void>
 
 export interface CmpActivation {
     cmpAvailable: boolean;
-    /** `…/v1/protocols/cmp/raProfile/<ra>`. */
     cmpUrl?: string;
 }
 
-/** `PATCH …/raProfiles/{own}/protocols/cmp/activate/{own cmp}` (ActivateCmpForRaProfileRequestDto). */
 export async function activateCmpOnOwnRaProfile(api: GuardedApi, ra: OwnRaProfile, cmp: OwnRef): Promise<CmpActivation> {
     await assertOwnLive(api, 'raProfiles', ra, 'activateCmpOnOwnRaProfile (RA profile)');
     await assertOwnLive(api, 'cmpProfiles', cmp, 'activateCmpOnOwnRaProfile (CMP profile)');
@@ -226,18 +192,13 @@ export async function ensureCmpActiveOnOwnRaProfile(api: GuardedApi, ra: OwnRaPr
     return activated.cmpUrl;
 }
 
-/** The URL path (`/api/…`) of a protocol URL the server reported, for `openssl cmp -path`. */
 export function pathOfUrl(url: string): string {
     const u = new URL(url);
     return `${u.pathname}${u.search}`;
 }
 
-/** The origin (`scheme://host[:port]`) of a protocol URL, for `openssl cmp -server`. */
 export const originOfUrl = (url: string): string => new URL(url).origin;
 
-// ------------------------------------------------------------- run-end teardown (registry: scepProfiles / cmpProfiles → protocolProfiles)
-
-/** The authority of an RA profile: the ledger's parents, else the RA profile detail (read-only). */
 async function authorityOf(ctx: TeardownContext, raProfileUuid: string): Promise<string | undefined> {
     const own = ctx.ledger.find((l) => l.uuid === raProfileUuid && l.event === 'created');
     const fromLedger = own && parentOf(own, 'authority');
@@ -248,15 +209,11 @@ async function authorityOf(ctx: TeardownContext, raProfileUuid: string): Promise
     return typeof authority === 'string' ? authority : undefined;
 }
 
-/** Live (created, not deleted) own RA profiles of this run: the only places a protocol can be active for us. */
 function liveOwnRaProfiles(ctx: TeardownContext): LedgerLine[] {
     return ctx.ledger.filter((l) => l.type === 'raProfiles' && l.event === 'created' && checkOwnership(l, { lines: ctx.ledger, runId: ctx.runId }).own);
 }
 
-/**
- * Deactivates `kind` on every own RA profile the profile `line` is active on (each RA profile checked live), through
- * the guard (the teardown's raw context wrapped: the PATCH names an own RA profile and nothing else).
- */
+/** Deactivates `kind` on every own RA profile the profile `line` is active on (each checked live), through the guard. */
 async function deactivateOnOwnRaProfiles(ctx: TeardownContext, kind: ProtocolKind, line: LedgerLine): Promise<void> {
     const candidates = new Set([...(line.parents?.raProfiles ? ([] as string[]).concat(line.parents.raProfiles) : []), ...liveOwnRaProfiles(ctx).map((l) => l.uuid)]);
     const api = guardApi(ctx.api);
@@ -273,13 +230,11 @@ async function deactivateOnOwnRaProfiles(ctx: TeardownContext, kind: ProtocolKin
         const info = (await res.json()) as JsonObject;
         const available = kind === 'scep' ? info.scepAvailable : info.cmpAvailable;
         if (!available || (info.uuid !== line.uuid && info.name !== line.name)) continue;
-        // The deactivation changes the RA profile: it must be this run's, live.
         await assertOwnLive(ctx.api, 'raProfiles', { uuid: raUuid }, `teardown.${kind}Profiles (deactivate)`, {
             lines: ctx.ledger, runId: ctx.runId, tier: ctx.tier, env: {}, ...(ctx.knownBug ? { onKnownBug: ctx.knownBug } : {}),
         });
         ctx.seen.add(raUuid);
         const resp = await api.patch(`/api/v1/authorities/${authorityUuid}/raProfiles/${raUuid}/protocols/${kind}/deactivate`);
-        // A 404 here follows a 200 read of both objects in this step: the activation is gone already.
         if (!resp.ok() && resp.status() !== 404) {
             throw new Error(`Failed to deactivate ${kind.toUpperCase()} on RA profile ${raUuid}: ${resp.status()} - ${(await resp.text()).slice(0, 300)}`);
         }
@@ -303,5 +258,4 @@ const cmpProfiles: TeardownHandler = {
     },
 };
 
-/** The raw handlers; runTeardown wraps each with wrapHandlerWithGuard when it loads this module. */
 export const teardownHandlers: Record<string, TeardownHandler> = { scepProfiles, cmpProfiles };

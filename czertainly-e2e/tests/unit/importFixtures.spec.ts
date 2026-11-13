@@ -1,7 +1,7 @@
 /**
  * Unit tests of utils/regression/inventory/importFixtures.ts: every builder is parsed back with an independent reader
  * (node-forge, @peculiar/x509, node:crypto) and its structure asserted, so a refusal test cannot pass or fail because a
- * fixture silently produced something else. Nothing touches a server.
+ * fixture silently produced something else.
  */
 import { expect, test } from '@playwright/test';
 import * as crypto from 'crypto';
@@ -10,7 +10,6 @@ import { certificateInfo, csrInfo, pemToDer, sha256Hex } from '../../utils/regre
 import { asFile, certificate, certificateFingerprint, certificatesInOnePem, containerDigest, csrPem, dhParametersPem, entryReference, garbageBytes, importBody, importCn, inspectionAlert, inspectionBody, keyReference, LIMITS, limitExceeded, paddedCertificatePem, pemBlock, pemTwoKeys, pkcs12, pkcs12TwoPassphrases, pkcs7Der, pkcs7Pem, pkcs8Key, REFUSAL, requestsInOnePem, ROUTES, toBase64, uploadBody } from '../../utils/regression/inventory/importFixtures';
 import { runId } from '../../utils/regression/ledger/runState';
 import { randomBytes } from 'node:crypto';
-// Run-scoped generated test passwords: no password-like literal in the file.
 const GEN_PW_1 = `qa-${randomBytes(9).toString('base64url')}`;
 const GEN_PW_2 = `qa-${randomBytes(9).toString('base64url')}`;
 const GEN_PW_3 = `qa-${randomBytes(9).toString('base64url')}`;
@@ -47,10 +46,8 @@ test('certificate: parses back, CN as asked, fingerprint and reference are the S
     expect(certificateFingerprint(id.der)).toBe(id.fingerprint);
     expect(entryReference(id.der)).toBe(id.fingerprint);
     expect(id.fingerprint).toMatch(/^[0-9a-f]{64}$/);
-    // The key reference is the SHA-256 of the SPKI the certificate carries.
     expect(Buffer.from(info.spkiBase64, 'base64').equals(id.spki)).toBe(true);
     expect(id.keyReference).toBe(keyReference(id.spki));
-    // The PKCS#8 PEM of the key is a PRIVATE KEY block whose public half is the certificate's key.
     expect(blocksOf(id.pkcs8Pem)).toEqual(['PRIVATE KEY']);
     const derived = crypto.createPublicKey(crypto.createPrivateKey(id.pkcs8Pem)).export({ type: 'spki', format: 'der' });
     expect(Buffer.from(derived).equals(id.spki)).toBe(true);
@@ -70,7 +67,6 @@ test('PKCS#7: a degenerate SignedData with the certificates — PEM block type P
     expect(blocksOf(pem)).toEqual(['PKCS7']);
     expect(forge.pkcs7.messageFromPem(pem)).toBeTruthy();
     expect(pemToDer(pem).equals(pkcs7Der([a]))).toBe(true); // the PEM is the DER of the same structure, deterministically
-    // contentType signedData (1.2.840.113549.1.7.2), no signer
     expect(oidsOf(forge.asn1.fromDer(der.toString('binary')))[0]).toBe('1.2.840.113549.1.7.2');
 });
 
@@ -100,7 +96,6 @@ test('PKCS#12 with a password: round trip with the right password; a wrong and a
     expect(ok.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag })[forge.pki.oids.pkcs8ShroudedKeyBag]).toHaveLength(1);
     expect(() => parse(GEN_PW_2)).toThrow(/MAC could not be verified/);
     expect(() => parse('')).toThrow();
-    // PFX version 3 (core's KeystoreDetection.isPkcs12 needs it: the first value of the outer SEQUENCE).
     const outer = forge.asn1.fromDer(f.bytes.toString('binary'));
     expect(forge.asn1.derToInteger((outer.value as forge.asn1.Asn1[])[0].value as string)).toBe(3);
 });
@@ -117,9 +112,7 @@ test('PKCS#12 with a key under another passphrase: the MAC verifies with the FIL
     const outer = forge.asn1.fromDer(f.bytes.toString('binary'));
     const parts = outer.value as forge.asn1.Asn1[];
     expect(forge.asn1.derToInteger(parts[0].value as string)).toBe(3);
-    // authSafe: data ContentInfo → OCTET STRING of the AuthenticatedSafe
     const authSafe = (((parts[1].value as forge.asn1.Asn1[])[1].value as forge.asn1.Asn1[])[0].value) as string;
-    // MacData: SEQUENCE { DigestInfo, salt, iterations }
     const mac = parts[2].value as forge.asn1.Asn1[];
     const digest = ((mac[0].value as forge.asn1.Asn1[])[1].value) as string;
     const salt = mac[1].value as string;
@@ -135,7 +128,6 @@ test('PKCS#12 with a key under another passphrase: the MAC verifies with the FIL
     expect(macWith(GEN_PW_4)).not.toBe(digest);
     expect(macWith('')).not.toBe(digest);
 
-    // The safe holds a shrouded key bag (PBES2, SHA-256 PRF, AES-256) and a certificate bag.
     const safe = forge.asn1.fromDer(authSafe);
     const content = forge.asn1.fromDer(((((safe.value as forge.asn1.Asn1[])[0].value as forge.asn1.Asn1[])[1].value as forge.asn1.Asn1[])[0].value) as string);
     const oids = oidsOf(content);
@@ -143,11 +135,9 @@ test('PKCS#12 with a key under another passphrase: the MAC verifies with the FIL
     expect(oids).toContain(forge.pki.oids.certBag);
     expect(oids).toContain(OIDS.hmacSha256);
     expect(oids).toContain(OIDS.aes256);
-    // Open the EncryptedPrivateKeyInfo with each passphrase.
     const keyBag = (content.value as forge.asn1.Asn1[])[0];
     const shrouded = ((keyBag.value as forge.asn1.Asn1[])[1].value as forge.asn1.Asn1[])[0];
     expect(forge.pki.decryptPrivateKeyInfo(shrouded, GEN_PW_4)).toBeTruthy();
-    // forge answers a wrong password with null or with a parse error of the garbage it decrypted: either way the key stays shut.
     let openedWithFilePassphrase = false;
     try {
         openedWithFilePassphrase = !!forge.pki.decryptPrivateKeyInfo(shrouded, GEN_PW_3);
@@ -176,7 +166,6 @@ test('a PEM with two keys holds exactly two PRIVATE KEY blocks of different keys
     const prime = Buffer.from(p.value as string, 'binary');
     expect(prime.length === 256 || (prime.length === 257 && prime[0] === 0)).toBe(true);
     expect(forge.asn1.derToInteger(g.value as string)).toBe(2);
-    // The text is a plain PEM: 64-column lines, a BEGIN line at the start of a line (what PemFormat counts).
     expect(dh.startsWith('-----BEGIN DH PARAMETERS-----\n')).toBe(true);
     expect(dh.split('\n').every((line) => line.length <= 64 + 30)).toBe(true);
 });
@@ -262,7 +251,6 @@ test('texts: the fixed messages as core spells them (retyped from the Java const
     // The two refusals a caller must not tell apart are one string each (non-oracular).
     expect(REFUSAL.integrityFailed).toContain('wrong or missing');
     expect(REFUSAL.keyUnreadable).toContain('wrong or missing');
-    // The DH block type is plain enough for core to repeat (KeyFileRefusal.REPEATABLE `[A-Za-z0-9 .-]{1,64}`).
     expect('DH PARAMETERS').toMatch(/^[A-Za-z0-9 .-]{1,64}$/);
 });
 

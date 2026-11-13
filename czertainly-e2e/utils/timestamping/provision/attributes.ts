@@ -1,15 +1,7 @@
 /**
  * attributes — the request attributes of the timestamping setup, built from the connector's LIVE definitions.
- *
- * WHAT: the attribute helpers of development-environment `scripts/timestamping-setup.sh` (`attr_uuid`, `group_uuid`,
- * `offers_attribute`, `request_attribute`, `chosen_attribute`), the key-spec plan of a key pair (`requested_key_spec`,
- * `key_spec_attributes`) and the signature settings of a CSR or a signing profile (`signing_operation_attributes`), plus
- * the per-provider attribute names (`configure_crypto_provider`).
- * WHY: the script is the source of truth for every request body; the connectors' forms differ between v1 and v2 and
- * between an empty and a populated provider, so nothing is hard-coded beyond the names the script hard-codes.
- * HOW: pure functions over the definition lists the caller read; a definition or an offered value that is missing is a
- * TierError naming what the run asked for. What the connector offered goes to the log only (a reason may be shown in a
- * report; the connector's lists are the tier's data).
+ * development-environment `scripts/timestamping-setup.sh` is the source of truth for every request body. A missing definition or offered
+ * value is a TierError; what the connector offered goes to the log only.
  */
 import { Logger } from '../../Logger';
 import type { CryptoProvider } from '../config';
@@ -23,7 +15,6 @@ export interface AttributeContent {
     contentType?: string;
 }
 
-/** The fields of a live attribute definition the setup reads. */
 export interface AttributeDef {
     uuid: string;
     name: string;
@@ -35,7 +26,6 @@ export interface AttributeDef {
     attributeCallback?: { mappings?: Array<{ to?: string; value?: unknown }> };
 }
 
-/** A request attribute as the script sends it (`request_attribute`). */
 export interface RequestAttribute {
     name: string;
     content: AttributeContent[];
@@ -44,24 +34,20 @@ export interface RequestAttribute {
     version: 'v2' | 'v3';
 }
 
-/** jq's `tostring`: a string as it is, anything else as compact JSON. */
 export const jqString = (v: unknown): string => (typeof v === 'string' ? v : JSON.stringify(v));
 
-/** `die_missing_attribute`: what was expected and every attribute the connector sent, so the script can be updated. */
 function missing(defs: AttributeDef[], expectation: string): TierError {
     const received = defs.map((d) => `${d.name}/${d.contentType ?? '(none)'}/${d.type ?? '?'}`).join(', ');
     logger.warn(`expected ${expectation}; received attributes: ${received || 'nothing'}`);
     return new TierError(`expected ${expectation}, not found (the received attributes are in the setup log)`);
 }
 
-/** `attr_uuid`: the uuid of an attribute by name and content type (the stable contract). */
 export function attrUuid(defs: AttributeDef[], name: string, contentType: string): string {
     const d = defs.find((x) => x.name === name && x.contentType === contentType);
     if (!d?.uuid) throw missing(defs, `attribute name='${name}' contentType='${contentType}'`);
     return d.uuid;
 }
 
-/** `group_uuid`: like attrUuid for a group attribute, which carries no content type. */
 export function groupUuid(defs: AttributeDef[], name: string): string {
     const d = defs.find((x) => x.name === name && x.type === 'group');
     if (!d?.uuid) throw missing(defs, `group attribute name='${name}'`);
@@ -70,10 +56,7 @@ export function groupUuid(defs: AttributeDef[], name: string): string {
 
 export const offersAttribute = (defs: AttributeDef[], name: string): boolean => defs.some((d) => d.name === name && !!d.uuid);
 
-/**
- * `request_attribute`: the request item for definition `name` with `content`. A v3 definition takes the content type on
- * every content item (an item's own content type wins), a v2 one takes it on the attribute only.
- */
+/** A v3 definition takes the content type on every content item (an item's own wins), a v2 one on the attribute only. */
 export function requestAttribute(defs: AttributeDef[], name: string, content: AttributeContent[]): RequestAttribute {
     const d = defs.find((x) => x.name === name);
     if (!d || !d.uuid) throw missing(defs, `attribute name='${name}'`);
@@ -84,7 +67,6 @@ export function requestAttribute(defs: AttributeDef[], name: string, content: At
     return { name, content: content.map(({ contentType: _dropped, ...c }) => c), contentType, uuid: d.uuid, version: 'v2' };
 }
 
-/** `chosen_attribute`: the offered content item of `name` whose data reads as `value`, as a request item. */
 export function chosenAttribute(defs: AttributeDef[], name: string, value: string): RequestAttribute {
     const d = defs.find((x) => x.name === name);
     const item = d?.content?.find((c) => jqString(c.data) === value);
@@ -96,9 +78,7 @@ export function chosenAttribute(defs: AttributeDef[], name: string, value: strin
     return requestAttribute(defs, name, [item]);
 }
 
-// ------------------------------------------------------------------ cryptography provider names
 
-/** The attribute names of the --crypto-provider connector (`configure_crypto_provider`). */
 export interface ProviderNames {
     keyAlgorithm: string;
     keySpecGroup: string;
@@ -120,25 +100,21 @@ export function providerNames(provider: CryptoProvider): ProviderNames {
     }
 }
 
-// The script's key-spec defaults: RSA 2048 bits, ML-DSA level 3 (ML-DSA-65), pure ML-DSA.
+// The script's key-spec defaults: RSA 2048 bits, ML-DSA-65, pure ML-DSA.
 const DEFAULT_RSA_KEY_SIZE = '2048';
 const DEFAULT_MLDSA_LEVEL = '3';
 const DEFAULT_MLDSA_PREHASH = 'false';
 
-/** `requested_key_spec` without --key-spec (the block has no such override): the defaults of the key algorithm. */
 export function requestedKeySpec(names: ProviderNames, keyAlgorithm: 'RSA' | 'ML-DSA'): Record<string, string> {
     if (keyAlgorithm === 'RSA') return { [names.rsaKeySize]: DEFAULT_RSA_KEY_SIZE };
     return { [names.mldsaLevel]: DEFAULT_MLDSA_LEVEL, ...(names.mldsaPrehash ? { [names.mldsaPrehash]: DEFAULT_MLDSA_PREHASH } : {}) };
 }
 
-/** A field with a usable default: not a list, and it carries content. */
 const hasDefault = (f: AttributeDef): boolean => f.properties?.list !== true && (f.content ?? []).length > 0;
 
 /**
- * `key_spec_attributes`: one request item per requested field, plus every required field that has a default (its
- * first offered value). A requested field the connector's key spec does not offer (`require_offered_key_spec_names`,
- * applied to the run's own defaults too: a key must never silently get the connector's default size or level), or a
- * required field without a default and no requested value, stops the family.
+ * A requested field the connector's key spec does not offer, or a required field without a default or a requested value, stops the family: a key
+ * must never silently get the connector's default.
  */
 export function keySpecAttributes(defs: AttributeDef[], requested: Record<string, string>, keyAlgorithm: string): RequestAttribute[] {
     const fields = defs.filter((d) => d.type === 'data');
@@ -158,7 +134,6 @@ export function keySpecAttributes(defs: AttributeDef[], requested: Record<string
     return plan.map(([name, value]) => keySpecAttribute(defs, name, value));
 }
 
-/** `key_spec_attribute`: an offered item when the field lists values, else the value typed by the field's content type. */
 function keySpecAttribute(defs: AttributeDef[], name: string, value: string): RequestAttribute {
     const field = defs.find((d) => d.name === name)!;
     const takesOffered = field.properties?.list === true || (field.content ?? []).some((c) => jqString(c.data) === value);
@@ -174,12 +149,10 @@ function keySpecAttribute(defs: AttributeDef[], name: string, value: string): Re
     return requestAttribute(defs, name, [{ data }]);
 }
 
-// ------------------------------------------------------------------ signature settings
 
 /**
- * `signing_operation_attributes`: the RSA scheme and the digest where the key's signature offers them (an ML-DSA key
- * offers neither: they are left out), plus `signatureAlgorithm` (its first offered value) where Core offers it instead, for
- * a post-quantum key on a v2 token.
+ * The RSA scheme and digest where the key offers them, plus `signatureAlgorithm`
+ * where Core offers it instead (a post-quantum key on a v2 token).
  */
 export function signingOperationAttributes(defs: AttributeDef[], scheme: string, digest: string): RequestAttribute[] {
     const out: RequestAttribute[] = [];

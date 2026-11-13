@@ -1,15 +1,9 @@
 /**
- * cmpMessageParser — a reader of CMP PKIMessages.
- *
- * WHAT: reads a CMP PKIMessage (RFC 4210 §5.1) from DER: the body type and, for an `error` body, the
- *       PKIStatusInfo (status, status strings, PKIFailureInfo bit names). A reader only: the suite sends CMP requests through
- *       `openssl cmp`; the builder here makes error messages for the unit tests of the reader.
- * WHY: An error body of a CMP answer carries the status the test must assert.
- * HOW: Reads the DER (RFC 4210) body type and, for an error body, the PKIStatusInfo; the builder exists for the unit tests of the reader.
+ * cmpMessageParser — reads a CMP PKIMessage (DER): the body type and, for an `error` body, the PKIStatusInfo; the builder makes error
+ * messages for the reader's unit tests.
  */
 import * as forge from 'node-forge';
 
-/** PKIFailureInfo bit names, bit 0 first (RFC 4210 §5.2.3). */
 export const PKI_FAILURE_INFO: readonly string[] = [
     'badAlg', 'badMessageCheck', 'badRequest', 'badTime', 'badCertId', 'badDataFormat', 'wrongAuthority', 'incorrectData',
     'missingTimeStamp', 'badPOP', 'certRevoked', 'certConfirmed', 'wrongIntegrity', 'badRecipientNonce', 'timeNotAvailable',
@@ -17,10 +11,8 @@ export const PKI_FAILURE_INFO: readonly string[] = [
     'transactionIdInUse', 'unsupportedVersion', 'notAuthorized', 'systemUnavail', 'systemFailure', 'duplicateCertReq',
 ];
 
-/** PKIStatus values (RFC 4210 §5.2.3). */
 const PKI_STATUS: readonly string[] = ['accepted', 'grantedWithMods', 'rejection', 'waiting', 'revocationWarning', 'revocationNotification', 'keyUpdateWarning'];
 
-/** PKIBody choice tags (RFC 4210 §5.1.2). */
 const PKI_BODY_TYPES: Readonly<Record<number, string>> = {
     0: 'ir', 1: 'ip', 2: 'cr', 3: 'cp', 4: 'p10cr', 5: 'popdecc', 6: 'popdecr', 7: 'kur', 8: 'kup', 9: 'krr', 10: 'krp', 11: 'rr', 12: 'rp',
     13: 'ccr', 14: 'ccp', 15: 'ckuann', 16: 'cann', 17: 'rann', 18: 'crlann', 19: 'pkiconf', 20: 'nested', 21: 'genm', 22: 'genp',
@@ -31,7 +23,6 @@ interface PkiStatusInfo {
     status: number;
     statusLabel: string;
     statusStrings: string[];
-    /** The set PKIFailureInfo bits by name (unknown bit positions as `bit<n>`). */
     failInfo: string[];
 }
 
@@ -39,9 +30,7 @@ export interface ParsedPkiMessage {
     pvno?: number;
     bodyType: number;
     bodyName: string;
-    /** Set when the body is `error` [23]. */
     error?: PkiStatusInfo & { errorCode?: number; errorDetails: string[] };
-    /** Whether `protection [0]` is present. */
     protected: boolean;
 }
 
@@ -49,7 +38,6 @@ type Asn1 = forge.asn1.Asn1;
 
 const { Class, Type } = forge.asn1;
 
-/** forge's `fromDer(bytes, options)` form (the typings only know the boolean `strict` form): bit strings are kept as bytes. */
 export const fromDerRaw = (der: Buffer): Asn1 =>
     (forge.asn1.fromDer as unknown as (bytes: forge.util.ByteBuffer, options: { strict?: boolean; decodeBitStrings?: boolean }) => Asn1)(
         forge.util.createBuffer(der.toString('binary')), { decodeBitStrings: false });
@@ -64,11 +52,9 @@ function integerOf(node: Asn1): number {
     if (b.length === 0) return 0;
     let v = 0;
     for (const x of b) v = v * 256 + x;
-    // Two's complement for a negative leading bit (never expected here, but read correctly).
     return b[0] & 0x80 ? v - 2 ** (8 * b.length) : v;
 }
 
-/** The set bit names of a DER BIT STRING node (first content byte = unused-bit count; bit 0 = the MSB of the next byte). */
 export function failInfoBits(node: Asn1): string[] {
     const b = bytesOf(node);
     if (b.length < 1) return [];
@@ -82,7 +68,6 @@ export function failInfoBits(node: Asn1): string[] {
     return out;
 }
 
-/** The strings of a PKIFreeText (SEQUENCE OF UTF8String). */
 function freeText(node: Asn1 | undefined): string[] {
     if (!node || !isUniversal(node, Type.SEQUENCE)) return [];
     return children(node).filter((c) => isUniversal(c, Type.UTF8)).map((c) => bytesOf(c).toString('utf8'));
@@ -97,7 +82,6 @@ function statusInfo(node: Asn1): PkiStatusInfo {
     return { status, statusLabel: PKI_STATUS[status] ?? `status${status}`, statusStrings: strings, failInfo: bits ? failInfoBits(bits) : [] };
 }
 
-/** Reads a PKIMessage; throws when the bytes are not one (no SEQUENCE, no header, no tagged body). */
 export function parsePkiMessage(der: Buffer): ParsedPkiMessage {
     let root: Asn1;
     try {
@@ -131,9 +115,8 @@ export function parsePkiMessage(der: Buffer): ParsedPkiMessage {
 }
 
 /**
- * A minimal unprotected PKIMessage with an `error` body (the shape ILM answers an unparseable request with): the
- * unit tests' fixture for the reader and the "truncated DER" parameter of API-PROT-39 (a real PKIMessage cut short).
- * Header: pvno 2, sender and recipient NULL-DN (`PKIHeader.NULL_NAME`: a GeneralName [4] holding an empty SEQUENCE).
+ * A minimal unprotected PKIMessage with an `error` body (the shape ILM answers an unparseable request with); fixture for the reader's unit
+ * tests and the truncated-DER case.
  */
 export function buildErrorPkiMessage(o: { failInfoBits: number[]; statusString?: string; status?: number; pvno?: number; errorDetails?: string }): Buffer {
     const a = forge.asn1;
@@ -161,7 +144,6 @@ export function buildErrorPkiMessage(o: { failInfoBits: number[]; statusString?:
     return Buffer.from(a.toDer(message).getBytes(), 'binary');
 }
 
-/** Why a parsed message is not "an error body with a rejection status" (API-PROT-39's oracle); empty = it is. */
 export function errorRejectionProblems(message: ParsedPkiMessage): string[] {
     const problems: string[] = [];
     if (message.bodyName !== 'error') problems.push(`body is ${message.bodyName} (${message.bodyType}), not error (23)`);

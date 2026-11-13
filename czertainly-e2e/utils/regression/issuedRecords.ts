@@ -1,21 +1,7 @@
 /**
- * issuedRecords — ledger before assertion for certificates and keys the PLATFORM made.
- *
- * WHAT: records the `certKey_<CN>` key linked to a
- * run certificate (a derived object with a server-clock bound), certificates a protocol issued under a run-prefixed
- * common name (ACME, cert-manager), the recording that also runs when an issuance step throws, the recording after the
- * issuance settled, and the ACME account the run registered.
- *
- * Clock rule: a derived key's age is judged on the server's clock (`createdAfter` from the Date header of the call that
- * made it). Without one the key is recorded with `keepingBound()`, a bound the key can never reach, so the teardown keeps
- * it and warns; the runner's own clock is never used to decide that a key may be deleted.
- *
- * WHY: the teardown only removes what the ledger holds, so a certificate or key that the platform made on the run's behalf
- *      and that was never recorded would stay on the tier; recording must happen right after the call, before any
- *      assertion, and also when the issuance step throws.
- * HOW: `recordDerivedKeyOf` reads the certificate detail and records its key as a derived line with the server-clock bound;
- *      `recordCertificatesNamed` / `recordIssuedNamed` adopt the certificates of a run-prefixed name from the inventory;
- *      `recordingIssued` and `recordIssuedSettled` wrap an issuance and record whether it returns or throws.
+ * issuedRecords — ledger before assertion for certificates and keys the PLATFORM made (the `certKey_<CN>` key, protocol-issued
+ * certificates, ACME accounts).
+ * A derived key's age is judged on the server's clock; without one the key is kept and the teardown warns.
  */
 import { APIRequestContext, expect } from '@playwright/test';
 import { Logger } from '../Logger';
@@ -27,13 +13,11 @@ import { hasRunFamilyPrefix } from './run/runId';
 import type { JsonObject } from './json';
 import { objectOf } from './json';
 
-const logger = new Logger('issuedRecords');
+const logger = new Logger('IssuedRecords');
 
 /**
- * Records the key the platform linked to a run certificate (`certKey_<CN>`) as a DERIVED ledger object with the server-clock
- * `createdAfter`, so the run-end teardown removes it when the platform made it during the run and nothing uses it any more
- * (teardownHandlers `keys`). No key: nothing to record. No server time: the key is still recorded, with `keepingBound()`, so the teardown
- * keeps it (logged).
+ * Records the key the platform linked to a run certificate as a DERIVED object with a server-clock `createdAfter`; without server time it
+ * is recorded with `keepingBound()` so the teardown keeps it.
  */
 export async function recordDerivedKeyOf(api: APIRequestContext, certificateUuid: string, createdAfter: string | undefined, spec: string): Promise<void> {
     const cert = await getCertificate(api, certificateUuid);
@@ -45,19 +29,14 @@ export async function recordDerivedKeyOf(api: APIRequestContext, certificateUuid
     if (checkOwnership({ uuid: keyUuid }).own) return;
     let bound = createdAfter;
     if (!bound) {
-        // Never a silent no-op: the key is recorded with a bound it can never reach, so the teardown keeps it with a
-        // warning instead of deleting it on a guess — a visible, human-decided leftover.
+        // Never a silent no-op: a bound it can never reach makes the teardown keep the key and warn.
         bound = keepingBound();
         logger.warn(`certificate ${certificateUuid}: no createdAfter for its key ${keyUuid}; recorded with a bound the teardown keeps (check by hand)`);
     }
     recordDerived('keys', { uuid: keyUuid, name: `key of certificate ${certificateUuid}` }, { spec, createdAfter: bound, note: 'key the platform linked to a run certificate', parents: { certificate: certificateUuid } });
 }
 
-/**
- * `recordDerivedKeyOf` after a `recordCreated`, with the by-name fallback of `recordingIssued`: when the
- * detail read throws, the run's certificates of `commonName` and their keys are recorded from the inventory instead;
- * a failure of that too surfaces (the test fails, the object is not silently left behind).
- */
+/** `recordDerivedKeyOf` with the by-name fallback of `recordingIssued` when the detail read throws; a failure of that surfaces. */
 export async function recordDerivedKeyOrNamed(api: APIRequestContext, certificateUuid: string, commonName: string, createdAfter: string | undefined, spec: string, note: string): Promise<void> {
     try {
         await recordDerivedKeyOf(api, certificateUuid, createdAfter, spec);
@@ -68,9 +47,8 @@ export async function recordDerivedKeyOrNamed(api: APIRequestContext, certificat
 }
 
 /**
- * Ledger before assertion for objects a PROTOCOL made (ACME, cert-manager): every inventory certificate whose common
- * name is exactly `commonName` (a run-prefixed name, so only the run can have made it) and that is not in the ledger
- * yet is recorded as this run's. Returns the uuids found (recorded now or before).
+ * Records every inventory certificate whose common name is exactly
+ * `commonName` (run-prefixed) and not yet in the ledger; returns the uuids.
  */
 export async function recordCertificatesNamed(api: APIRequestContext, commonName: string, spec: string, note: string): Promise<string[]> {
     if (!hasRunFamilyPrefix(commonName)) throw new Error(`recordCertificatesNamed: ${commonName} carries no run prefix; only run-named certificates are adopted`);
@@ -82,7 +60,6 @@ export async function recordCertificatesNamed(api: APIRequestContext, commonName
     return uuids;
 }
 
-/** Every certificate of a run-prefixed common name and its platform-linked key, in the ledger (idempotent). */
 export async function recordIssuedNamed(api: APIRequestContext, commonName: string, createdAfter: string | undefined, spec: string, note: string): Promise<string[]> {
     const uuids = await recordCertificatesNamed(api, commonName, spec, note);
     for (const uuid of uuids) await recordDerivedKeyOf(api, uuid, createdAfter, spec);
@@ -90,10 +67,8 @@ export async function recordIssuedNamed(api: APIRequestContext, commonName: stri
 }
 
 /**
- * Runs `work` — an issuance step that can throw AFTER the server issued (a finalize that errors, a wait that times out) —
- * and records the run's certificates of `commonName` and their keys whether it returns or throws
- * (the teardown is ledger-only, so an issued certificate that was never recorded would be left on the tier). The work's own
- * error is the one the caller sees; a failure of the recording on that path is logged, never thrown over it.
+ * Runs `work` (an issuance step that can throw after the server issued) and records the run's certificates of `commonName` and their keys
+ * whether it returns or throws; recording failures on the throw path are logged, not thrown.
  */
 export async function recordingIssued<T>(
     api: APIRequestContext, commonName: string, createdAfter: string | undefined, spec: string, note: string, work: () => Promise<T>,
@@ -112,15 +87,11 @@ export async function recordingIssued<T>(
     return { result, uuids: await recordIssuedNamed(api, commonName, createdAfter, spec, note) };
 }
 
-/** Certificate states in which an issuance is still on its way (a successor can still appear or change). */
 const ISSUANCE_IN_FLIGHT = new Set(['requested', 'pending_approval', 'pending_issue', 'pending_registration']);
 
 /**
- * Records, then waits for the API state of `commonName` to settle, then records once more: an
- * issuance that was in flight when its source (a cert-manager Certificate) was deleted can still produce a certificate.
- * Settled = two reads in a row list the same certificates in the same states and none is still requested / pending
- * (`expect.poll` with growing intervals, no fixed sleep); a poll that does not settle in `timeoutMs` is logged and the
- * final recording still runs. Returns every uuid recorded.
+ * Records, waits until two reads list the same certificates with none requested / pending (no fixed sleep; an unsettled poll is logged),
+ * then records again: an in-flight issuance can still produce a certificate. Returns every uuid recorded.
  */
 export async function recordIssuedSettled(
     api: APIRequestContext, commonName: string, createdAfter: string | undefined, spec: string, note: string, opts: { timeoutMs?: number } = {},
@@ -141,10 +112,7 @@ export async function recordIssuedSettled(
     return recordIssuedNamed(api, commonName, createdAfter, spec, note);
 }
 
-/**
- * Records an ACME account the run registered (REG-USE-05): found by its server-assigned account id (the last path
- * segment of the account URL), recorded under a run-prefixed name (`acmeAccounts` is id-named).
- */
+/** Records an ACME account the run registered, found by the account id (last path segment of the account URL), under a run-prefixed name. */
 export async function recordAcmeAccount(api: APIRequestContext, accountUrl: string, acmeProfile: OwnRef, spec: string): Promise<OwnRef> {
     const accountId = accountUrl.split('/').pop() ?? '';
     const accounts = await apiJson<JsonObject[]>(api, 'GET', '/api/v1/acmeAccounts');

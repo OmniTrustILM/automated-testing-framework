@@ -1,7 +1,7 @@
 /**
- * Validates API responses against the published OpenAPI document of the build under test (JSON Schema 2020-12 through
- * Ajv), walks the members the document does not declare and checks the paging fields. The document is a local file named
- * by `REG_OPENAPI_FILE`; without it `openapiSource()` gives a named skip reason, never a pass.
+ * openapiValidator — validates API responses against the OpenAPI document of the build under test (JSON Schema 2020-12 via Ajv), reports
+ * undeclared members and checks paging fields; the document is the file
+ * named by `REG_OPENAPI_FILE`, without it a named skip reason, never a pass.
  */
 import Ajv2020 from 'ajv/dist/2020';
 import type { ValidateFunction } from 'ajv/dist/2020';
@@ -17,7 +17,6 @@ export interface OpenApiDocument {
     components?: { schemas?: Record<string, JsonObject> } & JsonObject;
 }
 
-/** Parses an OpenAPI 3 document (JSON text); returns the problem instead of throwing. */
 export function parseOpenApi(text: string): { doc: OpenApiDocument } | { problem: string } {
     let doc: unknown;
     try {
@@ -33,7 +32,6 @@ export function parseOpenApi(text: string): { doc: OpenApiDocument } | { problem
 
 let cached: { file: string; mtimeMs: number; doc: OpenApiDocument } | undefined;
 
-/** The document named by REG_OPENAPI_FILE, or the named reason to skip. Cached per file and modification time. */
 export function openapiSource(env: NodeJS.ProcessEnv = process.env): { doc: OpenApiDocument } | { skip: string } {
     const file = settings(env).openapiFile;
     if (!file) return { skip: 'REG_OPENAPI_FILE is not set: the core does not serve its OpenAPI document; point it at the published doc-openapi-ilm-core.json of the build under test (deploy / data gap, never a pass)' };
@@ -50,9 +48,7 @@ export function openapiSource(env: NodeJS.ProcessEnv = process.env): { doc: Open
     return { doc: parsed.doc };
 }
 
-// ------------------------------------------------------------------ validation
 
-/** A schema to validate against: a component by name, or the response schema of an operation. */
 export type SchemaUse = { kind: 'component'; name: string } | { kind: 'response'; path: string; method: 'get' | 'post'; status: string };
 
 export interface Violation {
@@ -82,7 +78,6 @@ const lookup = (instance: unknown, pointer: string): unknown => {
     return cur;
 };
 
-/** The member reached by following `keys` from `value` (undefined as soon as a step is not an object). */
 const dig = (value: unknown, ...keys: string[]): unknown => keys.reduce<unknown>((cur, k) => (isJsonObject(cur) ? cur[k] : undefined), value);
 
 const short = (v: unknown): unknown => {
@@ -96,7 +91,6 @@ export class OpenApiValidator {
 
     constructor(readonly doc: OpenApiDocument) {}
 
-    /** Does the document describe this response (component present, path / method / status with a JSON schema)? */
     has(use: SchemaUse): boolean {
         return this.rawSchema(use) !== undefined;
     }
@@ -121,7 +115,6 @@ export class OpenApiValidator {
         return fn;
     }
 
-    /** The violations of `instance` (empty = it satisfies the schema). Each names where, which schema keyword and the offending value. */
     validate(use: SchemaUse, instance: unknown): Violation[] {
         const fn = this.compile(use);
         if (fn(instance)) return [];
@@ -133,7 +126,7 @@ export class OpenApiValidator {
         }));
     }
 
-    /** Members of `instance` the schema does not declare (objects with `properties` only), as JSON pointers. Reported, never failed. */
+    /** Members of `instance` the schema does not declare (objects with `properties` only), as JSON pointers; reported, never failed. */
     extraMembers(use: SchemaUse, instance: unknown): string[] {
         const root = this.rawSchema(use);
         if (!root) return [];
@@ -178,15 +171,12 @@ export class OpenApiValidator {
     }
 }
 
-/** Formats the first violations for a failure message. */
 export function describeViolations(label: string, violations: Violation[], max = 8): string {
     return violations.slice(0, max).map((v) => `${label} ${v.instancePath}: ${v.message} (schema ${v.schemaPath}; value ${JSON.stringify(v.value)})`).join('\n')
         + (violations.length > max ? `\n… ${violations.length - max} more` : '');
 }
 
-// ------------------------------------------------------------------ list invariants (API-GEN-25)
 
-/** The array member of a page (the first member holding an array), its name and the rows. */
 export function pageRows(body: unknown): { member: string; rows: unknown[] } | undefined {
     if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined;
     for (const [k, v] of Object.entries(body as JsonObject)) if (Array.isArray(v)) return { member: k, rows: v };
@@ -194,8 +184,8 @@ export function pageRows(body: unknown): { member: string; rows: unknown[] } | u
 }
 
 /**
- * The page invariants of a paged answer: totalPages = ceil(totalItems / itemsPerPage), no more rows than
- * itemsPerPage, the echoed paging values are positive integers. A body without paging members is not a page: no problems.
+ * The page invariants: totalPages = ceil(totalItems / itemsPerPage), no more rows than itemsPerPage, positive integer paging values; a body
+ * without paging members is no page.
  */
 export function pageProblems(body: unknown): string[] {
     const b = body as JsonObject | null;
@@ -214,9 +204,7 @@ export function pageProblems(body: unknown): string[] {
 
 const ZONE = /(Z|[+-]\d{2}:?\d{2})$/;
 
-/**
- * Every string that looks like a date-time (ISO date + `T` + time) must carry a zone designator; returns the offenders as `pointer: value`.
- */
+/** Every date-time-looking string must carry a zone designator; returns the offenders as `pointer: value`. */
 export function dateTimeZoneProblems(body: unknown, max = 5): string[] {
     const out: string[] = [];
     const walk = (v: unknown, at: string): void => {
@@ -230,5 +218,4 @@ export function dateTimeZoneProblems(body: unknown, max = 5): string[] {
     return out;
 }
 
-/** Is a string base64 (the `content` of a certificate detail / download)? */
 export const isBase64 = (s: string): boolean => s.length % 4 === 0 && HEX_BASE64.test(s);

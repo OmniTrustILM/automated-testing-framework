@@ -1,18 +1,6 @@
 /**
- * API-GEN-28 — An RA profile with a required attribute left empty, API leg. ilm#428.
- *
- * WHAT: 1. Validating RA-profile attributes without the required one, or with it empty → 422 naming the attribute: the connector's text for
- *          a v2 authority ("Required attribute <label> not found." / "Value of required attribute <label> not set."), core's
- *          attribute-engine text for a v3 one.
- *       2. The valid attributes of an existing RA profile validate with 200 (control).
- *       3. Creating an RA profile with the required attribute missing or empty → 422 with the same texts, and no RA profile with that name
- *          exists afterwards.
- * WHY: a connector 422 becomes a ValidationException and so a core 422 carrying the connector's messages (interfaces#898); the refusal must
- *      be a 422, not a 400 or a 502 (those are the defect under test). The oracle follows the authority's connector interface.
- * HOW: the authority is a pre-existing, connected one that has a required RA-profile attribute, and is only read; rows skip when there is
- *      none. Create-only on shared tiers with run-prefixed names; any RA profile left by a refused create is adopted by its unique name
- *      into the ledger before the assertion. A 503 from the connector (restarting or unreachable) is an environment blocker: a named skip,
- *      never retried and never a pass.
+ * API-GEN-28 — An RA profile with a required attribute left empty, API leg (ilm#428). A connector 422 reaches the client
+ * as a core 422 (interfaces#898); a 400 or 502 is the defect under test.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { refused422 } from '../../../utils/regression/inventory/configProbes';
@@ -26,12 +14,6 @@ import { ApiAnswer } from '../../../utils/regression/apiReads';
 
 const ISSUE = 'ilm#428';
 
-// ================================================================== API-GEN-28
-
-/**
- * The first connected pre-existing authority with a required RA-profile attribute, its valid base attributes and the label; else the rows
- * skip.
- */
 async function raSetupOrSkip(api: GuardedApi) {
     const pick = await authorityWithRequiredAttribute(api);
     test.skip(!pick.ok, pick.skip ?? 'no authority');
@@ -40,7 +22,6 @@ async function raSetupOrSkip(api: GuardedApi) {
     return { authority, def, base: (await validRaAttributes(api, authority.uuid)) ?? [] };
 }
 
-/** The refusal is a 422 whose messages carry the oracle of the authority's interface and name the attribute. */
 function expectRequiredRefusal(p: ApiAnswer, authority: { connectorInterface: 'v2' | 'v3' }, def: JsonObject, arm: 'missing' | 'empty'): void {
     const { text, names } = requiredAttributeOracle(authority.connectorInterface, def, arm);
     const messages = refused422(p);
@@ -48,10 +29,6 @@ function expectRequiredRefusal(p: ApiAnswer, authority: { connectorInterface: 'v
     expect(messages.some((m) => m.includes(names)), `a message names the attribute ${names}: ${messages.join(' | ')}`).toBe(true);
 }
 
-/**
- * A connector that is restarting answers 503: an environment blocker (never retried, never a pass), unlike 502 / 400, which are the defect
- * under test.
- */
 const skipOn503 = (p: ApiAnswer): void => test.skip(p.status === 503, 'the authority connector answered 503 (unreachable or restarting): environment blocker, not retried');
 
 test.describe('RA profile with a required attribute empty (API leg)', { tag: tags.api }, () => {

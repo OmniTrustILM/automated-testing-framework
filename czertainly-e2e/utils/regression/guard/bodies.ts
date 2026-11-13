@@ -2,13 +2,12 @@ import { isCanonicalUuid, isUuidField, merge, findUuidsInString, FoundUuids } fr
 import { NO_BASE } from './urls';
 import { REFERENCE_FIELDS } from './allowLists';
 import { ATTRIBUTE_KEY, isPlainObject } from './targets';
-import { BODY_FIELD_TYPES, ledgerTypeOfResource, SIBLING_TYPED_FIELDS } from './routes';
+import { BODY_FIELD_TYPES, ledgerTypeOfResource, LIST_ELEMENT, SIBLING_TYPED_FIELDS } from './routes';
 
 const KEY_DESTINATION = /^keydestination$/i;
 const ENTRY_REFERENCE = /^[0-9a-f]{64}$/;
 const MAX_IMPORT_ENTRIES = 250;
 
-/** The first key anywhere in a JSON value that matches `re`, or undefined (iterative). */
 function findKey(value: unknown, re: RegExp): string | undefined {
     const stack: unknown[] = [value];
     while (stack.length) {
@@ -25,16 +24,8 @@ function findKey(value: unknown, re: RegExp): string | undefined {
 }
 
 /**
- * The body of `POST /v1/certificates/import` the guard lets through — certificate-only entries. The guard cannot
- * read the file, so the body is constrained instead: a JSON object (a non-JSON Buffer is refused on this route although
- * creates normally accept one); top-level keys ⊂ {file, entries, passphrase, customAttributes}; `file` and `passphrase`
- * strings; `entries` a non-empty array (at most 250) of objects whose ONLY key is `entryReference`, a 64-character
- * lower-case hex fingerprint; any `keyDestination` key (even null, any case, anywhere — also inside `customAttributes`)
- * refuses. Core: a certificate entry with a `keyDestination` is refused (`TAKES_NO_DESTINATION`,
- * CertificateImportServiceImpl), a key entry without one is refused (`NEEDS_DESTINATION`), a CSR entry is
- * refused; so a body of this shape can reach the certificate registration only
- * (the plain upload), never the key import (KeyImportGates). Only
- * `certificateOutcome: "created"` results belong in the ledger (the spec's duty).
+ * The `POST /v1/certificates/import` body the guard lets through: certificate-only entries (a `keyDestination` anywhere is refused, so the
+ * key import is unreachable).
  */
 export function importBodyShapeProblem(view: BodyView): string | undefined {
     const where = 'POST /v1/certificates/import (certificate-only entries)';
@@ -63,12 +54,8 @@ export function importBodyShapeProblem(view: BodyView): string | undefined {
 const PROXY_CODE = /^proxycode$/i;
 
 /**
- * A connector create may name a pre-existing PROXY by its code — `proxyCode` is a plain
- * string, not a uuid, so the uuid rules never see it, yet core binds the new connector to that proxy and routes the
- * validate call through it (`service/v2/impl/ConnectorServiceImpl` → `resolveProxy`,
- * `proxyRepository.findByCode`). The v1 create delegates to the v2 one (`service/impl/ConnectorServiceImpl`).
- * So any `proxyCode` key (any case, any depth, any non-blank value) refuses on both creates; `proxyUuid` stays probes-only
- * (BODY_FIELD_TYPES). A blank / null / absent `proxyCode` names nothing (`:964` `isBlank`).
+ * A connector create may bind a pre-existing proxy through `proxyCode` (a
+ * plain string the uuid rules never see): any non-blank `proxyCode` is refused.
  */
 export function connectorBodyShapeProblem(view: BodyView): string | undefined {
     if (view.kind !== 'json' || !isPlainObject(view.value)) return undefined;
@@ -88,7 +75,6 @@ export function connectorBodyShapeProblem(view: BodyView): string | undefined {
     return undefined;
 }
 
-/** Per-route body shape rules of allow-listed CREATES (consulted by `judge()` after the body view checks). */
 export const CREATE_BODY_SHAPES: Readonly<Record<string, (view: BodyView) => string | undefined>> = {
     '/v1/certificates/import': importBodyShapeProblem,
     '/v1/connectors': connectorBodyShapeProblem,
@@ -96,37 +82,23 @@ export const CREATE_BODY_SHAPES: Readonly<Record<string, (view: BodyView) => str
 };
 
 export interface AssociationOptions {
-    /** An own create / update: canonical STRING values of TOP-LEVEL REFERENCE_FIELDS may name pre-existing objects. */
     references?: boolean;
-    /**
-     * Route-scoped waivers (guard/routes.ts ROUTE_FIELD_WAIVERS): TOP-LEVEL string fields whose canonical
-     * uuid value may name a non-own object on this request (treated like a REFERENCE_FIELDS field: not claimed, not
-     * typed; a non-canonical form is still refused; a list or nested key under the name is scanned as usual).
-     */
+    /** Route-scoped top-level string fields whose canonical uuid may name a non-own object (ROUTE_FIELD_WAIVERS). */
     waive?: ReadonlySet<string>;
-    /** Route-scoped NESTED waivers (guard/routes.ts ROUTE_PATH_WAIVERS): key paths from the root whose string value is a reference. */
     waivePaths?: ReadonlyArray<readonly string[]>;
-    /** Scan attribute subtrees too (an attribute callback: core expands the credentials and secrets named in them). */
     scanAttributes?: boolean;
 }
 
-/** The marker `findUuidsInBody` puts in a key path for a list element (a waiver path names it explicitly). */
-export const LIST_ELEMENT = '\u0000list';
+export { LIST_ELEMENT } from './routes';
 
 /**
- * The uuids a JSON body names: every string outside attribute subtrees, keys included —
- * canonical uuids (whole or inside a longer string) must be own, uuid-like non-canonical values are refused (base64 forms
- * only under a uuid-shaped key; keys themselves never take a base64 form: Jackson's map-key reader for UUID is
- * `UUID.fromString`). With `references`, canonical string values of top-level REFERENCE_FIELDS are waived.
+ * The uuids a JSON body names: canonical ones must be own, uuid-like non-canonical ones are refused; with `references`, top-level
+ * REFERENCE_FIELDS are waived.
  */
 export function findUuidsInBody(json: unknown, opts: AssociationOptions = {}): FoundUuids {
     const out: FoundUuids = { canonical: [], nonCanonical: [] };
-    /**
-     * `field`: the nearest key (array parents included) and `fieldType` its type: a BODY_FIELD_TYPES field
-     * or a SIBLING_TYPED_FIELDS field typed by its sibling `resource` code (unknown code: null = probes only);
-     * undefined = not typed. An exact canonical uuid value under a typed field becomes a typed claim.
-     */
     const waivedPath = (path: readonly string[]): boolean => !!opts.waivePaths?.some((w) => w.length === path.length && w.every((k, i) => k === path[i]));
+    /** `field` / `fieldType`: the nearest key and its BODY_FIELD_TYPES / sibling-typed type; undefined = untyped. */
     const visit = (v: unknown, depth: number, reference: boolean, uuidKey: boolean, field?: string, fieldType?: string | null, path: readonly string[] = []): void => {
         if (typeof v === 'string') {
             const f = findUuidsInString(v, { uuidKey });
@@ -134,7 +106,6 @@ export function findUuidsInBody(json: unknown, opts: AssociationOptions = {}): F
             if (!reference && field !== undefined && fieldType !== undefined && isCanonicalUuid(v)) (out.typed ??= []).push([v.toLowerCase(), fieldType, field]);
             return;
         }
-        // A list element's key path carries LIST_ELEMENT, so a path waiver reaches a list element only when it names the marker.
         if (Array.isArray(v)) return v.forEach((x) => visit(x, depth + 1, false, uuidKey, field, fieldType, [...path, LIST_ELEMENT]));
         if (!isPlainObject(v)) return;
         for (const [k, x] of Object.entries(v)) {
@@ -146,36 +117,26 @@ export function findUuidsInBody(json: unknown, opts: AssociationOptions = {}): F
             visit(x, depth + 1, reference, isUuidField(k), k, type, [...path, k]);
         }
     };
-    // The root: a top-level string, or a string of a top-level array (`List<UUID>` bodies), counts as uuid-keyed.
     visit(json, 0, false, true);
     return out;
 }
 
-/** The canonical uuids a body names besides its target (`findUuidsInBody(…).canonical`). */
 export function associationUuids(data: unknown, opts: AssociationOptions = {}): string[] {
     return findUuidsInBody(data, opts).canonical;
 }
 
-/**
- * What the guard reads of a request body: nothing, a JSON value (`raw`: the caller's own text, when the caller sent
- * text), text that is not JSON (a Buffer), or a body it cannot read.
- */
+/** What the guard reads of a body: nothing, JSON (`raw` = the caller's own text), non-JSON text, or an unreadable body. */
 export type BodyView =
     | { kind: 'none' }
     | { kind: 'json'; value: unknown; raw?: string }
     | { kind: 'text'; text: string }
-    /** A `text/plain` body (for the 415 negatives): raw text, never read as JSON. */
     | { kind: 'plain'; text: string }
     | { kind: 'unreadable'; why: string };
 
 const UTF8 = new TextDecoder('utf-8', { fatal: true });
-/** For `text/plain` bodies: a leading BOM is kept (the text is judged exactly as the bytes are). */
 const UTF8_KEEP_BOM = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
-/**
- * The first duplicate key of a JSON object anywhere in `text` (which JSON.parse accepted), or undefined. Iterative: a
- * stack of key sets, one per open object; a key is the decoded string before a `:`.
- */
+/** The first duplicate key of a JSON object anywhere in `text` (already accepted by JSON.parse), or undefined. */
 export function jsonDuplicateKey(text: string): string | undefined {
     const stack: Array<Set<string> | undefined> = [];
     let i = 0;
@@ -204,7 +165,6 @@ export function jsonDuplicateKey(text: string): string | undefined {
     return undefined;
 }
 
-/** A JSON view of caller-supplied text that JSON.parse accepts (duplicate keys: unreadable). */
 function jsonTextView(text: string): BodyView {
     const dup = jsonDuplicateKey(text);
     if (dup !== undefined) return { kind: 'unreadable', why: `a JSON body with a duplicate key (${JSON.stringify(dup.slice(0, 24))}): readers disagree on which value wins` };
@@ -220,27 +180,16 @@ const parses = (text: string): boolean => {
     }
 };
 
-/** What the guard sends of a body: the view it judges and the exact value it hands Playwright. */
 export interface BodySnapshot {
     view: BodyView;
-    /**
-     * undefined: no body is sent. A string goes with `content-type: application/json` (`text/plain`: as written); a Buffer byte for byte.
-     */
+    /** undefined = no body; a string goes as `application/json` (`text/plain`: as written); a Buffer byte for byte. */
     send?: string | Buffer;
 }
 
 /**
- * The body as the guard will send it and the server will read it; every input is read once:
- * - undefined: no body;
- * - a string (or String object): with `content-type: application/json`, Playwright sends it as written when
- *   `JSON.parse` accepts it (judged as that JSON; a duplicate key = unreadable), else re-quoted as a JSON string — so the
- *   guard sends `JSON.stringify(text)` itself and judges the JSON string value (a BOM, trailing junk);
- * - a Buffer: a copy, sent byte for byte; UTF-8 only (NUL bytes or invalid UTF-8 = unreadable: the server detects
- *   UTF-16 / UTF-32), a leading BOM skipped like Jackson does, whitespace only = no body; JSON (duplicate key =
- *   unreadable) or text (an allow-listed create may send it: malformed-JSON negatives);
- * - anything else Playwright serialises with `JSON.stringify` (`toJSON`, dropped functions and non-enumerables, a typed
- *   array's index object, `null` as `null`): serialised ONCE here, sent as that text and judged as its parse.
- * bigint, functions and symbols (Playwright throws) and unserialisable values are refused.
+ * The body as the guard sends and the server reads it; each input is read once. A string is judged as JSON when
+ * JSON.parse accepts it, else as a JSON string value; a Buffer is sent byte for byte (UTF-8 only; NUL or invalid UTF-8
+ * is unreadable); anything else is serialised once with `JSON.stringify`. bigint, functions and symbols are refused.
  */
 export function readJsonBody(data: unknown): BodySnapshot | { problem: string } {
     if (data === undefined) return { view: { kind: 'none' } };
@@ -274,18 +223,14 @@ export function readJsonBody(data: unknown): BodySnapshot | { problem: string } 
     return { view: { kind: 'json', value: JSON.parse(text) }, send: text };
 }
 
-/** The body as the guard judges it (`readJsonBody(data).view`; an unsendable body is `unreadable`). */
 export function bodyView(data: unknown): BodyView {
     const s = readJsonBody(data);
     return 'problem' in s ? { kind: 'unreadable', why: s.problem } : s.view;
 }
 
 /**
- * A `text/plain` body (for the 415 negatives), read once and sent AS WRITTEN: Playwright
- * re-quotes a string only under exactly `application/json` (playwright-core client/fetch.js `isJsonContentType`); under
- * any other type it sends `Buffer.from(data, 'utf8')`, and a Buffer byte for byte. The view is the raw text of the bytes
- * that go out (a string's lone surrogates become U+FFFD there; a Buffer must be UTF-8; a BOM is kept); NUL characters
- * make it unreadable (a reader could take the bytes for UTF-16).
+ * A `text/plain` body (415 negatives), sent as written: Playwright re-quotes a string only under exactly `application/json`. NUL characters
+ * make it unreadable.
  */
 export function readTextBody(data: unknown): BodySnapshot | { problem: string } {
     if (Buffer.isBuffer(data)) {
@@ -310,7 +255,6 @@ export function readTextBody(data: unknown): BodySnapshot | { problem: string } 
 
 export type Params = Record<string, string | number | boolean> | URLSearchParams | string | undefined;
 
-/** The keys and values of the effective query string and the `params` option (decoded, as the server reads them). */
 function queryEntries(search: URLSearchParams, params: Params): Array<[string, string]> {
     const out: Array<[string, string]> = [...search.entries()];
     if (typeof params === 'string') out.push(...new URLSearchParams(params).entries());
@@ -329,10 +273,7 @@ const searchOf = (url: string): URLSearchParams => {
     }
 };
 
-/**
- * Every uuid the query string and `params` name: canonical ones (to be own) and non-canonical uuid-like ones (refused;
- * base64 forms only as the value of a uuid-shaped key).
- */
+/** Every uuid the query string and `params` name: canonical ones (to be own) and non-canonical uuid-like ones (refused). */
 export function findUuidsInQuery(url: string | URL, params?: Params): FoundUuids {
     const out: FoundUuids = { canonical: [], nonCanonical: [] };
     const search = typeof url === 'string' ? searchOf(url) : url.searchParams;
@@ -343,7 +284,6 @@ export function findUuidsInQuery(url: string | URL, params?: Params): FoundUuids
     return out;
 }
 
-/** Every canonical uuid the query string and `params` name (any key or value, comma lists included). */
 export function queryUuids(url: string, params?: Params): string[] {
     return findUuidsInQuery(url, params).canonical;
 }

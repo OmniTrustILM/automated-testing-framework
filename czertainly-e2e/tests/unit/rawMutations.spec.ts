@@ -1,22 +1,14 @@
 /**
- * rawMutations — the deny-by-default lint of the REG / API specs and helpers (utils/regression/specLint/rawMutations.ts,
- * rules.ts, bindings.ts): raw contexts, request methods, imports by allow-list, env and fs writes, dynamic code, request
- * options and the token fixtures.
- *
- * WHAT: lints inline sources and checks the rules reported (line and rule name) or that nothing is reported; the
- * last block gives every rule of the table one positive and one negative case.
- * WHY: the lint is the proof that no spec can reach a shared tier around the guarded context; a rule that stops
- * firing is a hole, a rule that fires on clean code blocks the suite.
- * HOW: pure unit cases over `rawMutations` (the real tree is linted by specGuards.spec.ts).
+ * rawMutations — the deny-by-default lint of the REG / API specs and helpers (utils/regression/specLint/rawMutations.ts).
+ * Lints inline sources and checks the rules reported (line and rule name), or that nothing is reported.
  */
 import { test, expect } from '@playwright/test';
 import { RawMutationRule, rawMutations, rawMutationsWith } from '../../utils/regression/specLint/rawMutations';
 import { RULES, type Rule } from '../../utils/regression/specLint/rules';
 
-// The sources in this file are linted, never compiled: an `as any` inside one is lint input, not a cast of this file.
+// The sources in this file are linted, never compiled.
 const lint = (src: string, file = 'tests/api/X.spec.ts') => rawMutations(src, file).map((m) => `${m.line} ${m.rule}`);
 
-// deny by default: the api fixture, GuardedApi parameters and guard factories may mutate; raw contexts may only read
 test('deny by default: api fixture, GuardedApi and guard factories may mutate; raw contexts read', () => {
     const src = `
 test('T-1', async ({ api, request, page, env }) => {
@@ -36,7 +28,6 @@ async function helper(api: GuardedApi) { await api.patch('/api/v1/x'); await api
     expect(lint(src)).toEqual([]);
 });
 
-// raw contexts: every non-GET method, POST included, unless the literal URL is a read-only / protocol POST (creates included)
 test('raw contexts: every non-GET method is flagged unless the literal URL is a read-only or protocol POST', () => {
     const src = `
 test('T-1', async ({ request, page }) => {
@@ -151,7 +142,6 @@ async function f(raw: APIRequestContext, m: 'GET' | 'PATCH') {
     ]);
 });
 
-// the anonymous context factory belongs to the fixtures: any reference in a spec or a helper is a raw context
 test('the anonymous context factory belongs to the fixtures: any use in a spec or helper is a raw context', () => {
     const src = `
 import { newAnonymousContext } from '../../utils/auth/apiContext';
@@ -182,7 +172,6 @@ test('T-1', async ({ request, env }) => {
     ]);
 });
 
-// util imports: allow-list by prefix, no namespace / default / require / dynamic import, type-only is fine
 test('util imports: allow-list by prefix; no namespace, default, require or dynamic import; type-only fine', () => {
     const src = `
 import { deleteCertificate, waitForCertificateState, uploadCertificate } from '../../utils/certificateUtils';
@@ -208,12 +197,10 @@ import { execFileSync } from 'child_process';`;
         '11 util-import',
         '12 raw-process',
     ]);
-    // A utils/regression helper resolves "../xUtils" to the same modules; child_process is fine outside specs.
     expect(rawMutations("import { revokeCertificate } from '../certificateUtils';\nimport { execFileSync } from 'child_process';", 'utils/regression/x.ts', { spec: false })
         .map((m) => `${m.line} ${m.rule}`)).toEqual(['1 util-import']);
 });
 
-// spec rules: test only from the fixtures, no .extend(, no route method rewrite, no raw network modules
 test('spec rules: test only from the fixtures, no .extend(, no route method rewrite, no raw network', () => {
     const src = `
 import { test, expect } from '@playwright/test';
@@ -255,11 +242,11 @@ test('T-1', async ({ page }) => {
         '21 test-import',
         '22 raw-network',
     ]);
-    // The same text in a helper (spec: false) only meets the helper rules.
     expect(rawMutations(src, 'utils/api/apiChecks.ts', { spec: false }).map((m) => `${m.line} ${m.rule}`)).toEqual(['20 fetch-method']);
 });
 
-// anonymousApi is a guarded fixture (mutations pass), test.use may not replace it or the token fixtures, a cast stays caught
+// anonymousApi is a guarded fixture (mutations pass), test.use
+// may not replace it or the token fixtures, a cast stays caught.
 test('anonymousApi is a guarded fixture; test.use may not replace it or the token fixtures', () => {
     const ok = `
 test('API-AUTH-01: m', async ({ anonymousApi, env }) => {
@@ -274,12 +261,9 @@ test('API-AUTH-01: m', async ({ anonymousApi, env }) => {
     expect(rawMutations("test.use({ restrictedToken: undefined });", 'tests/api/X.spec.ts').map((m) => m.rule)).toEqual(['fixture-extend']);
     expect(rawMutations("test.use({ adminToken: undefined });", 'tests/api/X.spec.ts').map((m) => m.rule)).toEqual(['fixture-extend']);
     expect(rawMutations("test('T', async ({ request }) => { const a = request as GuardedApi; await a.post('/api/v1/roles'); });", 'tests/api/X.spec.ts').map((m) => m.rule)).toContain('guarded-cast');
-    // Mutant: dropping anonymousApi from the guarded set makes the first spec a context-method violation.
     expect(rawMutations("test('T', async ({ other }) => { await other.post('/api/v1/roles', { data: {} }); });", 'tests/api/X.spec.ts').map((m) => m.rule)).toEqual(['context-method']);
 });
 
-// the spec-facing fixtures of fixtures/regressionFixtures.ts: `test` may come from there, `localApi` is guarded like `api`, `signedIn` is a
-// page, and none can be replaced by `test.use`
 test('the regression fixtures: test comes from them, localApi is guarded, signedIn is a page, no test.use replaces one', () => {
     const rules = (src: string): string[] => rawMutations(src, 'tests/regression/X.spec.ts').map((m) => m.rule);
     expect(rules("import { test, expect } from '../../fixtures/regressionFixtures';")).toEqual([]);
@@ -288,19 +272,17 @@ test('the regression fixtures: test comes from them, localApi is guarded, signed
     expect(rules("import { test, expect } from '../../fixtures/areas/certificateList';")).toEqual([]);
     expect(rules("import { test } from '../../fixtures/areas/CertificateList';")).toEqual(['test-import']);
     expect(rules("import { test } from '../../fixtures/areas/nested/list';")).toEqual(['test-import']);
-    // only the root fixtures/areas folder: a folder of that name elsewhere is not linted as an area fixture
+    // only the root fixtures/areas folder: a folder of that name elsewhere is not linted as an area fixture.
     expect(rules("import { test } from '../../pages/fixtures/areas/evil';")).toEqual(['test-import']);
     expect(rules("import { test } from '../../utils/fixtures/areas/evil';")).toEqual(['test-import']);
     expect(rules("import { test } from '../../fixtures/areas/../../pages/evil';")).toEqual(['test-import']);
-    // an area fixture is linted like a spec: its base must be the spec-facing fixtures, and a raw context is refused
+    // an area fixture is linted like a spec: its base must be the spec-facing fixtures, and a raw context is refused.
     const area = (src: string): string[] => rawMutations(src, 'fixtures/areas/certificateList.ts', { spec: true }).map((m) => m.rule);
     expect(area("import { test as base } from '../regressionFixtures';\nexport const test = base.extend<{ x: number }>({ x: async ({ api }, use) => { await api.get('/api/v1/roles'); await use(1); } });")).toEqual(['fixture-extend']);
     expect(area("import { test as base } from '@playwright/test';\nexport const test = base.extend<{ x: number }>({ x: async ({ request }, use) => { await request.post('/api/v1/roles'); await use(1); } });")).toEqual(['test-import', 'fixture-extend', 'context-method']);
-    // localApi: a mutation through it is judged like one through `api`; through another receiver it is a context-method.
     expect(rules("test('x', async ({ localApi }) => { await localApi.post('/api/v1/roles', { data: {} }); const alias = localApi; await alias.delete('/api/v1/roles/1'); });")).toEqual([]);
     expect(rules("test('x', async ({ localApi }) => { let a = localApi; a = other; });")).toEqual(['guarded-reassign']);
     expect(rules("test('x', async ({ own }) => { await own.post('/api/v1/roles', { data: {} }); });")).toEqual(['context-method']);
-    // signedIn is the page after the sign-in: its request context is raw, like page.request.
     expect(rules("test('x', async ({ signedIn }) => { await signedIn.request.post('/api/v1/roles', { data: {} }); });")).toEqual(['raw-request-use']);
     expect(rules("test('x', async ({ signedIn }) => { await signedIn.request.get('/api/v1/roles'); });")).toEqual([]);
     for (const name of ['own', 'live', 'needs', 'signedIn', 'regressionEnv', 'localApi', 'workerApi', 'ownRaProfile']) {
@@ -311,7 +293,8 @@ test('the regression fixtures: test comes from them, localApi is guarded, signed
     expect(rules("test('x', async ({ live }) => { const h = await live('roles', ref); });")).toEqual([]);
 });
 
-// token use: the token fixtures may be used as a header value / helper argument / truthiness check, never printed, compared or annotated
+// token use: the token fixtures may be used as a header value / helper argument / truthiness check, never printed,
+// compared or annotated.
 test('token use: token fixtures may be a header or argument, never printed, compared or annotated', () => {
     const ok = `
 test('API-AUTH-02: claim', async ({ api, adminToken, restrictedToken }, testInfo) => {
@@ -340,11 +323,9 @@ test('API-AUTH-02: claim', async ({ api, adminToken, restrictedToken }, testInfo
         const src = `test('T', async ({ adminToken, restrictedToken }, testInfo) => { ${stmt} });`;
         expect(rawMutations(src, 'tests/api/X.spec.ts').map((m) => m.rule), name).toEqual(['token-use']);
     }
-    // Outside a spec (utils) the rule does not apply; a parameter of the same NAME in another function is not the fixture.
+    // Outside a spec (utils) the rule does not apply.
     expect(rawMutations("test('T', async ({ adminToken }) => { helper(adminToken); }); function helper(adminToken: unknown) { console.log(adminToken); }", 'tests/api/X.spec.ts')).toEqual([]);
 });
-
-// ------------ the lint: process through aliases, dynamic code, request options the guard does not forward (own helpers, so a block scope)
 
 {
     const HEAD = "import { test, expect } from '../../fixtures/testFixtures';\n";
@@ -410,15 +391,7 @@ test('API-AUTH-02: claim', async ({ api, adminToken, restrictedToken }, testInfo
     });
 }
 
-// ------------------------- the spec rules: imports by allow-list, env and fs writes, the literal raw POST (own helpers, so a block scope)
-
 {
-    /**
-     * The spec rules of the deny-by-default lint (utils/regression/specLint/rawMutations.ts):
-     * imports by ALLOW-LIST (relative imports inside the suite, `@playwright/test` for types only, the node
-     * built-ins SPEC_BUILTINS), `process.env` writes, fs writes / removals and `createRequire` in tests/**. Every probe of
-     * the lint probe spec is a row here, plus the URL check of a literal raw POST (judged like `allowedRawPost`).
-     */
 
     const HEAD = "import { test, expect } from '../../fixtures/testFixtures';\n";
     const rules = (src: string, file = 'tests/api/probe.api.spec.ts') => [...new Set(rawMutations(src, file, { spec: true }).map((h) => h.rule))].sort();
@@ -457,8 +430,6 @@ test('API-AUTH-02: claim', async ({ api, adminToken, restrictedToken }, testInfo
         expect(wrong).toEqual([]);
     });
 
-    // spec-import: relative imports stay inside the suite; @playwright/test for types only; built-ins by allow-list; dynamic module names
-    // refused
     test('spec-import: relative imports stay in the suite; @playwright/test types only; built-ins allow-listed', () => {
         const flagged = (src: string) => rawMutations(HEAD + src, 'tests/api/probe.api.spec.ts').filter((h) => h.rule === 'spec-import').length;
         expect(flagged("import { x } from '../../node_modules/undici/index';")).toBe(1);
@@ -497,7 +468,6 @@ test('API-AUTH-02: claim', async ({ api, adminToken, restrictedToken }, testInfo
         expect(flagged("const kind = process.env.TIER_KIND ?? 'shared';\nconst copy = { ...process.env };\ncopy.TIER_KIND = 'x';")).toBe(0);
     });
 
-    // fs-write: write / append / rm / unlink / rename / copy / mkdir / open on any fs binding; reads are fine
     test('fs-write: write, append, rm, unlink, rename, copy, mkdir and open on any fs binding; reads are fine', () => {
         const flagged = (src: string) => rawMutations(HEAD + src, 'tests/api/X.api.spec.ts').filter((h) => h.rule === 'fs-write').length;
         expect(flagged("import * as fs from 'fs';\nfs.writeFileSync('a', 'b');")).toBe(1);
@@ -513,7 +483,6 @@ test('API-AUTH-02: claim', async ({ api, adminToken, restrictedToken }, testInfo
         expect(flagged("import * as fs from 'fs';\nfs[name]('a');")).toBe(1);
         expect(flagged("import * as fs from 'fs';\nconst s = fs.createWriteStream('a');")).toBe(1);
         expect(flagged("import * as fs from 'fs';\nconst t = fs.readFileSync('a', 'utf8');\nfs.existsSync('b');\nfs.statSync('c');")).toBe(0);
-        // Helpers write the ledger, run state and proofs by design: the rule is spec-only.
         expect(rawMutations("import * as fs from 'fs';\nfs.writeFileSync('a', 'b');", 'utils/regression/x.ts', { spec: false }).filter((h) => h.rule === 'fs-write')).toEqual([]);
     });
 
@@ -532,8 +501,6 @@ test('API-AUTH-02: claim', async ({ api, adminToken, restrictedToken }, testInfo
     });
 }
 
-// ------------------------------------------------------------ one positive and one negative case per rule (own helpers, so a block scope)
-
 {
     const FIXTURES = "import { test, expect } from '../../fixtures/testFixtures';\n";
 
@@ -542,7 +509,6 @@ test('API-AUTH-02: claim', async ({ api, adminToken, restrictedToken }, testInfo
         bad: string;
         /** A close source the rule must not report. */
         fine: string;
-        /** The rule applies to specs only: the same bad source linted as a helper is clean. */
         specOnly?: boolean;
     }
 
@@ -639,21 +605,17 @@ test('API-AUTH-02: claim', async ({ api, adminToken, restrictedToken }, testInfo
         expect(refused("const s = await import('../guard/checkRequest');"), 'dynamic import').toEqual(['guard-internal']);
         expect(refused("export { checkAndSend } from '../guard/sendRequest';"), 'export from').toEqual(['guard-internal']);
         expect(refused("import { x } from '../../utils/regression/guard/claims';", 'tests/regression/01-a/01-b.spec.ts'), 'a spec').toContain('guard-internal');
-        // Fine: a type-only import, the public modules, the guard's own folder and the unit tests.
         expect(refused("import type { Snapshot } from '../guard/readRequest';")).toEqual([]);
         expect(refused("import { guardApi } from '../guard/createGuard';\nimport { assertGuarded } from '../guard/types';")).toEqual([]);
         expect(refused("import { checkAndSend } from './sendRequest';", `${GUARD}/createGuard.ts`)).toEqual([]);
         expect(refused("import { GuardState } from '../../../utils/regression/guard/guardState';", 'tests/unit/helpers/x.ts')).toEqual([]);
         expect(refused("import { x } from '../other/claims';")).toEqual([]);
-        // The unit-test verdict helper is a seam like guardApiWithSeams.
         expect(refused('await judgeWithSeams(api, {}, "GET", "/api/v1/roles");')).toEqual(['unit-seam']);
     });
 
     test('callback-target: the registration of a callback parent is reachable from the preflight, the guard and the unit tests only', () => {
         const only = (src: string, file: string, spec = true) => [...new Set(rawMutations(src, file, { spec }).filter((m) => m.rule === 'callback-target').map((m) => m.rule))];
         const SPEC = 'tests/timestamping/20-x.spec.ts';
-        // Every spelling in a spec (or any other file) is refused: the call, an alias, destructuring, a namespace, bracket access, require, import(),
-        // a re-export, a type position, a string naming the function or the module.
         for (const bad of [
             "registerCallbackTarget(api, 'connector', uuid);",
             "import { registerCallbackTarget } from '../../utils/regression/guard/callbackTargets';",
@@ -672,12 +634,13 @@ test('API-AUTH-02: claim', async ({ api, adminToken, restrictedToken }, testInfo
             expect(only(bad, SPEC), `a spec: ${bad}`).toEqual(['callback-target']);
             expect(only(bad, 'utils/timestamping/x.ts', false), `a helper: ${bad}`).toEqual(['callback-target']);
         }
-        // Allowed: the preflight, the guard's folder, the unit tests; and names that merely look alike.
         const use = "import { registerCallbackTarget } from '../../regression/guard/callbackTargets';\nregisterCallbackTarget(api, 'connector', uuid);";
-        for (const file of ['utils/timestamping/provision/preflight.ts', 'utils/regression/guard/callbackTargets.ts', 'utils/regression/guard/createGuard.ts', 'tests/unit/guardedApiTimestamping.spec.ts']) {
+        for (const file of ['utils/timestamping/provision/preflight.ts', 'utils/keyOnboarding/provision/preflight.ts', 'utils/regression/guard/callbackTargets.ts', 'utils/regression/guard/createGuard.ts', 'tests/unit/guardedApiTimestamping.spec.ts']) {
             expect(only(use, file, false), file).toEqual([]);
         }
         expect(only(use, 'utils/timestamping/provision/provision.ts', false), 'not the other files of the same folder').toEqual(['callback-target']);
+        expect(only(use, 'utils/keyOnboarding/provision/plant.ts', false), 'nor of the key onboarding folder').toEqual(['callback-target']);
+        expect(only(use, 'utils/keyOnboarding/preflight.ts', false), 'nor a preflight.ts outside provision/').toEqual(['callback-target']);
         for (const fine of ["const registerCallbackTargets = [];", "const s = 'callbackTargetsList';", "import { x } from './myCallbackTargets';", "const o = { registerCallback: 1 };"]) {
             expect(only(fine, SPEC), fine).toEqual([]);
         }
@@ -708,7 +671,6 @@ test('API-AUTH-02: claim', async ({ api, adminToken, restrictedToken }, testInfo
     });
 }
 
-// a page object's own page is the same raw context as the page fixture: `<x>.page.request` is refused like `page.request`
 test('<x>.page.request is a raw context like page.request: passed on or aliased it is refused, a GET passes, a write is refused', () => {
     const rules = (src: string): string[] => rawMutations(src, 'tests/regression/X.spec.ts').map((m) => m.rule);
     expect(rules("test('x', async ({ signedIn }) => { const roles = new RolesPage(signedIn); await roles.page.request.get('/api/v1/roles'); });")).toEqual([]);
@@ -716,7 +678,6 @@ test('<x>.page.request is a raw context like page.request: passed on or aliased 
     expect(rules("test('x', async ({ signedIn }) => { const roles = new RolesPage(signedIn); await helper(roles.page.request); });")).toEqual(['raw-request-use']);
     expect(rules("test('x', async ({ signedIn }) => { const roles = new RolesPage(signedIn); const raw = roles.page.request; });")).toEqual(['raw-request-use']);
     expect(rules("test('x', async ({ signedIn }) => { const roles = new RolesPage(signedIn); await roles.api.request.get('/x'); });")).toEqual([]);
-    // bracket and alias forms resolve like the dotted one
     const po = "const po = new RolesPage(signedIn); ";
     for (const body of ["await po['page'].request.post('/x');", "await po.page['request'].post('/x');", "const p = po.page; await p.request.post('/x');",
         "const { page } = po; await page.request.post('/x');", "const { page: pg } = po; await pg.request.post('/x');", "const p = po.page; const q = p; await q['request'].post('/x');",
@@ -728,13 +689,11 @@ test('<x>.page.request is a raw context like page.request: passed on or aliased 
     }
 });
 
-// cookies and storage state never reach a spec; a header assertion on a plain header, and the verdict helper's headers option, do
+// cookies and storage state never reach a spec.
 test('response state: only a header assertion on a plain header or the verdict helper option may read response headers', () => {
     const rules = (src: string): string[] => rawMutations(src, 'tests/api/X.api.spec.ts').map((m) => m.rule);
-    // allowed
     expect(rules("test('x', async ({ api }) => { const res = await api.get('/v1/a'); expect(res.headers()['content-type']).toContain('json'); });")).toEqual([]);
     expect(rules("test('x', async ({ api }) => { const res = await api.get('/v1/a'); const v = checkRefusedMethod({ status: res.status(), headers: res.headers(), bodyText: '' }); });")).toEqual([]);
-    // refused: a whole header map, a credential header, a computed name, storage state, another receiver, another helper
     expect(rules("test('x', async ({ api }) => { const res = await api.get('/v1/a'); const h = res.headers(); });")).toEqual(['response-state']);
     expect(rules("test('x', async ({ api }) => { const res = await api.get('/v1/a'); const c = res.headers()['set-cookie']; });")).toEqual(['response-state']);
     expect(rules("test('x', async ({ api }) => { const res = await api.get('/v1/a'); const c = res.headers()[name]; });")).toEqual(['response-state']);

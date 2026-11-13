@@ -1,8 +1,5 @@
 /**
- * A minimal config over this folder for the restricted-token skip proof (tests/unit/tokenFixtures.spec.ts): the REAL fixtures of
- * fixtures/testFixtures.ts, three tests taking `restrictedToken`, a loopback identity provider answering 401 — the
- * grant must be sent ONCE and every test must SKIP with the named reason. Never run by the unit config (fixtures/ is
- * ignored there) and invisible to the REG / API configs.
+ * A minimal config over this folder for the restricted-token skip proof (tests/unit/tokenFixtures.spec.ts).
  */
 import { defineConfig } from '@playwright/test';
 import * as path from 'path';

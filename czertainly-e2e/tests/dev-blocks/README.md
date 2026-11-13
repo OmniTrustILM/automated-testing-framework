@@ -1,17 +1,19 @@
 # Developers' test blocks (`@dev-tests`)
 
 Two blocks, each its own run with its own report: `timestamping` (tests/timestamping) and `key-onboarding`
-(tests/key-onboarding). They are written by the developers and ported by QA. Every `key-onboarding` test is `@local`, so on a shared tier
-that block selects nothing; `timestamping` runs create-only on a shared tier too (its rows carry `@needs:timestamping`, only the docker-bound
-and disruptive ones are `@local`: tests/timestamping/SHARED-TIER.md). They are not part of the regression or the API config.
+(tests/key-onboarding). They are written by the developers and ported by QA. Both run create-only on a shared tier too:
+`timestamping` rows carry `@needs:timestamping` (only the docker-bound and disruptive ones are `@local`: tests/timestamping/SHARED-TIER.md),
+`key-onboarding` rows carry `@needs:key-onboarding` and plant their key pairs with `kubectl exec` into the SoftHSM sidecar
+(tests/key-onboarding/README.md). They are not part of the regression or the API config.
 
 ## Commands
 
 One config, `playwright.devblock.config.ts`; `DEV_BLOCK` picks the block (unset or unknown stops with an error before
 anything is listed).
 
-Shared tier. `timestamping` runs the rows without `@local` (a tier without the components skips each with a named reason, exit 0);
-`key-onboarding` selects nothing, exits 0 and still writes the empty report:
+Shared tier. `timestamping` runs the rows without `@local`, `key-onboarding` all its rows (a tier or runner without the components
+skips each with a named reason, exit 0; `key-onboarding` needs KO_TOKEN_PIN, the KO_* connector URLs and kubectl with exec rights;
+`timestamping` with an ML-DSA family in `TSA_FAMILIES` needs OpenSSL 3.5 or newer on the runner, the Playwright image ships 3.0):
 
 ```
 REG_ENV_FILE=<tier env file> DEV_BLOCK=timestamping   npx playwright test -c playwright.devblock.config.ts

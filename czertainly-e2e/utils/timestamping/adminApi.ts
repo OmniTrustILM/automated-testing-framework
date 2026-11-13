@@ -1,10 +1,6 @@
 /**
- * adminApi — the admin API of the timestamping specs.
- *
- * WHAT: `AdminApi` (raw / get / post / patch, list helpers, trust files) and the response types the specs read.
- * WHY: the specs were written against this class; keeping its method names keeps their bodies unchanged.
- * HOW: ported from the developers' suite; it wraps `GuardedApi` instead of a raw context, and chain files are written
- * per test, so two tests never write the same file.
+ * adminApi — the admin API of the timestamping specs (`AdminApi`, list helpers, trust files) and the response types the specs read.
+ * Chain files are written per test, so two tests never write the same file.
  */
 import type { APIResponse } from '@playwright/test';
 import * as fs from 'fs';
@@ -12,10 +8,7 @@ import * as path from 'path';
 import type { GuardedApi } from '../regression/guard/types';
 import { artifactDir } from './provisioning';
 
-/**
- * Thin wrapper over the ILM admin API, now over the GUARDED api of the regression framework (the identity and the
- * ownership / platform rules are the guard's: strict on a shared tier and on a local stack alike).
- */
+/** Wraps the ILM admin API over the GUARDED api of the regression framework (strict on a shared tier and on a local stack alike). */
 export class AdminApi {
   constructor(private readonly request: GuardedApi) {}
 
@@ -56,7 +49,6 @@ export class AdminApi {
     return this.json<T>('PATCH', apiPath, body);
   }
 
-  /** POST .../list style endpoints that answer with a paginated envelope. */
   async listItems<T>(apiPath: string, itemsPerPage = 1000): Promise<T[]> {
     const response = await this.post<{ items?: T[] }>(apiPath, { itemsPerPage, pageNumber: 1, filters: [] });
     return response.items ?? [];
@@ -82,16 +74,11 @@ export class AdminApi {
     return this.get<CertificateDetail>(`/v1/certificates/${uuid}`);
   }
 
-  /** The signature options the certificate's key offers a signing profile. */
   signatureAttributes(certificateUuid: string): Promise<AttributeDefinition[]> {
     return this.get<AttributeDefinition[]>(`/v1/signingProfiles/certificates/${certificateUuid}/signatureAttributes`);
   }
 
-  /**
-   * The first page of signing records: every record of the platform, or (with `signingProfileUuid`) those of that signing profile. On a
-   * shared tier the rows pass their own profile: other clients' records are not this suite's business, and a busy table cannot push the
-   * run's record off the first page.
-   */
+  /** On a shared tier the rows pass their own profile, so a busy table cannot push the run's record off the first page. */
   async listSigningRecords(itemsPerPage = 200, signingProfileUuid?: string): Promise<SigningRecordListItem[]> {
     const response = await this.post<{ signingRecords?: SigningRecordListItem[]; items?: SigningRecordListItem[] }>(
       signingProfileUuid ? `/v1/signingProfiles/${signingProfileUuid}/signingRecords` : '/v1/signingRecords',
@@ -100,10 +87,7 @@ export class AdminApi {
     return response.signingRecords ?? response.items ?? [];
   }
 
-  /**
-   * Writes trusted anchors and untrusted intermediates to separate OpenSSL inputs.
-   * Files go under the running test's output dir, so no two tests share a name (no cross-test cache).
-   */
+  /** Writes trusted anchors and untrusted intermediates to separate OpenSSL inputs, under the running test's output dir. */
   async certificateTrustFiles(uuid: string, label = 'chain'): Promise<CertificateTrustFiles> {
     const chain = await this.get<{ completeChain: boolean; certificates: CertificateDetail[] }>(
       `/v1/certificates/${uuid}/chain?withEndCertificate=false`,
@@ -186,7 +170,6 @@ export interface AttributeValue {
   content: AttributeContent[];
 }
 
-/** Each attribute's values by name, in a stable order. */
 export function attributeValues(
   attributes: Array<{ name: string; content?: AttributeContent[] }>,
 ): Record<string, string[]> {

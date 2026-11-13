@@ -1,21 +1,6 @@
 /**
- * API-GEN-20 — Group assignment on a certificate replaces the set. ilm#428.
- *
- * WHAT: 1. PATCH groupUuids [g1, g2] gives both; omitted or null keeps them; [g3] leaves only g3; [] removes all; each answers 204 with no
- *          body and the history reads "<old> -> <new>" for the three real changes only.
- *       2. [g1, g1] gives one membership; assigning the identical set answers 204 and writes no new history event.
- *       3. groupUuids ["not-a-uuid"] → 400 "The request could not be processed." and the groups stay; an owner-only PATCH leaves the groups
- *          alone.
- *       4. An archived own certificate refuses a group change with 422 "Certificate with UUID <uuid> is archived and its groups cannot be
- *          updated." and keeps its groups.
- *       5. Local stack only, parked with `test.fixme`: an unknown group uuid → 404 and the previous groups survive.
- * WHY: non-empty replaces the set, [] removes all, omitted or null is no change (core#683, core#630; archived: core#1098, ilm#71); an
- *      identical set is a no-op that returns before the history event. The unknown-group row is unconfirmed: the assignment may delete the
- *      previous groups before the checked NotFoundException (the mechanism of core#2449 and core#2512), so the row has never run; there is
- *      no observed answer to assert and no defect to report yet.
- * HOW: every test builds an own self-signed certificate and own groups (run-prefixed, recorded in the ledger before the first assertion)
- *      and reads the final set back from the detail. The unknown-group row is local-stack only and sends only the own certificate and a
- *      probe uuid.
+ * API-GEN-20 — Group assignment on a certificate replaces the set
+ * (ilm#428). Rules: core#683, core#630; archived: core#1098, ilm#71.
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { refused422, refusedWith } from '../../../utils/regression/inventory/configProbes';
@@ -31,9 +16,6 @@ import { API_OWN_OBJECTS_TEST_MS } from '../../../utils/regression/timeouts';
 
 const ISSUE = 'ilm#428';
 
-// ================================================================== API-GEN-20
-
-/** An own certificate and `n` own groups: the data of the assignment rows. */
 async function assignmentSeed(api: GuardedApi, spec: string, n: number) {
     const certificate = await uploadOwnSelfSigned(api, spec);
     const groups = [];
@@ -41,7 +23,6 @@ async function assignmentSeed(api: GuardedApi, spec: string, n: number) {
     return { certificate, groups };
 }
 
-/** The group names of a group list, sorted, joined as core writes them into the history. */
 const joined = (names: string[]): string => [...names].sort().join(', ');
 
 test.describe('group assignment replaces the set', { tag: tags.api }, () => {
@@ -144,9 +125,8 @@ test.describe('group assignment replaces the set', { tag: tags.api }, () => {
         });
 });
 
-// Local stack only, and parked (`test.fixme`) until a local run settles it: the inferred transactional gap of the group assignment may
-// leave an own certificate without its previous groups; the request itself only names the own certificate and own groups (a probe uuid
-// is the unknown group).  The row has never been seen to run, so there is no observed answer to assert and no defect to report yet.
+// Local stack only, and parked (`test.fixme`) until a local run settles it:
+// the assignment may delete the previous groups before the NotFoundException.
 test.describe('group assignment of an unknown group (local stack)', { tag: tags.api }, () => {
     describeLocalOnly(test);
 
