@@ -1,6 +1,6 @@
 /**
  * Unit tests for the raw EST client: how a request is built, and one real round trip against a
- * local TLS server to cover the send path, including a client certificate and a self-signed edge.
+ * local TLS server to cover the send path, including a client certificate and an edge verified against its CA.
  */
 import { test, expect } from '@playwright/test';
 import * as https from 'https';
@@ -22,7 +22,7 @@ test('a bodyless request is a GET on the operation, SNI set to the host', () => 
     expect(options.port).toBe('8443');
     expect(options.path).toBe('/.well-known/est/cacerts');
     expect(options.servername).toBe('ilm.example.com');
-    expect(options.rejectUnauthorized).toBe(false);
+    expect(options.rejectUnauthorized).toBeUndefined();
     expect(options.cert).toBeUndefined();
     expect(body.length).toBe(0);
 });
@@ -61,6 +61,12 @@ test('an explicit method wins and a client certificate is passed on', () => {
     expect(options.key).toBe('KEY');
 });
 
+test('the edge CA given is the one the connection trusts', () => {
+    const { options } = buildEstRequest({ baseUrl: BASE, op: 'cacerts', ca: 'EDGE CA' });
+    expect(options.ca).toBe('EDGE CA');
+    expect(options.rejectUnauthorized).toBeUndefined();
+});
+
 test('base64 bodies decode across CRLF and whitespace', () => {
     expect(decodeBase64Body(Buffer.from('QUJD\r\nREVG\r\n')).toString()).toBe('ABCDEF');
     expect(decodeBase64Body(' QU JD ').toString()).toBe('ABC');
@@ -72,7 +78,7 @@ test('a request round-trips to a TLS server that asks for a client certificate',
     const client = issueCert(ca, { subject: 'client' });
 
     const srv = https.createServer(
-        { cert: certToPem(server.cert), key: keyToPem(server.key), requestCert: true, rejectUnauthorized: false },
+        { cert: certToPem(server.cert), key: keyToPem(server.key), ca: certToPem(ca.cert), requestCert: true },
         (req, res) => {
             const chunks: Buffer[] = [];
             req.on('data', (c: Buffer) => chunks.push(c));
@@ -83,14 +89,15 @@ test('a request round-trips to a TLS server that asks for a client certificate',
             });
         },
     );
-    await new Promise<void>((resolve) => srv.listen(0, '127.0.0.1', resolve));
+    await new Promise<void>((resolve) => srv.listen(0, 'localhost', resolve));
     try {
         const { port } = srv.address() as AddressInfo;
         const resp = await estRequest({
-            baseUrl: `https://127.0.0.1:${port}`,
+            baseUrl: `https://localhost:${port}`,
             op: 'simpleenroll',
             body: 'hello',
             clientCert: { cert: certToPem(client.cert), key: keyToPem(client.key) },
+            ca: certToPem(ca.cert),
         });
         expect(resp.status).toBe(200);
         expect(resp.headers['content-type']).toBe('text/plain');
@@ -113,10 +120,12 @@ test('a response cut off mid-body rejects', async () => {
         res.writeHead(200, { 'Content-Length': 100 });
         res.write('partial', () => req.socket.destroy());
     });
-    await new Promise<void>((resolve) => srv.listen(0, '127.0.0.1', resolve));
+    await new Promise<void>((resolve) => srv.listen(0, 'localhost', resolve));
     try {
         const { port } = srv.address() as AddressInfo;
-        await expect(estRequest({ baseUrl: `https://127.0.0.1:${port}`, op: 'cacerts' })).rejects.toThrow();
+        await expect(estRequest({ baseUrl: `https://localhost:${port}`, op: 'cacerts', ca: certToPem(ca.cert) })).rejects.toThrow(
+            /aborted|socket hang up|ECONNRESET|premature/i,
+        );
     } finally {
         srv.close();
     }

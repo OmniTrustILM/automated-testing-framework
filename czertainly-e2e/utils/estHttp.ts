@@ -7,10 +7,12 @@
  * client certificate, a malformed body, a query string — which Playwright's request context and
  * real EST clients do not allow.
  * HOW: `buildEstRequest` is pure and returns the `https.RequestOptions` and the body; `estRequest`
- * sends it. The edge presents a self-signed certificate, so verification is off and the SNI name
- * is the URL's host (none for an IP address). EST bodies are base64 text; `decodeBase64Body` turns them back into DER.
+ * sends it. The edge's certificate is verified against `EST_EDGE_CA_CERT` when it is set, else against the
+ * system trust store, and the SNI name is the URL's host (none for an IP address). EST bodies are base64 text;
+ * `decodeBase64Body` turns them back into DER.
  */
 
+import * as fs from 'fs';
 import * as https from 'https';
 import { isIP } from 'net';
 
@@ -27,12 +29,24 @@ export interface EstRequestOptions {
   headers?: Record<string, string>;
   /** PEM client certificate and key for mutual TLS. */
   clientCert?: { cert: string; key: string };
+  /** PEM CA the edge's certificate chains to; defaults to the file `EST_EDGE_CA_CERT` names. */
+  ca?: string;
 }
 
 export interface EstResponse {
   status: number;
   headers: Record<string, string>;
   body: Buffer;
+}
+
+let edgeCaFromEnv: string | undefined;
+
+/** The CA in the file `EST_EDGE_CA_CERT` names, read once; undefined when the variable is unset. */
+function edgeCa(): string | undefined {
+  const file = process.env.EST_EDGE_CA_CERT;
+  if (!file) return undefined;
+  edgeCaFromEnv ??= fs.readFileSync(file, 'utf8');
+  return edgeCaFromEnv;
 }
 
 /** `/.well-known/est/<op>` or `/.well-known/est/<label>/<op>`. */
@@ -61,8 +75,9 @@ export function buildEstRequest(opts: EstRequestOptions): { options: https.Reque
     headers,
     // SNI carries a name, never an address.
     servername: isIP(url.hostname) ? undefined : url.hostname,
-    rejectUnauthorized: false,
   };
+  const ca = opts.ca ?? edgeCa();
+  if (ca) options.ca = ca;
   if (opts.clientCert) {
     options.cert = opts.clientCert.cert;
     options.key = opts.clientCert.key;

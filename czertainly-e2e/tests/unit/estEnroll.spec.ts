@@ -43,7 +43,7 @@ test.beforeEach(() => clearCleanupFailures());
 test.afterEach(() => clearCleanupFailures());
 
 test('simpleEnroll posts the CSR as base64 PKCS#10 under the label', async () => {
-    const server = issueCert(ca, { subject: 'localhost' });
+    const server = issueCert(ca, { subject: 'localhost', sans: ['localhost'] });
     const csr = createCsr({ subject: 'device' });
     let seen = '';
     const srv = https.createServer({ cert: certToPem(server.cert), key: keyToPem(server.key) }, (req, res) => {
@@ -54,13 +54,14 @@ test('simpleEnroll posts the CSR as base64 PKCS#10 under the label', async () =>
             res.end();
         });
     });
-    await new Promise<void>((resolve) => srv.listen(0, '127.0.0.1', resolve));
+    await new Promise<void>((resolve) => srv.listen(0, 'localhost', resolve));
     try {
         const { port } = srv.address() as AddressInfo;
         const resp = await simpleEnroll({
-            baseUrl: `https://127.0.0.1:${port}`,
+            baseUrl: `https://localhost:${port}`,
             label: 'p1',
             csr,
+            ca: certToPem(ca.cert),
             basicAuth: { username: 'u', password: 'p' },
         });
         expect(resp.status).toBe(200);
@@ -136,17 +137,17 @@ test('cleanup deletes found certificates, skips gone ones and records failures',
 });
 
 test('sendCsr posts the CSR to the named operation', async () => {
-    const server = issueCert(ca, { subject: 'localhost' });
+    const server = issueCert(ca, { subject: 'localhost', sans: ['localhost'] });
     const csr = createCsr({ subject: 'device' });
     let seen = '';
     const srv = https.createServer({ cert: certToPem(server.cert), key: keyToPem(server.key) }, (req, res) => {
         seen = `${req.method} ${req.url} ${req.headers['content-type']}`;
         res.end();
     });
-    await new Promise<void>((resolve) => srv.listen(0, '127.0.0.1', resolve));
+    await new Promise<void>((resolve) => srv.listen(0, 'localhost', resolve));
     try {
         const { port } = srv.address() as AddressInfo;
-        await sendCsr('simplereenroll', { baseUrl: `https://127.0.0.1:${port}`, label: 'p1', csr });
+        await sendCsr('simplereenroll', { baseUrl: `https://localhost:${port}`, label: 'p1', csr, ca: certToPem(ca.cert) });
         expect(seen).toBe('POST /.well-known/est/p1/simplereenroll application/pkcs10');
     } finally {
         srv.close();
