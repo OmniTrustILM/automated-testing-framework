@@ -122,12 +122,12 @@ export async function uploadAsync(api: APIRequestContext, cleanup: Cleanup, cert
     return storing(cleanup, [cert.fingerprint], () => send(api, 'POST', '/api/v1/certificates/upload/async', uploadRequest(cert.pem)));
 }
 
-/** Imports the entries named by their references (certificate-only entries have no key destination). */
+/** Imports the entries by reference; a key-pair entry's reference names its key, so `stores` lists the certificates it brings in. */
 export async function importEntries(
     api: APIRequestContext, file: Buffer, entries: Array<{ entryReference: string; keyDestination?: Json }>,
-    opts: { cleanup?: Cleanup; extra?: Json } = {},
+    opts: { cleanup?: Cleanup; extra?: Json; stores?: string[] } = {},
 ): Promise<Answer> {
-    return storing(opts.cleanup, entries.map((e) => e.entryReference), () =>
+    return storing(opts.cleanup, [...entries.map((e) => e.entryReference), ...(opts.stores ?? [])], () =>
         send(api, 'POST', '/api/v1/certificates/import', { file: base64(file), entries, ...opts.extra }));
 }
 

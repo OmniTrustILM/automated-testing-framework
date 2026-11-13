@@ -300,7 +300,7 @@ test.describe('key import', () => {
         const second = pkcs12Chain(`${run}-s26-second.example.com`, intermediate, root, 'epic-pass');
         [first.identity, intermediate, root, second.identity].forEach((c) => cleanup.certificate(c.fingerprint));
 
-        const importAs = async (as: APIRequestContext, file: { bytes: Buffer }, keyName: string) => {
+        const importAs = async (as: APIRequestContext, file: { bytes: Buffer }, keyName: string, brings: Identity[]) => {
             const inspection = await send(as, 'POST', '/api/v1/inspections', {
                 file: Buffer.from(file.bytes).toString('base64'), passphrase: 'epic-pass', tokenProfileUuid,
             });
@@ -312,7 +312,8 @@ test.describe('key import', () => {
                 entryReference: e.entryReference,
                 keyDestination: { tokenProfileUuid, keyName, importAttributes: [keyAlias] },
             }));
-            const answer = await importEntries(as, file.bytes, toToken, { cleanup, extra: { passphrase: 'epic-pass' } });
+            const stores = brings.map((c) => c.fingerprint);
+            const answer = await importEntries(as, file.bytes, toToken, { cleanup, extra: { passphrase: 'epic-pass' }, stores });
             await registerImportedKeys(admin, cleanup, answer);
             expect(answer.status, answer.text).toBe(200);
             expect(importResults(answer).map((r) => r.imported), `every entry is imported: ${answer.text.slice(0, 1500)}`)
@@ -322,14 +323,14 @@ test.describe('key import', () => {
 
         // V then owns the intermediate, which the second import must keep
         const importer = nameOf('U');
-        await importAs(U, first, `${run}-s26-key-1`);
+        await importAs(U, first, `${run}-s26-key-1`, [first.identity, intermediate, root]);
         for (const c of [first.identity, intermediate, root]) {
             expect((await detail(admin, await waitForCertificate(admin, c.fingerprint))).owner, `the importer owns ${c.cn}`).toBe(importer);
         }
         const intermediateUuid = await waitForCertificate(admin, intermediate.fingerprint);
         await sendOk(admin, 'PATCH', `/api/v1/certificates/${intermediateUuid}`, { ownerUuid: await userUuid(admin, nameOf('V')) });
 
-        await importAs(U, second, `${run}-s26-key-2`);
+        await importAs(U, second, `${run}-s26-key-2`, [second.identity]);
         const secondUuid = await waitForCertificate(admin, second.identity.fingerprint);
         expect((await detail(admin, secondUuid)).owner, 'the importer owns the new end-entity certificate').toBe(importer);
         expect(
