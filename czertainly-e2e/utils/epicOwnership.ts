@@ -15,6 +15,8 @@ import { findCryptoConnector, tokenRequestAttributes, tokenAlias, activationCode
 import { PROFILE_USAGES } from './regression/platform/cryptoAlgorithmCases';
 import { fingerprintFilter, pollCertificateByFingerprint } from './regression/apiReads';
 import { pollUntil } from './regression/wait';
+import { csrFromKey, derToPem, newKeyPair } from './regression/pkiBuilders';
+import { deleteCertificate, waitForCertificateState } from './certificateUtils';
 
 const logger = new Logger('EpicOwnership');
 
@@ -172,7 +174,7 @@ export async function ownerChanges(api: APIRequestContext, uuid: string): Promis
 }
 
 /** Uploads as the account, registered for the cleanup, and returns the answer as it came. */
-export async function uploadRegistered(as: APIRequestContext, cleanup: Cleanup, cert: CertificateFile, customAttributes: unknown[] = []): Promise<Answer> {
+async function uploadRegistered(as: APIRequestContext, cleanup: Cleanup, cert: CertificateFile, customAttributes: unknown[] = []): Promise<Answer> {
     cleanup.certificate(cert.fingerprint);
     return storing(cleanup, [cert.fingerprint], () => upload(as, cert.pem, customAttributes));
 }
@@ -182,6 +184,35 @@ export async function uploadAndFind(as: APIRequestContext, admin: APIRequestCont
     const answer = await uploadRegistered(as, cleanup, cert, customAttributes);
     if (answer.status !== 200 && answer.status !== 201) throw new Error(`upload answered ${answer.status}: ${answer.text.slice(0, 500)}`);
     return waitForCertificate(admin, cert.fingerprint);
+}
+
+export interface RaProfileRef { authorityUuid: string; raProfileUuid: string }
+
+/** Issues a certificate for the subject through the RA profile as the account and waits until it is issued; the cleanup removes it. */
+export async function issueThroughRaProfile(as: APIRequestContext, admin: APIRequestContext, cleanup: Cleanup, ra: RaProfileRef, cn: string): Promise<string> {
+    const csr = csrFromKey(newKeyPair(), cn, { dns: [cn], ip: [] });
+    const answer = await send(as, 'POST', `/api/v2/operations/authorities/${ra.authorityUuid}/raProfiles/${ra.raProfileUuid}/certificates`, {
+        request: csr.derBase64, format: 'pkcs10', attributes: [], customAttributes: [],
+    });
+    if (answer.status !== 200) throw new Error(`issue answered ${answer.status}: ${answer.text.slice(0, 500)}`);
+    const uuid = (answer.json as Json)?.uuid;
+    if (!uuid) throw new Error(`issue answered without a certificate uuid: ${answer.text.slice(0, 500)}`);
+    cleanup.add('issued certificate', cn, () => removeFromInventory(admin, uuid));
+    await waitForCertificateState(admin, uuid, 'issued', 120_000);
+    return uuid;
+}
+
+/** Deletes the certificate and its key from the inventory; its authority still knows it. Nothing to do when it is gone. */
+export async function removeFromInventory(admin: APIRequestContext, uuid: string): Promise<void> {
+    const keyUuid = await getCertificateKeyUuid(admin, uuid);
+    await deleteCertificate(admin, uuid);
+    if (keyUuid) await sendOk(admin, 'DELETE', '/api/v1/keys', [keyUuid]);
+}
+
+/** The certificate as an upload sends it, read from the inventory. */
+export async function certificateFile(admin: APIRequestContext, uuid: string): Promise<CertificateFile> {
+    const stored = await detail(admin, uuid);
+    return { pem: derToPem(Buffer.from(String(stored.certificateContent), 'base64')), fingerprint: String(stored.fingerprint) };
 }
 
 /** How long the cleanup waits for a certificate that an accepted request stores, as `waitForCertificate` does. */
@@ -442,10 +473,11 @@ export async function createOwnerNotificationProfile(admin: APIRequestContext, c
     return uuid;
 }
 
-/** The internal notifications of the signed-in account that mention the text (the certificate's subject or UUID). */
-export async function notificationsMentioning(api: APIRequestContext, text: string): Promise<Json[]> {
-    const answer = await sendOk(api, 'GET', '/api/v1/notifications');
-    return (((answer.json as Json).items ?? []) as Json[]).filter((n) => JSON.stringify(n).includes(text));
+/** The signed-in account's "has been uploaded" internal notifications for the subject (newest first). */
+export async function uploadNotifications(api: APIRequestContext, cn: string): Promise<Json[]> {
+    const answer = await sendOk(api, 'GET', '/api/v1/notifications?itemsPerPage=100&pageNumber=1');
+    return (((answer.json as Json).items ?? []) as Json[])
+        .filter((n) => String(n.message).includes(`CN=${cn}`) && String(n.message).includes('has been uploaded'));
 }
 
 /** A token on the software cryptography provider with an enabled token profile, the key destination of a PKCS#12 import. */

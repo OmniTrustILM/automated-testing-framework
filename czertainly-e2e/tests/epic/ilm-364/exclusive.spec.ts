@@ -7,8 +7,7 @@ import { test, expect, request as playwrightRequest, APIRequestContext, Browser,
 import { loadEnv, TestEnv } from '../../../utils/env';
 import { uniqueName } from '../../../utils/names';
 import { certificate, certificatesInOnePem, Identity, pkcs12Chain } from '../../../utils/regression/inventory/importFixtures';
-import { csrFromKey, newKeyMaterial, newKeyPair } from '../../../utils/regression/pkiBuilders';
-import { waitForCertificateState } from '../../../utils/certificateUtils';
+import { newKeyMaterial } from '../../../utils/regression/pkiBuilders';
 import { SCP_ATTR } from '../../../utils/regression/platform/cryptoAlgorithmCases';
 import { tokenAlias } from '../../../utils/regression/platform/tokens';
 import { readSmokeState } from '../../../utils/smokeState';
@@ -18,9 +17,9 @@ import { CertificatePage } from '../../../pages/CertificatePage';
 import { CertificateListPage } from '../../../pages/CertificateListPage';
 import { PlatformSettingsPage } from '../../../pages/PlatformSettingsPage';
 import {
-    Account, Answer, Cleanup, Json, accountCredentials, envFor, adminApi, apiAs, attributeValue, commonNameIs, createCustomAttribute, createGroup, createTeamUser,
-    createOwnerNotificationProfile, createSoftwareTokenProfile, createUploadTrigger, customValue, notificationsMentioning, detail, findByFingerprint, importEntries, importResults, inventoryRow, ownerChanges, waitUntil,
-    readAutomaticOwnership, registerImportedKeys, restoreValidation, send, sendOk, setAutomaticOwnership, setOwner, subjectOf, upload, uploadAndFind, uploadAsync, uploadRegistered, userUuid, validationFields, waitForCertificate,
+    Account, Answer, Cleanup, Json, RaProfileRef, accountCredentials, certificateFile, envFor, adminApi, apiAs, attributeValue, commonNameIs, createCustomAttribute, createGroup, createTeamUser,
+    createOwnerNotificationProfile, createSoftwareTokenProfile, createUploadTrigger, customValue, uploadNotifications, detail, findByFingerprint, importEntries, importResults, inventoryRow, issueThroughRaProfile, ownerChanges, waitUntil,
+    readAutomaticOwnership, registerImportedKeys, removeFromInventory, restoreValidation, send, sendOk, setAutomaticOwnership, setOwner, subjectOf, upload, uploadAndFind, uploadAsync, userUuid, validationFields, waitForCertificate,
 } from '../../../utils/epicOwnership';
 
 const TAGS = ['@epic-364', '@exclusive'];
@@ -45,6 +44,13 @@ let cleanup = new Cleanup();
 
 /** A new self-signed certificate with a subject unique to this run and scenario; every certificate shares one key pair (faster to make). */
 const newCertificate = (scenario: string): Identity => certificate(subjectOf(run, scenario), { keys });
+
+/** The RA profile and authority of the global setup. */
+function setupRaProfile(): RaProfileRef {
+    const state = readSmokeState();
+    if (!state) throw new Error('The RA profile of the global setup is missing (.smoke-state.json)');
+    return { authorityUuid: state.authorityUuid, raProfileUuid: state.raProfileUuid };
+}
 
 /** A browser signed in as the account (the login form, as the smoke user does); the suite's trace setting records a failed test. */
 async function signedIn(browser: Browser, account: Account | 'admin'): Promise<{ page: Page; close: () => Promise<void> }> {
@@ -104,24 +110,16 @@ test.afterAll(async () => {
 test.describe('ownership by upload and import', () => {
     test('S1: upload through the API makes the uploader the owner', { tag: REGRESSION }, async () => {
         await setAutomaticOwnership(admin, true);
+        const attribute = await createCustomAttribute(admin, cleanup, `${run}-s1-attr`);
         const cert = newCertificate('s1');
 
-        const uuid = await uploadAndFind(U, admin, cleanup, cert);
+        const uuid = await uploadAndFind(U, admin, cleanup, cert, [attributeValue(attribute, 'uploaded-value')]);
 
-        expect((await detail(admin, uuid)).owner, 'the owner in the detail').toBe(nameOf('U'));
+        const uploaded = await detail(admin, uuid);
+        expect(uploaded.owner, 'the owner in the detail').toBe(nameOf('U'));
         expect((await inventoryRow(admin, cert.fingerprint))?.owner, 'the owner in the inventory').toBe(nameOf('U'));
         expect(await ownerChanges(admin, uuid), 'exactly one owner change in the history').toEqual([`undefined -> ${nameOf('U')}`]);
-    });
-
-    // uploaded by the administrator: U's role may not set custom attributes
-    test('S1: the custom attribute value of an upload is kept with the setting on', { tag: REGRESSION }, async () => {
-        await setAutomaticOwnership(admin, true);
-        const attribute = await createCustomAttribute(admin, cleanup, `${run}-s1-attr`);
-        const cert = newCertificate('s1-attr');
-
-        const uuid = await uploadAndFind(admin, admin, cleanup, cert, [attributeValue(attribute, 'uploaded-value')]);
-
-        expect(customValue(await detail(admin, uuid), attribute.name), 'the custom attribute value').toBe('uploaded-value');
+        expect(customValue(uploaded, attribute.name), 'the custom attribute value').toBe('uploaded-value');
     });
 
     test('S2: asynchronous upload through the API makes the uploader the owner', { tag: TAGS }, async () => {
@@ -216,53 +214,30 @@ test.describe('ownership by upload and import', () => {
     });
 
     test('S8: a trigger that sets other fields but not the owner does not stop automatic ownership', { tag: TAGS }, async () => {
-        await setAutomaticOwnership(admin, true);
-        const state = readSmokeState();
-        if (!state) throw new Error('The RA profile of the global setup is missing (.smoke-state.json)');
+        const ra = setupRaProfile();
+        const cn = subjectOf(run, 's8');
+        // issued by the trigger's authority, then deleted: the RA profile switch has the authority identify the upload, which a self-signed one never passes
+        const issued = await issueThroughRaProfile(admin, admin, cleanup, ra, cn);
+        const cert = await certificateFile(admin, issued);
+        await removeFromInventory(admin, issued);
         const group = await createGroup(admin, cleanup, `${run}-s8-group`);
         const attribute = await createCustomAttribute(admin, cleanup, `${run}-s8-attr`);
-        const cert = newCertificate('s8');
         await createUploadTrigger(admin, cleanup, {
             name: `${run}-s8-trigger`,
-            conditions: [commonNameIs(cert.cn)],
+            conditions: [commonNameIs(cn)],
             setFields: [
                 { fieldSource: 'property', fieldIdentifier: 'GROUP_NAME', data: [group.uuid] },
-                { fieldSource: 'property', fieldIdentifier: 'RA_PROFILE_NAME', data: state.raProfileUuid },
+                { fieldSource: 'property', fieldIdentifier: 'RA_PROFILE_NAME', data: ra.raProfileUuid },
                 { fieldSource: 'custom', fieldIdentifier: `${attribute.name}|STRING`, data: 'set-by-trigger' },
             ],
         });
-
-        const answer = await uploadRegistered(U, cleanup, cert);
-        // possibly the test, not the product: the RA profile switch asks the authority to identify a self-signed upload it never issued
-        test.fail(answer.status === 500, 'an upload fails with 500 when a platform upload trigger sets an RA profile');
-        expect([200, 201], `the upload is accepted: ${answer.text}`).toContain(answer.status);
-        const uuid = await waitForCertificate(admin, cert.fingerprint);
-
-        const certificateDetail = await detail(admin, uuid);
-        expect((certificateDetail.groups as Json[]).map((g) => g.uuid), 'the group set by the trigger').toEqual([group.uuid]);
-        expect(certificateDetail.raProfile?.uuid, 'the RA profile set by the trigger').toBe(state.raProfileUuid);
-        expect(customValue(certificateDetail, attribute.name), 'the custom attribute set by the trigger').toBe('set-by-trigger');
-        expect(certificateDetail.owner, 'the uploader is the owner').toBe(nameOf('U'));
-    });
-
-    test('S8: a trigger that sets a group and a custom attribute but not the owner does not stop automatic ownership', { tag: TAGS }, async () => {
         await setAutomaticOwnership(admin, true);
-        const group = await createGroup(admin, cleanup, `${run}-s8b-group`);
-        const attribute = await createCustomAttribute(admin, cleanup, `${run}-s8b-attr`);
-        const cert = newCertificate('s8b');
-        await createUploadTrigger(admin, cleanup, {
-            name: `${run}-s8b-trigger`,
-            conditions: [commonNameIs(cert.cn)],
-            setFields: [
-                { fieldSource: 'property', fieldIdentifier: 'GROUP_NAME', data: [group.uuid] },
-                { fieldSource: 'custom', fieldIdentifier: `${attribute.name}|STRING`, data: 'set-by-trigger' },
-            ],
-        });
 
         const uuid = await uploadAndFind(U, admin, cleanup, cert);
 
         const certificateDetail = await detail(admin, uuid);
         expect((certificateDetail.groups as Json[]).map((g) => g.uuid), 'the group set by the trigger').toEqual([group.uuid]);
+        expect(certificateDetail.raProfile?.uuid, 'the RA profile set by the trigger').toBe(ra.raProfileUuid);
         expect(customValue(certificateDetail, attribute.name), 'the custom attribute set by the trigger').toBe('set-by-trigger');
         expect(certificateDetail.owner, 'the uploader is the owner').toBe(nameOf('U'));
     });
@@ -332,16 +307,16 @@ test.describe('key import', () => {
             return answer;
         };
 
-        // imported by the administrator (U's role cannot use token profiles); V then owns the intermediate, which the second import must keep
-        const importer = env.username;
-        await importAs(admin, first, `${run}-s26-key-1`);
+        // V then owns the intermediate, which the second import must keep
+        const importer = nameOf('U');
+        await importAs(U, first, `${run}-s26-key-1`);
         for (const c of [first.identity, intermediate, root]) {
             expect((await detail(admin, await waitForCertificate(admin, c.fingerprint))).owner, `the importer owns ${c.cn}`).toBe(importer);
         }
         const intermediateUuid = await waitForCertificate(admin, intermediate.fingerprint);
         await sendOk(admin, 'PATCH', `/api/v1/certificates/${intermediateUuid}`, { ownerUuid: await userUuid(admin, nameOf('V')) });
 
-        await importAs(admin, second, `${run}-s26-key-2`);
+        await importAs(U, second, `${run}-s26-key-2`);
         const secondUuid = await waitForCertificate(admin, second.identity.fingerprint);
         expect((await detail(admin, secondUuid)).owner, 'the importer owns the new end-entity certificate').toBe(importer);
         expect((await inventoryRow(admin, intermediate.fingerprint))?.owner, 'the intermediate certificate, already in the inventory, keeps its owner').toBe(nameOf('V'));
@@ -363,7 +338,7 @@ test.describe('notification to the owner', () => {
         await setAutomaticOwnership(admin, true);
         const started = Date.now();
         await uploadAndFind(U, admin, cleanup, withSetting);
-        await waitUntil(async () => (await notificationsMentioning(U, withSetting.cn)).length > 0, `U has a notification for ${withSetting.cn}`, 90_000);
+        await waitUntil(async () => (await uploadNotifications(U, withSetting.cn)).length > 0, `U has a notification for ${withSetting.cn}`, 90_000);
         const deliveryMs = Date.now() - started;
 
         await setAutomaticOwnership(admin, false);
@@ -371,9 +346,22 @@ test.describe('notification to the owner', () => {
         // An absence can only be shown over a window: three times what the delivery took above, at least ten seconds, on top of the budget.
         const windowMs = Math.max(10_000, 3 * deliveryMs);
         test.setTimeout(test.info().timeout + windowMs);
-        const seen = await pollUntil(() => notificationsMentioning(U, withoutSetting.cn), (found) => found.length > 0,
+        const seen = await pollUntil(() => uploadNotifications(U, withoutSetting.cn), (found) => found.length > 0,
             { timeoutMs: windowMs, intervalMs: 2_000, tolerateErrors: 0, onTimeout: 'return' });
         expect(seen, `U has no notification for ${withoutSetting.cn} within ${Math.round(windowMs / 1000)} s`).toHaveLength(0);
+    });
+
+    test('S28: the built-in upload notification reaches the owner', { tag: TAGS }, async () => {
+        await setAutomaticOwnership(admin, true);
+        const cert = newCertificate('s28');
+
+        await uploadAndFind(U, admin, cleanup, cert);
+
+        // no upload trigger here: a notification about this certificate can only be the built-in one
+        const seen = await pollUntil(() => uploadNotifications(U, cert.cn), (found) => found.length > 0,
+            { timeoutMs: 90_000, intervalMs: 2_000, tolerateErrors: 0, onTimeout: 'return' });
+        test.fail(seen.length === 0, 'core#2814: the built-in upload notification goes to the certificate\'s authentication user, not to its owner');
+        expect(seen, `U, the owner, has the built-in notification for ${cert.cn}`).not.toHaveLength(0);
     });
 });
 
@@ -467,33 +455,17 @@ test.describe('access and security', () => {
 });
 
 test.describe('unchanged behaviour', () => {
-    // issued by the administrator: U's role cannot use authorities; the owner rule is compared with the setting off and on
     test('S20: issued certificates keep their ownership with the setting on', { tag: REGRESSION }, async () => {
-        const state = readSmokeState();
-        if (!state) throw new Error('The RA profile of the global setup is missing (.smoke-state.json)');
-        const issue = async (name: string): Promise<{ uuid: string; owner: unknown }> => {
-            const cn = subjectOf(run, name);
-            const csr = csrFromKey(newKeyPair(), cn, { dns: [cn], ip: [] });
-            const answer = await send(admin, 'POST', `/api/v2/operations/authorities/${state.authorityUuid}/raProfiles/${state.raProfileUuid}/certificates`, {
-                request: csr.derBase64, format: 'pkcs10', attributes: [], customAttributes: [],
-            });
-            expect(answer.status, `issue: ${answer.text}`).toBe(200);
-            const uuid = (answer.json as Json).uuid as string;
-            cleanup.add('issued certificate', cn, async () => {
-                const keyUuid = (await detail(admin, uuid)).key?.uuid;
-                await sendOk(admin, 'DELETE', `/api/v1/certificates/${uuid}`);
-                if (keyUuid) await sendOk(admin, 'DELETE', '/api/v1/keys', [keyUuid]);
-            });
-            await waitForCertificateState(admin, uuid, 'issued', 120_000);
-            return { uuid, owner: (await detail(admin, uuid)).owner ?? null };
-        };
+        const ra = setupRaProfile();
+        const ownerOfIssued = async (scenario: string): Promise<unknown> =>
+            (await detail(admin, await issueThroughRaProfile(U, admin, cleanup, ra, subjectOf(run, scenario)))).owner ?? null;
 
         await setAutomaticOwnership(admin, false);
-        const before = await issue('s20-off');
+        const before = await ownerOfIssued('s20-off');
         await setAutomaticOwnership(admin, true);
-        const after = await issue('s20-on');
+        const after = await ownerOfIssued('s20-on');
 
-        expect(after.owner, 'the same owner rule with the setting on as with it off').toBe(before.owner);
+        expect(after, 'the same owner rule with the setting on as with it off').toBe(before);
     });
 });
 
