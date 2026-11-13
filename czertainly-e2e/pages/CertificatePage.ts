@@ -20,8 +20,6 @@ const logger = new Logger('CertificatePage');
 export class CertificatePage {
     readonly page: Page;
     private readonly navigation: Navigation;
-    /** The answer of the import wizard's certificate custom-attribute listing, watched from before the dialog opens. */
-    private certificateAttributesListing?: Promise<Response>;
 
     // Page header (fe-administrator#2426): Create, and Import / Delete in its menu; the widget buttons on older builds
     readonly header: PageHeader;
@@ -131,13 +129,14 @@ export class CertificatePage {
         await expect(this.importModal).toBeVisible();
     }
 
-    /** Opens the list by its route, then the import dialog, watching the certificate custom-attribute listing it loads. */
-    async openImportFromList(): Promise<void> {
+    /** Opens the list by its route, then the import dialog; returns the watch on the certificate custom-attribute listing it loads. */
+    async openImportFromList(): Promise<{ attributeListing: Promise<Response> }> {
         // Watched before the list loads: the list page may make the request first, and the dialog may reuse its answer.
-        this.certificateAttributesListing = watchApiCall(this.page, { method: 'GET', path: '/api/v1/attributes/custom/resources/certificates' });
+        const attributeListing = watchApiCall(this.page, { method: 'GET', path: '/api/v1/attributes/custom/resources/certificates' });
         await openHashRoute(this.page, 'certificates');
         await expect(this.main).toBeVisible();
         await this.openImportModal();
+        return { attributeListing };
     }
 
     /** Waits until the pasted certificates are detected: one checked entry, or Import naming `entries` entries. */
@@ -150,16 +149,10 @@ export class CertificatePage {
         await this.importFileContent.blur();
     }
 
-    /**
-     * The known blocker: Import stays disabled and the wizard's certificate custom-attribute listing answered 403.
-     * False when Import becomes enabled; Import disabled for any other reason throws, so the test fails as usual.
-     */
-    async importBlockedByAttributeAccess(): Promise<boolean> {
+    /** True when Import stays disabled after the custom-attribute listing answered 403; disabled for any other reason throws. */
+    async importBlockedByAttributeAccess(attributeListing: Promise<Response>): Promise<boolean> {
+        const status = await attributeListing.then((r) => r.status(), () => undefined);
         if (await this.importEnabled()) return false;
-        if (!this.certificateAttributesListing) {
-            throw new Error('Import stays disabled; the custom-attribute listing was not watched (use openImportFromList)');
-        }
-        const status = await this.certificateAttributesListing.then((r) => r.status(), () => undefined);
         if (status === 403) return true;
         throw new Error(`Import stays disabled, but the custom-attribute listing answered ${status ?? 'nothing'}: not the known blocker`);
     }
@@ -170,7 +163,6 @@ export class CertificatePage {
             await expect(this.importSubmitButton).toBeEnabled();
             return true;
         } catch (error) {
-            // Only a button that is there and disabled is the known state; anything else stays a failure.
             if (await this.importSubmitButton.isDisabled().catch(() => false)) return false;
             throw error;
         }

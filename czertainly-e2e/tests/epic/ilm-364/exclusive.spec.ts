@@ -52,11 +52,10 @@ function setupRaProfile(): RaProfileRef {
     return { authorityUuid: state.authorityUuid, raProfileUuid: state.raProfileUuid };
 }
 
-/** Marks the known wizard failure when Import stays disabled; otherwise the cleanup waits for the certificates the import stores. */
-async function importEnabledOrKnownBlock(certificates: CertificatePage, stored: string[]): Promise<void> {
-    const blocked = await certificates.importBlockedByAttributeAccess();
-    test.fail(blocked, 'the import wizard keeps Import disabled when its custom attribute listing answers 403 to a user without attribute access');
-    if (!blocked) stored.forEach((fingerprint) => cleanup.expectStored(fingerprint, true));
+/** Red once the bug's symptom is gone (drop the call then); while it is seen, the rest of the test is an expected failure. */
+function knownBug(symptomSeen: boolean, bug: string): void {
+    expect(symptomSeen, `the symptom is gone, remove this knownBug call: ${bug}`).toBe(true);
+    test.fail(true, bug);
 }
 
 /** A browser signed in as the account (the login form, as the smoke user does); the suite's trace setting records a failed test. */
@@ -249,25 +248,6 @@ test.describe('ownership by upload and import', () => {
         expect(certificateDetail.owner, 'the uploader is the owner').toBe(nameOf('U'));
     });
 
-    test('S9: a discarded upload is refused with a pointer to the event history', { tag: REGRESSION }, async () => {
-        await setAutomaticOwnership(admin, true);
-        const cert = newCertificate('s9');
-        cleanup.certificate(cert.fingerprint);
-        await createUploadTrigger(admin, cleanup, { name: `${run}-s9-trigger`, conditions: [commonNameIs(cert.cn)], ignore: true });
-
-        const answer = await upload(U, cert.pem);
-
-        // never masked by the known bug: the upload is refused and nothing is stored (watched for a few seconds)
-        expect(answer.status, `the discarded upload is refused: ${answer.text}`).toBeGreaterThanOrEqual(400);
-        const stored = await pollUntil(() => inventoryRow(admin, cert.fingerprint, { includeArchived: true }), (row) => row !== undefined,
-            { timeoutMs: 5_000, intervalMs: 1_000, onTimeout: 'return' });
-        expect(stored, 'no certificate with that fingerprint exists').toBeUndefined();
-
-        test.fail(answer.status >= 500, 'an upload discarded by an ignore trigger answers 500 instead of a client error');
-        expect(answer.status, `a client error, not a server error: ${answer.text}`).toBeLessThan(500);
-        expect(answer.text, 'the message points to the event history').toContain(DISCARDED);
-    });
-
     test('S24: a trigger that clears the owner keeps the certificate without an owner', { tag: TAGS }, async () => {
         await setAutomaticOwnership(admin, true);
         const cert = newCertificate('s24');
@@ -307,7 +287,12 @@ test.describe('key import', () => {
             expect(inspection.status, inspection.text).toBe(200);
             const entries = ((inspection.json as Json).entries as Json[]).filter((e) => e.importable !== false);
             expect(entries.length, 'the file has an entry to import').toBeGreaterThan(0);
-            const answer = await importEntries(as, file.bytes, entries.map((e) => ({ entryReference: e.entryReference, keyDestination: { tokenProfileUuid, keyName, importAttributes: [{ name: SCP_ATTR.keyAlias.name, uuid: SCP_ATTR.keyAlias.uuid, version: 'v2', contentType: 'string', content: [{ data: tokenAlias(keyName) }] }] } })), { cleanup, extra: { passphrase: 'epic-pass' } });
+            const keyAlias = { ...SCP_ATTR.keyAlias, version: 'v2', contentType: 'string', content: [{ data: tokenAlias(keyName) }] };
+            const toToken = entries.map((e) => ({
+                entryReference: e.entryReference,
+                keyDestination: { tokenProfileUuid, keyName, importAttributes: [keyAlias] },
+            }));
+            const answer = await importEntries(as, file.bytes, toToken, { cleanup, extra: { passphrase: 'epic-pass' } });
             await registerImportedKeys(admin, cleanup, answer);
             expect(answer.status, answer.text).toBe(200);
             expect(importResults(answer).map((r) => r.imported), `every entry is imported: ${answer.text.slice(0, 1500)}`).not.toContain(false);
@@ -358,19 +343,6 @@ test.describe('notification to the owner', () => {
         const seen = await pollUntil(() => uploadNotifications(U, withoutSetting.cn), (found) => found.length > 0,
             { timeoutMs: windowMs, intervalMs: 2_000, tolerateErrors: 0, onTimeout: 'return' });
         expect(seen, `U has no notification for ${withoutSetting.cn} within ${Math.round(windowMs / 1000)} s`).toHaveLength(0);
-    });
-
-    test('S28: the built-in upload notification reaches the owner', { tag: TAGS }, async () => {
-        expect(await platformTriggers(admin), 'no platform trigger on the upload event, so a notification can only be the built-in one').toEqual([]);
-        await setAutomaticOwnership(admin, true);
-        const cert = newCertificate('s28');
-
-        await uploadAndFind(U, admin, cleanup, cert);
-
-        const seen = await pollUntil(() => uploadNotifications(U, cert.cn), (found) => found.length > 0,
-            { timeoutMs: 90_000, intervalMs: 2_000, tolerateErrors: 0, onTimeout: 'return' });
-        test.fail(seen.length === 0, 'core#2814: the built-in upload notification goes to the certificate\'s authentication user, not to its owner');
-        expect(seen, `U, the owner, has the built-in notification for ${cert.cn}`).not.toHaveLength(0);
     });
 });
 
@@ -520,9 +492,10 @@ test.describe('import wizard (UI)', () => {
         const { page, close } = await signedIn(browser, 'U');
         try {
             const certificates = new CertificatePage(page);
-            await certificates.openImportFromList();
+            const { attributeListing } = await certificates.openImportFromList();
             await certificates.pasteCertificatePem(cert.pem);
-            await importEnabledOrKnownBlock(certificates, [cert.fingerprint]);
+            expect(await certificates.importBlockedByAttributeAccess(attributeListing), 'U may list custom attributes: Import is enabled').toBe(false);
+            cleanup.expectStored(cert.fingerprint, true);
             await certificates.importPastedCertificate();
 
             await certificates.importOpenCertificateLinks.click();
@@ -547,9 +520,9 @@ test.describe('import wizard (UI)', () => {
         const { page, close } = await signedIn(browser, 'U');
         try {
             const certificates = new CertificatePage(page);
-            await certificates.openImportFromList();
+            const { attributeListing } = await certificates.openImportFromList();
             await certificates.pasteCertificatePem(cert.pem);
-            await importEnabledOrKnownBlock(certificates, []);
+            expect(await certificates.importBlockedByAttributeAccess(attributeListing), 'U may list custom attributes: Import is enabled').toBe(false);
             await certificates.submitImport();
 
             await certificates.assertImportResult('Not imported');
@@ -568,9 +541,10 @@ test.describe('import wizard (UI)', () => {
         const { page, close } = await signedIn(browser, 'U');
         try {
             const certificates = new CertificatePage(page);
-            await certificates.openImportFromList();
+            const { attributeListing } = await certificates.openImportFromList();
             await certificates.pasteCertificatePem(pem, 3);
-            await importEnabledOrKnownBlock(certificates, certs.map((c) => c.fingerprint));
+            expect(await certificates.importBlockedByAttributeAccess(attributeListing), 'U may list custom attributes: Import is enabled').toBe(false);
+            certs.forEach((c) => cleanup.expectStored(c.fingerprint, true));
             await certificates.submitImport();
 
             const links = certificates.importOpenCertificateLinks;
@@ -590,35 +564,6 @@ test.describe('import wizard (UI)', () => {
         }
     });
 
-    test('S13: a user who may only upload opens the certificate they imported; others stay hidden', { tag: REGRESSION }, async ({ browser }) => {
-        await setAutomaticOwnership(admin, true);
-        const ofU = newCertificate('s13-u');
-        const ofV = newCertificate('s13-v');
-        const ofR = newCertificate('s13-r');
-        cleanup.certificate(ofR.fingerprint);
-        await uploadAndFind(U, admin, cleanup, ofU);
-        await uploadAndFind(V, admin, cleanup, ofV);
-        const { page, close } = await signedIn(browser, 'R');
-        try {
-            const certificates = new CertificatePage(page);
-            await certificates.openImportFromList();
-            await certificates.pasteCertificatePem(ofR.pem);
-            await importEnabledOrKnownBlock(certificates, [ofR.fingerprint]);
-            await certificates.importPastedCertificate();
-            await certificates.importOpenCertificateLinks.click();
-
-            await expect(page).toHaveURL(/\/certificates\/detail\//);
-            await expect(certificates.commonNameRow, 'the detail opens without an access error').toContainText(ofR.cn);
-
-            const list = new CertificateListPage(page);
-            await list.openFresh();
-            await expect(await list.rowByCommonName(ofR.cn), 'R\'s certificate is in the inventory').toHaveCount(1);
-            await expect(await list.rowByCommonName(ofU.cn), 'U\'s certificate is not shown').toHaveCount(0);
-            await expect(await list.rowByCommonName(ofV.cn), 'V\'s certificate is not shown').toHaveCount(0);
-        } finally {
-            await close();
-        }
-    });
 });
 
 test.describe('platform setting (UI)', () => {
@@ -650,5 +595,73 @@ test.describe('platform setting (UI)', () => {
         } finally {
             await close();
         }
+    });
+});
+
+// Last in the serial file: a red here (a bug fixed, or S28's precondition) skips every test after it.
+test.describe('known bugs', () => {
+    test('S9: a discarded upload is refused with a pointer to the event history', { tag: REGRESSION }, async () => {
+        await setAutomaticOwnership(admin, true);
+        const cert = newCertificate('s9');
+        cleanup.certificate(cert.fingerprint);
+        await createUploadTrigger(admin, cleanup, { name: `${run}-s9-trigger`, conditions: [commonNameIs(cert.cn)], ignore: true });
+
+        const answer = await upload(U, cert.pem);
+
+        // never masked by the known bug: the upload is refused and nothing is stored (watched for a few seconds)
+        expect(answer.status, `the discarded upload is refused: ${answer.text}`).toBeGreaterThanOrEqual(400);
+        const stored = await pollUntil(() => inventoryRow(admin, cert.fingerprint, { includeArchived: true }), (row) => row !== undefined,
+            { timeoutMs: 5_000, intervalMs: 1_000, onTimeout: 'return' });
+        expect(stored, 'no certificate with that fingerprint exists').toBeUndefined();
+
+        knownBug(answer.status >= 500, 'an upload discarded by an ignore trigger answers 500 instead of a client error');
+        expect(answer.status, `a client error, not a server error: ${answer.text}`).toBeLessThan(500);
+        expect(answer.text, 'the message points to the event history').toContain(DISCARDED);
+    });
+
+    test('S13: a user who may only upload opens the certificate they imported; others stay hidden', { tag: REGRESSION }, async ({ browser }) => {
+        await setAutomaticOwnership(admin, true);
+        const ofU = newCertificate('s13-u');
+        const ofV = newCertificate('s13-v');
+        const ofR = newCertificate('s13-r');
+        cleanup.certificate(ofR.fingerprint);
+        await uploadAndFind(U, admin, cleanup, ofU);
+        await uploadAndFind(V, admin, cleanup, ofV);
+        const { page, close } = await signedIn(browser, 'R');
+        try {
+            const certificates = new CertificatePage(page);
+            const { attributeListing } = await certificates.openImportFromList();
+            await certificates.pasteCertificatePem(ofR.pem);
+            const blocked = await certificates.importBlockedByAttributeAccess(attributeListing);
+            knownBug(blocked, 'Import stays disabled when the custom-attribute listing answers 403 to a user without attribute access');
+            expect(blocked, 'Import is enabled for a user without attribute access').toBe(false);
+            cleanup.expectStored(ofR.fingerprint, true);
+            await certificates.importPastedCertificate();
+            await certificates.importOpenCertificateLinks.click();
+
+            await expect(page).toHaveURL(/\/certificates\/detail\//);
+            await expect(certificates.commonNameRow, 'the detail opens without an access error').toContainText(ofR.cn);
+
+            const list = new CertificateListPage(page);
+            await list.openFresh();
+            await expect(await list.rowByCommonName(ofR.cn), 'R\'s certificate is in the inventory').toHaveCount(1);
+            await expect(await list.rowByCommonName(ofU.cn), 'U\'s certificate is not shown').toHaveCount(0);
+            await expect(await list.rowByCommonName(ofV.cn), 'V\'s certificate is not shown').toHaveCount(0);
+        } finally {
+            await close();
+        }
+    });
+
+    test('S28: the built-in upload notification reaches the owner', { tag: TAGS }, async () => {
+        expect(await platformTriggers(admin), 'no platform trigger on the upload event, so a notification can only be the built-in one').toEqual([]);
+        await setAutomaticOwnership(admin, true);
+        const cert = newCertificate('s28');
+
+        await uploadAndFind(U, admin, cleanup, cert);
+
+        const seen = await pollUntil(() => uploadNotifications(U, cert.cn), (found) => found.length > 0,
+            { timeoutMs: 90_000, intervalMs: 2_000, tolerateErrors: 0, onTimeout: 'return' });
+        knownBug(seen.length === 0, 'core#2814: the built-in upload notification goes to the certificate\'s authentication user, not to its owner');
+        expect(seen, `U, the owner, has the built-in notification for ${cert.cn}`).not.toHaveLength(0);
     });
 });

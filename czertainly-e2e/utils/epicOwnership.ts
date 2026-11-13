@@ -428,7 +428,7 @@ export async function createUploadTrigger(admin: APIRequestContext, cleanup: Cle
     return trigger.uuid;
 }
 
-/** The platform-level triggers on the upload event (they act on every uploaded certificate). */
+/** The platform-level triggers on the upload event (getPlatformTriggerGate reads the same, but needs a regression-guarded context). */
 export async function platformTriggers(admin: APIRequestContext): Promise<string[]> {
     const answer = await sendOk(admin, 'GET', '/api/v1/settings/events');
     return (((answer.json as Json).eventsMapping ?? {})[UPLOAD_EVENT] ?? []) as string[];
@@ -474,7 +474,7 @@ export async function createOwnerNotificationProfile(admin: APIRequestContext, c
     return uuid;
 }
 
-/** The certificate's event-history rows of the trigger: whether its conditions matched and its actions ran. */
+/** The certificate's event-history rows of the trigger (getObjectHistory reads the same, but needs a regression-guarded context). */
 export async function triggerRows(admin: APIRequestContext, certificateUuid: string, triggerUuid: string): Promise<Json[]> {
     const answer = await sendOk(admin, 'GET', `/api/v1/workflows/events/certificates/${certificateUuid}/history?itemsPerPage=100&pageNumber=1`);
     return (((answer.json as Json).items ?? []) as Json[]).filter((row) => row.trigger?.uuid === triggerUuid);
