@@ -20,7 +20,7 @@ import { PlatformSettingsPage } from '../../../pages/PlatformSettingsPage';
 import {
     Account, Answer, Cleanup, Json, accountCredentials, envFor, adminApi, apiAs, attributeValue, commonNameIs, createCustomAttribute, createGroup, createTeamUser,
     createOwnerNotificationProfile, createSoftwareTokenProfile, createUploadTrigger, customValue, notificationsMentioning, detail, findByFingerprint, importEntries, importResults, inventoryRow, ownerChanges, waitUntil,
-    readAutomaticOwnership, registerImportedKeys, restoreValidation, send, sendOk, setAutomaticOwnership, setOwner, subjectOf, upload, uploadAndFind, uploadAsync, userUuid, validationFields, waitForCertificate,
+    readAutomaticOwnership, registerImportedKeys, restoreValidation, send, sendOk, setAutomaticOwnership, setOwner, subjectOf, upload, uploadAndFind, uploadAsync, uploadRegistered, userUuid, validationFields, waitForCertificate,
 } from '../../../utils/epicOwnership';
 
 const TAGS = ['@epic-364', '@exclusive'];
@@ -232,9 +232,11 @@ test.describe('ownership by upload and import', () => {
             ],
         });
 
+        const answer = await uploadRegistered(U, cleanup, cert);
         // possibly the test, not the product: the RA profile switch asks the authority to identify a self-signed upload it never issued
-        test.fail(true, 'an upload fails with 500 when a platform upload trigger sets an RA profile');
-        const uuid = await uploadAndFind(U, admin, cleanup, cert);
+        test.fail(answer.status === 500, 'an upload fails with 500 when a platform upload trigger sets an RA profile');
+        expect([200, 201], `the upload is accepted: ${answer.text}`).toContain(answer.status);
+        const uuid = await waitForCertificate(admin, cert.fingerprint);
 
         const certificateDetail = await detail(admin, uuid);
         expect((certificateDetail.groups as Json[]).map((g) => g.uuid), 'the group set by the trigger').toEqual([group.uuid]);
@@ -279,7 +281,7 @@ test.describe('ownership by upload and import', () => {
             { timeoutMs: 5_000, intervalMs: 1_000, onTimeout: 'return' });
         expect(stored, 'no certificate with that fingerprint exists').toBeUndefined();
 
-        test.fail(true, 'an upload discarded by an ignore trigger answers 500 instead of a client error');
+        test.fail(answer.status >= 500, 'an upload discarded by an ignore trigger answers 500 instead of a client error');
         expect(answer.status, `a client error, not a server error: ${answer.text}`).toBeLessThan(500);
         expect(answer.text, 'the message points to the event history').toContain(DISCARDED);
     });
@@ -539,7 +541,7 @@ test.describe('import wizard (UI)', () => {
             const certificates = new CertificatePage(page);
             await certificates.openImportFromList();
             await certificates.pasteCertificatePem(cert.pem);
-            test.fail(true, 'the import wizard keeps Import disabled for a user without custom attribute access');
+            test.fail(!(await certificates.importEnabled()), 'the import wizard keeps Import disabled for a user without custom attribute access');
             await certificates.importPastedCertificate();
 
             await certificates.importOpenCertificateLinks.click();
@@ -566,7 +568,7 @@ test.describe('import wizard (UI)', () => {
             const certificates = new CertificatePage(page);
             await certificates.openImportFromList();
             await certificates.pasteCertificatePem(cert.pem);
-            test.fail(true, 'the import wizard keeps Import disabled for a user without custom attribute access');
+            test.fail(!(await certificates.importEnabled()), 'the import wizard keeps Import disabled for a user without custom attribute access');
             await certificates.submitImport();
 
             await certificates.assertImportResult('Not imported');
@@ -587,7 +589,7 @@ test.describe('import wizard (UI)', () => {
             const certificates = new CertificatePage(page);
             await certificates.openImportFromList();
             await certificates.pasteCertificatePem(pem, 3);
-            test.fail(true, 'the import wizard keeps Import disabled for a user without custom attribute access');
+            test.fail(!(await certificates.importEnabled()), 'the import wizard keeps Import disabled for a user without custom attribute access');
             await certificates.submitImport();
 
             const links = certificates.importOpenCertificateLinks;
@@ -620,7 +622,7 @@ test.describe('import wizard (UI)', () => {
             const certificates = new CertificatePage(page);
             await certificates.openImportFromList();
             await certificates.pasteCertificatePem(ofR.pem);
-            test.fail(true, 'the import wizard keeps Import disabled for a user without custom attribute access');
+            test.fail(!(await certificates.importEnabled()), 'the import wizard keeps Import disabled for a user without custom attribute access');
             await certificates.importPastedCertificate();
             await certificates.importOpenCertificateLinks.click();
 

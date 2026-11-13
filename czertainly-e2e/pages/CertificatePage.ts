@@ -145,6 +145,11 @@ export class CertificatePage {
         await this.importFileContent.blur();
     }
 
+    /** Whether Import becomes enabled within the usual wait; the wizard keeps it disabled when it cannot list custom attributes. */
+    async importEnabled(): Promise<boolean> {
+        return expect(this.importSubmitButton).toBeEnabled().then(() => true, () => false);
+    }
+
     async importPastedCertificate(): Promise<void> {
         logger.info('Importing the detected certificate');
         await expect(this.importSubmitButton).toBeEnabled();

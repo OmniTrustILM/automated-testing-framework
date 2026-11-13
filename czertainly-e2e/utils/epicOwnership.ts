@@ -171,10 +171,15 @@ export async function ownerChanges(api: APIRequestContext, uuid: string): Promis
     return (await history(api, uuid)).filter((e) => e.event === 'Update Owner' || e.event === 'UPDATE_OWNER').map((e) => String(e.message));
 }
 
+/** Uploads as the account, registered for the cleanup, and returns the answer as it came. */
+export async function uploadRegistered(as: APIRequestContext, cleanup: Cleanup, cert: CertificateFile, customAttributes: unknown[] = []): Promise<Answer> {
+    cleanup.certificate(cert.fingerprint);
+    return storing(cleanup, [cert.fingerprint], () => upload(as, cert.pem, customAttributes));
+}
+
 /** Uploads as the account (registered for the cleanup) and returns the uuid of the new certificate. */
 export async function uploadAndFind(as: APIRequestContext, admin: APIRequestContext, cleanup: Cleanup, cert: CertificateFile, customAttributes: unknown[] = []): Promise<string> {
-    cleanup.certificate(cert.fingerprint);
-    const answer = await storing(cleanup, [cert.fingerprint], () => upload(as, cert.pem, customAttributes));
+    const answer = await uploadRegistered(as, cleanup, cert, customAttributes);
     if (answer.status !== 200 && answer.status !== 201) throw new Error(`upload answered ${answer.status}: ${answer.text.slice(0, 500)}`);
     return waitForCertificate(admin, cert.fingerprint);
 }
