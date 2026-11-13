@@ -126,11 +126,16 @@ export interface ImportResult { entryReference: string; imported: boolean; certi
 
 export const importResults = (answer: Answer): ImportResult[] => ((answer.json as Json)?.results ?? []) as ImportResult[];
 
-/** Registers the keys of the certificates an import created, before a test asserts anything about the answer. */
+/** Registers the keys of the certificates an import created, before a test asserts anything; a failed read is only logged (the token sweep removes the key). */
 export async function registerImportedKeys(admin: APIRequestContext, cleanup: Cleanup, answer: Answer): Promise<void> {
     for (const { certificateUuid } of importResults(answer)) {
-        const keyUuid = certificateUuid ? await getCertificateKeyUuid(admin, certificateUuid) : undefined;
-        if (keyUuid) cleanup.key(keyUuid);
+        if (!certificateUuid) continue;
+        try {
+            const keyUuid = await getCertificateKeyUuid(admin, certificateUuid);
+            if (keyUuid) cleanup.key(keyUuid);
+        } catch (e) {
+            logger.warn(`The key of imported certificate ${certificateUuid} was not read (${String(e).slice(0, 200)}); the token sweep removes it`);
+        }
     }
 }
 
@@ -467,8 +472,9 @@ export async function createSoftwareTokenProfile(admin: APIRequestContext, clean
     tokenStep.requires = profileStep;
     // every key on this test's own token goes, also those of an import whose answer the test never read
     profileStep.requires = cleanup.add('keys on the token profile', `${name}-profile`, async () => {
-        const pairs = (await sendOk(admin, 'GET', `/api/v1/keys/pairs?tokenProfileUuid=${profileUuid}`)).json as Json[];
-        const own = pairs.filter((k) => k.tokenInstanceUuid === tokenUuid).map((k) => String(k.uuid));
+        const pairs = (await sendOk(admin, 'GET', `/api/v1/keys/pairs?tokenProfileUuid=${profileUuid}`)).json;
+        if (!Array.isArray(pairs)) throw new Error('keys on the token profile: unexpected answer (not a list)');
+        const own = (pairs as Json[]).filter((k) => k.tokenInstanceUuid === tokenUuid).map((k) => String(k.uuid));
         if (own.length) await sendOk(admin, 'DELETE', '/api/v1/keys', own);
     });
     return profileUuid;

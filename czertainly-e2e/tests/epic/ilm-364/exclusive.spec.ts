@@ -273,9 +273,11 @@ test.describe('ownership by upload and import', () => {
 
         const answer = await upload(U, cert.pem);
 
-        // never masked by the known bug: the upload is refused and nothing is stored
+        // never masked by the known bug: the upload is refused and nothing is stored (watched for a few seconds)
         expect(answer.status, `the discarded upload is refused: ${answer.text}`).toBeGreaterThanOrEqual(400);
-        expect(await inventoryRow(admin, cert.fingerprint, { includeArchived: true }), 'no certificate with that fingerprint exists').toBeUndefined();
+        const stored = await pollUntil(() => inventoryRow(admin, cert.fingerprint, { includeArchived: true }), (row) => row !== undefined,
+            { timeoutMs: 5_000, intervalMs: 1_000, onTimeout: 'return' });
+        expect(stored, 'no certificate with that fingerprint exists').toBeUndefined();
 
         test.fail(true, 'an upload discarded by an ignore trigger answers 500 instead of a client error');
         expect(answer.status, `a client error, not a server error: ${answer.text}`).toBeLessThan(500);
