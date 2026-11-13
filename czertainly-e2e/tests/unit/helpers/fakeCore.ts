@@ -27,7 +27,14 @@ export class FakeCore {
         return undefined;
     }
 
-    answer = (a: Arrived): Answer | undefined => this.respond(a);
+    /** The platform settings a core without its own settings route answers: automatic ownership off (core#2698). */
+    platformSettings: Json = { certificates: { upload: { automaticOwnership: false } } };
+
+    answer = (a: Arrived): Answer | undefined => {
+        const answered = this.respond(a);
+        const settingsRead = a.method === 'GET' && a.url.split('?')[0] === '/api/v1/settings/platform';
+        return settingsRead && (!answered || answered.status === 404) ? { status: 200, body: this.platformSettings } : answered;
+    };
 
     protected respond(a: Arrived): Answer | undefined {
         const path = a.url.split('?')[0];

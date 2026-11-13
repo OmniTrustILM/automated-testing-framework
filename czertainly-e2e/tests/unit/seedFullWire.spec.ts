@@ -24,6 +24,7 @@ class SeedCore extends BaseCore {
     readonly uploads: Json[] = [];
     readonly patches: Array<{ uuid: string; body: Json }> = [];
     requiredGroupAttr = false;
+    automaticOwnership = false;
 
     protected respond(a: Arrived): Answer | undefined {
         const path = a.url.split('?')[0];
@@ -35,6 +36,7 @@ class SeedCore extends BaseCore {
     }
 
     private get(path: string): Answer {
+        if (path === '/api/v1/settings/platform') return { status: 200, body: { certificates: { upload: { automaticOwnership: this.automaticOwnership } } } };
         if (/^\/api\/v1\/attributes\/custom\/resources\/(certificates|users|groups)$/.test(path)) {
             return { status: 200, body: path.endsWith('/groups') && this.requiredGroupAttr ? [{ uuid: U(1), name: 'site', contentType: 'string', properties: { required: true } }] : [] };
         }
@@ -68,6 +70,7 @@ class SeedCore extends BaseCore {
                 notBefore: d.notBefore.toISOString(),
                 notAfter: d.notAfter.toISOString(),
                 key: { uuid: this.next() },
+                ...(this.automaticOwnership ? { ownerUuid: U(8888), owner: 'uploader' } : {}),
             });
             return { status: 200, body: { uuid } };
         }
@@ -77,6 +80,8 @@ class SeedCore extends BaseCore {
     private patch(path: string, body: Json | undefined): Answer {
         const m = /^\/api\/v1\/certificates\/([0-9a-f-]{36})$/.exec(path);
         if (m) this.patches.push({ uuid: m[1], body: body ?? {} });
+        const stored = m ? this.store.get(path) : undefined;
+        if (stored && body?.ownerUuid === '') this.store.set(path, { ...stored, ownerUuid: undefined, owner: undefined });
         return { status: 204 };
     }
 }
@@ -112,6 +117,7 @@ test.describe('the certificate seeds build on the loopback fake core (every requ
         expect(patched.C03).toEqual({ groupUuids: [m.groupUuids.a, m.groupUuids.b] });
         expect(patched.C07).toEqual({ groupUuids: [m.groupUuids.b] });
         expect(patched.C24).toEqual({ trustedCa: true });
+        expect(core.patches.filter((p) => p.body.ownerUuid === ''), 'automatic ownership off: no owner removal').toEqual([]);
         const c01 = core.uploads.find((u) => String(u.subject).endsWith('alpha-web'))!;
         const vals = (c01.customAttributes as Json[]).map((a) => [a.name.replace(m.prefix, ''), a.content.map((x: Json) => x.data)]);
         expect(vals).toEqual([['txt', ['red']], ['num', [10]], ['day', [m.certificates[0].day]], ['flag', [true]], ['pick', ['a']]]);
@@ -144,6 +150,21 @@ test.describe('the certificate seeds build on the loopback fake core (every requ
         server.reset();
         await expect(patchOwnCertificate(api, { uuid: certById(m, 'C01').uuid, name: certById(m, 'C01').commonName, kind: 'own' }, { groupUuids: [U(9999)] })).rejects.toBeInstanceOf(OwnObjectViolation);
         expect(server.mutations()).toEqual([]);
+    });
+
+    test('with automatic ownership on, every seed upload loses the uploader as owner before the seed PATCHes (core#2698)', async () => {
+        test.setTimeout(180_000);
+        core.automaticOwnership = true;
+        const m = await ensureCertificateSeed(api, 'T');
+        const byId = (uuid: string) => idsOfUuids(m, [uuid])[0];
+        const dropped = core.patches.filter((p) => p.body.ownerUuid === '').map((p) => byId(p.uuid));
+        expect(dropped).toHaveLength(24);
+        const first = new Map<string, Json>();
+        for (const p of core.patches) if (!first.has(p.uuid)) first.set(p.uuid, p.body);
+        for (const [uuid, body] of first) expect(body, `the first PATCH of ${byId(uuid)}`).toEqual({ ownerUuid: '' });
+        expect(core.patches.find((p) => byId(p.uuid) === 'C01' && p.body.ownerUuid === m.ownerUuid)).toBeTruthy();
+        const c03 = await api.get(`/api/v1/certificates/${certById(m, 'C03').uuid}`);
+        expect((await c03.json()).ownerUuid).toBeUndefined();
     });
 
     test('buildFreshSeedB: own groups only, every create recorded in the ledger before the first assertion, the guard refuses a foreign group', async () => {
