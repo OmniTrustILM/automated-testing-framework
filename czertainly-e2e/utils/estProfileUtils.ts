@@ -153,3 +153,61 @@ export async function cleanupEstProfile(
     deleteEstProfile(api, profile.uuid),
   );
 }
+
+interface NamedAttribute {
+  uuid?: string;
+  name: string;
+  content?: unknown;
+}
+
+/** The request form of an attribute the platform reported. */
+function toRequestAttributes(attributes: NamedAttribute[] | undefined): unknown[] {
+  return (attributes ?? []).map(({ uuid, name, content }) => ({ uuid, name, content }));
+}
+
+/** UUID of the EST Profile that serves requests without a label, if there is one. */
+export async function findSystemDefaultEstProfile(api: APIRequestContext): Promise<string | undefined> {
+  const resp = await api.get('/api/v1/estProfiles');
+  await ensureOk(resp, 'List EST Profiles');
+  const profiles = (await resp.json()) as Array<{ uuid: string; systemDefault?: boolean }>;
+  return profiles.find((profile) => profile.systemDefault)?.uuid;
+}
+
+/**
+ * Makes the EST Profile the system default again. Creating a default profile clears the flag of the
+ * previous one and deleting it does not give the flag back, so a spec that creates one restores it.
+ * The update replaces the whole profile, so the request is rebuilt from what the platform reports.
+ */
+export async function restoreSystemDefaultEstProfile(api: APIRequestContext, uuid: string): Promise<void> {
+  logger.info(`Restoring the system default EST Profile: ${uuid}`);
+  const resp = await api.get(`/api/v1/estProfiles/${uuid}`);
+  await ensureOk(resp, `Get EST Profile ${uuid}`);
+  const d = (await resp.json()) as Record<string, any>;
+  const associations = d.certificateAssociations;
+  const data = {
+    description: d.description,
+    raProfileUuid: d.raProfile?.uuid,
+    systemDefault: true,
+    authenticationPolicy: d.authenticationPolicy,
+    basicCredentialSecretUuids: (d.basicCredentialSecrets ?? []).map((secret: { uuid: string }) => secret.uuid),
+    trustedCaCertificateUuids: (d.trustedCaCertificates ?? []).map((ca: { uuid: string }) => ca.uuid),
+    allowRenewal: d.allowRenewal,
+    allowRekey: d.allowRekey,
+    renewalThreshold: d.renewalThreshold,
+    serverKeyGeneration: d.serverKeyGeneration,
+    keyRecovery: d.keyRecovery,
+    keyRecoveryTokenProfileUuid: d.keyRecoveryTokenProfile?.uuid,
+    keyRecoveryKeyAttributes: toRequestAttributes(d.keyRecoveryKeyAttributes),
+    issueWaitTimeout: d.issueWaitTimeout,
+    retryAfter: d.retryAfter,
+    serverKeyGenerationTimeout: d.serverKeyGenerationTimeout,
+    issueCertificateAttributes: toRequestAttributes(d.issueCertificateAttributes),
+    customAttributes: toRequestAttributes(d.customAttributes),
+    certificateAssociations: associations && {
+      ownerUuid: associations.ownerUuid,
+      groupUuids: associations.groupUuids ?? [],
+      customAttributes: toRequestAttributes(associations.customAttributes),
+    },
+  };
+  await ensureOk(await api.put(`/api/v1/estProfiles/${uuid}`, { data }), `Restore system default EST Profile ${uuid}`);
+}

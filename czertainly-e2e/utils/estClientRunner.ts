@@ -7,8 +7,9 @@
  * platform interoperates with what devices actually run.
  * HOW: a work directory on the host is mounted at `/work`, holding the edge CA (estclient refuses
  * an untrusted server) and any key, certificate or CSR the operation uses; outputs land there too.
- * A local edge name (localhost, a loopback address, `.localhost` or `.test`) is mapped to the Docker host,
- * where such an edge listens; any other host name is left to Docker's DNS. estclient exits 0
+ * A local edge name (`localhost`, `.localhost` or `.test`) is mapped to the Docker host, where such an
+ * edge listens; any other host name is left to Docker's DNS, and an IP address needs no mapping, so an
+ * edge on a loopback address is not supported (the container's own loopback is not the host's). estclient exits 0
  * even when the server refuses, so callers judge the result by the files it wrote, never by the
  * exit code alone. `exec` is passed in so the runner can be tested without Docker.
  */
@@ -17,7 +18,6 @@ import { execFile } from 'child_process';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { isIP } from 'net';
 import { decodeBase64Body } from './estHttp';
 import { parseCertsOnlyDer } from './estPki';
 
@@ -42,14 +42,13 @@ export interface EstclientResult {
 
 export type Exec = (file: string, args: string[], timeoutMs: number) => Promise<EstclientResult>;
 
-const RUN_TIMEOUT_MS = 120_000;
+// Well below the test timeout of playwright.est.config.ts, so a hung run is stopped before the test is.
+const RUN_TIMEOUT_MS = 60_000;
 
-/** Whether the host is the machine itself or a name reserved for local use (RFC 6761). */
+/** Whether the host is a name for this machine or reserved for local use (RFC 6761); an IP address is not. */
 export function isLocalHost(hostname: string): boolean {
-  const host = hostname.replace(/^\[(.*)\]$/, '$1').toLowerCase();
-  if (host === 'localhost' || host === '::1') return true;
-  if (isIP(host) === 4) return host.startsWith('127.');
-  return host.endsWith('.localhost') || host.endsWith('.test');
+  const host = hostname.toLowerCase();
+  return host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.test');
 }
 
 /** The container's name, unique per run, so a timed-out run can be stopped by name. */
@@ -65,7 +64,7 @@ export function estclientDockerArgs(run: EstclientRun, name = containerName()): 
     '--rm',
     '--name',
     name,
-    ...(isLocalHost(url.hostname) ? ['--add-host', `${hostname}:host-gateway`] : []),
+    ...(isLocalHost(hostname) ? ['--add-host', `${hostname}:host-gateway`] : []),
     '-v',
     `${run.workDir}:${WORK}`,
     '-e',

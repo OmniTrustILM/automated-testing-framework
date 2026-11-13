@@ -20,7 +20,14 @@ import { APIRequestContext, expect, test } from '@playwright/test';
 import { loadEstEnv, EstEnv } from '../../utils/estEnv';
 import { EstResponse, decodeBase64Body, estRequest } from '../../utils/estHttp';
 import { newEstAdminContext, getRaProfileCaFingerprints } from '../../utils/estAdminApi';
-import { cleanupEstProfile, createEstProfile, estProfileName, EstProfile } from '../../utils/estProfileUtils';
+import {
+  cleanupEstProfile,
+  createEstProfile,
+  estProfileName,
+  EstProfile,
+  findSystemDefaultEstProfile,
+  restoreSystemDefaultEstProfile,
+} from '../../utils/estProfileUtils';
 import { isDerCsrAttrs, parseCertsOnlyDer, sha256Fingerprint } from '../../utils/estPki';
 import { Logger } from '../../utils/Logger';
 
@@ -30,11 +37,13 @@ test.describe('@est discovery', () => {
   let env: EstEnv;
   let api: APIRequestContext;
   let profile: EstProfile;
+  let previousDefaultUuid: string | undefined;
   let expectedChain: string[];
 
   test.beforeAll(async () => {
     env = loadEstEnv();
     api = await newEstAdminContext(env);
+    previousDefaultUuid = await findSystemDefaultEstProfile(api);
     // A failed beforeAll still runs afterAll, which cleans up and disposes once.
     profile = await createEstProfile(api, {
       name: estProfileName('discovery'),
@@ -48,8 +57,12 @@ test.describe('@est discovery', () => {
 
   test.afterAll(async () => {
     if (!api) return;
-    if (profile) await cleanupEstProfile(api, profile);
-    await api.dispose();
+    try {
+      if (profile) await cleanupEstProfile(api, profile);
+      if (previousDefaultUuid) await restoreSystemDefaultEstProfile(api, previousDefaultUuid);
+    } finally {
+      await api.dispose();
+    }
   });
 
   function expectChain(resp: EstResponse): void {

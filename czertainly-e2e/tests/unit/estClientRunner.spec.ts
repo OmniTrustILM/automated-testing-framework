@@ -48,18 +48,18 @@ test('a remote edge host is left to Docker DNS, and the port defaults to 443', (
     expect(args.slice(args.indexOf('-p'), args.indexOf('-p') + 2)).toEqual(['-p', '443']);
 });
 
-test('only the machine itself and names reserved for local use are local hosts', () => {
-    for (const host of ['localhost', 'LOCALHOST', 'a.localhost', 'ilm.est.test', '127.0.0.1', '127.1.2.3', '::1', '[::1]']) {
+test('only local names are local hosts; an IP address, loopback or not, is not', () => {
+    for (const host of ['localhost', 'LOCALHOST', 'a.localhost', 'ilm.est.test']) {
         expect(isLocalHost(host), host).toBe(true);
     }
-    for (const host of ['ilm.example.com', '10.0.0.5', '192.168.1.1', 'test.example.com', 'attest', '2001:db8::1']) {
+    for (const host of ['ilm.example.com', '127.0.0.1', '::1', '10.0.0.5', 'test.example.com', 'attest', '2001:db8::1']) {
         expect(isLocalHost(host), host).toBe(false);
     }
 });
 
-test('an IPv6 edge host is passed to estclient without brackets', () => {
+test('an IPv6 edge host is passed to estclient without brackets and without a host mapping', () => {
     const args = estclientDockerArgs({ ...run, baseUrl: 'https://[::1]:8443' }, 'c1');
-    expect(args).toContain('::1:host-gateway');
+    expect(args).not.toContain('--add-host');
     expect(args[args.indexOf('-s') + 1]).toBe('::1');
 });
 

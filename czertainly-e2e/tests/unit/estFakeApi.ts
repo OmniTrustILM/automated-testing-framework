@@ -46,6 +46,7 @@ export function fakeApi(responder: (call: Call) => FakeReply | undefined = () =>
     const api = {
         get: (url: string, o?: { data?: unknown }) => send('GET', url, o),
         post: (url: string, o?: { data?: unknown }) => send('POST', url, o),
+        put: (url: string, o?: { data?: unknown }) => send('PUT', url, o),
         patch: (url: string, o?: { data?: unknown }) => send('PATCH', url, o),
         delete: (url: string, o?: { data?: unknown }) => send('DELETE', url, o),
     } as unknown as APIRequestContext;

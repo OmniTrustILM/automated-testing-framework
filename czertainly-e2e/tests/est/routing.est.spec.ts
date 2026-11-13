@@ -27,6 +27,8 @@ import {
   createEstProfile,
   estProfileName,
   EstProfile,
+  findSystemDefaultEstProfile,
+  restoreSystemDefaultEstProfile,
 } from '../../utils/estProfileUtils';
 import { createBasicSecret, createRaProfile, deleteRaProfile, deleteSecret } from '../../utils/estFixtures';
 import {
@@ -52,6 +54,7 @@ test.describe('@est routing', () => {
   let defaultCredentials: Credentials;
   let directCredentials: Credentials;
   let activated = false;
+  let previousDefaultUuid: string | undefined;
   const issued: Buffer[] = [];
   const answers: EstResponse[] = [];
 
@@ -103,6 +106,7 @@ test.describe('@est routing', () => {
   test.beforeAll(async () => {
     env = loadEstEnv();
     api = await newEstAdminContext(env);
+    previousDefaultUuid = await findSystemDefaultEstProfile(api);
     // A failed beforeAll still runs afterAll, which cleans up and disposes once.
     labelRaProfileName = await getRaProfileName(api, env.labelRaProfileUuid);
     [defaultProfile, defaultCredentials] = await newRaBasicProfile('routing-default', true);
@@ -117,8 +121,12 @@ test.describe('@est routing', () => {
 
   test.afterAll(async () => {
     if (!api) return;
-    await cleanup();
-    await api.dispose();
+    try {
+      await cleanup();
+      if (previousDefaultUuid) await restoreSystemDefaultEstProfile(api, previousDefaultUuid);
+    } finally {
+      await api.dispose();
+    }
   });
 
   test('EST-010 a request without a label is served by the system default EST Profile', async () => {

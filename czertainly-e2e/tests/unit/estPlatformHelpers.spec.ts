@@ -15,6 +15,8 @@ import {
     DEFAULT_RESPONSE_TIMING,
     deleteEstProfile,
     estProfileName,
+    findSystemDefaultEstProfile,
+    restoreSystemDefaultEstProfile,
     setEstProfileEnabled,
 } from '../../utils/estProfileUtils';
 import {
@@ -199,6 +201,86 @@ test.describe('EST profiles', () => {
             global.setTimeout = original;
         }
         expect(readCleanupFailures()).toMatchObject([{ resource: 'estProfile', uuid: 'p', name: 'n', status: 500 }]);
+    });
+});
+
+test.describe('system default EST Profile', () => {
+    test('the default is the listed profile flagged as system default, if any', async () => {
+        const list = [{ uuid: 'a' }, { uuid: 'b', systemDefault: true }];
+        const { api, calls } = fakeApi(() => ({ body: list }));
+        expect(await findSystemDefaultEstProfile(api)).toBe('b');
+        expect(calls).toEqual([{ method: 'GET', url: '/api/v1/estProfiles', data: undefined }]);
+
+        const none = fakeApi(() => ({ body: [{ uuid: 'a', systemDefault: false }] }));
+        expect(await findSystemDefaultEstProfile(none.api)).toBeUndefined();
+    });
+
+    test('a failed list is raised', async () => {
+        const { api } = fakeApi(() => ({ status: 500, body: 'boom' }));
+        await expect(findSystemDefaultEstProfile(api)).rejects.toThrow(/List EST Profiles/);
+    });
+
+    test('restoring rebuilds the whole profile from its detail and sets the flag', async () => {
+        const detail = {
+            description: 'd',
+            raProfile: { uuid: 'ra-1' },
+            systemDefault: false,
+            authenticationPolicy: 'raBasic',
+            basicCredentialSecrets: [{ uuid: 's-1', name: 'n' }],
+            trustedCaCertificates: [{ uuid: 'ca-1', name: 'c' }],
+            allowRenewal: true,
+            allowRekey: false,
+            renewalThreshold: 5,
+            serverKeyGeneration: true,
+            keyRecovery: true,
+            keyRecoveryTokenProfile: { uuid: 'tp-1', name: 't' },
+            keyRecoveryKeyAttributes: [{ uuid: 'ka', name: 'k', content: [1], contentType: 'x' }],
+            issueWaitTimeout: 11,
+            retryAfter: 12,
+            serverKeyGenerationTimeout: 13,
+            issueCertificateAttributes: [{ uuid: 'ia', name: 'i', content: [2] }],
+            customAttributes: [],
+            certificateAssociations: { ownerUuid: 'o-1', groupUuids: ['g-1'], customAttributes: [{ name: 'x', content: [3] }] },
+        };
+        const { api, calls } = fakeApi((call) => (call.method === 'GET' ? { body: detail } : undefined));
+        await restoreSystemDefaultEstProfile(api, 'p-1');
+        expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual(['GET /api/v1/estProfiles/p-1', 'PUT /api/v1/estProfiles/p-1']);
+        expect(calls[1].data).toEqual({
+            description: 'd',
+            raProfileUuid: 'ra-1',
+            systemDefault: true,
+            authenticationPolicy: 'raBasic',
+            basicCredentialSecretUuids: ['s-1'],
+            trustedCaCertificateUuids: ['ca-1'],
+            allowRenewal: true,
+            allowRekey: false,
+            renewalThreshold: 5,
+            serverKeyGeneration: true,
+            keyRecovery: true,
+            keyRecoveryTokenProfileUuid: 'tp-1',
+            keyRecoveryKeyAttributes: [{ uuid: 'ka', name: 'k', content: [1] }],
+            issueWaitTimeout: 11,
+            retryAfter: 12,
+            serverKeyGenerationTimeout: 13,
+            issueCertificateAttributes: [{ uuid: 'ia', name: 'i', content: [2] }],
+            customAttributes: [],
+            certificateAssociations: { ownerUuid: 'o-1', groupUuids: ['g-1'], customAttributes: [{ name: 'x', content: [3] }] },
+        });
+    });
+
+    test('a bare profile restores with empty lists, and a refused update is raised', async () => {
+        const bare = { authenticationPolicy: 'certificateRegistration', raProfile: { uuid: 'ra-1' } };
+        const ok = fakeApi((call) => (call.method === 'GET' ? { body: bare } : undefined));
+        await restoreSystemDefaultEstProfile(ok.api, 'p-1');
+        expect(ok.calls[1].data).toMatchObject({
+            basicCredentialSecretUuids: [],
+            trustedCaCertificateUuids: [],
+            customAttributes: [],
+            certificateAssociations: undefined,
+        });
+
+        const refused = fakeApi((call) => (call.method === 'PUT' ? { status: 422, body: 'no' } : { body: bare }));
+        await expect(restoreSystemDefaultEstProfile(refused.api, 'p-1')).rejects.toThrow(/Restore system default/);
     });
 });
 
