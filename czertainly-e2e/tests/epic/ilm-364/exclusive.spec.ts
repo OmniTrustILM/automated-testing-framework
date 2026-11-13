@@ -18,7 +18,7 @@ import { CertificateListPage } from '../../../pages/CertificateListPage';
 import { PlatformSettingsPage } from '../../../pages/PlatformSettingsPage';
 import {
     Account, Answer, Cleanup, Json, RaProfileRef, accountCredentials, certificateFile, envFor, adminApi, apiAs, attributeValue, commonNameIs, createCustomAttribute, createGroup, createTeamUser,
-    createOwnerNotificationProfile, createSoftwareTokenProfile, createUploadTrigger, customValue, uploadNotifications, detail, findByFingerprint, importEntries, importResults, inventoryRow, issueThroughRaProfile, ownerChanges, waitUntil,
+    createOwnerNotificationProfile, createSoftwareTokenProfile, createUploadTrigger, customValue, uploadNotifications, detail, findByFingerprint, importEntries, importResults, inventoryRow, issueThroughRaProfile, ownerChanges, platformTriggers, triggerRows, waitUntil,
     readAutomaticOwnership, registerImportedKeys, removeFromInventory, restoreValidation, send, sendOk, setAutomaticOwnership, setOwner, subjectOf, upload, uploadAndFind, uploadAsync, userUuid, validationFields, waitForCertificate,
 } from '../../../utils/epicOwnership';
 
@@ -50,6 +50,13 @@ function setupRaProfile(): RaProfileRef {
     const state = readSmokeState();
     if (!state) throw new Error('The RA profile of the global setup is missing (.smoke-state.json)');
     return { authorityUuid: state.authorityUuid, raProfileUuid: state.raProfileUuid };
+}
+
+/** Marks the known wizard failure when Import stays disabled; otherwise the cleanup waits for the certificates the import stores. */
+async function importEnabledOrKnownBlock(certificates: CertificatePage, stored: string[]): Promise<void> {
+    const blocked = await certificates.importBlockedByAttributeAccess();
+    test.fail(blocked, 'the import wizard keeps Import disabled when its custom attribute listing answers 403 to a user without attribute access');
+    if (!blocked) stored.forEach((fingerprint) => cleanup.expectStored(fingerprint, true));
 }
 
 /** A browser signed in as the account (the login form, as the smoke user does); the suite's trace setting records a failed test. */
@@ -329,7 +336,7 @@ test.describe('notification to the owner', () => {
         const profile = await createOwnerNotificationProfile(admin, cleanup, `${run}-s22-profile`);
         const withSetting = newCertificate('s22-on');
         const withoutSetting = newCertificate('s22-off');
-        await createUploadTrigger(admin, cleanup, {
+        const trigger = await createUploadTrigger(admin, cleanup, {
             name: `${run}-s22-trigger`,
             conditions: [{ fieldSource: 'property', fieldIdentifier: 'COMMON_NAME', operator: 'STARTS_WITH', value: `${run}-s22-` }],
             notificationProfileUuid: profile,
@@ -337,9 +344,11 @@ test.describe('notification to the owner', () => {
 
         await setAutomaticOwnership(admin, true);
         const started = Date.now();
-        await uploadAndFind(U, admin, cleanup, withSetting);
+        const uploaded = await uploadAndFind(U, admin, cleanup, withSetting);
         await waitUntil(async () => (await uploadNotifications(U, withSetting.cn)).length > 0, `U has a notification for ${withSetting.cn}`, 90_000);
         const deliveryMs = Date.now() - started;
+        // the built-in upload notification has the same text once core#2814 is fixed: the trigger's own history shows its action ran
+        expect((await triggerRows(admin, uploaded, trigger)).map((r) => [r.conditionsMatched, r.actionsPerformed]), 'the trigger matched and sent its notification').toEqual([[true, true]]);
 
         await setAutomaticOwnership(admin, false);
         await uploadAndFind(U, admin, cleanup, withoutSetting);
@@ -352,12 +361,12 @@ test.describe('notification to the owner', () => {
     });
 
     test('S28: the built-in upload notification reaches the owner', { tag: TAGS }, async () => {
+        expect(await platformTriggers(admin), 'no platform trigger on the upload event, so a notification can only be the built-in one').toEqual([]);
         await setAutomaticOwnership(admin, true);
         const cert = newCertificate('s28');
 
         await uploadAndFind(U, admin, cleanup, cert);
 
-        // no upload trigger here: a notification about this certificate can only be the built-in one
         const seen = await pollUntil(() => uploadNotifications(U, cert.cn), (found) => found.length > 0,
             { timeoutMs: 90_000, intervalMs: 2_000, tolerateErrors: 0, onTimeout: 'return' });
         test.fail(seen.length === 0, 'core#2814: the built-in upload notification goes to the certificate\'s authentication user, not to its owner');
@@ -513,7 +522,7 @@ test.describe('import wizard (UI)', () => {
             const certificates = new CertificatePage(page);
             await certificates.openImportFromList();
             await certificates.pasteCertificatePem(cert.pem);
-            test.fail(await certificates.importBlockedByAttributeAccess(), 'the import wizard keeps Import disabled when its custom attribute listing answers 403 to a user without attribute access');
+            await importEnabledOrKnownBlock(certificates, [cert.fingerprint]);
             await certificates.importPastedCertificate();
 
             await certificates.importOpenCertificateLinks.click();
@@ -540,7 +549,7 @@ test.describe('import wizard (UI)', () => {
             const certificates = new CertificatePage(page);
             await certificates.openImportFromList();
             await certificates.pasteCertificatePem(cert.pem);
-            test.fail(await certificates.importBlockedByAttributeAccess(), 'the import wizard keeps Import disabled when its custom attribute listing answers 403 to a user without attribute access');
+            await importEnabledOrKnownBlock(certificates, []);
             await certificates.submitImport();
 
             await certificates.assertImportResult('Not imported');
@@ -561,7 +570,7 @@ test.describe('import wizard (UI)', () => {
             const certificates = new CertificatePage(page);
             await certificates.openImportFromList();
             await certificates.pasteCertificatePem(pem, 3);
-            test.fail(await certificates.importBlockedByAttributeAccess(), 'the import wizard keeps Import disabled when its custom attribute listing answers 403 to a user without attribute access');
+            await importEnabledOrKnownBlock(certificates, certs.map((c) => c.fingerprint));
             await certificates.submitImport();
 
             const links = certificates.importOpenCertificateLinks;
@@ -594,7 +603,7 @@ test.describe('import wizard (UI)', () => {
             const certificates = new CertificatePage(page);
             await certificates.openImportFromList();
             await certificates.pasteCertificatePem(ofR.pem);
-            test.fail(await certificates.importBlockedByAttributeAccess(), 'the import wizard keeps Import disabled when its custom attribute listing answers 403 to a user without attribute access');
+            await importEnabledOrKnownBlock(certificates, [ofR.fingerprint]);
             await certificates.importPastedCertificate();
             await certificates.importOpenCertificateLinks.click();
 
