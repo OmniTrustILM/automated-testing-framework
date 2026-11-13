@@ -1,7 +1,6 @@
 /**
  * epic369Utils — API helpers of the Epic ilm#369 timeline: create, flip and remove its objects, read notifications, firings and job runs.
- * Own wrappers: timeline objects live across executions, while the regression mutation helpers need the current run's ledger;
- * `call` also marks no answer or a gateway error as the environment's (ENVIRONMENT), which the regression readers do not.
+ * Own wrappers: the objects outlive one execution (regression mutations need its ledger), and `call` marks gateway errors as ENVIRONMENT.
  */
 
 import { APIRequestContext } from '@playwright/test';
@@ -11,6 +10,8 @@ import { recordCleanupFailure } from './cleanupLedger';
 import { csrFromKey, newKeyMaterial } from './regression/pkiBuilders';
 import { waitForCertificateState } from './certificateUtils';
 import { deleteKeyIfOrphaned, getCertificateKeyUuid } from './keyUtils';
+import { objectOf } from './regression/json';
+import { certificateCreationTime, keyAssociationsOf } from './regression/teardown/teardownHandlers';
 
 const logger = new Logger('Epic369Utils');
 
@@ -18,9 +19,13 @@ export const NOT_COMPLIANT_EVENT = 'certificate_not_compliant';
 export const EXPIRING_EVENT = 'certificate_expiring';
 const STATUS_JOB_NAME = 'updateCertificateStatusJob';
 const NAME_ROOT = 'atf-e369-';
+const SMOKE_RA_PROFILE = 'smoke-raprofile-'; // global-setup's name for the RA profile of each execution
 const STALE_AFTER_MS = 6 * 60 * 60 * 1000;
 
 export const ENVIRONMENT = 'TIMELINE-ENVIRONMENT:';
+
+/** The seed's certificates, by the suffix of their common name. */
+export const TIMELINE_CERTIFICATES = ['reminded', 'twohourly', 'once', 'recovered', 'archived', 'expiring', 'everyrun', 'twoprofiles'];
 
 /** Letters and digits only: a dash inside the id would let one timeline's prefix match another's objects. */
 function timelineId(): string {
@@ -243,17 +248,66 @@ const createdAtOf = (group: Named): number | undefined => {
     return m ? time(m[1]) : undefined;
 };
 
+/** The certKey_<CN> keys core made for a timeline certificate and keeps after it: exact name, in no token, linked to nothing else. */
+async function certificateKeysOf(api: APIRequestContext, commonName: string, certUuid?: string): Promise<string[]> {
+    const wanted = `certKey_${commonName}`;
+    const candidates = new Set<string>();
+    const linked = certUuid ? await getCertificateKeyUuid(api, certUuid) : undefined;
+    if (linked) candidates.add(linked);
+    const found = await call(api, 'post', '/v1/keys', {
+        itemsPerPage: 100, pageNumber: 1, filters: [{ fieldSource: 'property', fieldIdentifier: 'CKI_NAME', condition: 'EQUALS', value: wanted }],
+    });
+    for (const row of (found?.cryptographicKeys ?? []) as Json[]) if (row.name === wanted && row.keyWrapperUuid) candidates.add(String(row.keyWrapperUuid));
+    const own: string[] = [];
+    for (const uuid of candidates) {
+        const key = await call(api, 'get', `/v1/keys/${uuid}`, undefined, [404]);
+        if (key?.name !== wanted || key.tokenInstanceUuid) continue;
+        if (keyAssociationsOf(key).some((a) => String(objectOf(a).uuid ?? a) !== certUuid)) continue;
+        own.push(uuid);
+    }
+    return own;
+}
+
+/** One retry: the association of a certificate deleted a moment ago can linger. A kept key is a failure, never a silent leak. */
+async function removeOwnKey(api: APIRequestContext, uuid: string, createdAfter: Date): Promise<void> {
+    for (let attemptNo = 1; ; attemptNo++) {
+        if (await deleteKeyIfOrphaned(api, uuid, createdAfter)) return;
+        if (attemptNo === 2) throw new Error(`key ${uuid} kept: in a token, older than its certificate or still associated`);
+        await new Promise((r) => setTimeout(r, 2_000));
+    }
+}
+
+/** Plain delete first; the force removes every association, so it is sent only when those left are to the executions' RA profiles or gone. */
+async function removeComplianceProfile(api: APIRequestContext, uuid: string): Promise<void> {
+    const plain = await api.delete(`/api/v1/complianceProfiles/${uuid}`);
+    if (plain.ok()) return;
+    if (plain.status() === 404 && (await api.get(`/api/v1/complianceProfiles/${uuid}`)).status() === 404) return;
+    const associations = ((await call(api, 'get', `/v2/complianceProfiles/${uuid}/associations`)) ?? []) as Array<{ resource?: string; objectUuid?: string; name?: string }>;
+    const liveRaProfiles = new Map(((await call(api, 'get', '/v1/raProfiles')) as Named[]).map((r) => [r.uuid, r.name]));
+    const foreign = associations.filter((a) => {
+        const raProfile = liveRaProfiles.get(String(a.objectUuid));
+        return a.resource !== 'raProfiles' || (raProfile !== undefined && !raProfile.startsWith(SMOKE_RA_PROFILE));
+    });
+    if (foreign.length) throw new Error(`not forced, associations the timeline did not make: ${foreign.map((a) => `${a.resource} ${a.name ?? a.objectUuid}`).join(', ')}`);
+    const refused = await call(api, 'delete', '/v2/complianceProfiles/force', [uuid]);
+    if (refused === undefined || (Array.isArray(refused) && !refused.length)) return;
+    const why = Array.isArray(refused) ? refused.map((m: Json) => `${m.name ?? m.uuid}: ${m.message}`).join('; ') : `unexpected answer ${JSON.stringify(refused)}`;
+    throw new Error(`force delete refused: ${why.slice(0, 300)}`);
+}
+
 /**
- * Removes everything of a timeline, in the order the objects depend on each other; each step is tried even when one before it failed.
- * The groups go last and only when all else is gone: the stale sweep finds a timeline by its first group.
+ * Removes everything of a timeline in dependency order; each step is tried even when one before it failed.
+ * What a later sweep finds the rest by (the certificates, then the groups) stays until the rest is gone.
  */
 export async function cleanupTimeline(api: APIRequestContext, prefix: string): Promise<string[]> {
     const failures: string[] = [];
-    const attempt = async (what: string, action: () => Promise<unknown>): Promise<void> => {
+    const attempt = async (what: string, action: () => Promise<unknown>): Promise<boolean> => {
         try {
             await action();
+            return true;
         } catch (e) {
             failures.push(`${what}: ${String(e).slice(0, 300)}`);
+            return false;
         }
     };
     // a failed list read is a failure of its own, never a reason to skip the rest
@@ -273,7 +327,7 @@ export async function cleanupTimeline(api: APIRequestContext, prefix: string): P
     const certUuids = Object.values(certs);
 
     // The test user's notifications about these certificates.
-    await attempt('notifications', async () => {
+    const notificationsGone = await attempt('notifications', async () => {
         const mine = (await listMyNotifications(api)).filter((n) => (n.targetObjectIdentification ?? []).some((u) => certUuids.includes(u)));
         if (mine.length) await call(api, 'delete', '/v1/notifications', mine.map((n) => n.uuid));
     });
@@ -292,48 +346,50 @@ export async function cleanupTimeline(api: APIRequestContext, prefix: string): P
         }
     }, [] as Named[]);
     for (const p of own(profiles)) await attempt(`notification profile ${p.name}`, () => call(api, 'delete', `/v1/notificationProfiles/${p.uuid}`));
-    for (const p of await ownList('compliance profiles', '/v2/complianceProfiles')) {
-        await attempt(`compliance profile ${p.name}`, async () => {
-            // the force delete answers 200 with the profiles it refused
-            const refused = await call(api, 'delete', '/v2/complianceProfiles/force', [p.uuid]);
-            if (Array.isArray(refused) && refused.length) throw new Error(`force delete refused: ${JSON.stringify(refused).slice(0, 300)}`);
-        });
-    }
+    for (const p of await ownList('compliance profiles', '/v2/complianceProfiles')) await attempt(`compliance profile ${p.name}`, () => removeComplianceProfile(api, p.uuid));
     for (const r of await ownList('compliance rules', '/v2/complianceProfiles/rules')) await attempt(`rule ${r.name}`, () => call(api, 'delete', `/v2/complianceProfiles/rules/${r.uuid}`));
     const attributes = await listed('custom attributes', async () => (await call(api, 'get', '/v1/attributes/custom')) as Named[], []);
     for (const a of attributes.filter((x) => x.name === attributeNameOf(prefix))) await attempt(`custom attribute ${a.name}`, () => call(api, 'delete', `/v1/attributes/custom/${a.uuid}`));
+
     // core links a certKey_<CN> key to each certificate and keeps it after the certificate is deleted
-    const keyOf: Record<string, string | undefined> = {};
-    const deleted: string[] = [];
-    for (const [suffix, uuid] of Object.entries(certs)) {
-        await attempt(`key of certificate ${suffix}`, async () => { keyOf[suffix] = await getCertificateKeyUuid(api, uuid); });
-        await attempt(`certificate ${suffix}`, async () => {
-            await call(api, 'delete', `/v1/certificates/${uuid}`, undefined, [404]);
-            deleted.push(suffix);
+    for (const suffix of new Set([...TIMELINE_CERTIFICATES, ...Object.keys(certs)])) {
+        const certUuid = certs[suffix];
+        let keys: string[] = [];
+        // the exact name carries the timeline's prefix; the server's creation time of the certificate is checked on top when it is known
+        let createdAfter = new Date(0);
+        const keysFound = await attempt(`key lookup of certificate ${suffix}`, async () => {
+            keys = await certificateKeysOf(api, `${prefix}${suffix}`, certUuid);
+            const created = certUuid ? await certificateCreationTime(api, certUuid) : undefined;
+            if (created) createdAfter = new Date(Date.parse(created) - 60_000);
         });
+        if (certUuid) {
+            if (!keysFound || !notificationsGone) {
+                failures.push(`certificate ${suffix}: kept, so that a later sweep finds its ${keysFound ? 'notifications' : 'key'} through it`);
+                continue;
+            }
+            if (!(await attempt(`certificate ${suffix}`, () => call(api, 'delete', `/v1/certificates/${certUuid}`, undefined, [404])))) continue;
+        }
+        for (const key of keys) await attempt(`key delete of certificate ${suffix}`, () => removeOwnKey(api, key, createdAfter));
     }
-    const seededAt = Math.min(...groups.map(createdAtOf).filter((t): t is number => t !== undefined));
-    for (const suffix of deleted) {
-        const keyUuid = keyOf[suffix];
-        if (!keyUuid) continue;
-        if (!Number.isFinite(seededAt)) failures.push(`key of certificate ${suffix}: kept, no group tells when the timeline was seeded`);
-        else await attempt(`key of certificate ${suffix}`, () => deleteKeyIfOrphaned(api, keyUuid, new Date(seededAt - 60_000)));
+
+    if (!failures.length) {
+        for (const g of groups) await attempt(`group ${g.name}`, () => call(api, 'delete', `/v1/groups/${g.uuid}`));
+    } else if (groups.length) {
+        logger.warn(`Groups of ${prefix} kept, so that a later stale sweep finds the timeline again`);
     }
-    if (failures.length) failures.push(`groups kept, so that a later stale sweep finds the timeline again: ${groups.map((g) => g.name).join(', ')}`);
-    else for (const g of groups) await attempt(`group ${g.name}`, () => call(api, 'delete', `/v1/groups/${g.uuid}`));
     if (failures.length) logger.warn(`Timeline ${prefix} was not removed completely:\n${failures.join('\n')}`);
     return failures;
 }
 
 /**
- * Removes the leftovers of earlier timelines of this Epic: those older than 6 hours (their group names carry the prefix, the description the time).
+ * Removes every atf-e369 timeline older than 6 hours, whoever seeded it (its group names carry the prefix, the descriptions the time).
  * What cannot be removed goes to the cleanup ledger, which fails the run; the kept groups let the next sweep try again.
  */
 export async function cleanupStaleTimelines(api: APIRequestContext, ownPrefix: string): Promise<void> {
     const groups = (await call(api, 'get', '/v1/groups')) as Named[];
     const stale = new Set<string>();
     for (const g of groups) {
-        const m = /^(atf-e369-.+-)g1$/.exec(g.name);
+        const m = /^(atf-e369-.+-)g\d+$/.exec(g.name);
         const created = createdAtOf(g);
         if (m && m[1] !== ownPrefix && created !== undefined && Date.now() - created > STALE_AFTER_MS) stale.add(m[1]);
     }

@@ -13,12 +13,11 @@ import {
     EXPIRING_EVENT, NOT_COMPLIANT_EVENT, ENVIRONMENT, Notification, associateComplianceProfile, archiveCertificate, assignRaProfile,
     attributeNameOf, call, cleanupStaleTimelines, cleanupTimeline, complianceProfileOf, createComplianceSetup, createGroup, createNotificationProfile,
     createNotifyingTrigger, eventHistoryOf, findTimelineCertificates, getCertificate, isExpiring, isNotCompliant, issueCertificate, listMyNotifications,
-    makeCompliance, notificationsOf, prefixOf, runAfter, setGroup, statusJobRuns, userUuidOf, within,
+    makeCompliance, notificationsOf, prefixOf, runAfter, setGroup, statusJobRuns, TIMELINE_CERTIFICATES, userUuidOf, within,
 } from '../../../utils/epic369Utils';
 
 const logger = new Logger('Epic369Timeline');
 const SEED = 'seed';
-const CERTIFICATES = ['reminded', 'twohourly', 'once', 'recovered', 'archived', 'expiring', 'everyrun', 'twoprofiles'];
 
 function requireSmokeState() {
     const smoke = readSmokeState();
@@ -39,7 +38,7 @@ async function withApi<T>(request: APIRequestContext, env: Parameters<typeof get
 async function readTimeline(api: APIRequestContext) {
     const prefix = prefixOf();
     const certs = await findTimelineCertificates(api, prefix);
-    for (const name of CERTIFICATES) {
+    for (const name of TIMELINE_CERTIFICATES) {
         if (!certs[name]) throw new Error(`${ENVIRONMENT} certificate ${prefix}${name} of the ${SEED} is not found: the timeline was not seeded or was removed`);
     }
     const attributes = (await call(api, 'get', '/v1/attributes/custom')) as Array<{ uuid: string; name: string }>;
