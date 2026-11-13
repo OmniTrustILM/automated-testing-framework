@@ -1,6 +1,7 @@
 /**
  * epic369Utils — API helpers of the Epic ilm#369 timeline: create, flip and remove its objects, read notifications, firings and job runs.
- * Own wrappers: timeline objects live across executions, while the regression mutation helpers need the current run's ledger.
+ * Own wrappers: timeline objects live across executions, while the regression mutation helpers need the current run's ledger;
+ * `call` also marks no answer or a gateway error as the environment's (ENVIRONMENT), which the regression readers do not.
  */
 
 import { APIRequestContext } from '@playwright/test';
@@ -9,6 +10,7 @@ import { Logger } from './Logger';
 import { recordCleanupFailure } from './cleanupLedger';
 import { csrFromKey, newKeyMaterial } from './regression/pkiBuilders';
 import { waitForCertificateState } from './certificateUtils';
+import { deleteKeyIfOrphaned, getCertificateKeyUuid } from './keyUtils';
 
 const logger = new Logger('Epic369Utils');
 
@@ -233,9 +235,18 @@ export function runAfter(runs: JobRun[], start: number, k: number): { run: JobRu
 export const within = <T>(items: T[], at: (item: T) => number, from: number, to: number = Number.POSITIVE_INFINITY): T[] =>
     items.filter((i) => at(i) >= from && at(i) < to);
 
-interface Named { uuid: string; name: string }
+interface Named { uuid: string; name: string; description?: string }
 
-/** Removes everything of a timeline, in the order the objects depend on each other; each step is tried even when one before it failed. */
+/** The creation time a timeline group carries in its description (the seed's clock), if any. */
+const createdAtOf = (group: Named): number | undefined => {
+    const m = /created (\S+)/.exec(group.description ?? '');
+    return m ? time(m[1]) : undefined;
+};
+
+/**
+ * Removes everything of a timeline, in the order the objects depend on each other; each step is tried even when one before it failed.
+ * The groups go last and only when all else is gone: the stale sweep finds a timeline by its first group.
+ */
 export async function cleanupTimeline(api: APIRequestContext, prefix: string): Promise<string[]> {
     const failures: string[] = [];
     const attempt = async (what: string, action: () => Promise<unknown>): Promise<void> => {
@@ -282,25 +293,49 @@ export async function cleanupTimeline(api: APIRequestContext, prefix: string): P
     }, [] as Named[]);
     for (const p of own(profiles)) await attempt(`notification profile ${p.name}`, () => call(api, 'delete', `/v1/notificationProfiles/${p.uuid}`));
     for (const p of await ownList('compliance profiles', '/v2/complianceProfiles')) {
-        await attempt(`compliance profile ${p.name}`, () => call(api, 'delete', '/v2/complianceProfiles/force', [p.uuid]));
+        await attempt(`compliance profile ${p.name}`, async () => {
+            // the force delete answers 200 with the profiles it refused
+            const refused = await call(api, 'delete', '/v2/complianceProfiles/force', [p.uuid]);
+            if (Array.isArray(refused) && refused.length) throw new Error(`force delete refused: ${JSON.stringify(refused).slice(0, 300)}`);
+        });
     }
     for (const r of await ownList('compliance rules', '/v2/complianceProfiles/rules')) await attempt(`rule ${r.name}`, () => call(api, 'delete', `/v2/complianceProfiles/rules/${r.uuid}`));
     const attributes = await listed('custom attributes', async () => (await call(api, 'get', '/v1/attributes/custom')) as Named[], []);
     for (const a of attributes.filter((x) => x.name === attributeNameOf(prefix))) await attempt(`custom attribute ${a.name}`, () => call(api, 'delete', `/v1/attributes/custom/${a.uuid}`));
-    for (const [suffix, uuid] of Object.entries(certs)) await attempt(`certificate ${suffix}`, () => call(api, 'delete', `/v1/certificates/${uuid}`, undefined, [404]));
-    for (const g of groups) await attempt(`group ${g.name}`, () => call(api, 'delete', `/v1/groups/${g.uuid}`));
+    // core links a certKey_<CN> key to each certificate and keeps it after the certificate is deleted
+    const keyOf: Record<string, string | undefined> = {};
+    const deleted: string[] = [];
+    for (const [suffix, uuid] of Object.entries(certs)) {
+        await attempt(`key of certificate ${suffix}`, async () => { keyOf[suffix] = await getCertificateKeyUuid(api, uuid); });
+        await attempt(`certificate ${suffix}`, async () => {
+            await call(api, 'delete', `/v1/certificates/${uuid}`, undefined, [404]);
+            deleted.push(suffix);
+        });
+    }
+    const seededAt = Math.min(...groups.map(createdAtOf).filter((t): t is number => t !== undefined));
+    for (const suffix of deleted) {
+        const keyUuid = keyOf[suffix];
+        if (!keyUuid) continue;
+        if (!Number.isFinite(seededAt)) failures.push(`key of certificate ${suffix}: kept, no group tells when the timeline was seeded`);
+        else await attempt(`key of certificate ${suffix}`, () => deleteKeyIfOrphaned(api, keyUuid, new Date(seededAt - 60_000)));
+    }
+    if (failures.length) failures.push(`groups kept, so that a later stale sweep finds the timeline again: ${groups.map((g) => g.name).join(', ')}`);
+    else for (const g of groups) await attempt(`group ${g.name}`, () => call(api, 'delete', `/v1/groups/${g.uuid}`));
     if (failures.length) logger.warn(`Timeline ${prefix} was not removed completely:\n${failures.join('\n')}`);
     return failures;
 }
 
-/** Removes the leftovers of earlier timelines of this Epic: those older than 6 hours (their group names carry the prefix, the description the time). */
+/**
+ * Removes the leftovers of earlier timelines of this Epic: those older than 6 hours (their group names carry the prefix, the description the time).
+ * What cannot be removed goes to the cleanup ledger, which fails the run; the kept groups let the next sweep try again.
+ */
 export async function cleanupStaleTimelines(api: APIRequestContext, ownPrefix: string): Promise<void> {
-    const groups = (await call(api, 'get', '/v1/groups')) as Array<Named & { description?: string }>;
+    const groups = (await call(api, 'get', '/v1/groups')) as Named[];
     const stale = new Set<string>();
     for (const g of groups) {
         const m = /^(atf-e369-.+-)g1$/.exec(g.name);
-        const created = /created (\S+)/.exec(g.description ?? '');
-        if (m && m[1] !== ownPrefix && created && Date.now() - time(created[1]) > STALE_AFTER_MS) stale.add(m[1]);
+        const created = createdAtOf(g);
+        if (m && m[1] !== ownPrefix && created !== undefined && Date.now() - created > STALE_AFTER_MS) stale.add(m[1]);
     }
     for (const prefix of stale) {
         logger.info(`Removing the leftovers of the earlier timeline ${prefix}`);

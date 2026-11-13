@@ -32,8 +32,8 @@ test.describe('@epic-369 notification profile', () => {
         await loginAsSmokeUser(page, env);
         await profiles.goToList();
         const answer = await profiles.create({ name, recipientUser: env.username, internal: true, frequency: '1h', repetitions: 2 });
-        expect(answer.status, 'the create answer').toBe(201);
         createdUuid = answer.uuid;
+        expect(answer.status, 'the create answer').toBe(201);
         await waitForDetailRoute(page, 'notificationprofiles');
 
         // reloaded, so the values come from the server and not from the form
