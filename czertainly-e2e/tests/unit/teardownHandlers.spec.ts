@@ -226,10 +226,13 @@ test('a certificate whose live RA profile is foreign, or the ledger one in anoth
     expect(await revokesOf(same, { uuid: own.uuid.toUpperCase(), authorityInstanceUuid: 'auth-2' }, [own])).toEqual([revokeUrl('auth-1', own.uuid, same)]);
 });
 
-test('a certificate moved to an own RA profile without a live authority falls back to the ledger authority', async () => {
-    const moved = line('raProfiles');
+test('a certificate moved to an own RA profile without a live authority takes that RA profile\'s authority, else the ledger one', async () => {
+    const moved = line('raProfiles', { parents: { authority: 'auth-2' } });
     const cert = line('certificates', { name: `${RUN}-noauth.example.test`, parents: { raProfile: 'ra-1', authority: 'auth-1' } });
-    expect(await revokesOf(cert, { uuid: moved.uuid }, [moved])).toEqual([revokeUrl('auth-1', moved.uuid, cert)]);
+    expect(await revokesOf(cert, { uuid: moved.uuid.toUpperCase() }, [moved])).toEqual([revokeUrl('auth-2', moved.uuid.toUpperCase(), cert)]);
+    const bare = line('raProfiles');
+    const other = line('certificates', { name: `${RUN}-noauth2.example.test`, parents: { raProfile: 'ra-1', authority: 'auth-1' } });
+    expect(await revokesOf(other, { uuid: bare.uuid }, [bare]), 'no authority known for the RA profile (its detail reads 404)').toEqual([revokeUrl('auth-1', bare.uuid, other)]);
 });
 
 const derivedCert = (over: Partial<LedgerLine> = {}) =>

@@ -6,6 +6,7 @@ import { expect, test } from '../../../fixtures/regressionFixtures';
 import { controlDiscovery, createOwnDiscovery, findDiscoveriesByName, findDiscoveryConnectors, getDiscovery, RunControl, waitForCompleted } from '../../../utils/regression/discovery/discoveryApi';
 import { expectRefused } from '../../../utils/regression/errorContract';
 import { testMeta, tags } from '../../../utils/regression/tags';
+import { TRANSIENT_DISCOVERY_STATUSES } from '../../../utils/regression/teardown/snapshotModel';
 import { DISCOVERY_V1_RUN_WAIT_MS, ISSUE_MS } from '../../../utils/regression/timeouts';
 
 const VERB: Record<RunControl, string> = { stop: 'stopped', resume: 'resumed', cancel: 'cancelled' };
@@ -32,9 +33,9 @@ test.describe('A v1 discovery run has no run controls', { tag: tags.api }, () =>
             };
 
             await test.step('While the run is in progress: all three controls are refused', async () => {
-                const detail = await getDiscovery(api, run.uuid);
-                test.info().annotations.push({ type: 'state-at-first-try', description: `${detail.status}` });
-                await refused(detail.status === 'completed' ? 'completed' : 'running');
+                await refused('running');
+                // read after the three: a run still going then was running for each of them (a /27 scanned one target at a time)
+                expect(TRANSIENT_DISCOVERY_STATUSES, 'the run was still running when the controls were tried').toContain((await getDiscovery(api, run.uuid)).status);
             });
 
             await test.step('The run ends: detail shows the kind, no interface, no controls', async () => {

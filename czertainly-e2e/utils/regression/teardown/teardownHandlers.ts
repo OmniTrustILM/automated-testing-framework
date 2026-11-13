@@ -85,7 +85,7 @@ async function ownLive(ctx: TeardownContext, type: string, line: LedgerLine | { 
 }
 
 async function authorityOfRaProfile(ctx: TeardownContext, raProfileUuid: string): Promise<string | undefined> {
-    const own = ctx.ledger.find((l) => l.uuid === raProfileUuid && l.event === 'created');
+    const own = ctx.ledger.find((l) => l.uuid.toLowerCase() === raProfileUuid.toLowerCase() && l.event === 'created');
     const fromLedger = own && parent(own, 'authority');
     if (fromLedger) return fromLedger;
     const authority = (await getJson(ctx.api, `/api/v1/raProfiles/${raProfileUuid}`))?.authorityInstanceUuid;
@@ -297,7 +297,9 @@ const certificates: TeardownHandler = {
             const movedToOwn = !!liveRa && liveOwnUuids(ctx, 'raProfiles').has(liveRa.toLowerCase()) && liveRa.toLowerCase() !== parent(line, 'raProfile')?.toLowerCase();
             const raProfileUuid = movedToOwn ? liveRa : parent(line, 'raProfile') ?? liveRa;
             const liveAuthority = stringOf(objectOf(cert.raProfile).authorityInstanceUuid);
-            const authorityUuid = movedToOwn ? liveAuthority ?? parent(line, 'authority') : parent(line, 'authority') ?? liveAuthority;
+            const authorityUuid = movedToOwn
+                ? liveAuthority ?? await authorityOfRaProfile(ctx, liveRa!).catch(() => undefined) ?? parent(line, 'authority')
+                : parent(line, 'authority') ?? liveAuthority;
             if (raProfileUuid && authorityUuid) {
                 try {
                     await revokeThroughAuthority(ctx.api, { authorityUuid, raProfileUuid, certUuid: line.uuid, reason: 'unspecified' });
@@ -407,7 +409,7 @@ async function settled(ctx: TeardownContext, uuid: string, live: JsonObject): Pr
             return (await res.json()) as JsonObject;
         },
         (d) => !running(d),
-        { attempts: Math.ceil(DISCOVERY_SETTLE_MS / SETTLE_POLL_MS), timeoutMs: Number.POSITIVE_INFINITY, intervalMs: ctx.pollMs ?? SETTLE_POLL_MS, onTimeout: 'return' },
+        { attempts: Math.ceil(DISCOVERY_SETTLE_MS / SETTLE_POLL_MS), timeoutMs: DISCOVERY_SETTLE_MS, intervalMs: ctx.pollMs ?? SETTLE_POLL_MS, onTimeout: 'return' },
     );
     if (running(last)) ctx.warn(`discovery ${uuid} is still ${String(last.status)} after ${DISCOVERY_SETTLE_MS / 60_000} minutes; it cannot be deleted before it ends`);
     return last;
