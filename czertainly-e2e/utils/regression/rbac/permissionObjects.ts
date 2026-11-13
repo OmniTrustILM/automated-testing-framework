@@ -8,7 +8,7 @@ import { listAll, PermissionDocument, readPermissions, replaceOwnUserRoles, save
 import { callAs, Credentials, parseProfile, Profile } from './identities';
 import { GuardedApi } from '../guard/types';
 import { selfSignedPem } from '../pkiBuilders';
-import { apiJson } from '../apiReads';
+import { apiJson, getCertificate } from '../apiReads';
 import { pickHealthyAuthority, RaProfileSourceMissing, createOwnRaProfileLike, raProfileBodyLike } from '../ownRaProfiles';
 import { OwnRef, readLedger } from '../ledger/ledger';
 import { runName, runId } from '../ledger/runState';
@@ -87,7 +87,7 @@ export async function ensureRbacObjects(api: GuardedApi, spec: string): Promise<
         const onRa = plan.ra ? refs[plan.ra] : undefined;
         let known = onRa ? ledgerRefByPrefix('certificates', `${cn}-`) : ledgerRef('certificates', cn);
         // An issue whose wait failed is ledgered but not issued: issue a new one rather than build the matrix on it.
-        if (known && onRa && (await apiJson<JsonObject>(api, 'GET', `/api/v1/certificates/${known.uuid}`)).state !== 'issued') known = undefined;
+        if (known && onRa && (await getCertificate(api, known.uuid)).state !== 'issued') known = undefined;
         const cert = known ?? (onRa
             ? await issueOwnCertificate(api, { uuid: onRa.uuid, name: onRa.name, authorityUuid: pick.authorityUuid }, spec,
                 { suffix: `rbac-${key}`, fillRequiredAttributes: true, note: `RBAC fixture certificate ${key} (issued on ${plan.ra!.toUpperCase()})` })

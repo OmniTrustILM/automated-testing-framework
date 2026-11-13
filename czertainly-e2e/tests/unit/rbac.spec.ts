@@ -284,7 +284,7 @@ test('the multi-word action of API-AUTH-30 is the human form core builds: "Check
 
 test('rolesAfterSignInProblem: the roles the API set must survive the UI sign-in; a mismatch names the sync policy, not RBAC', () => {
     expect(rolesAfterSignInProblem(['b', 'a'], ['a', 'b'])).toBeUndefined();
-    expect(rolesAfterSignInProblem([], ['a'])).toMatch(/SYNC_POLICY=sync-data.*DevOps request 4.*core#2226.*not an RBAC failure/);
+    expect(rolesAfterSignInProblem([], ['a'])).toMatch(/SYNC_POLICY=sync-data.*create-only.*core#2226.*not an RBAC failure/);
     expect(rolesAfterSignInProblem(['a', 'x'], ['a'])).toMatch(/SYNC_POLICY/);
     expect(rolesAfterSignInProblem(['x'], ['a'])).toMatch(/SYNC_POLICY/);
     expect(rolesAfterSignInProblem([], [])).toBeUndefined();

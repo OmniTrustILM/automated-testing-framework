@@ -22,7 +22,7 @@ import { FAILED_FIXTURE_ROW_TEST_MS, ISSUED_WAIT_MS, ISSUE_MS, LEFTOVER_APPROVAL
 import { waitForCertificateState } from '../../../utils/regression/wait/certificateState';
 
 /** A failed successor from two parallel renews of one own certificate (EJBCA-NG rolls one back, API-CERT-36); undefined when both issue. */
-async function failedByParallelRenew(api: GuardedApi, own: OwnObjects, ra: RaLike): Promise<(OwnRef & { name: string }) | undefined> {
+async function failedByParallelRenew(api: GuardedApi, own: OwnObjects, ra: RaLike): Promise<OwnRef | undefined> {
     for (let attempt = 1; attempt <= 2; attempt++) {
         const a = await own.certificate.issue(ra, { suffix: `c08fr${attempt}` });
         const detail = await getCertificate(api, a.uuid);
@@ -35,7 +35,7 @@ async function failedByParallelRenew(api: GuardedApi, own: OwnObjects, ra: RaLik
             (e: unknown) => { if (/reached "failed"/.test(String(e))) return 'failed'; throw e; })));
         for (const r of both) await own.derivedKey(r.successor!.uuid, r.createdAfter);
         const at = outcomes.indexOf('failed');
-        if (at >= 0) return { ...both[at].successor!, name: both[at].successor!.name ?? a.name };
+        if (at >= 0) return both[at].successor!;
     }
     return undefined;
 }

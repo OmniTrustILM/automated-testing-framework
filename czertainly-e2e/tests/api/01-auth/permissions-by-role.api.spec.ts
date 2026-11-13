@@ -2,7 +2,7 @@
  * API-AUTH-30, 31, 32, 33 — The RBAC decision table through the API as the dedicated second identity (ilm#427). The 403
  * body's `statusCode` is 403 (interfaces#887).
  */
-import { ISSUING_MATRIX_ROW_TEST_MS, LIFECYCLE_MS } from '../../../utils/regression/timeouts';
+import { ISSUING_MATRIX_ROW_TEST_MS } from '../../../utils/regression/timeouts';
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { callAs, isNotGrantableAction, replicaBlocker } from '../../../utils/regression/rbac/identities';
 import { accessDeniedProblems, Cell, cellPair, cellStatus, CERT_KEYS, CertKey, DENY_NUANCES, Fixture, FIXTURES, MATRIX_A_DETAIL, MATRIX_A_LIST, MATRIX_A_PROFILE, MATRIX_B_ISSUE_P1, MATRIX_B_ISSUE_P2, MATRIX_B_RA_CREATE, MATRIX_B_RA_DETAIL_P1, MATRIX_B_RA_DETAIL_P2, MATRIX_B_RA_LIST, MATRIX_B_ROLE_CREATE, MATRIX_B_ROLES_LIST, MATRIX_B_USER_PERMISSIONS, MATRIX_B_USERS_LIST, NESTED_GATE_FIXTURES } from '../../../utils/regression/rbac/permissionMatrix';
@@ -33,6 +33,7 @@ interface Fixtures {
     restrictedToken: string | undefined;
 }
 
+/** The first row of a run builds the RBAC objects, two of them issued on P1 / P2: every row that calls it takes the issuing budget. */
 async function prepare(fx: Fixtures): Promise<Matrix> {
     const spec = fx.own.spec;
     const blocker = replicaBlocker();
@@ -48,8 +49,7 @@ async function prepare(fx: Fixtures): Promise<Matrix> {
 const ISSUE_P1_400_BUG: ReadonlySet<Fixture> = new Set<Fixture>(['F4a', 'F4b', 'F4c', 'F6']);
 const ISSUE_P2_400_BUG: ReadonlySet<Fixture> = new Set<Fixture>(['F4b', 'F4c', 'F6']);
 
-/** A core#2842 cell: anything but the known 400 is checked in full here (a 403 with its deny body), so only the known 400 waits for the
- * marker; the cell still goes there, so a row whose cells all answer 403 shows as an unexpected pass once core#2842 is fixed. */
+/** A core#2842 cell: any answer but the known 400 is checked in full now; every cell still goes to the marker step. */
 function knownIssueAnswer(fixture: Fixture, what: string, answer: ApiAnswer, cell: Cell): { what: string; answer: ApiAnswer; cell: Cell } {
     const known = answer.status === 400 && /Failed to submit certificate request/.test(answer.text);
     if (!known) expectCell(`${ROLE_WORDS[fixture]} ${what}`, answer, cell);
@@ -89,7 +89,7 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
             ],
         }),
         async ({ api, anonymousApi, env, own, restrictedToken }) => {
-            test.setTimeout(ISSUING_MATRIX_ROW_TEST_MS); // the first row of a run makes the fixtures: two issues on P1 / P2
+            test.setTimeout(ISSUING_MATRIX_ROW_TEST_MS);
             const m = await prepare({ api, env, own, restrictedToken: restrictedToken?.bearer() });
             await test.step('The role without permissions is the second identity\'s only role', async () => applyFixture(m.api, m.sw, 'F0', m.refs, m.spec));
 
@@ -128,7 +128,7 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
             rule: ['the body field `statusCode` of a 403 is 403 (interfaces#887: the DTO getter forced it to 400 before the fix)', 'needs the second identity'],
         }),
         async ({ api, env, own, restrictedToken }) => {
-            test.setTimeout(ISSUING_MATRIX_ROW_TEST_MS); // the first row of a run makes the fixtures: two issues on P1 / P2
+            test.setTimeout(ISSUING_MATRIX_ROW_TEST_MS);
             const m = await prepare({ api, env, own, restrictedToken: restrictedToken?.bearer() });
             await applyFixture(m.api, m.sw, 'F0', m.refs, m.spec);
             const res = await callAs(m.api, m.token, 'GET', '/api/v1/roles');
@@ -171,7 +171,7 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
                 ],
             }),
             async ({ api, env, own, restrictedToken }) => {
-                test.setTimeout(LIFECYCLE_MS);
+                test.setTimeout(ISSUING_MATRIX_ROW_TEST_MS);
                 const m = await prepare({ api, env, own, restrictedToken: restrictedToken?.bearer() });
                 const auditor = fixture === 'F6' ? await auditorDocument(m.api) : undefined;
                 await test.step(`${ROLE_WORDS[fixture]} is the second identity's only role and is in force`, async () => applyFixture(m.api, m.sw, fixture, m.refs, m.spec, auditor));
@@ -227,7 +227,7 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
                 const auditor = fixture === 'F6' ? await auditorDocument(m.api) : undefined;
                 await test.step(`${ROLE_WORDS[fixture]} is the second identity's only role and is in force`, async () => applyFixture(m.api, m.sw, fixture, m.refs, m.spec, auditor));
                 const { p1, p2, authorityUuid } = m.refs;
-                const knownIssueAnswers: Array<{ what: string; answer: ApiAnswer; cell: Cell }> = []; // re-asserted last, under the core#2842 marker
+                const knownIssueAnswers: Array<{ what: string; answer: ApiAnswer; cell: Cell }> = [];
 
                 await test.step('GET /v1/raProfiles: the rows seen, or the refusal', async () => {
                     const cell = MATRIX_B_RA_LIST[fixture];
@@ -313,7 +313,7 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
                 ],
             }),
             async ({ api, env, own, restrictedToken }) => {
-                test.setTimeout(LIFECYCLE_MS);
+                test.setTimeout(ISSUING_MATRIX_ROW_TEST_MS);
                 const m = await prepare({ api, env, own, restrictedToken: restrictedToken?.bearer() });
                 await test.step(`${ROLE_WORDS[fixture]} is the second identity's only role and is in force`, async () => applyFixture(m.api, m.sw, fixture, m.refs, m.spec));
                 const want = DENY_NUANCES[fixture];

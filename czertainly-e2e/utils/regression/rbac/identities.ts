@@ -168,7 +168,7 @@ export function rolesAfterSignInProblem(profileRoleUuids: string[], expectedRole
     const got = [...profileRoleUuids].sort();
     const want = [...expectedRoleUuids].sort();
     if (got.length === want.length && got.every((u, i) => u === want[i])) return undefined;
-    return `The restricted user holds ${got.length} role(s) after the UI sign-in, the API barrier had set ${want.length} (other uuids): the auth service most likely runs SYNC_POLICY=sync-data and rewrote the roles at sign-in (DevOps request 4: the test account needs create-only; core#2226). This is a tier configuration problem, not an RBAC failure of the fixture.`;
+    return `The restricted user holds ${got.length} role(s) after the UI sign-in, the API barrier had set ${want.length} (other uuids): the auth service most likely runs SYNC_POLICY=sync-data and rewrote the roles at sign-in (the test account needs create-only; core#2226). This is a tier configuration problem, not an RBAC failure of the fixture.`;
 }
 
 /** After the UI sign-in: the user's own session holds exactly the roles the API set; a mismatch fails with the sync-policy message. */
