@@ -12,7 +12,7 @@ import { sendRaw } from './lifecycle/rawAnswers';
 import { GeneratedCsr, csrFromKey, newKeyPair, SanSet, sameSans, sansOfDetail, selfSignedPem } from './pkiBuilders';
 import { RaLike } from './ownRaProfiles';
 import { Logger } from '../Logger';
-import { ApiAnswer, apiJson, apiJsonWithDate, CertificateDetail, createdAfterOf } from './apiReads';
+import { ApiAnswer, apiJson, apiJsonWithDate, createdAfterOf, getCertificate } from './apiReads';
 import { requiredCustomAttributes } from './customAttributes';
 import { recordDerivedKeyOf, recordDerivedKeyOrNamed } from './issuedRecords';
 import { OwnRef, recordCreated } from './ledger/ledger';
@@ -117,14 +117,10 @@ async function automaticOwnershipOn(api: GuardedApi): Promise<boolean> {
     }
 }
 
-/**
- * The suites expect an own upload without an owner. With automatic ownership on (core#2698), the sync upload makes the uploader the
- * owner before it answers (an after-commit listener in the request), so one read is enough; an upload trigger may leave no owner.
- */
+/** With automatic ownership on (core#2698) the sync upload answers with the uploader as owner; the suites expect none, so it is removed. */
 async function dropUploaderOwner(api: GuardedApi, ref: OwnRef): Promise<void> {
     if (!(await automaticOwnershipOn(api))) return;
-    const detail = await apiJson<CertificateDetail>(api, 'GET', `/api/v1/certificates/${ref.uuid}`);
-    if (!detail?.ownerUuid) return;
+    if (!(await getCertificate(api, ref.uuid)).ownerUuid) return;
     await apiJsonWithDate(api, 'PATCH', `/api/v1/certificates/${ref.uuid}`, { ownerUuid: '' });
     logger.info(`certificate ${ref.uuid}: automatic ownership is on; the uploader's ownership is removed`);
 }

@@ -26,7 +26,7 @@ test.describe('User with a role', { tag: tags.regression }, () => {
             const name = ownName('user');
             const users = new UserPage(page);
 
-            const { created, uuid } = await test.step(`Users → "+" → Create User → fields → tick ${role.name} → Create`, async () => {
+            const { created, uuid } = await test.step(`Users → "+" → Create User → fields → pick ${role.name} in Roles → Create`, async () => {
                 await users.goToList();
                 const answer = await submitRecordingByNameOnFailure(
                     { type: 'users', name, spec: own.spec, note: `role ${role.name}`, lookup: lookupInList(api, '/api/v1/users', 'username') },

@@ -15,17 +15,18 @@ import { Answer, Arrived, LoopbackServer } from './helpers/loopbackServer';
 import { FakeCore as BaseCore } from './helpers/fakeCore';
 import { registerFakeCore } from './helpers/guardRig';
 import { QUICK_STATE_WAIT_MS } from '../../utils/regression/timeouts';
+import { getCertificate } from '../../utils/regression/apiReads';
 
 type Json = Record<string, any>;
 
 const U = (n: number) => `bbbbbbbb-0000-4000-8000-${String(n).padStart(12, '0')}`;
+const OWNERSHIP_ON = { certificates: { upload: { automaticOwnership: true } } };
 
 class SeedCore extends BaseCore {
     protected uuidPrefix = 'bbbbbbbb-0000-4000-8000-';
     readonly uploads: Json[] = [];
     readonly patches: Array<{ uuid: string; body: Json }> = [];
     requiredGroupAttr = false;
-    automaticOwnership = false;
     /** An upload trigger that sets the owner to nobody: automatic ownership then leaves the upload without one. */
     triggerSetsNoOwner = false;
 
@@ -39,7 +40,6 @@ class SeedCore extends BaseCore {
     }
 
     private get(path: string): Answer {
-        if (path === '/api/v1/settings/platform') return { status: 200, body: { certificates: { upload: { automaticOwnership: this.automaticOwnership } } } };
         if (/^\/api\/v1\/attributes\/custom\/resources\/(certificates|users|groups)$/.test(path)) {
             return { status: 200, body: path.endsWith('/groups') && this.requiredGroupAttr ? [{ uuid: U(1), name: 'site', contentType: 'string', properties: { required: true } }] : [] };
         }
@@ -66,6 +66,7 @@ class SeedCore extends BaseCore {
             const d = describeCertificate(pem);
             const der = Buffer.from(pem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, ''), 'base64');
             this.uploads.push({ uuid, subject: d.subject, customAttributes: body?.customAttributes });
+            const owned = this.platformSettings.certificates.upload.automaticOwnership && !this.triggerSetsNoOwner;
             this.store.set(`/api/v1/certificates/${uuid}`, {
                 uuid,
                 commonName: d.subject.replace(/^CN=/, ''),
@@ -73,7 +74,7 @@ class SeedCore extends BaseCore {
                 notBefore: d.notBefore.toISOString(),
                 notAfter: d.notAfter.toISOString(),
                 key: { uuid: this.next() },
-                ...(this.automaticOwnership && !this.triggerSetsNoOwner ? { ownerUuid: U(8888), owner: 'uploader' } : {}),
+                ...(owned ? { ownerUuid: U(8888), owner: 'uploader' } : {}),
             });
             return { status: 200, body: { uuid } };
         }
@@ -157,7 +158,7 @@ test.describe('the certificate seeds build on the loopback fake core (every requ
 
     test('with automatic ownership on, every seed upload loses the uploader as owner before the seed PATCHes (core#2698)', async () => {
         test.setTimeout(180_000);
-        core.automaticOwnership = true;
+        core.platformSettings = OWNERSHIP_ON;
         const m = await ensureCertificateSeed(api, 'T');
         const byId = (uuid: string) => idsOfUuids(m, [uuid])[0];
         const dropped = core.patches.filter((p) => p.body.ownerUuid === '').map((p) => byId(p.uuid));
@@ -166,13 +167,12 @@ test.describe('the certificate seeds build on the loopback fake core (every requ
         for (const p of core.patches) if (!first.has(p.uuid)) first.set(p.uuid, p.body);
         for (const [uuid, body] of first) expect(body, `the first PATCH of ${byId(uuid)}`).toEqual({ ownerUuid: '' });
         expect(core.patches.find((p) => byId(p.uuid) === 'C01' && p.body.ownerUuid === m.ownerUuid)).toBeTruthy();
-        const c03 = await api.get(`/api/v1/certificates/${certById(m, 'C03').uuid}`);
-        expect((await c03.json()).ownerUuid).toBeUndefined();
+        expect((await getCertificate(api, certById(m, 'C03').uuid)).ownerUuid).toBeUndefined();
     });
 
     test('with automatic ownership on but an upload trigger leaving no owner, the seed does not wait for one and removes nothing', async () => {
         test.setTimeout(180_000);
-        core.automaticOwnership = true;
+        core.platformSettings = OWNERSHIP_ON;
         core.triggerSetsNoOwner = true;
         const started = Date.now();
         const m = await ensureCertificateSeed(api, 'T');

@@ -125,7 +125,7 @@ test.describe('credential validation', { tag: tags.api }, () => {
         });
 
     test('a name-only attribute is refused and no credential is left behind',
-        testMeta({ id: 'API-GEN-18', row: 'attribute-by-name', prio: 'P1', issue: ISSUE, rule: ['atomicity gap: the credential row is saved before the attribute content is written; core#2512, mechanism core#2449', 'attribute by name only (no uuid); core#2451 (request attribute without uuid)', 'core#2512 fixed on core main (2026-11-12): 422 and no orphan'] }),
+        testMeta({ id: 'API-GEN-18', row: 'attribute-by-name', prio: 'P1', issue: ISSUE, rule: ['atomicity gap: the credential row is saved before the attribute content is written; core#2512, mechanism core#2449', 'attribute by name only (no uuid); core#2451 (request attribute without uuid)', 'a name-only attribute is refused 422 and no credential is left behind (core#2512)'] }),
         async ({ api, own }, testInfo) => {
             const c = await credentialConnectorOrSkip(api);
             const name = ownName('cred-byname');
