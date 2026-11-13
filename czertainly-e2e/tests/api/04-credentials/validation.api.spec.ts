@@ -1,6 +1,5 @@
 /**
- * API-GEN-17, API-GEN-18 — Credential create validation, one test per row (ilm#428). core#2512: a name-only attribute
- * leaves an orphan credential today (test.fail).
+ * API-GEN-17, API-GEN-18 — Credential create validation, one test per row (ilm#428).
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
 import { expect422Messages, expectMessageObject } from '../../../utils/regression/errorContract';
@@ -126,7 +125,7 @@ test.describe('credential validation', { tag: tags.api }, () => {
         });
 
     test('a name-only attribute is refused and no credential is left behind',
-        testMeta({ id: 'API-GEN-18', row: 'attribute-by-name', prio: 'P1', issue: ISSUE, bug: 'core#2512', rule: ['atomicity gap: the credential row is saved before the attribute content is written; core#2512, mechanism core#2449', 'attribute by name only (no uuid); core#2451 (request attribute without uuid)', 'core#2512: 404 and an orphan today'] }),
+        testMeta({ id: 'API-GEN-18', row: 'attribute-by-name', prio: 'P1', issue: ISSUE, rule: ['atomicity gap: the credential row is saved before the attribute content is written; core#2512, mechanism core#2449', 'attribute by name only (no uuid); core#2451 (request attribute without uuid)', 'a name-only attribute is refused 422 and no credential is left behind (core#2512)'] }),
         async ({ api, own }, testInfo) => {
             const c = await credentialConnectorOrSkip(api);
             const name = ownName('cred-byname');
@@ -134,13 +133,11 @@ test.describe('credential validation', { tag: tags.api }, () => {
             const probe = await probeCredential(api, own.spec, body, 'by-name attribute probe (core#2512)');
             const rows = await adoptByName(api, '/api/v1/credentials', 'credentials', name, own.spec, 'orphan left by a refused create (core#2512)');
             testInfo.annotations.push({ type: 'observed', description: `status ${probe.status}; ${rows.length} credential(s) with the name afterwards` });
+            expect(probe.status, 'a name-only attribute is refused (4xx); a created one is adopted above').toBeGreaterThanOrEqual(400);
             expect(probe.status, 'a refused request is a 4xx, never a 5xx').toBeLessThan(500);
-            if (probe.status >= 400) {
-                if (probe.status === 422) expect422Messages(probe.text);
-                else expectMessageObject(probe.text);
-            }
-            test.fail(true, 'core#2512: the credential row is saved before the attribute lookup fails; the refused request leaves an orphan credential');
-            expect(probe.status >= 400 ? rows : [], 'a refused create leaves no credential with that name').toHaveLength(0);
+            if (probe.status === 422) expect422Messages(probe.text);
+            else expectMessageObject(probe.text);
+            expect(rows, 'a refused create leaves no credential with that name').toHaveLength(0);
         });
 
     test('a create without connectorUuid is a 4xx with the error-contract body',

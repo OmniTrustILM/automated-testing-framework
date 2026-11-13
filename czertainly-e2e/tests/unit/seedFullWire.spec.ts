@@ -14,16 +14,21 @@ import { readRunState, runId } from '../../utils/regression/ledger/runState';
 import { Answer, Arrived, LoopbackServer } from './helpers/loopbackServer';
 import { FakeCore as BaseCore } from './helpers/fakeCore';
 import { registerFakeCore } from './helpers/guardRig';
+import { getCertificate } from '../../utils/regression/apiReads';
 
 type Json = Record<string, any>;
 
 const U = (n: number) => `bbbbbbbb-0000-4000-8000-${String(n).padStart(12, '0')}`;
+const OWNERSHIP_ON = { certificates: { upload: { automaticOwnership: true } } };
 
 class SeedCore extends BaseCore {
     protected uuidPrefix = 'bbbbbbbb-0000-4000-8000-';
     readonly uploads: Json[] = [];
     readonly patches: Array<{ uuid: string; body: Json }> = [];
     requiredGroupAttr = false;
+    /** An upload trigger that sets the owner to nobody: automatic ownership then leaves the upload without one. */
+    triggerSetsNoOwner = false;
+    readonly detailReads = new Map<string, number>();
 
     protected respond(a: Arrived): Answer | undefined {
         const path = a.url.split('?')[0];
@@ -35,6 +40,8 @@ class SeedCore extends BaseCore {
     }
 
     private get(path: string): Answer {
+        const detail = /^\/api\/v1\/certificates\/([0-9a-f-]{36})$/.exec(path);
+        if (detail) this.detailReads.set(detail[1], (this.detailReads.get(detail[1]) ?? 0) + 1);
         if (/^\/api\/v1\/attributes\/custom\/resources\/(certificates|users|groups)$/.test(path)) {
             return { status: 200, body: path.endsWith('/groups') && this.requiredGroupAttr ? [{ uuid: U(1), name: 'site', contentType: 'string', properties: { required: true } }] : [] };
         }
@@ -61,6 +68,7 @@ class SeedCore extends BaseCore {
             const d = describeCertificate(pem);
             const der = Buffer.from(pem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, ''), 'base64');
             this.uploads.push({ uuid, subject: d.subject, customAttributes: body?.customAttributes });
+            const owned = this.platformSettings.certificates.upload.automaticOwnership && !this.triggerSetsNoOwner;
             this.store.set(`/api/v1/certificates/${uuid}`, {
                 uuid,
                 commonName: d.subject.replace(/^CN=/, ''),
@@ -68,6 +76,7 @@ class SeedCore extends BaseCore {
                 notBefore: d.notBefore.toISOString(),
                 notAfter: d.notAfter.toISOString(),
                 key: { uuid: this.next() },
+                ...(owned ? { ownerUuid: U(8888), owner: 'uploader' } : {}),
             });
             return { status: 200, body: { uuid } };
         }
@@ -77,6 +86,8 @@ class SeedCore extends BaseCore {
     private patch(path: string, body: Json | undefined): Answer {
         const m = /^\/api\/v1\/certificates\/([0-9a-f-]{36})$/.exec(path);
         if (m) this.patches.push({ uuid: m[1], body: body ?? {} });
+        const stored = m ? this.store.get(path) : undefined;
+        if (stored && body?.ownerUuid === '') this.store.set(path, { ...stored, ownerUuid: undefined, owner: undefined });
         return { status: 204 };
     }
 }
@@ -112,6 +123,7 @@ test.describe('the certificate seeds build on the loopback fake core (every requ
         expect(patched.C03).toEqual({ groupUuids: [m.groupUuids.a, m.groupUuids.b] });
         expect(patched.C07).toEqual({ groupUuids: [m.groupUuids.b] });
         expect(patched.C24).toEqual({ trustedCa: true });
+        expect(core.patches.filter((p) => p.body.ownerUuid === ''), 'automatic ownership off: no owner removal').toEqual([]);
         const c01 = core.uploads.find((u) => String(u.subject).endsWith('alpha-web'))!;
         const vals = (c01.customAttributes as Json[]).map((a) => [a.name.replace(m.prefix, ''), a.content.map((x: Json) => x.data)]);
         expect(vals).toEqual([['txt', ['red']], ['num', [10]], ['day', [m.certificates[0].day]], ['flag', [true]], ['pick', ['a']]]);
@@ -144,6 +156,44 @@ test.describe('the certificate seeds build on the loopback fake core (every requ
         server.reset();
         await expect(patchOwnCertificate(api, { uuid: certById(m, 'C01').uuid, name: certById(m, 'C01').commonName, kind: 'own' }, { groupUuids: [U(9999)] })).rejects.toBeInstanceOf(OwnObjectViolation);
         expect(server.mutations()).toEqual([]);
+    });
+
+    test('with automatic ownership on, every seed upload loses the uploader as owner before the seed PATCHes (core#2698)', async () => {
+        test.setTimeout(180_000);
+        core.platformSettings = OWNERSHIP_ON;
+        const m = await ensureCertificateSeed(api, 'T');
+        const byId = (uuid: string) => idsOfUuids(m, [uuid])[0];
+        const dropped = core.patches.filter((p) => p.body.ownerUuid === '').map((p) => byId(p.uuid));
+        expect(dropped).toHaveLength(24);
+        const first = new Map<string, Json>();
+        for (const p of core.patches) if (!first.has(p.uuid)) first.set(p.uuid, p.body);
+        for (const [uuid, body] of first) expect(body, `the first PATCH of ${byId(uuid)}`).toEqual({ ownerUuid: '' });
+        expect(core.patches.find((p) => byId(p.uuid) === 'C01' && p.body.ownerUuid === m.ownerUuid)).toBeTruthy();
+        expect((await getCertificate(api, certById(m, 'C03').uuid)).ownerUuid).toBeUndefined();
+    });
+
+    test('with automatic ownership on but an upload trigger leaving no owner, the seed does not wait for one and removes nothing', async () => {
+        test.setTimeout(180_000);
+        core.platformSettings = OWNERSHIP_ON;
+        core.triggerSetsNoOwner = true;
+        const m = await ensureCertificateSeed(api, 'T');
+        expect(core.detailReads.size, 'every upload is read').toBe(24);
+        expect(Math.max(...core.detailReads.values()), 'no poll for an owner that never comes (a 30 s poll reads ~15 times)').toBeLessThan(10);
+        expect(core.patches.filter((p) => p.body.ownerUuid === ''), 'nothing to remove').toEqual([]);
+        expect(core.patches.find((p) => idsOfUuids(m, [p.uuid])[0] === 'C01' && p.body.ownerUuid === m.ownerUuid)).toBeTruthy();
+    });
+
+    test('a settings read that fails (403) keeps the seed uploads and their records, and removes no owner', async () => {
+        test.setTimeout(180_000);
+        core.platformSettings = OWNERSHIP_ON;
+        core.platformSettingsStatus = 403;
+        const m = await ensureCertificateSeed(api, 'T');
+        expect(core.uploads).toHaveLength(24);
+        expect(core.patches.filter((p) => p.body.ownerUuid === ''), 'the setting is unknown: nothing removed').toEqual([]);
+        const ledger = readLedger().filter((l) => l.runId === runId());
+        expect(ledger.filter((l) => l.type === 'certificates' && !l.derived)).toHaveLength(24);
+        expect(ledger.filter((l) => l.type === 'keys' && l.derived)).toHaveLength(24);
+        expect((await getCertificate(api, certById(m, 'C03').uuid)).ownerUuid, 'the uploader stays owner').toBe(U(8888));
     });
 
     test('buildFreshSeedB: own groups only, every create recorded in the ledger before the first assertion, the guard refuses a foreign group', async () => {

@@ -50,6 +50,8 @@ export class UserPage {
     readonly lastNameInput: Locator;
     readonly emailInput: Locator;
     readonly enabledSwitch: Locator;
+    readonly rolesTrigger: Locator;
+    readonly rolesSearchInput: Locator;
     readonly createButton: Locator;
 
     // Edit User dialog
@@ -92,6 +94,8 @@ export class UserPage {
         this.lastNameInput = this.createUserDialog.getByTestId('text-input-lastName');
         this.emailInput = this.createUserDialog.getByTestId('text-input-email');
         this.enabledSwitch = this.createUserDialog.getByTestId('switch-enabled-input');
+        this.rolesTrigger = this.createUserDialog.getByTestId('select-userRoles-trigger');
+        this.rolesSearchInput = page.getByTestId('select-userRoles-search');
         this.createButton = this.createUserDialog.getByTestId('progress-button').last();
 
         this.editUserDialog = page.getByRole('dialog', { name: 'Edit User' });
@@ -115,8 +119,8 @@ export class UserPage {
         return this.usersList.getByRole('link', { name: username, exact: true });
     }
 
-    roleRow(roleName: string): Locator {
-        return this.createUserDialog.getByRole('row').filter({ has: this.page.getByRole('cell', { name: roleName, exact: true }) });
+    private roleOption(roleName: string): Locator {
+        return this.page.getByRole('option').filter({ has: this.page.getByText(roleName, { exact: true }) });
     }
 
     async goToList(): Promise<void> {
@@ -142,15 +146,16 @@ export class UserPage {
         await expect(this.createUserDialog).toBeVisible();
     }
 
-    /** Ticks the row that has the role's name cell, without `force`, so a covered or disabled box fails. */
-    private async tickRole(roleName: string): Promise<void> {
-        const row = this.roleRow(roleName);
-        await expect(row).toHaveCount(1);
-        const box = row.getByRole('checkbox');
-        await box.scrollIntoViewIfNeeded();
-        await expect(box).toBeEnabled();
-        await box.check();
-        await expect(box).toBeChecked();
+    /** Picks the role in the searchable roles select (fe-administrator#2423); its chip shows the choice. */
+    private async pickRole(roleName: string): Promise<void> {
+        await this.rolesTrigger.click();
+        await this.rolesSearchInput.fill(roleName);
+        const option = this.roleOption(roleName);
+        await expect(option).toHaveCount(1);
+        await option.click();
+        await this.page.keyboard.press('Escape');
+        await expect(this.createUserDialog).toBeVisible();
+        await expect(this.rolesTrigger.getByRole('button', { name: `Remove ${roleName}`, exact: true })).toBeVisible();
     }
 
     /**
@@ -165,7 +170,7 @@ export class UserPage {
         await fillText(this.emailInput, fields.email ?? `${fields.username}@example.test`);
         await expect(this.enabledSwitch).toBeChecked();
         await fillRequiredCustomAttributes(this.page, this.createUserDialog, 'qa-reg', await customAttributesDefined(this.page, 'users'));
-        for (const r of fields.roleNames ?? []) await this.tickRole(r);
+        for (const r of fields.roleNames ?? []) await this.pickRole(r);
         const createCall = watchApiCall(this.page, { method: 'POST', path: /\/api\/v1\/users$/ });
         const rolesCall = (fields.roleNames ?? []).length
             ? watchApiCall(this.page, { method: 'PATCH', path: new RegExp(`/api/v1/users/${UUID}/roles$`) })
