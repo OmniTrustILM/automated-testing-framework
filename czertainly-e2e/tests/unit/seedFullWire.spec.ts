@@ -181,6 +181,19 @@ test.describe('the certificate seeds build on the loopback fake core (every requ
         expect(core.patches.find((p) => idsOfUuids(m, [p.uuid])[0] === 'C01' && p.body.ownerUuid === m.ownerUuid)).toBeTruthy();
     });
 
+    test('a settings read that fails (403) keeps the seed uploads and their records, and removes no owner', async () => {
+        test.setTimeout(180_000);
+        core.platformSettings = OWNERSHIP_ON;
+        core.platformSettingsStatus = 403;
+        const m = await ensureCertificateSeed(api, 'T');
+        expect(core.uploads).toHaveLength(24);
+        expect(core.patches.filter((p) => p.body.ownerUuid === ''), 'the setting is unknown: nothing removed').toEqual([]);
+        const ledger = readLedger().filter((l) => l.runId === runId());
+        expect(ledger.filter((l) => l.type === 'certificates' && !l.derived)).toHaveLength(24);
+        expect(ledger.filter((l) => l.type === 'keys' && l.derived)).toHaveLength(24);
+        expect((await getCertificate(api, certById(m, 'C03').uuid)).ownerUuid, 'the uploader stays owner').toBe(U(8888));
+    });
+
     test('buildFreshSeedB: own groups only, every create recorded in the ledger before the first assertion, the guard refuses a foreign group', async () => {
         test.setTimeout(60_000);
         const b = await buildFreshSeedB(api, 'T');

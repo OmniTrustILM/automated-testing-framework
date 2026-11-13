@@ -120,7 +120,10 @@ async function automaticOwnershipOn(api: GuardedApi): Promise<boolean> {
 /** With automatic ownership on (core#2698) the sync upload answers with the uploader as owner; the suites expect none, so it is removed. */
 async function dropUploaderOwner(api: GuardedApi, ref: OwnRef): Promise<void> {
     if (!(await automaticOwnershipOn(api))) return;
-    if (!(await getCertificate(api, ref.uuid)).ownerUuid) return;
+    if (!(await getCertificate(api, ref.uuid)).ownerUuid) {
+        logger.info(`certificate ${ref.uuid}: automatic ownership is on, but the upload has no owner (an upload trigger may have set none)`);
+        return;
+    }
     await apiJsonWithDate(api, 'PATCH', `/api/v1/certificates/${ref.uuid}`, { ownerUuid: '' });
     logger.info(`certificate ${ref.uuid}: automatic ownership is on; the uploader's ownership is removed`);
 }
