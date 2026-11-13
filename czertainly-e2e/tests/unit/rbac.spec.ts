@@ -120,10 +120,11 @@ test('parseProfile reads the real UserProfileDetailDto (top-level username, perm
     expect(isNotGrantableAction('list')).toBe(false);
 });
 
-test('secondIdentityBlocker names the DevOps request while DED is missing, and refuses DED = the admin account', () => {
+test('secondIdentityBlocker names the missing variable while DED is missing, and refuses DED = the admin account', () => {
     expect(secondIdentityBlocker('admin-test', {})).toContain(SECOND_IDENTITY_REQUEST);
     expect(secondIdentityBlocker('admin-test', {})).toMatch(/^\[blocked: second identity\]/);
-    expect(secondIdentityBlocker('admin-test', { REG_RESTRICTED_USERNAME: 'qa-ded' })).toContain('DevOps request 2');
+    expect(secondIdentityBlocker('admin-test', {})).toContain('REG_RESTRICTED_USERNAME and REG_RESTRICTED_PASSWORD not set');
+    expect(secondIdentityBlocker('admin-test', { REG_RESTRICTED_USERNAME: 'second-user' })).toMatch(/\] REG_RESTRICTED_PASSWORD not set/);
     expect(secondIdentityBlocker('Admin-Test', { REG_RESTRICTED_USERNAME: ' admin-TEST ', REG_RESTRICTED_PASSWORD: GEN_PW_1 })).toMatch(/equals the admin test user/);
     expect(secondIdentityBlocker('admin-test', { REG_RESTRICTED_USERNAME: 'qa-ded', REG_RESTRICTED_PASSWORD: GEN_PW_1 })).toBeUndefined();
     expect(restrictedIdentity({ REG_RESTRICTED_USERNAME: ' qa-ded ', REG_RESTRICTED_PASSWORD: GEN_PW_1 })).toEqual({ username: 'qa-ded', password: GEN_PW_1 });
@@ -237,7 +238,7 @@ test('matrix B is internally consistent: issue needs RA-profile detail on P1; P2
     for (const f of FIXTURES) {
         if (cellStatus(MATRIX_B_ISSUE_P1[f]) === 200) expect(cellStatus(MATRIX_B_RA_DETAIL_P1[f]), `${f}: issue on P1 needs detail on P1`).toBe(200);
         expect(cellStatus(MATRIX_B_ISSUE_P2[f]), `${f}: nobody issues on P2`).toBe(403);
-        if (cellStatus(MATRIX_B_RA_CREATE[f]) === 200) expect(cellStatus(MATRIX_B_ROLES_LIST[f]), `${f}: the only creator holds every resource`).toBe(200);
+        if (cellStatus(MATRIX_B_RA_CREATE[f]) === 201) expect(cellStatus(MATRIX_B_ROLES_LIST[f]), `${f}: the only creator holds every resource`).toBe(200);
     }
     for (const f of ['F4a', 'F4b', 'F4c'] as const) {
         const n = DENY_NUANCES[f];
@@ -283,7 +284,7 @@ test('the multi-word action of API-AUTH-30 is the human form core builds: "Check
 
 test('rolesAfterSignInProblem: the roles the API set must survive the UI sign-in; a mismatch names the sync policy, not RBAC', () => {
     expect(rolesAfterSignInProblem(['b', 'a'], ['a', 'b'])).toBeUndefined();
-    expect(rolesAfterSignInProblem([], ['a'])).toMatch(/SYNC_POLICY=sync-data.*DevOps request 4.*core#2226.*not an RBAC failure/);
+    expect(rolesAfterSignInProblem([], ['a'])).toMatch(/SYNC_POLICY=sync-data.*create-only.*core#2226.*not an RBAC failure/);
     expect(rolesAfterSignInProblem(['a', 'x'], ['a'])).toMatch(/SYNC_POLICY/);
     expect(rolesAfterSignInProblem(['x'], ['a'])).toMatch(/SYNC_POLICY/);
     expect(rolesAfterSignInProblem([], [])).toBeUndefined();
