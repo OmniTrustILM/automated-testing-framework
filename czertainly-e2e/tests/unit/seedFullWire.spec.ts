@@ -177,6 +177,7 @@ test.describe('the certificate seeds build on the loopback fake core (every requ
         core.platformSettings = OWNERSHIP_ON;
         core.triggerSetsNoOwner = true;
         const m = await ensureCertificateSeed(api, 'T');
+        expect(core.detailReads.size, 'every upload is read').toBe(24);
         expect(Math.max(...core.detailReads.values()), 'no poll for an owner that never comes (a 30 s poll reads ~15 times)').toBeLessThan(10);
         expect(core.patches.filter((p) => p.body.ownerUuid === ''), 'nothing to remove').toEqual([]);
         expect(core.patches.find((p) => idsOfUuids(m, [p.uuid])[0] === 'C01' && p.body.ownerUuid === m.ownerUuid)).toBeTruthy();
