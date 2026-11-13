@@ -234,13 +234,13 @@ test.describe('system default EST Profile', () => {
             serverKeyGeneration: true,
             keyRecovery: true,
             keyRecoveryTokenProfile: { uuid: 'tp-1', name: 't' },
-            keyRecoveryKeyAttributes: [{ uuid: 'ka', name: 'k', content: [1], contentType: 'x' }],
+            keyRecoveryKeyAttributes: [{ uuid: 'ka', name: 'k', version: 'v2', content: [1], contentType: 'string' }],
             issueWaitTimeout: 11,
             retryAfter: 12,
             serverKeyGenerationTimeout: 13,
             issueCertificateAttributes: [{ uuid: 'ia', name: 'i', content: [2] }],
             customAttributes: [],
-            certificateAssociations: { ownerUuid: 'o-1', groupUuids: ['g-1'], customAttributes: [{ name: 'x', content: [3] }] },
+            certificateAssociations: { ownerUuid: 'o-1', groupUuids: ['g-1'], customAttributes: [{ name: 'x', version: 'v3', contentType: 'integer', content: [3] }] },
         };
         const { api, calls } = fakeApi((call) => (call.method === 'GET' ? { body: detail } : undefined));
         await restoreSystemDefaultEstProfile(api, 'p-1');
@@ -258,13 +258,13 @@ test.describe('system default EST Profile', () => {
             serverKeyGeneration: true,
             keyRecovery: true,
             keyRecoveryTokenProfileUuid: 'tp-1',
-            keyRecoveryKeyAttributes: [{ uuid: 'ka', name: 'k', content: [1] }],
+            keyRecoveryKeyAttributes: [{ uuid: 'ka', name: 'k', version: 'v2', contentType: 'string', content: [1] }],
             issueWaitTimeout: 11,
             retryAfter: 12,
             serverKeyGenerationTimeout: 13,
             issueCertificateAttributes: [{ uuid: 'ia', name: 'i', content: [2] }],
             customAttributes: [],
-            certificateAssociations: { ownerUuid: 'o-1', groupUuids: ['g-1'], customAttributes: [{ name: 'x', content: [3] }] },
+            certificateAssociations: { ownerUuid: 'o-1', groupUuids: ['g-1'], customAttributes: [{ name: 'x', version: 'v3', contentType: 'integer', content: [3] }] },
         });
     });
 

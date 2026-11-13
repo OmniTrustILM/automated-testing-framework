@@ -157,12 +157,20 @@ export async function cleanupEstProfile(
 interface NamedAttribute {
   uuid?: string;
   name: string;
+  version?: string;
+  contentType?: string;
   content?: unknown;
 }
 
 /** The request form of an attribute the platform reported. */
 function toRequestAttributes(attributes: NamedAttribute[] | undefined): unknown[] {
-  return (attributes ?? []).map(({ uuid, name, content }) => ({ uuid, name, content }));
+  return (attributes ?? []).map(({ uuid, name, version, contentType, content }) => ({
+    uuid,
+    name,
+    version,
+    contentType,
+    content,
+  }));
 }
 
 /** UUID of the EST Profile that serves requests without a label, if there is one. */

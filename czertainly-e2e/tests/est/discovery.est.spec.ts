@@ -59,7 +59,7 @@ test.describe('@est discovery', () => {
     if (!api) return;
     try {
       if (profile) await cleanupEstProfile(api, profile);
-      if (previousDefaultUuid) await restoreSystemDefaultEstProfile(api, previousDefaultUuid);
+      if (profile && previousDefaultUuid) await restoreSystemDefaultEstProfile(api, previousDefaultUuid);
     } finally {
       await api.dispose();
     }
