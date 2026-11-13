@@ -147,7 +147,14 @@ export class CertificatePage {
 
     /** Whether Import becomes enabled within the usual wait; the wizard keeps it disabled when it cannot list custom attributes. */
     async importEnabled(): Promise<boolean> {
-        return expect(this.importSubmitButton).toBeEnabled().then(() => true, () => false);
+        try {
+            await expect(this.importSubmitButton).toBeEnabled();
+            return true;
+        } catch (error) {
+            // Only a button that is there and disabled is the known state; anything else stays a failure.
+            if (await this.importSubmitButton.isDisabled().catch(() => false)) return false;
+            throw error;
+        }
     }
 
     async importPastedCertificate(): Promise<void> {
