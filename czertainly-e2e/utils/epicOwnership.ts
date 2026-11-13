@@ -1,5 +1,5 @@
 /**
- * epicOwnership — helpers of the Epic ilm#364 tests: the prepared accounts, the ownership setting, uploads, imports, reads, upload triggers.
+ * epicOwnership — helpers of the Epic ilm#364 tests: prepared accounts, the ownership setting, uploads, imports, reads, upload triggers.
  * API contexts that renew their tokens; every object a test creates goes into a Cleanup, removed in dependency order also after a failure.
  */
 
@@ -50,7 +50,9 @@ export const adminApi = (grant: APIRequestContext, env: TestEnv): APIRequestCont
 
 export interface Answer { status: number; json: Json | any[] | undefined; text: string }
 
-export async function send(api: APIRequestContext, method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, data?: unknown): Promise<Answer> {
+export async function send(
+    api: APIRequestContext, method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, data?: unknown,
+): Promise<Answer> {
     const response = await api.fetch(url, { method, ...(data === undefined ? {} : { data }) });
     const text = await response.text();
     let json: Answer['json'];
@@ -58,9 +60,13 @@ export async function send(api: APIRequestContext, method: 'GET' | 'POST' | 'PUT
     return { status: response.status(), json, text };
 }
 
-export async function sendOk(api: APIRequestContext, method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, data?: unknown): Promise<Answer> {
+export async function sendOk(
+    api: APIRequestContext, method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, data?: unknown,
+): Promise<Answer> {
     const answer = await send(api, method, url, data);
-    if (answer.status < 200 || answer.status >= 300) throw new Error(`${method} ${url} answered ${answer.status}: ${answer.text.slice(0, 500)}`);
+    if (answer.status < 200 || answer.status >= 300) {
+        throw new Error(`${method} ${url} answered ${answer.status}: ${answer.text.slice(0, 500)}`);
+    }
     return answer;
 }
 
@@ -118,17 +124,24 @@ export async function uploadAsync(api: APIRequestContext, cleanup: Cleanup, cert
 
 /** Imports the entries named by their references (certificate-only entries have no key destination). */
 export async function importEntries(
-    api: APIRequestContext, file: Buffer, entries: Array<{ entryReference: string; keyDestination?: Json }>, opts: { cleanup?: Cleanup; extra?: Json } = {},
+    api: APIRequestContext, file: Buffer, entries: Array<{ entryReference: string; keyDestination?: Json }>,
+    opts: { cleanup?: Cleanup; extra?: Json } = {},
 ): Promise<Answer> {
     return storing(opts.cleanup, entries.map((e) => e.entryReference), () =>
         send(api, 'POST', '/api/v1/certificates/import', { file: base64(file), entries, ...opts.extra }));
 }
 
-export interface ImportResult { entryReference: string; imported: boolean; certificateOutcome?: string; certificateUuid?: string; message?: string }
+export interface ImportResult {
+    entryReference: string;
+    imported: boolean;
+    certificateOutcome?: string;
+    certificateUuid?: string;
+    message?: string;
+}
 
 export const importResults = (answer: Answer): ImportResult[] => ((answer.json as Json)?.results ?? []) as ImportResult[];
 
-/** Registers the keys of the certificates an import created, before a test asserts anything; a failed read is only logged (the token sweep removes the key). */
+/** Registers the keys of the certificates an import created, before any assertion; a failed read only logs (the token sweep removes it). */
 export async function registerImportedKeys(admin: APIRequestContext, cleanup: Cleanup, answer: Answer): Promise<void> {
     for (const { certificateUuid } of importResults(answer)) {
         if (!certificateUuid) continue;
@@ -136,19 +149,25 @@ export async function registerImportedKeys(admin: APIRequestContext, cleanup: Cl
             const keyUuid = await getCertificateKeyUuid(admin, certificateUuid);
             if (keyUuid) cleanup.key(keyUuid);
         } catch (e) {
-            logger.warn(`The key of imported certificate ${certificateUuid} was not read (${String(e).slice(0, 200)}); the token sweep removes it`);
+            logger.warn(
+                `The key of imported certificate ${certificateUuid} was not read (${String(e).slice(0, 200)}); the token sweep removes it`,
+            );
         }
     }
 }
 
-const fingerprintSearch = (fingerprint: string, includeArchived = false): Json => ({ itemsPerPage: 10, pageNumber: 1, filters: fingerprintFilter(fingerprint), includeArchived });
+const fingerprintSearch = (fingerprint: string, includeArchived = false): Json => ({
+    itemsPerPage: 10, pageNumber: 1, filters: fingerprintFilter(fingerprint), includeArchived,
+});
 
 export async function findByFingerprint(api: APIRequestContext, fingerprint: string): Promise<Answer> {
     return send(api, 'POST', '/api/v1/certificates', fingerprintSearch(fingerprint));
 }
 
 /** The inventory row of the certificate as the signed-in account sees it, or undefined; archived ones only when asked (clean-up). */
-export async function inventoryRow(api: APIRequestContext, fingerprint: string, opts: { includeArchived?: boolean } = {}): Promise<Json | undefined> {
+export async function inventoryRow(
+    api: APIRequestContext, fingerprint: string, opts: { includeArchived?: boolean } = {},
+): Promise<Json | undefined> {
     const answer = await sendOk(api, 'POST', '/api/v1/certificates', fingerprintSearch(fingerprint, opts.includeArchived));
     return ((answer.json as Json).certificates as Json[])[0];
 }
@@ -174,13 +193,17 @@ export async function ownerChanges(api: APIRequestContext, uuid: string): Promis
 }
 
 /** Uploads as the account, registered for the cleanup, and returns the answer as it came. */
-async function uploadRegistered(as: APIRequestContext, cleanup: Cleanup, cert: CertificateFile, customAttributes: unknown[] = []): Promise<Answer> {
+async function uploadRegistered(
+    as: APIRequestContext, cleanup: Cleanup, cert: CertificateFile, customAttributes: unknown[] = [],
+): Promise<Answer> {
     cleanup.certificate(cert.fingerprint);
     return storing(cleanup, [cert.fingerprint], () => upload(as, cert.pem, customAttributes));
 }
 
 /** Uploads as the account (registered for the cleanup) and returns the uuid of the new certificate. */
-export async function uploadAndFind(as: APIRequestContext, admin: APIRequestContext, cleanup: Cleanup, cert: CertificateFile, customAttributes: unknown[] = []): Promise<string> {
+export async function uploadAndFind(
+    as: APIRequestContext, admin: APIRequestContext, cleanup: Cleanup, cert: CertificateFile, customAttributes: unknown[] = [],
+): Promise<string> {
     const answer = await uploadRegistered(as, cleanup, cert, customAttributes);
     if (answer.status !== 200 && answer.status !== 201) throw new Error(`upload answered ${answer.status}: ${answer.text.slice(0, 500)}`);
     return waitForCertificate(admin, cert.fingerprint);
@@ -189,11 +212,16 @@ export async function uploadAndFind(as: APIRequestContext, admin: APIRequestCont
 export interface RaProfileRef { authorityUuid: string; raProfileUuid: string }
 
 /** Issues a certificate for the subject through the RA profile as the account and waits until it is issued; the cleanup removes it. */
-export async function issueThroughRaProfile(as: APIRequestContext, admin: APIRequestContext, cleanup: Cleanup, ra: RaProfileRef, cn: string): Promise<string> {
+export async function issueThroughRaProfile(
+    as: APIRequestContext, admin: APIRequestContext, cleanup: Cleanup, ra: RaProfileRef, cn: string,
+): Promise<string> {
     const csr = csrFromKey(newKeyPair(), cn, { dns: [cn], ip: [] });
-    const answer = await send(as, 'POST', `/api/v2/operations/authorities/${ra.authorityUuid}/raProfiles/${ra.raProfileUuid}/certificates`, {
-        request: csr.derBase64, format: 'pkcs10', attributes: [], customAttributes: [],
-    });
+    const answer = await send(
+        as,
+        'POST',
+        `/api/v2/operations/authorities/${ra.authorityUuid}/raProfiles/${ra.raProfileUuid}/certificates`,
+        { request: csr.derBase64, format: 'pkcs10', attributes: [], customAttributes: [] },
+    );
     if (answer.status !== 200) throw new Error(`issue answered ${answer.status}: ${answer.text.slice(0, 500)}`);
     const uuid = (answer.json as Json)?.uuid;
     if (!uuid) throw new Error(`issue answered without a certificate uuid: ${answer.text.slice(0, 500)}`);
@@ -218,7 +246,7 @@ export async function certificateFile(admin: APIRequestContext, uuid: string): P
 /** How long the cleanup waits for a certificate that an accepted request stores, as `waitForCertificate` does. */
 const STORED_LATER_MS = 60_000;
 
-/** True when the reads over the wait never found the certificate; reads that keep failing leave the decision to the retried cleanup step. */
+/** True when the reads over the wait never found the certificate; reads that keep failing leave it to the retried cleanup step. */
 async function stillMissing(admin: APIRequestContext, fingerprint: string): Promise<boolean> {
     try {
         const row = await pollUntil(() => inventoryRow(admin, fingerprint, { includeArchived: true }), (found) => found !== undefined,
@@ -276,7 +304,10 @@ export class Cleanup {
         for (const [fingerprint, storedLater] of certificates) {
             const describe = { resource: 'certificate', name: fingerprint };
             if (storedLater && await stillMissing(admin, fingerprint)) {
-                recordCleanupFailure({ ...describe, message: `an accepted request stores it, but it is not in the inventory after ${STORED_LATER_MS / 1000} s: it may still appear` });
+                recordCleanupFailure({
+                    ...describe,
+                    message: `an accepted request stores it, but it is not in the inventory after ${STORED_LATER_MS / 1000} s: it may still appear`,
+                });
                 continue;
             }
             await attemptCleanup(describe, async () => {
@@ -300,7 +331,9 @@ export class Cleanup {
             const referrer = step.requires;
             if (referrer && !referrer.cleaned) {
                 step.blockedBy = referrer.blockedBy ?? referrer.describe.resource;
-                recordCleanupFailure({ ...step.describe, message: `kept: the ${referrer.describe.resource} still refers to it`, blockedBy: step.blockedBy });
+                recordCleanupFailure({
+                    ...step.describe, message: `kept: the ${referrer.describe.resource} still refers to it`, blockedBy: step.blockedBy,
+                });
                 continue;
             }
             step.cleaned = await attemptCleanup(step.describe, step.remove);
@@ -317,7 +350,9 @@ export async function userUuid(admin: APIRequestContext, username: string): Prom
     return String(user.uuid);
 }
 
-export async function createTeamUser(admin: APIRequestContext, cleanup: Cleanup, username: string): Promise<{ uuid: string; username: string }> {
+export async function createTeamUser(
+    admin: APIRequestContext, cleanup: Cleanup, username: string,
+): Promise<{ uuid: string; username: string }> {
     const created = await sendOk(admin, 'POST', '/api/v1/users', {
         username,
         firstName: 'QA',
@@ -344,7 +379,9 @@ export async function createGroup(admin: APIRequestContext, cleanup: Cleanup, na
     return { uuid, name };
 }
 
-export async function createCustomAttribute(admin: APIRequestContext, cleanup: Cleanup, name: string): Promise<{ uuid: string; name: string; contentType: string }> {
+export async function createCustomAttribute(
+    admin: APIRequestContext, cleanup: Cleanup, name: string,
+): Promise<{ uuid: string; name: string; contentType: string }> {
     const created = await sendOk(admin, 'POST', '/api/v1/attributes/custom', {
         name,
         label: name,
@@ -389,10 +426,13 @@ interface Created { uuid: string; step: CleanupStep }
 async function create(admin: APIRequestContext, cleanup: Cleanup, kind: string, body: Json): Promise<Created> {
     const created = await sendOk(admin, 'POST', `/api/v1/workflows/${kind}`, body);
     const uuid = (created.json as Json).uuid as string;
-    return { uuid, step: cleanup.add(`workflow ${kind}`, String(body.name), () => sendOk(admin, 'DELETE', `/api/v1/workflows/${kind}/${uuid}`)) };
+    return {
+        uuid,
+        step: cleanup.add(`workflow ${kind}`, String(body.name), () => sendOk(admin, 'DELETE', `/api/v1/workflows/${kind}/${uuid}`)),
+    };
 }
 
-/** Creates a trigger chain on "Certificate uploaded" and adds it to the global platform list (so callers are exclusive); `cleanup` restores the list. */
+/** A trigger chain on "Certificate uploaded", added to the global platform list (callers are exclusive); `cleanup` restores the list. */
 export async function createUploadTrigger(admin: APIRequestContext, cleanup: Cleanup, spec: TriggerSpec): Promise<string> {
     const condition = await create(admin, cleanup, 'conditions', {
         name: `${spec.name}-c`, description: 'Epic test', type: 'checkField', resource: 'certificates', items: spec.conditions,
@@ -405,8 +445,14 @@ export async function createUploadTrigger(admin: APIRequestContext, cleanup: Cle
     let action: Created | undefined;
     if (!spec.ignore) {
         const execution = await create(admin, cleanup, 'executions', spec.notificationProfileUuid
-            ? { name: `${spec.name}-e`, description: 'Epic test', type: 'sendNotification', resource: 'certificates', items: [{ notificationProfileUuid: spec.notificationProfileUuid }] }
-            : { name: `${spec.name}-e`, description: 'Epic test', type: 'setField', resource: 'certificates', items: spec.setFields ?? [] });
+            ? {
+                name: `${spec.name}-e`, description: 'Epic test', type: 'sendNotification', resource: 'certificates',
+                items: [{ notificationProfileUuid: spec.notificationProfileUuid }],
+            }
+            : {
+                name: `${spec.name}-e`, description: 'Epic test', type: 'setField', resource: 'certificates',
+                items: spec.setFields ?? [],
+            });
         action = await create(admin, cleanup, 'actions', {
             name: `${spec.name}-a`, description: 'Epic test', resource: 'certificates', executionsUuids: [execution.uuid],
         });
@@ -440,7 +486,11 @@ async function restorePlatformTriggers(admin: APIRequestContext, before: string[
     for (const uuid of before) {
         const answer = await admin.get(`/api/v1/workflows/triggers/${uuid}`);
         if (answer.ok()) existing.push(uuid);
-        else if (answer.status() !== 404) throw new Error(`GET trigger ${uuid} answered ${answer.status()}: the platform list is not restored, so no trigger is dropped from it`);
+        else if (answer.status() !== 404) {
+            throw new Error(
+                `GET trigger ${uuid} answered ${answer.status()}: the platform list is not restored, so no trigger is dropped from it`,
+            );
+        }
     }
     await sendOk(admin, 'PATCH', '/api/v1/settings/events', { event: UPLOAD_EVENT, triggerUuids: existing });
 }
@@ -457,9 +507,13 @@ async function associateWithUploadEvent(admin: APIRequestContext, cleanup: Clean
 /** A subject name that only this run's triggers' conditions match. */
 export const subjectOf = (runPrefix: string, scenario: string): string => `${runPrefix}-${scenario}.example.com`;
 
-export const commonNameIs = (cn: string): TriggerSpec['conditions'][number] => ({ fieldSource: 'property', fieldIdentifier: 'COMMON_NAME', operator: 'EQUALS', value: cn });
+export const commonNameIs = (cn: string): TriggerSpec['conditions'][number] => ({
+    fieldSource: 'property', fieldIdentifier: 'COMMON_NAME', operator: 'EQUALS', value: cn,
+});
 
-export const setOwner = (userUuid: string | null): NonNullable<TriggerSpec['setFields']>[number] => ({ fieldSource: 'property', fieldIdentifier: 'OWNER', data: userUuid });
+export const setOwner = (userUuid: string | null): NonNullable<TriggerSpec['setFields']>[number] => ({
+    fieldSource: 'property', fieldIdentifier: 'OWNER', data: userUuid,
+});
 
 /** An internal notification profile whose recipient is the owner of the certificate (nothing is sent outside the platform). */
 export async function createOwnerNotificationProfile(admin: APIRequestContext, cleanup: Cleanup, name: string): Promise<string> {
@@ -476,7 +530,9 @@ export async function createOwnerNotificationProfile(admin: APIRequestContext, c
 
 /** The certificate's event-history rows of the trigger (getObjectHistory reads the same, but needs a regression-guarded context). */
 export async function triggerRows(admin: APIRequestContext, certificateUuid: string, triggerUuid: string): Promise<Json[]> {
-    const answer = await sendOk(admin, 'GET', `/api/v1/workflows/events/certificates/${certificateUuid}/history?itemsPerPage=100&pageNumber=1`);
+    const answer = await sendOk(
+        admin, 'GET', `/api/v1/workflows/events/certificates/${certificateUuid}/history?itemsPerPage=100&pageNumber=1`,
+    );
     return (((answer.json as Json).items ?? []) as Json[]).filter((row) => row.trigger?.uuid === triggerUuid);
 }
 
@@ -512,7 +568,8 @@ export async function createSoftwareTokenProfile(admin: APIRequestContext, clean
         usage: [...PROFILE_USAGES],
     });
     const profileUuid = (profile.json as Json).uuid as string;
-    const profileStep = cleanup.add('token profile', `${name}-profile`, () => sendOk(admin, 'DELETE', `/api/v1/tokens/${tokenUuid}/tokenProfiles/${profileUuid}`));
+    const profileStep = cleanup.add('token profile', `${name}-profile`, () =>
+        sendOk(admin, 'DELETE', `/api/v1/tokens/${tokenUuid}/tokenProfiles/${profileUuid}`));
     tokenStep.requires = profileStep;
     // every key on this test's own token goes, also those of an import whose answer the test never read
     profileStep.requires = cleanup.add('keys on the token profile', `${name}-profile`, async () => {
