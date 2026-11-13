@@ -196,6 +196,45 @@ test('a refused revoke names the authority that blocks the certificate', async (
     expect((error as { blockedBy?: string }).blockedBy).toBe('authority auth-1');
 });
 
+/** The revoke calls the certificate handler sends for an issued certificate with the live `raProfile` and the ledger lines `ledger`. */
+async function revokesOf(cert: LedgerLine, raProfile: Json, ledger: LedgerLine[]): Promise<string[]> {
+    const detail = `/api/v1/certificates/${cert.uuid}`;
+    const core = new FakeCore()
+        .set(detail, { uuid: cert.uuid, commonName: cert.name, state: 'issued', raProfile })
+        .route('POST', /\/revoke$/, () => {
+            core.store.get(detail)!.state = 'revoked';
+            return { status: 200 };
+        });
+    const { error } = await run(core, cert, [...ledger, cert]);
+    expect(error).toBeUndefined();
+    return core.mutations().filter((m) => m.endsWith('/revoke'));
+}
+
+const revokeUrl = (authority: string, ra: string, cert: LedgerLine) => `POST /api/v2/operations/authorities/${authority}/raProfiles/${ra}/certificates/${cert.uuid}/revoke`;
+
+test('a certificate moved to another own RA profile is revoked through that live RA profile and its authority', async () => {
+    const moved = line('raProfiles');
+    const cert = line('certificates', { name: `${RUN}-moved.example.test`, parents: { raProfile: 'ra-1', authority: 'auth-1' } });
+    expect(await revokesOf(cert, { uuid: moved.uuid.toUpperCase(), authorityInstanceUuid: 'auth-2' }, [moved])).toEqual([revokeUrl('auth-2', moved.uuid.toUpperCase(), cert)]);
+});
+
+test('a certificate whose live RA profile is foreign, or the ledger one in another case, is revoked through the ledger parents', async () => {
+    const own = line('raProfiles');
+    const cert = line('certificates', { name: `${RUN}-foreign.example.test`, parents: { raProfile: own.uuid, authority: 'auth-1' } });
+    expect(await revokesOf(cert, { uuid: 'ra-foreign', authorityInstanceUuid: 'auth-2' }, [own])).toEqual([revokeUrl('auth-1', own.uuid, cert)]);
+    const same = line('certificates', { name: `${RUN}-same.example.test`, parents: { raProfile: own.uuid, authority: 'auth-1' } });
+    expect(await revokesOf(same, { uuid: own.uuid.toUpperCase(), authorityInstanceUuid: 'auth-2' }, [own])).toEqual([revokeUrl('auth-1', own.uuid, same)]);
+});
+
+test('a certificate moved to an own RA profile without a live authority takes that RA profile\'s authority, else the ledger one', async () => {
+    const moved = line('raProfiles', { parents: { authority: 'auth-2' } });
+    const cert = line('certificates', { name: `${RUN}-noauth.example.test`, parents: { raProfile: 'ra-1', authority: 'auth-1' } });
+    expect(await revokesOf(cert, { uuid: moved.uuid.toUpperCase() }, [moved])).toEqual([revokeUrl('auth-2', moved.uuid.toUpperCase(), cert)]);
+    const bare = line('raProfiles');
+    const other = line('certificates', { name: `${RUN}-noauth2.example.test`, parents: { raProfile: 'ra-1', authority: 'auth-1' } });
+    expect(await revokesOf(other, { uuid: bare.uuid }, [bare]), 'no authority known for the RA profile (its detail reads 404)').toEqual([revokeUrl('auth-1', bare.uuid, other)]);
+});
+
 const derivedCert = (over: Partial<LedgerLine> = {}) =>
     line('certificates', { name: 'onboarded', derived: true, createdAfter: '2026-10-13T12:00:00.000Z', parents: { discovery: 'disc-1' }, ...over });
 
@@ -510,6 +549,51 @@ test('a discovery records its newly onboarded certificates as derived, then is d
     const derived = readLedger().filter((l) => l.derived);
     expect(derived).toEqual([expect.objectContaining({ uuid: INV, runId: RUN, type: 'certificates', createdAfter: '2026-10-13T12:00:58.000Z', parents: { discovery: d.uuid } })]);
     expect(core.mutations()).toEqual([`DELETE /api/v1/discoveries/${d.uuid}`]);
+});
+
+test('a secret a TSP Basic credential owns is done once the credential or its profile is deleted; otherwise its absence is a failure', async () => {
+    const tsp = randomUUID();
+    const cred = randomUUID();
+    const secret = line('secrets', { uuid: randomUUID(), name: `tsp-basic-${tsp}-u-0a1b2c3d`, derived: true, createdAfter: '2026-10-13T12:00:00.000Z', parents: { tspProfile: tsp, tspBasicCredential: cred } });
+    const gone = new FakeCore();
+    expect((await run(gone, secret, [secret])).error).toBeInstanceOf(LiveObjectMissing);
+    for (const owner of [line('tspBasicCredentials', { uuid: cred, event: 'deleted' }), line('tspProfiles', { uuid: tsp, event: 'deleted' })]) {
+        expect((await run(gone, secret, [secret, owner])).error, owner.type).toBeUndefined();
+    }
+    expect(gone.mutations()).toEqual([]);
+});
+
+function runningDiscovery(processingReads: number) {
+    const d = line('discoveries', { uuid: randomUUID() });
+    let reads = 0;
+    let deleted = false;
+    const core = new FakeCore()
+        .route('GET', new RegExp(`^/api/v1/discoveries/${d.uuid}$`), () => {
+            if (deleted) return { status: 404 };
+            reads++;
+            return { status: 200, body: { uuid: d.uuid, name: d.name, status: reads <= processingReads ? 'processing' : 'failed', startTime: '2026-10-13T12:01:00.000Z' } };
+        })
+        .route('DELETE', new RegExp(`^/api/v1/discoveries/${d.uuid}$`), () => {
+            if (reads <= processingReads) return { status: 422, body: ['Discovery is Processing and cannot be deleted; wait for it to end'] };
+            deleted = true;
+            return { status: 204 };
+        })
+        .route('GET', /\/certificates$/, () => ({ status: 200, body: { certificates: [], totalPages: 1 } }));
+    return { d, core };
+}
+
+test('a discovery still processing is waited for and deleted once it ended; one that never ends is reported', async () => {
+    process.env.REG_RUN_ID = RUN;
+    const ends = runningDiscovery(3);
+    const ended = await run(ends.core, ends.d);
+    expect(ended.error).toBeUndefined();
+    expect(ended.warnings.join('\n')).not.toMatch(/still processing/);
+    expect(ends.core.mutations()).toEqual([`DELETE /api/v1/discoveries/${ends.d.uuid}`]);
+
+    const stuck = runningDiscovery(Number.POSITIVE_INFINITY);
+    const result = await run(stuck.core, stuck.d);
+    expect(result.warnings.join('\n')).toMatch(/still processing after 6 minutes/);
+    expect(String(result.error)).toMatch(/422/);
 });
 
 test('a discovery without a server timestamp records its certificates with the keeping bound and warns, then is deleted', async () => {

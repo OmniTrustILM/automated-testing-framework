@@ -43,8 +43,9 @@ export const updateJobCron = (api: GuardedApi, uuid: string, cronExpression: str
 
 export const deleteJob = (api: GuardedApi, uuid: string): Promise<APIResponse> => api.delete(`${JOBS_URL}/${uuid}`);
 
+/** The stored configuration of a job; scheduleState and nextFireTime move on their own as the scheduler runs. */
 export const jobFingerprint = (job: JsonObject): JsonObject => ({
-    cronExpression: job.cronExpression, enabled: job.enabled, scheduleState: job.scheduleState, nextFireTime: job.nextFireTime, system: job.system, oneTime: job.oneTime,
+    jobName: job.jobName, cronExpression: job.cronExpression, enabled: job.enabled, system: job.system, oneTime: job.oneTime, jobType: job.jobType,
 });
 
 

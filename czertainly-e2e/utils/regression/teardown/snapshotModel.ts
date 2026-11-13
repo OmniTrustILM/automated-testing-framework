@@ -144,7 +144,7 @@ export const keyItemsDelta: NonNullable<ResourceDef['delta']> = (c) => {
     ];
 };
 
-const TRANSIENT_DISCOVERY_STATUSES: readonly string[] = ['inProgress', 'processing'];
+export const TRANSIENT_DISCOVERY_STATUSES: readonly string[] = ['inProgress', 'processing'];
 export const discoveryMarker = (i: Json) => (TRANSIENT_DISCOVERY_STATUSES.includes(i.status) ? undefined : i.status);
 
 export function descriptionOf(item: Json): { description?: string } {

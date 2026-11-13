@@ -575,6 +575,18 @@ test('recordDerivedKeyOf without a createdAfter still records the key, with a bo
     expect(derivedDeletable(line, new Date(Date.now() + 3_600_000).toISOString()), 'a key made now, even on a server clock an hour ahead, is kept').toBe(false);
 });
 
+test('recordDerivedKeyOf records the alternative key of a hybrid certificate from the same read', async () => {
+    const cert = core.addCert(runName('f10.example.test'), 'issued');
+    const other = core.addCert(runName('f10-other.example.test'), 'issued');
+    cert.altKey = { uuid: other.key.uuid };
+    await recordDerivedKeyOf(api, cert.uuid, '2026-10-13T12:00:00.000Z', 'T');
+    const keys = readLedger().filter((l) => l.type === 'keys' && l.parents?.certificate === cert.uuid);
+    expect(keys.map((l) => [l.uuid, l.name, l.derived])).toEqual([
+        [cert.key.uuid, `key of certificate ${cert.uuid}`, true],
+        [other.key.uuid, `alternative key of certificate ${cert.uuid}`, true],
+    ]);
+});
+
 test('recordDerivedKeyOrNamed: a failed detail read falls back to the by-name recording; a failure of that too surfaces', async () => {
     const cn = runName('f2.example.test');
     const cert = core.addCert(cn, 'issued');
