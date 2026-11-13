@@ -18,9 +18,9 @@ import { CertificatePage } from '../../../pages/CertificatePage';
 import { CertificateListPage } from '../../../pages/CertificateListPage';
 import { PlatformSettingsPage } from '../../../pages/PlatformSettingsPage';
 import {
-    Account, Cleanup, Json, accountCredentials, envFor, adminApi, apiAs, attributeValue, commonNameIs, createCustomAttribute, createGroup, createTeamUser,
+    Account, Answer, Cleanup, Json, accountCredentials, envFor, adminApi, apiAs, attributeValue, commonNameIs, createCustomAttribute, createGroup, createTeamUser,
     createOwnerNotificationProfile, createSoftwareTokenProfile, createUploadTrigger, customValue, notificationsMentioning, detail, findByFingerprint, importEntries, importResults, inventoryRow, ownerChanges, waitUntil,
-    readAutomaticOwnership, restoreValidation, send, sendOk, setAutomaticOwnership, setOwner, subjectOf, upload, uploadAndFind, uploadAsync, userUuid, validationFields, waitForCertificate,
+    readAutomaticOwnership, registerImportedKeys, restoreValidation, send, sendOk, setAutomaticOwnership, setOwner, subjectOf, upload, uploadAndFind, uploadAsync, userUuid, validationFields, waitForCertificate,
 } from '../../../utils/epicOwnership';
 
 const TAGS = ['@epic-364', '@exclusive'];
@@ -216,8 +216,6 @@ test.describe('ownership by upload and import', () => {
     });
 
     test('S8: a trigger that sets other fields but not the owner does not stop automatic ownership', { tag: TAGS }, async () => {
-        // possibly the test, not the product: the RA profile switch asks the authority to identify a self-signed upload it never issued
-        test.fail(true, 'an upload fails with 500 when a platform upload trigger sets an RA profile');
         await setAutomaticOwnership(admin, true);
         const state = readSmokeState();
         if (!state) throw new Error('The RA profile of the global setup is missing (.smoke-state.json)');
@@ -234,6 +232,8 @@ test.describe('ownership by upload and import', () => {
             ],
         });
 
+        // possibly the test, not the product: the RA profile switch asks the authority to identify a self-signed upload it never issued
+        test.fail(true, 'an upload fails with 500 when a platform upload trigger sets an RA profile');
         const uuid = await uploadAndFind(U, admin, cleanup, cert);
 
         const certificateDetail = await detail(admin, uuid);
@@ -266,7 +266,6 @@ test.describe('ownership by upload and import', () => {
     });
 
     test('S9: a discarded upload is refused with a pointer to the event history', { tag: REGRESSION }, async () => {
-        test.fail(true, 'an upload discarded by an ignore trigger answers 500 instead of a client error');
         await setAutomaticOwnership(admin, true);
         const cert = newCertificate('s9');
         cleanup.certificate(cert.fingerprint);
@@ -274,10 +273,13 @@ test.describe('ownership by upload and import', () => {
 
         const answer = await upload(U, cert.pem);
 
-        expect(answer.status, `a client error, not a server error: ${answer.text}`).toBeGreaterThanOrEqual(400);
+        // never masked by the known bug: the upload is refused and nothing is stored
+        expect(answer.status, `the discarded upload is refused: ${answer.text}`).toBeGreaterThanOrEqual(400);
+        expect(await inventoryRow(admin, cert.fingerprint, { includeArchived: true }), 'no certificate with that fingerprint exists').toBeUndefined();
+
+        test.fail(true, 'an upload discarded by an ignore trigger answers 500 instead of a client error');
         expect(answer.status, `a client error, not a server error: ${answer.text}`).toBeLessThan(500);
         expect(answer.text, 'the message points to the event history').toContain(DISCARDED);
-        expect(((await findByFingerprint(admin, cert.fingerprint)).json as Json).certificates, 'no certificate with that fingerprint exists').toHaveLength(0);
     });
 
     test('S24: a trigger that clears the owner keeps the certificate without an owner', { tag: TAGS }, async () => {
@@ -320,6 +322,7 @@ test.describe('key import', () => {
             const entries = ((inspection.json as Json).entries as Json[]).filter((e) => e.importable !== false);
             expect(entries.length, 'the file has an entry to import').toBeGreaterThan(0);
             const answer = await importEntries(as, file.bytes, entries.map((e) => ({ entryReference: e.entryReference, keyDestination: { tokenProfileUuid, keyName, importAttributes: [{ name: SCP_ATTR.keyAlias.name, uuid: SCP_ATTR.keyAlias.uuid, version: 'v2', contentType: 'string', content: [{ data: tokenAlias(keyName) }] }] } })), { cleanup, extra: { passphrase: 'epic-pass' } });
+            await registerImportedKeys(admin, cleanup, answer);
             expect(answer.status, answer.text).toBe(200);
             expect(importResults(answer).map((r) => r.imported), `every entry is imported: ${answer.text.slice(0, 1500)}`).not.toContain(false);
             return answer;
@@ -329,18 +332,14 @@ test.describe('key import', () => {
         const importer = env.username;
         await importAs(admin, first, `${run}-s26-key-1`);
         for (const c of [first.identity, intermediate, root]) {
-            const certificateDetail = await detail(admin, await waitForCertificate(admin, c.fingerprint));
-            if (certificateDetail.key?.uuid) cleanup.key(certificateDetail.key.uuid);
-            expect(certificateDetail.owner, `the importer owns ${c.cn}`).toBe(importer);
+            expect((await detail(admin, await waitForCertificate(admin, c.fingerprint))).owner, `the importer owns ${c.cn}`).toBe(importer);
         }
         const intermediateUuid = await waitForCertificate(admin, intermediate.fingerprint);
         await sendOk(admin, 'PATCH', `/api/v1/certificates/${intermediateUuid}`, { ownerUuid: await userUuid(admin, nameOf('V')) });
 
         await importAs(admin, second, `${run}-s26-key-2`);
         const secondUuid = await waitForCertificate(admin, second.identity.fingerprint);
-        const secondDetail = await detail(admin, secondUuid);
-        if (secondDetail.key?.uuid) cleanup.key(secondDetail.key.uuid);
-        expect(secondDetail.owner, 'the importer owns the new end-entity certificate').toBe(importer);
+        expect((await detail(admin, secondUuid)).owner, 'the importer owns the new end-entity certificate').toBe(importer);
         expect((await inventoryRow(admin, intermediate.fingerprint))?.owner, 'the intermediate certificate, already in the inventory, keeps its owner').toBe(nameOf('V'));
         expect((await inventoryRow(admin, root.fingerprint))?.owner, 'the root certificate, already in the inventory, keeps its owner').toBe(importer);
     });
@@ -495,6 +494,19 @@ test.describe('unchanged behaviour', () => {
 });
 
 test.describe('platform setting', () => {
+    test('S17: a user without permission to update settings cannot turn the setting on', { tag: TAGS }, async () => {
+        await setAutomaticOwnership(admin, false);
+        let answer: Answer | undefined;
+        try {
+            answer = await send(R, 'PUT', '/api/v1/settings/platform', { certificates: { upload: { automaticOwnership: true } } });
+            expect(answer.status, `refused for missing permission: ${answer.text}`).toBe(403);
+            expect(await readAutomaticOwnership(admin), 'the setting stays off').toBe(false);
+        } finally {
+            // only a change the refused user made is undone; afterAll puts back the value read before the tests
+            if (answer && answer.status < 300) await setAutomaticOwnership(admin, false);
+        }
+    });
+
     test('S19: a settings update without the upload part leaves the setting as it is', { tag: TAGS }, async () => {
         await setAutomaticOwnership(admin, true);
         const before = originalValidation;
@@ -517,7 +529,6 @@ test.describe('platform setting', () => {
 
 test.describe('import wizard (UI)', () => {
     test('S10: import one certificate in the UI, open it in one click, see yourself as owner', { tag: REGRESSION }, async ({ browser }) => {
-        test.fail(true, 'the import wizard keeps Import disabled for a user without custom attribute access');
         await setAutomaticOwnership(admin, true);
         const cert = newCertificate('s10');
         cleanup.certificate(cert.fingerprint);
@@ -526,6 +537,7 @@ test.describe('import wizard (UI)', () => {
             const certificates = new CertificatePage(page);
             await certificates.openImportFromList();
             await certificates.pasteCertificatePem(cert.pem);
+            test.fail(true, 'the import wizard keeps Import disabled for a user without custom attribute access');
             await certificates.importPastedCertificate();
 
             await certificates.importOpenCertificateLinks.click();
@@ -543,7 +555,6 @@ test.describe('import wizard (UI)', () => {
     });
 
     test('S11: a discarded certificate in the import wizard is reported as not added', { tag: TAGS }, async ({ browser }) => {
-        test.fail(true, 'the import wizard keeps Import disabled for a user without custom attribute access');
         await setAutomaticOwnership(admin, true);
         const cert = newCertificate('s11');
         cleanup.certificate(cert.fingerprint);
@@ -553,6 +564,7 @@ test.describe('import wizard (UI)', () => {
             const certificates = new CertificatePage(page);
             await certificates.openImportFromList();
             await certificates.pasteCertificatePem(cert.pem);
+            test.fail(true, 'the import wizard keeps Import disabled for a user without custom attribute access');
             await certificates.submitImport();
 
             await certificates.assertImportResult('Not imported');
@@ -565,7 +577,6 @@ test.describe('import wizard (UI)', () => {
     });
 
     test('S12: the import result lets the user open each created certificate', { tag: TAGS }, async ({ browser }) => {
-        test.fail(true, 'the import wizard keeps Import disabled for a user without custom attribute access');
         await setAutomaticOwnership(admin, true);
         const { pem, certs } = certificatesInOnePem(3, `${run}-s12`);
         certs.forEach((c) => cleanup.certificate(c.fingerprint));
@@ -574,6 +585,7 @@ test.describe('import wizard (UI)', () => {
             const certificates = new CertificatePage(page);
             await certificates.openImportFromList();
             await certificates.pasteCertificatePem(pem, 3);
+            test.fail(true, 'the import wizard keeps Import disabled for a user without custom attribute access');
             await certificates.submitImport();
 
             const links = certificates.importOpenCertificateLinks;
@@ -594,7 +606,6 @@ test.describe('import wizard (UI)', () => {
     });
 
     test('S13: a user who may only upload opens the certificate they imported; others stay hidden', { tag: REGRESSION }, async ({ browser }) => {
-        test.fail(true, 'the import wizard keeps Import disabled for a user without custom attribute access');
         await setAutomaticOwnership(admin, true);
         const ofU = newCertificate('s13-u');
         const ofV = newCertificate('s13-v');
@@ -607,6 +618,7 @@ test.describe('import wizard (UI)', () => {
             const certificates = new CertificatePage(page);
             await certificates.openImportFromList();
             await certificates.pasteCertificatePem(ofR.pem);
+            test.fail(true, 'the import wizard keeps Import disabled for a user without custom attribute access');
             await certificates.importPastedCertificate();
             await certificates.importOpenCertificateLinks.click();
 

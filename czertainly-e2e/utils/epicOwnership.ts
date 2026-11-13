@@ -126,6 +126,14 @@ export interface ImportResult { entryReference: string; imported: boolean; certi
 
 export const importResults = (answer: Answer): ImportResult[] => ((answer.json as Json)?.results ?? []) as ImportResult[];
 
+/** Registers the keys of the certificates an import created, before a test asserts anything about the answer. */
+export async function registerImportedKeys(admin: APIRequestContext, cleanup: Cleanup, answer: Answer): Promise<void> {
+    for (const { certificateUuid } of importResults(answer)) {
+        const keyUuid = certificateUuid ? await getCertificateKeyUuid(admin, certificateUuid) : undefined;
+        if (keyUuid) cleanup.key(keyUuid);
+    }
+}
+
 const fingerprintSearch = (fingerprint: string, includeArchived = false): Json => ({ itemsPerPage: 10, pageNumber: 1, filters: fingerprintFilter(fingerprint), includeArchived });
 
 export async function findByFingerprint(api: APIRequestContext, fingerprint: string): Promise<Answer> {
@@ -195,7 +203,7 @@ export class Cleanup {
     private readonly steps: CleanupStep[] = [];
     /** Fingerprint → true while a request that stores the certificate is in flight or was accepted. */
     private readonly certificates = new Map<string, boolean>();
-    private readonly keys: string[] = [];
+    private readonly keys = new Set<string>();
     private startedAt = new Date(Date.now() - 60_000);
 
     add(resource: string, ref: string, remove: () => Promise<unknown>): CleanupStep {
@@ -216,7 +224,7 @@ export class Cleanup {
 
     /** A key in a token (made by an import); removed after the certificates and before the token. */
     key(keyUuid: string): void {
-        this.keys.push(keyUuid);
+        this.keys.add(keyUuid);
     }
 
     /** Removes the certificates (archived ones too), then the keys they left, then the registered objects, last created first. */
@@ -242,7 +250,9 @@ export class Cleanup {
         for (const keyUuid of leftKeys) {
             await attemptCleanup({ resource: 'key', uuid: keyUuid }, () => deleteKeyIfOrphaned(admin, keyUuid, this.startedAt));
         }
-        for (const keyUuid of this.keys.splice(0)) {
+        const keys = [...this.keys];
+        this.keys.clear();
+        for (const keyUuid of keys) {
             await attemptCleanup({ resource: 'key', uuid: keyUuid }, () => sendOk(admin, 'DELETE', '/api/v1/keys', [keyUuid]));
         }
         for (const step of this.steps.splice(0)) {
@@ -443,7 +453,7 @@ export async function createSoftwareTokenProfile(admin: APIRequestContext, clean
         customAttributes: await requiredCustomAttributes(admin, 'tokens', name),
     });
     const tokenUuid = (token.json as Json).uuid as string;
-    cleanup.add('token', name, () => sendOk(admin, 'DELETE', `/api/v1/tokens/${tokenUuid}`));
+    const tokenStep = cleanup.add('token', name, () => sendOk(admin, 'DELETE', `/api/v1/tokens/${tokenUuid}`));
     const profile = await sendOk(admin, 'POST', `/api/v1/tokens/${tokenUuid}/tokenProfiles`, {
         name: `${name}-profile`,
         description: 'Epic test token profile',
@@ -453,6 +463,13 @@ export async function createSoftwareTokenProfile(admin: APIRequestContext, clean
         usage: [...PROFILE_USAGES],
     });
     const profileUuid = (profile.json as Json).uuid as string;
-    cleanup.add('token profile', `${name}-profile`, () => sendOk(admin, 'DELETE', `/api/v1/tokens/${tokenUuid}/tokenProfiles/${profileUuid}`));
+    const profileStep = cleanup.add('token profile', `${name}-profile`, () => sendOk(admin, 'DELETE', `/api/v1/tokens/${tokenUuid}/tokenProfiles/${profileUuid}`));
+    tokenStep.requires = profileStep;
+    // every key on this test's own token goes, also those of an import whose answer the test never read
+    profileStep.requires = cleanup.add('keys on the token profile', `${name}-profile`, async () => {
+        const pairs = (await sendOk(admin, 'GET', `/api/v1/keys/pairs?tokenProfileUuid=${profileUuid}`)).json as Json[];
+        const own = pairs.filter((k) => k.tokenInstanceUuid === tokenUuid).map((k) => String(k.uuid));
+        if (own.length) await sendOk(admin, 'DELETE', '/api/v1/keys', own);
+    });
     return profileUuid;
 }
