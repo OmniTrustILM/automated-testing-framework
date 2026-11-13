@@ -9,8 +9,10 @@ import { SanSet, sameSans } from '../utils/regression/pkiBuilders';
 import { Navigation } from './Navigation';
 import { CertificateAddPage } from './CertificateAddPage';
 import { ImportCertificatesDialog } from './ImportCertificatesDialog';
+import { openHashRoute } from './ui/openHashRoute';
 import { PageHeader } from './ui/pageHeader';
 import { chooseOption } from './ui/select';
+import { watchApiCall } from './ui/waitForResponse';
 import { widgetTitled } from './ui/widget';
 
 const logger = new Logger('CertificatePage');
@@ -32,6 +34,7 @@ export class CertificatePage {
     readonly importDetectedContent: Locator;
     readonly importSubmitButton: Locator;
     readonly importResults: Locator;
+    readonly importOpenCertificateLinks: Locator;
     readonly importDoneButton: Locator;
     readonly importDialog: ImportCertificatesDialog;
 
@@ -50,6 +53,7 @@ export class CertificatePage {
     // Details page
     readonly tablist: Locator;
     readonly commonNameRow: Locator;
+    readonly ownerRow: Locator;
     readonly stateBadge: Locator;
     readonly subjectAlternativeNames: Locator;
 
@@ -71,6 +75,7 @@ export class CertificatePage {
         this.importDetectedContent = this.importModal.getByRole('region', { name: /Detected content/ });
         this.importSubmitButton = this.importModal.getByRole('button', { name: /Import \d+ entr/ });
         this.importResults = this.importModal.getByRole('region', { name: 'Import results' });
+        this.importOpenCertificateLinks = this.importResults.getByTestId('import-open-certificate');
         this.importDoneButton = this.importModal.getByRole('button', { name: 'Done', exact: true });
         this.importDialog = new ImportCertificatesDialog(page);
 
@@ -86,6 +91,7 @@ export class CertificatePage {
 
         this.tablist = page.getByRole('tablist');
         this.commonNameRow = this.main.locator('tr[data-id="commonName"]');
+        this.ownerRow = this.main.locator('tr[data-id="owner"]');
         this.stateBadge = this.main.locator('tr[data-id="certState"] [data-testid="certificate-status"]');
         this.subjectAlternativeNames = widgetTitled(this.main, 'Subject Alternative Names');
 
@@ -97,6 +103,12 @@ export class CertificatePage {
     async goToList(): Promise<void> {
         await this.navigation.openViaSidebar('sidebar-certificates', /\/certificates/i);
         await expect(this.main).toBeVisible();
+    }
+
+    /** Opens the detail an import result links to (`#/certificates/detail/<uuid>`). */
+    async goToDetailLink(href: string): Promise<void> {
+        await this.page.goto(`/administrator/${href}`);
+        await expect(this.page).toHaveURL(/\/certificates\/detail\//);
     }
 
     async goToDetail(uuid: string): Promise<void> {
@@ -117,12 +129,43 @@ export class CertificatePage {
         await expect(this.importModal).toBeVisible();
     }
 
-    async pasteCertificatePem(pem: string): Promise<void> {
+    /** Opens the list by its route, then the import dialog; returns the watch on the certificate custom-attribute listing it loads. */
+    async openImportFromList(): Promise<{ attributeListing: Promise<Response> }> {
+        // Watched before the list loads: the list page may make the request first, and the dialog may reuse its answer.
+        const attributeListing = watchApiCall(this.page, { method: 'GET', path: '/api/v1/attributes/custom/resources/certificates' });
+        await openHashRoute(this.page, 'certificates');
+        await expect(this.main).toBeVisible();
+        await this.openImportModal();
+        return { attributeListing };
+    }
+
+    /** Waits until the pasted certificates are detected: one checked entry, or Import naming `entries` entries. */
+    async pasteCertificatePem(pem: string, entries = 1): Promise<void> {
         logger.info('Pasting certificate PEM');
         await this.importFileContent.fill(pem);
         await expect(this.importDetectedContent).toBeVisible();
-        await expect(this.importDetectedContent.getByRole('checkbox')).toBeChecked();
+        if (entries === 1) await expect(this.importDetectedContent.getByRole('checkbox')).toBeChecked();
+        else await expect(this.importSubmitButton).toHaveText(new RegExp(`Import ${entries} entr`));
         await this.importFileContent.blur();
+    }
+
+    /** True when Import stays disabled after the custom-attribute listing answered 403; disabled for any other reason throws. */
+    async importBlockedByAttributeAccess(attributeListing: Promise<Response>): Promise<boolean> {
+        const status = await attributeListing.then((r) => r.status(), () => undefined);
+        if (await this.importEnabled()) return false;
+        if (status === 403) return true;
+        throw new Error(`Import stays disabled, but the custom-attribute listing answered ${status ?? 'nothing'}: not the known blocker`);
+    }
+
+    /** Whether Import becomes enabled within the usual wait; the wizard keeps it disabled when it cannot list custom attributes. */
+    private async importEnabled(): Promise<boolean> {
+        try {
+            await expect(this.importSubmitButton).toBeEnabled();
+            return true;
+        } catch (error) {
+            if (await this.importSubmitButton.isDisabled().catch(() => false)) return false;
+            throw error;
+        }
     }
 
     async importPastedCertificate(): Promise<void> {
