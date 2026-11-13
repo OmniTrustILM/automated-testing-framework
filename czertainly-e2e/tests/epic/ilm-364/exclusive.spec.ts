@@ -541,7 +541,7 @@ test.describe('import wizard (UI)', () => {
             const certificates = new CertificatePage(page);
             await certificates.openImportFromList();
             await certificates.pasteCertificatePem(cert.pem);
-            test.fail(!(await certificates.importEnabled()), 'the import wizard keeps Import disabled for a user without custom attribute access');
+            test.fail(await certificates.importBlockedByAttributeAccess(), 'the import wizard keeps Import disabled when its custom attribute listing answers 403 to a user without attribute access');
             await certificates.importPastedCertificate();
 
             await certificates.importOpenCertificateLinks.click();
@@ -568,7 +568,7 @@ test.describe('import wizard (UI)', () => {
             const certificates = new CertificatePage(page);
             await certificates.openImportFromList();
             await certificates.pasteCertificatePem(cert.pem);
-            test.fail(!(await certificates.importEnabled()), 'the import wizard keeps Import disabled for a user without custom attribute access');
+            test.fail(await certificates.importBlockedByAttributeAccess(), 'the import wizard keeps Import disabled when its custom attribute listing answers 403 to a user without attribute access');
             await certificates.submitImport();
 
             await certificates.assertImportResult('Not imported');
@@ -589,7 +589,7 @@ test.describe('import wizard (UI)', () => {
             const certificates = new CertificatePage(page);
             await certificates.openImportFromList();
             await certificates.pasteCertificatePem(pem, 3);
-            test.fail(!(await certificates.importEnabled()), 'the import wizard keeps Import disabled for a user without custom attribute access');
+            test.fail(await certificates.importBlockedByAttributeAccess(), 'the import wizard keeps Import disabled when its custom attribute listing answers 403 to a user without attribute access');
             await certificates.submitImport();
 
             const links = certificates.importOpenCertificateLinks;
@@ -622,7 +622,7 @@ test.describe('import wizard (UI)', () => {
             const certificates = new CertificatePage(page);
             await certificates.openImportFromList();
             await certificates.pasteCertificatePem(ofR.pem);
-            test.fail(!(await certificates.importEnabled()), 'the import wizard keeps Import disabled for a user without custom attribute access');
+            test.fail(await certificates.importBlockedByAttributeAccess(), 'the import wizard keeps Import disabled when its custom attribute listing answers 403 to a user without attribute access');
             await certificates.importPastedCertificate();
             await certificates.importOpenCertificateLinks.click();
 

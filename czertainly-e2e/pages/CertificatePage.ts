@@ -12,6 +12,7 @@ import { ImportCertificatesDialog } from './ImportCertificatesDialog';
 import { openHashRoute } from './ui/openHashRoute';
 import { PageHeader } from './ui/pageHeader';
 import { chooseOption } from './ui/select';
+import { watchApiCall } from './ui/waitForResponse';
 import { widgetTitled } from './ui/widget';
 
 const logger = new Logger('CertificatePage');
@@ -19,6 +20,8 @@ const logger = new Logger('CertificatePage');
 export class CertificatePage {
     readonly page: Page;
     private readonly navigation: Navigation;
+    /** The answer of the import wizard's certificate custom-attribute listing, watched from before the dialog opens. */
+    private certificateAttributesListing?: Promise<Response>;
 
     // Page header (fe-administrator#2426): Create, and Import / Delete in its menu; the widget buttons on older builds
     readonly header: PageHeader;
@@ -128,10 +131,11 @@ export class CertificatePage {
         await expect(this.importModal).toBeVisible();
     }
 
-    /** Opens the list by its route, then the import dialog. */
+    /** Opens the list by its route, then the import dialog, watching the certificate custom-attribute listing it loads. */
     async openImportFromList(): Promise<void> {
         await openHashRoute(this.page, 'certificates');
         await expect(this.main).toBeVisible();
+        this.certificateAttributesListing = watchApiCall(this.page, { method: 'GET', path: '/api/v1/attributes/custom/resources/certificates' });
         await this.openImportModal();
     }
 
@@ -145,8 +149,20 @@ export class CertificatePage {
         await this.importFileContent.blur();
     }
 
+    /**
+     * The known blocker: Import stays disabled and the wizard's certificate custom-attribute listing answered 403.
+     * False when Import becomes enabled; Import disabled for any other reason throws, so the test fails as usual.
+     */
+    async importBlockedByAttributeAccess(): Promise<boolean> {
+        if (await this.importEnabled()) return false;
+        if (!this.certificateAttributesListing) throw new Error('Import stays disabled; the custom-attribute listing was not watched (open the dialog with openImportFromList)');
+        const status = await this.certificateAttributesListing.then((r) => r.status(), () => undefined);
+        if (status === 403) return true;
+        throw new Error(`Import stays disabled, but the custom-attribute listing answered ${status ?? 'nothing'}: not the known blocker`);
+    }
+
     /** Whether Import becomes enabled within the usual wait; the wizard keeps it disabled when it cannot list custom attributes. */
-    async importEnabled(): Promise<boolean> {
+    private async importEnabled(): Promise<boolean> {
         try {
             await expect(this.importSubmitButton).toBeEnabled();
             return true;
