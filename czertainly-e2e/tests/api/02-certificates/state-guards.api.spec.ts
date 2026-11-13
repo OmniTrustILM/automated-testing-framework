@@ -18,7 +18,7 @@ import { OwnRef } from '../../../utils/regression/ledger/ledger';
 import type { OwnObjects } from '../../../utils/regression/ownObjects';
 import { ownCommonName } from '../../../utils/regression/ledger/runState';
 import { testMeta, tags } from '../../../utils/regression/tags';
-import { ISSUED_WAIT_MS, ISSUE_MS, LEFTOVER_APPROVAL_LOOKUP_MS, LIFECYCLE_MS, MANY_STEPS_TEST_MS, QUICK_STATE_WAIT_MS, SLOW_LIFECYCLE_MS, STATE_CHANGE_WAIT_MS } from '../../../utils/regression/timeouts';
+import { FAILED_FIXTURE_ROW_TEST_MS, ISSUED_WAIT_MS, ISSUE_MS, LEFTOVER_APPROVAL_LOOKUP_MS, LIFECYCLE_MS, MANY_STEPS_TEST_MS, QUICK_STATE_WAIT_MS, STATE_CHANGE_WAIT_MS } from '../../../utils/regression/timeouts';
 import { waitForCertificateState } from '../../../utils/regression/wait/certificateState';
 
 /** A failed successor from two parallel renews of one own certificate (EJBCA-NG rolls one back, API-CERT-36); undefined when both issue. */
@@ -151,7 +151,7 @@ test.describe('Certificate state and operation refusal matrix', { tag: tags.api 
             rule: [...RULES, 'shared-tier producers of failed: EJBCA-NG refuses an e-mail SAN (end-entity profile), else it rolls back one of two parallel renews of one end entity (API-CERT-36)'],
         }),
         async ({ api, own, ownRaProfile }) => {
-            test.setTimeout(SLOW_LIFECYCLE_MS);
+            test.setTimeout(FAILED_FIXTURE_ROW_TEST_MS);
             const ra = ownRaProfile;
             const cert = await test.step('Fixture: an issue with an e-mail SAN the end-entity profile refuses → failed', async () => {
                 const cn = ownCommonName('c08fl');
