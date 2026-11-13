@@ -35,19 +35,14 @@ test.describe('@est discovery', () => {
   test.beforeAll(async () => {
     env = loadEstEnv();
     api = await newEstAdminContext(env);
-    try {
-      profile = await createEstProfile(api, {
-        name: estProfileName('discovery'),
-        raProfileUuid: env.raProfileUuid,
-        authenticationPolicy: 'certificateRegistration',
-        systemDefault: true,
-      });
-      expectedChain = await getRaProfileCaFingerprints(api, env.authorityUuid, env.raProfileUuid);
-    } catch (error) {
-      if (profile) await cleanupEstProfile(api, profile);
-      await api.dispose();
-      throw error;
-    }
+    // A failed beforeAll still runs afterAll, which cleans up and disposes once.
+    profile = await createEstProfile(api, {
+      name: estProfileName('discovery'),
+      raProfileUuid: env.raProfileUuid,
+      authenticationPolicy: 'certificateRegistration',
+      systemDefault: true,
+    });
+    expectedChain = await getRaProfileCaFingerprints(api, env.authorityUuid, env.raProfileUuid);
     logger.info(`Expecting a chain of ${expectedChain.length} certificate(s)`);
   });
 
@@ -68,6 +63,7 @@ test.describe('@est discovery', () => {
   function expectCsrAttrs(resp: EstResponse): void {
     expect([200, 204]).toContain(resp.status);
     if (resp.status === 200) {
+      expect(resp.headers['content-type']).toContain('application/csrattrs');
       expect(isDerCsrAttrs(decodeBase64Body(resp.body))).toBe(true);
     } else {
       expect(resp.body.length).toBe(0);

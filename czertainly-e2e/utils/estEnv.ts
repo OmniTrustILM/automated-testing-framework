@@ -27,11 +27,9 @@ export type EstEnv = {
   raProfileUuid: string;
   labelRaProfileUuid: string;
   approvalRaProfileUuid: string;
-  pendingAuthorityUuid: string;
   pendingRaProfileUuid: string;
   vaultUuid: string;
   vaultProfileUuid: string;
-  keyRecoveryTokenUuid: string;
   keyRecoveryTokenProfileUuid: string;
   estclientImage?: string;
   /** CA of the edge's TLS certificate, which a real EST client must trust. */
@@ -48,11 +46,9 @@ const REQUIRED: Array<[keyof EstEnv, string]> = [
   ['raProfileUuid', 'EST_RA_PROFILE_UUID'],
   ['labelRaProfileUuid', 'EST_LABEL_RA_PROFILE_UUID'],
   ['approvalRaProfileUuid', 'EST_APPROVAL_RA_PROFILE_UUID'],
-  ['pendingAuthorityUuid', 'EST_PENDING_AUTHORITY_UUID'],
   ['pendingRaProfileUuid', 'EST_PENDING_RA_PROFILE_UUID'],
   ['vaultUuid', 'EST_VAULT_UUID'],
   ['vaultProfileUuid', 'EST_VAULT_PROFILE_UUID'],
-  ['keyRecoveryTokenUuid', 'EST_KEY_RECOVERY_TOKEN_UUID'],
   ['keyRecoveryTokenProfileUuid', 'EST_KEY_RECOVERY_TOKEN_PROFILE_UUID'],
 ];
 

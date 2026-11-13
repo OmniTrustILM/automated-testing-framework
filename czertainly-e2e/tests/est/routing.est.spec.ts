@@ -103,21 +103,16 @@ test.describe('@est routing', () => {
   test.beforeAll(async () => {
     env = loadEstEnv();
     api = await newEstAdminContext(env);
-    try {
-      labelRaProfileName = await getRaProfileName(api, env.labelRaProfileUuid);
-      [defaultProfile, defaultCredentials] = await newRaBasicProfile('routing-default', true);
-      [directProfile, directCredentials] = await newRaBasicProfile('routing-direct', false);
-      await activateEstOnRaProfile(api, {
-        authorityUuid: env.authorityUuid,
-        raProfileUuid: env.labelRaProfileUuid,
-        estProfileUuid: directProfile.uuid,
-      });
-      activated = true;
-    } catch (error) {
-      await cleanup();
-      await api.dispose();
-      throw error;
-    }
+    // A failed beforeAll still runs afterAll, which cleans up and disposes once.
+    labelRaProfileName = await getRaProfileName(api, env.labelRaProfileUuid);
+    [defaultProfile, defaultCredentials] = await newRaBasicProfile('routing-default', true);
+    [directProfile, directCredentials] = await newRaBasicProfile('routing-direct', false);
+    await activateEstOnRaProfile(api, {
+      authorityUuid: env.authorityUuid,
+      raProfileUuid: env.labelRaProfileUuid,
+      estProfileUuid: directProfile.uuid,
+    });
+    activated = true;
   });
 
   test.afterAll(async () => {

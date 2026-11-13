@@ -70,6 +70,38 @@ test('the edge CA given is the one the connection trusts', () => {
 test('base64 bodies decode across CRLF and whitespace', () => {
     expect(decodeBase64Body(Buffer.from('QUJD\r\nREVG\r\n')).toString()).toBe('ABCDEF');
     expect(decodeBase64Body(' QU JD ').toString()).toBe('ABC');
+    expect(decodeBase64Body('QQ==').toString()).toBe('A');
+    expect(decodeBase64Body('').length).toBe(0);
+});
+
+test('base64 bodies with a foreign character or bad padding are rejected without echoing the text', () => {
+    for (const bad of ['QU!JD', 'QUJ', 'QQ=', 'Q===', 'QQ==QUJD', 'QU-_', 'caf\u00e9']) {
+        expect(() => decodeBase64Body(bad), bad).toThrow(/^Invalid base64: \d+ characters$/);
+    }
+});
+
+test('the brackets of an IPv6 literal are not part of the host name, and no SNI is sent for it', () => {
+    const { options } = buildEstRequest({ baseUrl: 'https://[::1]:8443', op: 'cacerts' });
+    expect(options.hostname).toBe('::1');
+    expect(options.servername).toBeUndefined();
+});
+
+test('a request that outlives its deadline is destroyed and rejects', async () => {
+    const ca = createCa({ cn: 'http-test-ca' });
+    const server = issueCert(ca, { subject: 'localhost', sans: ['localhost'] });
+    const srv = https.createServer({ cert: certToPem(server.cert), key: keyToPem(server.key) }, () => {
+        // never answers
+    });
+    await new Promise<void>((resolve) => srv.listen(0, 'localhost', resolve));
+    try {
+        const { port } = srv.address() as AddressInfo;
+        await expect(
+            estRequest({ baseUrl: `https://localhost:${port}`, op: 'cacerts', ca: certToPem(ca.cert), timeoutMs: 200 }),
+        ).rejects.toThrow(/timed out after 200 ms/);
+    } finally {
+        srv.closeAllConnections();
+        srv.close();
+    }
 });
 
 test('a request round-trips to a TLS server that asks for a client certificate', async () => {

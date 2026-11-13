@@ -13,6 +13,7 @@
 
 import * as crypto from 'crypto';
 import * as forge from 'node-forge';
+import { decodeBase64Text } from './estHttp';
 
 const { pki, asn1 } = forge;
 
@@ -217,9 +218,9 @@ export function parseMultipartMixed(contentTypeHeader: string, body: Buffer): Mu
       const colon = line.indexOf(':');
       if (colon > 0) headers[line.slice(0, colon).trim().toLowerCase()] = line.slice(colon + 1).trim();
     }
-    let partBody = Buffer.from(content.slice(split.index + split[0].length).replace(/\r?\n$/, ''), 'latin1');
+    let partBody: Buffer = Buffer.from(content.slice(split.index + split[0].length).replace(/\r?\n$/, ''), 'latin1');
     if (headers['content-transfer-encoding']?.toLowerCase() === 'base64') {
-      partBody = Buffer.from(partBody.toString('latin1').replace(/\s+/g, ''), 'base64');
+      partBody = decodeBase64Text(partBody.toString('latin1'));
     }
     parts.push({ headers, contentType: (headers['content-type'] ?? '').split(';')[0].trim().toLowerCase(), body: partBody });
   }
@@ -251,7 +252,7 @@ export function isDerCsrAttrs(der: Buffer): boolean {
       if (isOid(element)) return true;
       if (!isUniversal(element, asn1.Type.SEQUENCE)) return false;
       const parts = element.value as forge.asn1.Asn1[];
-      return parts.length === 2 && isOid(parts[0]) && isUniversal(parts[1], asn1.Type.SET);
+      return parts.length === 2 && isOid(parts[0]) && isUniversal(parts[1], asn1.Type.SET) && parts[1].constructed;
     });
   } catch {
     return false;

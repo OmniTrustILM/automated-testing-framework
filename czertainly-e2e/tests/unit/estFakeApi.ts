@@ -17,11 +17,9 @@ export const FAKE_EST_ENV: Record<string, string> = {
     EST_RA_PROFILE_UUID: 'ra',
     EST_LABEL_RA_PROFILE_UUID: 'ra-label',
     EST_APPROVAL_RA_PROFILE_UUID: 'ra-approval',
-    EST_PENDING_AUTHORITY_UUID: 'auth-pending',
     EST_PENDING_RA_PROFILE_UUID: 'ra-pending',
     EST_VAULT_UUID: 'vault',
     EST_VAULT_PROFILE_UUID: 'vp',
-    EST_KEY_RECOVERY_TOKEN_UUID: 'tok',
     EST_KEY_RECOVERY_TOKEN_PROFILE_UUID: 'tokp',
 };
 

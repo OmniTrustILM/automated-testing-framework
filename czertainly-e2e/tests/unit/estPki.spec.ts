@@ -171,6 +171,7 @@ test('CsrAttrs is a SEQUENCE of OIDs and Attributes, and nothing else', () => {
     expect(isDerCsrAttrs(der(sequence(sequence(oid('1.2.3'))))), 'an Attribute without values').toBe(false);
     expect(isDerCsrAttrs(der(sequence(sequence(set(), set())))), 'an Attribute without an OID').toBe(false);
     expect(isDerCsrAttrs(Buffer.from('300a30080601 2a3100020105'.replace(' ', ''), 'hex')), 'an Attribute with a third part').toBe(false);
+    expect(isDerCsrAttrs(Buffer.from('3008300606022a031100', 'hex')), 'a SET that is not constructed').toBe(false);
     expect(isDerCsrAttrs(Buffer.from([0x30, 0x02, 0x06, 0x00])), 'an empty OID').toBe(false);
     expect(isDerCsrAttrs(Buffer.from([0x30, 0x03, 0x06, 0x01, 0x81])), 'an unterminated OID').toBe(false);
     expect(isDerCsrAttrs(Buffer.from([0x02, 0x01, 0x05])), 'an INTEGER').toBe(false);
@@ -214,4 +215,6 @@ test('malformed multipart bodies are rejected', () => {
     expect(() => parseMultipartMixed('multipart/mixed', Buffer.from('x'))).toThrow(/boundary/);
     expect(() => parseMultipartMixed('multipart/mixed; boundary=b', Buffer.from('--b\r\nno separator'))).toThrow(/separator/);
     expect(() => parseMultipartMixed('multipart/mixed; boundary=b', Buffer.from('--b\r\nX: y\r\n\r\nbody\r\n'))).toThrow(/closing delimiter/);
+    const invalidBase64 = '--b\r\nContent-Transfer-Encoding: base64\r\n\r\nQU!JD\r\n--b--\r\n';
+    expect(() => parseMultipartMixed('multipart/mixed; boundary=b', Buffer.from(invalidBase64))).toThrow(/Invalid base64/);
 });

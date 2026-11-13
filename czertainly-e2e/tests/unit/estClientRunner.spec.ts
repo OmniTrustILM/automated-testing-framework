@@ -12,6 +12,7 @@ import {
     createWorkDir,
     EDGE_CA_FILE,
     estclientDockerArgs,
+    isLocalHost,
     readEstclientCaCertificates,
     readEstclientCertificate,
     readEstclientKey,
@@ -33,32 +34,66 @@ function tempDir(): string {
 
 const run = { image: 'local/estclient:1', baseUrl: 'https://ilm.est.test:8443', workDir: '/tmp/w', args: ['-g', '-o', '/work/g'] };
 
-test('the docker arguments map the edge host, mount the work dir and trust the edge CA', () => {
-    expect(estclientDockerArgs(run)).toEqual([
-        'run', '--rm', '--add-host', 'ilm.est.test:host-gateway', '-v', '/tmp/w:/work',
+test('the docker arguments name the container, map a local edge host, mount the work dir and trust the edge CA', () => {
+    expect(estclientDockerArgs(run, 'c1')).toEqual([
+        'run', '--rm', '--name', 'c1', '--add-host', 'ilm.est.test:host-gateway', '-v', '/tmp/w:/work',
         '-e', `EST_OPENSSL_CACERT=/work/${EDGE_CA_FILE}`, 'local/estclient:1',
         '-s', 'ilm.est.test', '-p', '8443', '-g', '-o', '/work/g',
     ]);
 });
 
-test('the port defaults to 443', () => {
-    const args = estclientDockerArgs({ ...run, baseUrl: 'https://ilm.example.com' });
+test('a remote edge host is left to Docker DNS, and the port defaults to 443', () => {
+    const args = estclientDockerArgs({ ...run, baseUrl: 'https://ilm.example.com' }, 'c1');
+    expect(args).not.toContain('--add-host');
     expect(args.slice(args.indexOf('-p'), args.indexOf('-p') + 2)).toEqual(['-p', '443']);
 });
 
-test('runEstclient hands docker and the arguments to exec', async () => {
-    const seen: Array<[string, string[]]> = [];
-    const result = await runEstclient(run, async (file, args) => {
-        seen.push([file, args]);
+test('only the machine itself and names reserved for local use are local hosts', () => {
+    for (const host of ['localhost', 'LOCALHOST', 'a.localhost', 'ilm.est.test', '127.0.0.1', '127.1.2.3', '::1', '[::1]']) {
+        expect(isLocalHost(host), host).toBe(true);
+    }
+    for (const host of ['ilm.example.com', '10.0.0.5', '192.168.1.1', 'test.example.com', 'attest', '2001:db8::1']) {
+        expect(isLocalHost(host), host).toBe(false);
+    }
+});
+
+test('an IPv6 edge host is passed to estclient without brackets', () => {
+    const args = estclientDockerArgs({ ...run, baseUrl: 'https://[::1]:8443' }, 'c1');
+    expect(args).toContain('::1:host-gateway');
+    expect(args[args.indexOf('-s') + 1]).toBe('::1');
+});
+
+test('runEstclient hands docker, the arguments and a timeout to exec', async () => {
+    const seen: Array<[string, string[], number]> = [];
+    const result = await runEstclient(run, async (file, args, timeoutMs) => {
+        seen.push([file, args, timeoutMs]);
         return { code: 0, output: 'done' };
     });
     expect(result).toEqual({ code: 0, output: 'done' });
-    expect(seen).toEqual([['docker', estclientDockerArgs(run)]]);
+    expect(seen).toHaveLength(1);
+    expect(seen[0][0]).toBe('docker');
+    expect(seen[0][1].slice(0, 3)).toEqual(['run', '--rm', '--name']);
+    expect(seen[0][2]).toBeGreaterThan(0);
 });
 
 test('runEstclient reports a command that cannot start as a failure', async () => {
     const result = await runEstclient(run, async () => ({ code: 1, output: 'spawn docker ENOENT' }));
     expect(result.code).toBe(1);
+});
+
+test('a run that times out has its named container stopped', async () => {
+    const calls: string[][] = [];
+    const result = await runEstclient(
+        run,
+        async (_file, args) => {
+            calls.push(args);
+            return args[0] === 'run' ? { code: 1, output: '', timedOut: true } : { code: 0, output: '' };
+        },
+        50,
+    );
+    expect(result.timedOut).toBe(true);
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toEqual(['stop', '--time', '5', calls[0][calls[0].indexOf('--name') + 1]]);
 });
 
 test('createWorkDir copies the edge CA into a fresh directory', () => {

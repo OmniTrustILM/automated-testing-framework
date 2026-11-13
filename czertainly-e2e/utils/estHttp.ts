@@ -31,6 +31,8 @@ export interface EstRequestOptions {
   clientCert?: { cert: string; key: string };
   /** PEM CA the edge's certificate chains to; defaults to the file `EST_EDGE_CA_CERT` names. */
   ca?: string;
+  /** Milliseconds after which the request is destroyed and rejected; defaults to 30 seconds. */
+  timeoutMs?: number;
 }
 
 export interface EstResponse {
@@ -38,6 +40,8 @@ export interface EstResponse {
   headers: Record<string, string>;
   body: Buffer;
 }
+
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 let edgeCaFromEnv: string | undefined;
 
@@ -56,6 +60,8 @@ export function estPath(label: string | undefined, op: string): string {
 
 export function buildEstRequest(opts: EstRequestOptions): { options: https.RequestOptions; body: Buffer } {
   const url = new URL(opts.baseUrl);
+  // WHATWG keeps the brackets of an IPv6 literal; https and isIP take the bare address.
+  const hostname = url.hostname.replace(/^\[(.*)\]$/, '$1');
   const query = opts.query ? `?${new URLSearchParams(opts.query).toString()}` : '';
   const body = Buffer.from(opts.body ?? '');
 
@@ -69,12 +75,12 @@ export function buildEstRequest(opts: EstRequestOptions): { options: https.Reque
 
   const options: https.RequestOptions = {
     method: opts.method ?? (body.length > 0 ? 'POST' : 'GET'),
-    hostname: url.hostname,
+    hostname,
     port: url.port || 443,
     path: estPath(opts.label, opts.op) + query,
     headers,
     // SNI carries a name, never an address.
-    servername: isIP(url.hostname) ? undefined : url.hostname,
+    servername: isIP(hostname) ? undefined : hostname,
   };
   const ca = opts.ca ?? edgeCa();
   if (ca) options.ca = ca;
@@ -87,6 +93,7 @@ export function buildEstRequest(opts: EstRequestOptions): { options: https.Reque
 
 export function estRequest(opts: EstRequestOptions): Promise<EstResponse> {
   const { options, body } = buildEstRequest(opts);
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   return new Promise((resolve, reject) => {
     const req = https.request(options, (res) => {
       const chunks: Buffer[] = [];
@@ -101,11 +108,28 @@ export function estRequest(opts: EstRequestOptions): Promise<EstResponse> {
       });
     });
     req.on('error', reject);
+    // A deadline on the whole request, not an idle timeout: a server that trickles bytes must not hold the suite.
+    const deadline = setTimeout(() => {
+      req.destroy(new Error(`EST request ${options.method} ${options.path} timed out after ${timeoutMs} ms`));
+    }, timeoutMs);
+    req.on('close', () => clearTimeout(deadline));
     req.end(body);
   });
 }
 
+const BASE64_TEXT = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+
+/**
+ * Decodes base64 text (RFC 4648 section 4) after removing whitespace, which RFC 8951 allows between
+ * lines. Any other character, or bad padding, throws; the text is not echoed in the error.
+ */
+export function decodeBase64Text(text: string): Buffer {
+  const compact = text.replace(/\s+/g, '');
+  if (!BASE64_TEXT.test(compact)) throw new Error(`Invalid base64: ${compact.length} characters`);
+  return Buffer.from(compact, 'base64');
+}
+
 /** EST bodies are base64 of DER, possibly wrapped in lines; tolerates CRLF and whitespace. */
 export function decodeBase64Body(body: Buffer | string): Buffer {
-  return Buffer.from(body.toString('latin1').replace(/\s+/g, ''), 'base64');
+  return decodeBase64Text(body.toString('latin1'));
 }

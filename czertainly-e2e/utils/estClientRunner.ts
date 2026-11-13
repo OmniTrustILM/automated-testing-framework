@@ -7,14 +7,17 @@
  * platform interoperates with what devices actually run.
  * HOW: a work directory on the host is mounted at `/work`, holding the edge CA (estclient refuses
  * an untrusted server) and any key, certificate or CSR the operation uses; outputs land there too.
- * The edge's host name is mapped to the Docker host, where the edge listens. estclient exits 0
+ * A local edge name (localhost, a loopback address, `.localhost` or `.test`) is mapped to the Docker host,
+ * where such an edge listens; any other host name is left to Docker's DNS. estclient exits 0
  * even when the server refuses, so callers judge the result by the files it wrote, never by the
  * exit code alone. `exec` is passed in so the runner can be tested without Docker.
  */
 
 import { execFile } from 'child_process';
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import { isIP } from 'net';
 import { decodeBase64Body } from './estHttp';
 import { parseCertsOnlyDer } from './estPki';
 
@@ -33,42 +36,69 @@ export interface EstclientRun {
 export interface EstclientResult {
   code: number;
   output: string;
+  /** True when the run was killed for outliving its timeout. */
+  timedOut?: boolean;
 }
 
-export type Exec = (file: string, args: string[]) => Promise<EstclientResult>;
+export type Exec = (file: string, args: string[], timeoutMs: number) => Promise<EstclientResult>;
 
-export function estclientDockerArgs(run: EstclientRun): string[] {
+const RUN_TIMEOUT_MS = 120_000;
+
+/** Whether the host is the machine itself or a name reserved for local use (RFC 6761). */
+export function isLocalHost(hostname: string): boolean {
+  const host = hostname.replace(/^\[(.*)\]$/, '$1').toLowerCase();
+  if (host === 'localhost' || host === '::1') return true;
+  if (isIP(host) === 4) return host.startsWith('127.');
+  return host.endsWith('.localhost') || host.endsWith('.test');
+}
+
+/** The container's name, unique per run, so a timed-out run can be stopped by name. */
+function containerName(): string {
+  return `estclient-${crypto.randomBytes(6).toString('hex')}`;
+}
+
+export function estclientDockerArgs(run: EstclientRun, name = containerName()): string[] {
   const url = new URL(run.baseUrl);
+  const hostname = url.hostname.replace(/^\[(.*)\]$/, '$1');
   return [
     'run',
     '--rm',
-    '--add-host',
-    `${url.hostname}:host-gateway`,
+    '--name',
+    name,
+    ...(isLocalHost(url.hostname) ? ['--add-host', `${hostname}:host-gateway`] : []),
     '-v',
     `${run.workDir}:${WORK}`,
     '-e',
     `EST_OPENSSL_CACERT=${WORK}/${EDGE_CA_FILE}`,
     run.image,
     '-s',
-    url.hostname,
+    hostname,
     '-p',
     url.port || '443',
     ...run.args,
   ];
 }
 
-const execDocker: Exec = (file, args) =>
+const execDocker: Exec = (file, args, timeoutMs) =>
   new Promise((resolve) => {
-    execFile(file, args, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+    execFile(file, args, { maxBuffer: 10 * 1024 * 1024, timeout: timeoutMs }, (error, stdout, stderr) => {
       // A non-zero exit carries its code; a failure to start (no docker) carries a string such as ENOENT.
       const exitCode: unknown = error?.code;
       const code = error ? (typeof exitCode === 'number' ? exitCode : 1) : 0;
-      resolve({ code, output: `${stdout}${stderr}` });
+      const timedOut = error?.killed === true;
+      resolve({ code, output: `${stdout}${stderr}${timedOut ? `\nestclient timed out after ${timeoutMs} ms` : ''}`, timedOut });
     });
   });
 
-export function runEstclient(run: EstclientRun, exec: Exec = execDocker): Promise<EstclientResult> {
-  return exec('docker', estclientDockerArgs(run));
+/** Runs estclient; a run that outlives the timeout is killed and its named container stopped. */
+export async function runEstclient(run: EstclientRun, exec: Exec = execDocker, timeoutMs = RUN_TIMEOUT_MS): Promise<EstclientResult> {
+  const name = containerName();
+  const result = await exec('docker', estclientDockerArgs(run, name), timeoutMs);
+  if (result.timedOut) {
+    // Killing the docker CLI leaves the container running.
+    await exec('docker', ['stop', '--time', '5', name], 30_000);
+  }
+  return result;
 }
 
 /** A fresh work directory holding the edge CA. */
