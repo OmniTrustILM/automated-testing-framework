@@ -277,22 +277,33 @@ async function removeOwnKey(api: APIRequestContext, uuid: string, createdAfter: 
     }
 }
 
-/** Plain delete first; the force removes every association, so it is sent only when those left are to the executions' RA profiles or gone. */
+/**
+ * Removes the associations the timeline made, then a plain delete; the force removes every association, so it is sent only when none
+ * of another owner is left. Absence is proven by a 404.
+ */
 async function removeComplianceProfile(api: APIRequestContext, uuid: string): Promise<void> {
-    const plain = await api.delete(`/api/v1/complianceProfiles/${uuid}`);
-    if (plain.ok()) return;
-    if (plain.status() === 404 && (await api.get(`/api/v1/complianceProfiles/${uuid}`)).status() === 404) return;
     const associations = ((await call(api, 'get', `/v2/complianceProfiles/${uuid}/associations`)) ?? []) as Array<{ resource?: string; objectUuid?: string; name?: string }>;
     const liveRaProfiles = new Map(((await call(api, 'get', '/v1/raProfiles')) as Named[]).map((r) => [r.uuid, r.name]));
-    const foreign = associations.filter((a) => {
+    // "gone" is judged from the RA profiles the test user can see
+    const timelines = (a: { resource?: string; objectUuid?: string }): boolean => {
         const raProfile = liveRaProfiles.get(String(a.objectUuid));
-        return a.resource !== 'raProfiles' || (raProfile !== undefined && !raProfile.startsWith(SMOKE_RA_PROFILE));
-    });
+        return a.resource === 'raProfiles' && (raProfile === undefined || raProfile.startsWith(SMOKE_RA_PROFILE));
+    };
+    for (const a of associations.filter(timelines)) {
+        const removed = await api.delete(`/api/v2/complianceProfiles/${uuid}/associations/raProfiles/${a.objectUuid}`);
+        if (!removed.ok() && removed.status() !== 404) logger.warn(`compliance profile ${uuid}: removing its association with RA profile ${a.objectUuid} answered ${removed.status()}`);
+    }
+    const gone = async (): Promise<boolean> => (await api.get(`/api/v1/complianceProfiles/${uuid}`)).status() === 404;
+    const plain = await api.delete(`/api/v1/complianceProfiles/${uuid}`);
+    if ((plain.ok() || plain.status() === 404) && await gone()) return;
+    const foreign = associations.filter((a) => !timelines(a));
     if (foreign.length) throw new Error(`not forced, associations the timeline did not make: ${foreign.map((a) => `${a.resource} ${a.name ?? a.objectUuid}`).join(', ')}`);
     const refused = await call(api, 'delete', '/v2/complianceProfiles/force', [uuid]);
-    if (refused === undefined || (Array.isArray(refused) && !refused.length)) return;
-    const why = Array.isArray(refused) ? refused.map((m: Json) => `${m.name ?? m.uuid}: ${m.message}`).join('; ') : `unexpected answer ${JSON.stringify(refused)}`;
-    throw new Error(`force delete refused: ${why.slice(0, 300)}`);
+    if (refused !== undefined && !(Array.isArray(refused) && !refused.length)) {
+        const why = Array.isArray(refused) ? refused.map((m: Json) => `${m.name ?? m.uuid}: ${m.message}`).join('; ') : `unexpected answer ${JSON.stringify(refused)}`;
+        throw new Error(`force delete refused: ${why.slice(0, 300)}`);
+    }
+    if (!await gone()) throw new Error('still there after the force delete');
 }
 
 /**
@@ -355,12 +366,14 @@ export async function cleanupTimeline(api: APIRequestContext, prefix: string): P
     for (const suffix of new Set([...TIMELINE_CERTIFICATES, ...Object.keys(certs)])) {
         const certUuid = certs[suffix];
         let keys: string[] = [];
-        // the exact name carries the timeline's prefix; the server's creation time of the certificate is checked on top when it is known
+        // with the certificate gone the exact name is the proof (it carries the timeline's prefix); else its creation time on the server
         let createdAfter = new Date(0);
         const keysFound = await attempt(`key lookup of certificate ${suffix}`, async () => {
             keys = await certificateKeysOf(api, `${prefix}${suffix}`, certUuid);
-            const created = certUuid ? await certificateCreationTime(api, certUuid) : undefined;
-            if (created) createdAfter = new Date(Date.parse(created) - 60_000);
+            if (!certUuid) return;
+            const created = await certificateCreationTime(api, certUuid);
+            if (!created) throw new Error('no creation time in the history of the certificate, so its key cannot be proven ours');
+            createdAfter = new Date(Date.parse(created) - 60_000);
         });
         if (certUuid) {
             if (!keysFound || !notificationsGone) {
@@ -375,7 +388,7 @@ export async function cleanupTimeline(api: APIRequestContext, prefix: string): P
     if (!failures.length) {
         for (const g of groups) await attempt(`group ${g.name}`, () => call(api, 'delete', `/v1/groups/${g.uuid}`));
     } else if (groups.length) {
-        logger.warn(`Groups of ${prefix} kept, so that a later stale sweep finds the timeline again`);
+        failures.push(`groups kept so a later sweep finds the leftovers: ${groups.map((g) => g.name).join(', ')}`);
     }
     if (failures.length) logger.warn(`Timeline ${prefix} was not removed completely:\n${failures.join('\n')}`);
     return failures;
