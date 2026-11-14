@@ -160,7 +160,7 @@ test.describe('@epic-369 reminders timeline', () => {
         });
     });
 
-    test('S3: run 1 sends one reminder, and the first expiring notification in the same run; also S2, S4–S6, S8–S10', { tag: ['@epic-369', '@timeline', '@timeline-r1'] }, async ({ request, env }) => {
+    test('S3: run 1 sends one reminder, and the first expiring notification in the same run; also S2, S4–S6, S8–S10', { tag: ['@epic-369', '@regression', '@timeline', '@timeline-r1'] }, async ({ request, env }) => {
         test.setTimeout(5 * 60_000);
         await withApi(request, env, async (api) => {
             const t = await readTimeline(api);
@@ -202,7 +202,7 @@ test.describe('@epic-369 reminders timeline', () => {
         });
     });
 
-    test('S7: run 2 sends nothing to the reminded certificate, and a new non-compliance starts from the beginning; also S3–S6, S8–S10', { tag: ['@epic-369', '@timeline', '@timeline-r2'] }, async ({ request, env }) => {
+    test('S7: run 2 sends nothing to the reminded certificate, and a new non-compliance starts from the beginning; also S3–S6, S8–S10', { tag: ['@epic-369', '@regression', '@timeline', '@timeline-r2'] }, async ({ request, env }) => {
         test.setTimeout(10 * 60_000);
         const smoke = requireSmokeState();
         await withApi(request, env, async (api) => {

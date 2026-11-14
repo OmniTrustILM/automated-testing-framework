@@ -26,7 +26,7 @@ test.describe('@epic-369 notification profile', () => {
         }
     });
 
-    test('S1: frequency and repetitions are saved on a notification profile', { tag: ['@epic-369'] }, async ({ page, env, api }) => {
+    test('S1: frequency and repetitions are saved on a notification profile', { tag: ['@epic-369', '@regression'] }, async ({ page, env, api }) => {
         const name = uniqueName('atf-epic369-s1');
         const profiles = new NotificationProfilePage(page);
         await loginAsSmokeUser(page, env);
