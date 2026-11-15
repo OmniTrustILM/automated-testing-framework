@@ -680,7 +680,7 @@ test.describe('known bugs', () => {
             await certificates.pasteCertificatePem(ofR.pem);
             const blocked = await certificates.importBlockedByAttributeAccess(attributeListing);
             knownBug(
-                blocked, 'Import stays disabled when the custom-attribute listing answers 403 to a user without attribute access',
+                blocked, 'fe-administrator#2461: Import stays disabled when the custom-attribute listing answers 403 to a user without attribute access',
             );
             expect(blocked, 'Import is enabled for a user without attribute access').toBe(false);
             cleanup.expectStored(ofR.fingerprint, true);
