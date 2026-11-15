@@ -225,14 +225,19 @@ export async function issueThroughRaProfile(
     if (answer.status !== 200) throw new Error(`issue answered ${answer.status}: ${answer.text.slice(0, 500)}`);
     const uuid = (answer.json as Json)?.uuid;
     if (!uuid) throw new Error(`issue answered without a certificate uuid: ${answer.text.slice(0, 500)}`);
-    cleanup.add('issued certificate', cn, () => removeFromInventory(admin, uuid));
+    // the key is read once and kept, so a retry after a failed key delete still deletes it (the certificate is gone then)
+    let keyUuid: string | undefined;
+    cleanup.add('issued certificate', cn, async () => {
+        keyUuid ??= await getCertificateKeyUuid(admin, uuid);
+        await removeFromInventory(admin, uuid, keyUuid);
+    });
     await waitForCertificateState(admin, uuid, 'issued', 120_000);
     return uuid;
 }
 
 /** Deletes the certificate and its key from the inventory; its authority still knows it. Nothing to do when it is gone. */
-export async function removeFromInventory(admin: APIRequestContext, uuid: string): Promise<void> {
-    const keyUuid = await getCertificateKeyUuid(admin, uuid);
+export async function removeFromInventory(admin: APIRequestContext, uuid: string, knownKeyUuid?: string): Promise<void> {
+    const keyUuid = knownKeyUuid ?? await getCertificateKeyUuid(admin, uuid);
     await deleteCertificate(admin, uuid);
     if (keyUuid) await sendOk(admin, 'DELETE', '/api/v1/keys', [keyUuid]);
 }

@@ -659,10 +659,11 @@ test.describe('known bugs', () => {
         const stored = await pollUntil(() => inventoryRow(admin, cert.fingerprint, { includeArchived: true }), (row) => row !== undefined,
             { timeoutMs: 5_000, intervalMs: 1_000, onTimeout: 'return' });
         expect(stored, 'no certificate with that fingerprint exists').toBeUndefined();
+        // before the known bug: a 500 of another failure carries another message, so it cannot pass as core#2878
+        expect(answer.text, 'the message points to the event history').toContain(DISCARDED);
 
         knownBug(answer.status >= 500, 'core#2878: an upload discarded by an ignore trigger answers 500 instead of a client error');
         expect(answer.status, `a client error, not a server error: ${answer.text}`).toBeLessThan(500);
-        expect(answer.text, 'the message points to the event history').toContain(DISCARDED);
     });
 
     test('S13: a user who may only upload opens the certificate they imported; others stay hidden', { tag: REGRESSION }, async ({ browser }) => {
