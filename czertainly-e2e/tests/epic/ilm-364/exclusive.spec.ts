@@ -660,7 +660,7 @@ test.describe('known bugs', () => {
             { timeoutMs: 5_000, intervalMs: 1_000, onTimeout: 'return' });
         expect(stored, 'no certificate with that fingerprint exists').toBeUndefined();
 
-        knownBug(answer.status >= 500, 'an upload discarded by an ignore trigger answers 500 instead of a client error');
+        knownBug(answer.status >= 500, 'core#2878: an upload discarded by an ignore trigger answers 500 instead of a client error');
         expect(answer.status, `a client error, not a server error: ${answer.text}`).toBeLessThan(500);
         expect(answer.text, 'the message points to the event history').toContain(DISCARDED);
     });
