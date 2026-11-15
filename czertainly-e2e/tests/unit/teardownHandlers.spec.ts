@@ -596,6 +596,38 @@ test('a discovery still processing is waited for and deleted once it ended; one 
     expect(String(result.error)).toMatch(/422/);
 });
 
+function v2RunAtConnector(status: 'inProgress' | 'stopped') {
+    const d = line('discoveries', { uuid: randomUUID() });
+    let current: string = status;
+    let deleted = false;
+    const core = new FakeCore()
+        .route('GET', new RegExp(`^/api/v1/discoveries/${d.uuid}$`), () => (deleted ? { status: 404 } : {
+            status: 200,
+            body: { uuid: d.uuid, name: d.name, status: current, connectorInterface: { code: 'discoveryProvider', version: 'v2' }, startTime: '2026-10-13T12:01:00.000Z' },
+        }))
+        .route('PATCH', new RegExp(`^/api/v1/discoveries/${d.uuid}/cancel$`), () => {
+            current = 'cancelled';
+            return { status: 204 };
+        })
+        .route('DELETE', new RegExp(`^/api/v1/discoveries/${d.uuid}$`), () => {
+            if (current !== 'cancelled') return { status: 422, body: [`Discovery ${d.uuid} is ${current} and cannot be deleted; cancel it first`] };
+            deleted = true;
+            return { status: 204 };
+        })
+        .route('GET', /\/certificates$/, () => ({ status: 200, body: { certificates: [], totalPages: 1 } }));
+    return { d, core };
+}
+
+test('an own v2 run still at its connector (in progress or stopped) is cancelled, then deleted', async () => {
+    process.env.REG_RUN_ID = RUN;
+    for (const status of ['inProgress', 'stopped'] as const) {
+        const { d, core } = v2RunAtConnector(status);
+        const result = await run(core, d);
+        expect(result.error, status).toBeUndefined();
+        expect(core.mutations(), status).toEqual([`PATCH /api/v1/discoveries/${d.uuid}/cancel`, `DELETE /api/v1/discoveries/${d.uuid}`]);
+    }
+});
+
 test('a discovery without a server timestamp records its certificates with the keeping bound and warns, then is deleted', async () => {
     process.env.REG_RUN_ID = RUN;
     const d = line('discoveries', { uuid: '00000000-0000-4000-8000-0000000000e1' });

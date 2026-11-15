@@ -397,11 +397,20 @@ const keyItems: TeardownHandler = {
 const stringOf = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
 
 const SETTLE_POLL_MS = 10_000;
-const running = (d: JsonObject): boolean => TRANSIENT_DISCOVERY_STATUSES.includes(String(d.status));
+const AT_CONNECTOR = ['inProgress', 'stopped'];
+const UNFINISHED = [...TRANSIENT_DISCOVERY_STATUSES, 'stopped'];
+const running = (d: JsonObject): boolean => UNFINISHED.includes(String(d.status));
 
-/** A running discovery refuses its delete (422), so the teardown waits for it to end, at most DISCOVERY_SETTLE_MS. */
+/**
+ * A running discovery is waited for, at most DISCOVERY_SETTLE_MS. A v2 run still at its connector (in progress or stopped) refuses
+ * its delete until it ends, so it is cancelled first; a processing one can only be waited for.
+ */
 async function settled(ctx: TeardownContext, uuid: string, live: JsonObject): Promise<JsonObject> {
     if (!running(live)) return live;
+    if (live.connectorInterface && AT_CONNECTOR.includes(String(live.status))) {
+        const res = await ctx.api.patch(`/api/v1/discoveries/${uuid}/cancel`);
+        if (!res.ok()) ctx.warn(`cancel of the ${String(live.status)} discovery ${uuid} answered ${res.status()}`);
+    }
     const last = await pollUntil(
         async () => {
             const res = await ctx.api.get(`/api/v1/discoveries/${uuid}`);
@@ -416,7 +425,7 @@ async function settled(ctx: TeardownContext, uuid: string, live: JsonObject): Pr
 }
 
 const discoveries: TeardownHandler = {
-    action: 'wait for a running discovery to end, record the certificates it onboarded as new (derived; createdAfter from the server clock, else the keeping bound), then delete it',
+    action: 'cancel an own v2 run still at its connector and wait for a running discovery to end, record the certificates it onboarded as new (derived; createdAfter from the server clock, else the keeping bound), then delete it',
     async remove(ctx, line) {
         const discovery = await settled(ctx, line.uuid, ctx.live!);
         // The server's clock (the discovery's start time, else the create response's Date); with neither, the certificates are recorded

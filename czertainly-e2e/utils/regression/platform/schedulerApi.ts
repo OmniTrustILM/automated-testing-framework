@@ -29,9 +29,17 @@ export const SYSTEM_JOB_NAMES: readonly string[] = SYSTEM_JOBS.map((j) => j.jobN
 
 export const JOBS_URL = '/api/v1/scheduler/jobs';
 
+/** Every job, page by page. */
 export async function listJobs(api: APIRequestContext): Promise<JsonObject[]> {
-    const body = await apiJson<JsonObject>(api, 'GET', `${JOBS_URL}?itemsPerPage=100&pageNumber=1`);
-    return Array.isArray(body) ? body : ((body.scheduledJobs ?? body.items ?? []) as JsonObject[]);
+    const jobs: JsonObject[] = [];
+    for (let page = 1; ; page++) {
+        const body = await apiJson<JsonObject>(api, 'GET', `${JOBS_URL}?itemsPerPage=100&pageNumber=${page}`);
+        if (Array.isArray(body)) return body;
+        const rows = (body.scheduledJobs ?? body.items ?? []) as JsonObject[];
+        jobs.push(...rows);
+        const total = Number(body.totalPages);
+        if (rows.length === 0 || !Number.isFinite(total) || page >= total) return jobs;
+    }
 }
 
 export const getJob = (api: APIRequestContext, uuid: string): Promise<JsonObject> => apiJson<JsonObject>(api, 'GET', `${JOBS_URL}/${uuid}`);
