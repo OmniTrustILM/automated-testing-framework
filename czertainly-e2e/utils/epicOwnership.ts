@@ -183,6 +183,17 @@ export async function detail(api: APIRequestContext, uuid: string): Promise<Json
     return (await sendOk(api, 'GET', `/api/v1/certificates/${uuid}`)).json as Json;
 }
 
+/**
+ * The detail once its owner is the expected one (`null` for none). The upload handler sets the owner after the certificate
+ * is stored, so a read right after the certificate appears may still show the owner before; a wrong final owner fails with it.
+ */
+export async function detailOwnedBy(api: APIRequestContext, uuid: string, owner: string | null): Promise<Json> {
+    const reached = await pollUntil(() => detail(api, uuid), (d) => (d.owner ?? null) === owner,
+        { timeoutMs: 30_000, intervalMs: 500, tolerateErrors: 0, onTimeout: 'return' });
+    if ((reached.owner ?? null) !== owner) throw new Error(`The owner of ${uuid} is ${reached.owner ?? 'nobody'}, expected ${owner ?? 'nobody'}`);
+    return reached;
+}
+
 async function history(api: APIRequestContext, uuid: string): Promise<Json[]> {
     return (await sendOk(api, 'GET', `/api/v1/certificates/${uuid}/history`)).json as Json[];
 }
