@@ -70,16 +70,20 @@ export async function sendOk(
     return answer;
 }
 
+const SETTING_CACHE_MS = 30_000;
+
 /** The stored value as the API returns it; undefined when the field is missing. */
 export async function readAutomaticOwnership(api: APIRequestContext): Promise<boolean | undefined> {
     const answer = await sendOk(api, 'GET', '/api/v1/settings/platform');
     return (answer.json as Json).certificates?.upload?.automaticOwnership;
 }
 
-/** Sets the switch and waits until a read shows it (one Core instance is assumed; with several, the caches follow within 30 seconds). */
+/** Sets the switch and waits until a read shows it; after a change the caches of the other Core instances follow within 30 seconds. */
 export async function setAutomaticOwnership(api: APIRequestContext, on: boolean): Promise<void> {
+    const changes = (await readAutomaticOwnership(api)) !== on;
     await sendOk(api, 'PUT', '/api/v1/settings/platform', { certificates: { upload: { automaticOwnership: on } } });
     await waitUntil(async () => (await readAutomaticOwnership(api)) === on, `the platform setting reads ${on ? 'on' : 'off'}`);
+    if (changes) await new Promise((resolve) => setTimeout(resolve, SETTING_CACHE_MS));
 }
 
 /** The validation fields a settings read returned, for a PUT that writes no value the platform did not have. */
