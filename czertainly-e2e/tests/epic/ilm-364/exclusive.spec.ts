@@ -17,7 +17,7 @@ import { CertificatePage } from '../../../pages/CertificatePage';
 import { CertificateListPage } from '../../../pages/CertificateListPage';
 import { PlatformSettingsPage } from '../../../pages/PlatformSettingsPage';
 import {
-    Account, Answer, Cleanup, Json, RaProfileRef, accountCredentials, certificateFile, envFor, adminApi, apiAs, attributeValue,
+    acquireExclusiveLock, releaseExclusiveLock, Account, Answer, Cleanup, Json, RaProfileRef, accountCredentials, certificateFile, envFor, adminApi, apiAs, attributeValue,
     commonNameIs, createCustomAttribute, createGroup, createTeamUser, createOwnerNotificationProfile, createSoftwareTokenProfile,
     createUploadTrigger, customValue, detailOwnedBy, uploadNotifications, detail, findByFingerprint, importEntries, importResults, inventoryRow,
     issueThroughRaProfile, ownerChanges, platformTriggers, triggerRows, waitUntil, readAutomaticOwnership, registerImportedKeys,
@@ -32,6 +32,9 @@ const DISCARDED = 'Certificate was not uploaded. See Certificate Uploaded Event 
 // Each test waits for the setting (up to 30 s) and its certificates (up to 60 s each, two issues in one): far above the 30-second default.
 test.describe.configure({ mode: 'serial', timeout: 360_000 });
 
+// Repeated runs and retries start in several workers; one at a time may change the platform setting.
+const LOCK_WAIT_MS = 30 * 60_000;
+let lockHeld = false;
 let env: TestEnv;
 let grant: APIRequestContext;
 let admin: APIRequestContext;
@@ -77,7 +80,9 @@ async function signedIn(browser: Browser, account: Account | 'admin'): Promise<{
 }
 
 test.beforeAll(async () => {
-    test.setTimeout(60_000); // a token grant and two settings reads, above the 30-second hook default
+    test.setTimeout(LOCK_WAIT_MS + 60_000); // the wait for other workers, a token grant and two settings reads
+    await acquireExclusiveLock(LOCK_WAIT_MS);
+    lockHeld = true;
     env = loadEnv();
     // the contexts renew their tokens through this one, so it stays open until the last restore
     grant = await playwrightRequest.newContext({ ignoreHTTPSErrors: true });
@@ -113,6 +118,7 @@ test.afterAll(async () => {
     if (admin && setting !== undefined) await attempt(() => setAutomaticOwnership(admin, setting));
     await Promise.all([admin, U, V, R].map((api) => api?.dispose()));
     await grant?.dispose();
+    if (lockHeld) releaseExclusiveLock();
     if (failures.length) throw new Error(`Restoring the platform settings failed: ${failures.join('; ')}`);
 });
 

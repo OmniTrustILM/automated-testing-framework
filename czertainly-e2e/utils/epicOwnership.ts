@@ -3,6 +3,9 @@
  * API contexts that renew their tokens; every object a test creates goes into a Cleanup, removed in dependency order also after a failure.
  */
 
+import { mkdirSync, rmSync, statSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { APIRequestContext } from '@playwright/test';
 import { TestEnv } from './env';
 import { openAuthenticatedApiContext } from './auth/apiContext';
@@ -102,6 +105,30 @@ export function validationFields(captured: Json): Json {
 /** Puts back the validation settings as they were read. */
 export async function restoreValidation(admin: APIRequestContext, captured: Json): Promise<void> {
     await sendOk(admin, 'PUT', '/api/v1/settings/platform', { certificates: { validation: validationFields(captured) } });
+}
+
+const LOCK_DIR = join(tmpdir(), 'epic-ilm-364-exclusive.lock');
+const LOCK_STALE_MS = 20 * 60_000;
+
+/**
+ * Lets one worker at a time run the exclusive tests: repeated runs (--repeat-each) and retries start in several workers,
+ * and each of them changes the same platform setting. A lock older than 20 minutes belongs to a worker that died.
+ */
+export async function acquireExclusiveLock(timeoutMs: number): Promise<void> {
+    const ok = await pollUntil(async () => {
+        try {
+            mkdirSync(LOCK_DIR);
+            return true;
+        } catch {
+            if (Date.now() - statSync(LOCK_DIR).mtimeMs > LOCK_STALE_MS) rmSync(LOCK_DIR, { recursive: true, force: true });
+            return false;
+        }
+    }, (held) => held, { timeoutMs, intervalMs: 2_000, tolerateErrors: 0, onTimeout: 'return' });
+    if (!ok) throw new Error('Timed out waiting for the worker that runs the exclusive tests');
+}
+
+export function releaseExclusiveLock(): void {
+    rmSync(LOCK_DIR, { recursive: true, force: true });
 }
 
 /** The shared poll of utils/regression/wait.ts with a message: an error of the check fails at once, as a timeout does. */
