@@ -235,6 +235,20 @@ export async function detailOwnedBy(api: APIRequestContext, uuid: string, owner:
     return reached;
 }
 
+/**
+ * The detail, after the owner kept the expected value (`null` for none) over a short window: the owner is set just after the
+ * certificate is stored, so a read right after it appears cannot show that nothing will change it.
+ */
+export async function detailKeepsOwner(api: APIRequestContext, uuid: string, owner: string | null, windowMs = 8_000): Promise<Json> {
+    const changed = await pollUntil(() => detail(api, uuid), (d) => (d.owner ?? null) !== owner,
+        { timeoutMs: windowMs, intervalMs: 1_000, tolerateErrors: 0, onTimeout: 'return' });
+    if ((changed.owner ?? null) !== owner) {
+        const events = (await history(api, uuid)).map((e) => `${e.event}: ${e.message}`).join('; ');
+        throw new Error(`The owner of ${uuid} changed to ${changed.owner}, expected ${owner ?? 'nobody'} to stay; its history: ${events}`);
+    }
+    return changed;
+}
+
 async function history(api: APIRequestContext, uuid: string): Promise<Json[]> {
     return (await sendOk(api, 'GET', `/api/v1/certificates/${uuid}/history`)).json as Json[];
 }
