@@ -242,7 +242,7 @@ test.describe('ownership by upload and import', () => {
         await removeFromInventory(admin, issued);
         const group = await createGroup(admin, cleanup, `${run}-s8-group`);
         const attribute = await createCustomAttribute(admin, cleanup, `${run}-s8-attr`);
-        await createUploadTrigger(admin, cleanup, {
+        const trigger = await createUploadTrigger(admin, cleanup, {
             name: `${run}-s8-trigger`,
             conditions: [commonNameIs(cn)],
             setFields: [
@@ -256,7 +256,9 @@ test.describe('ownership by upload and import', () => {
         const uuid = await uploadAndFind(U, admin, cleanup, cert);
 
         const certificateDetail = await detailOwnedBy(admin, uuid, nameOf('U'));
-        expect((certificateDetail.groups as Json[]).map((g) => g.uuid), 'the group set by the trigger').toEqual([group.uuid]);
+        const trail = JSON.stringify(await triggerRows(admin, uuid, trigger)).slice(0, 1200);
+        expect((certificateDetail.groups as Json[]).map((g) => g.uuid), `the group set by the trigger; its history: ${trail}`)
+            .toEqual([group.uuid]);
         expect(certificateDetail.raProfile?.uuid, 'the RA profile set by the trigger').toBe(ra.raProfileUuid);
         expect(customValue(certificateDetail, attribute.name), 'the custom attribute set by the trigger').toBe('set-by-trigger');
         expect(certificateDetail.owner, 'the uploader is the owner').toBe(nameOf('U'));

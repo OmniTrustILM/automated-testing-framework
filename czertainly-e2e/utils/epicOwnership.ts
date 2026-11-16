@@ -190,7 +190,10 @@ export async function detail(api: APIRequestContext, uuid: string): Promise<Json
 export async function detailOwnedBy(api: APIRequestContext, uuid: string, owner: string | null): Promise<Json> {
     const reached = await pollUntil(() => detail(api, uuid), (d) => (d.owner ?? null) === owner,
         { timeoutMs: 30_000, intervalMs: 500, tolerateErrors: 0, onTimeout: 'return' });
-    if ((reached.owner ?? null) !== owner) throw new Error(`The owner of ${uuid} is ${reached.owner ?? 'nobody'}, expected ${owner ?? 'nobody'}`);
+    if ((reached.owner ?? null) !== owner) {
+        const events = (await history(api, uuid)).map((e) => `${e.event}: ${e.message}`).join('; ');
+        throw new Error(`The owner of ${uuid} is ${reached.owner ?? 'nobody'}, expected ${owner ?? 'nobody'}; its history: ${events}`);
+    }
     return reached;
 }
 
