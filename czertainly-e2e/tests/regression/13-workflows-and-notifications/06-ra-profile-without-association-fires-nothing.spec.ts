@@ -11,7 +11,7 @@ import { getFirings, getObjectHistory, waitForFinishedFirings } from '../../../u
 import { EVENT } from '../../../utils/regression/events/eventVocabulary';
 import { createOwnChain, setGroupsAction } from '../../../utils/regression/events/workflowObjects';
 import { testMeta, tags } from '../../../utils/regression/tags';
-import { SLOW_LIFECYCLE_MS } from '../../../utils/regression/timeouts';
+import { SLOW_LIFECYCLE_MS, TRIGGER_EFFECT_WAIT_MS } from '../../../utils/regression/timeouts';
 
 test.describe('RA profile without association: control', { tag: tags.regression }, () => {
     test('an issue on an RA profile without association changes nothing and fires nothing',
@@ -38,7 +38,9 @@ test.describe('RA profile without association: control', { tag: tags.regression 
             await test.step('Positive marker: the associated RA profile A shows its firing and its certificate is in the group', async () => {
                 const page = await waitForFinishedFirings(api, { event: EVENT.actionPerformed, scope: { resource: 'raProfiles', objectUuid: raA.uuid } }, 1);
                 expect(page.items[0], 'the firing of A finished with 1 evaluated and 1 matched').toMatchObject({ status: 'finished', objectsEvaluated: 1, objectsMatched: 1 });
-                expect(groupUuidsOf(await getCertificateDetail(api, certA.uuid)), 'the certificate of A is in the group').toEqual([group.uuid]);
+                // The group update is visible once the trigger's transaction commits, which can be after the firing reads finished.
+                await expect(async () => expect(groupUuidsOf(await getCertificateDetail(api, certA.uuid)), 'the certificate of A is in the group').toEqual([group.uuid]))
+                    .toPass({ timeout: TRIGGER_EFFECT_WAIT_MS });
             });
 
             await test.step('Control: B\'s certificate has no group and the issuing user as owner, B\'s scope has no firing, the certificate has no trigger row', async () => {
