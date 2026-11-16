@@ -531,26 +531,20 @@ export async function platformTriggersMatching(admin: APIRequestContext, cn: str
     return matching;
 }
 
-/** Puts the earlier platform list back, leaving out only triggers that are gone (404): any other failed read stops the restore. */
-async function restorePlatformTriggers(admin: APIRequestContext, before: string[]): Promise<void> {
-    const existing: string[] = [];
-    for (const uuid of before) {
-        const answer = await admin.get(`/api/v1/workflows/triggers/${uuid}`);
-        if (answer.ok()) existing.push(uuid);
-        else if (answer.status() !== 404) {
-            throw new Error(
-                `GET trigger ${uuid} answered ${answer.status()}: the platform list is not restored, so no trigger is dropped from it`,
-            );
-        }
-    }
-    await sendOk(admin, 'PATCH', '/api/v1/settings/events', { event: UPLOAD_EVENT, triggerUuids: existing });
+/**
+ * Takes this test's trigger off the platform list, as the list is now: triggers others added meanwhile stay. A read of the list that
+ * fails stops the restore, so no trigger is dropped from it.
+ */
+async function restorePlatformTriggers(admin: APIRequestContext, own: string): Promise<void> {
+    const now = await platformTriggers(admin);
+    await sendOk(admin, 'PATCH', '/api/v1/settings/events', { event: UPLOAD_EVENT, triggerUuids: now.filter((uuid) => uuid !== own) });
 }
 
 async function associateWithUploadEvent(admin: APIRequestContext, cleanup: Cleanup, trigger: Created): Promise<void> {
     const before = await platformTriggers(admin);
     // Registered before the change and required by the trigger's delete: the platform list never names a deleted trigger.
     trigger.step.requires = cleanup.add('platform trigger list of the upload event', UPLOAD_EVENT, () =>
-        restorePlatformTriggers(admin, before));
+        restorePlatformTriggers(admin, trigger.uuid));
     await sendOk(admin, 'PATCH', '/api/v1/settings/events', { event: UPLOAD_EVENT, triggerUuids: [...before, trigger.uuid] });
     logger.info(`Platform triggers on the upload event: ${before.length} before, ${before.length + 1} now`);
 }

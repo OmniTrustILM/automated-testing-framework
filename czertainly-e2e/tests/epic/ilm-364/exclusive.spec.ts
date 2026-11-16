@@ -709,6 +709,9 @@ test.describe('known bugs', () => {
             await expect(await list.rowByCommonName(ofR.cn), 'R\'s certificate is in the inventory').toHaveCount(1);
             await expect(await list.rowByCommonName(ofU.cn), 'U\'s certificate is not shown').toHaveCount(0);
             await expect(await list.rowByCommonName(ofV.cn), 'V\'s certificate is not shown').toHaveCount(0);
+            // the list shows one page: R's own search by fingerprint covers every certificate R may read
+            expect(await inventoryRow(R, ofU.fingerprint), 'U\'s certificate is not in R\'s inventory').toBeUndefined();
+            expect(await inventoryRow(R, ofV.fingerprint), 'V\'s certificate is not in R\'s inventory').toBeUndefined();
         } finally {
             await close();
         }
