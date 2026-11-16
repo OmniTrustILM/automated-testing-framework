@@ -30,11 +30,6 @@ function expectRefusedAtSave(sent: ApiAnswer): void {
     expectRefused(sent, { status: 422, what: 'refused at save' });
 }
 
-async function expectNone(api: Api, spec: string, name: string): Promise<void> {
-    // A refused create that persisted something is recorded first (ledger before assertion), then the assertion fails.
-    expect(await recordNamed(api, 'instances', name, spec), 'a list by name shows no instance').toEqual([]);
-}
-
 test.describe('Notification templates are refused at save', { tag: tags.api }, () => {
     const rowMeta = (row: string, rule: string, needs: Needs[]) =>
         testMeta({ id: 'API-WFL-21', prio: 'P1', issue: 'ilm#434', needs, rule: [`templates are validated at save (PR email-notification-provider#80, PR webhook-notification-provider#48), row ${row}: ${rule}`] });
@@ -59,9 +54,10 @@ test.describe('Notification templates are refused at save', { tag: tags.api }, (
             const connector = await connectorOf(api, 'EMAIL');
             const name = ownName(`wf21-${row}`);
             const sent = await probeInstance(api, own.spec, await emailWith(api, connector, name, template));
+            const left = await recordNamed(api, 'instances', name, own.spec);
             expectRefusedAtSave(sent);
             if (text) expect(mentions(sent, text), `the message names the cause: ${JSON.stringify(sent.json)}`).toBe(true);
-            await expectNone(api, own.spec, name);
+            expect(left, 'a list by name shows no instance the refused request left').toEqual([]);
         });
     }
 
@@ -76,8 +72,9 @@ test.describe('Notification templates are refused at save', { tag: tags.api }, (
             const name = ownName(`wf21-${row}`);
             const defs = await instanceDefinitions(api, connector);
             const sent = await probeInstance(api, own.spec, instanceBody(connector, name, webhookAttributes(defs, { url: reservedWebhookUrl(), contentType, template })));
+            const left = await recordNamed(api, 'instances', name, own.spec);
             expectRefusedAtSave(sent);
-            await expectNone(api, own.spec, name);
+            expect(left, 'a list by name shows no instance the refused request left').toEqual([]);
         });
     }
 
@@ -89,8 +86,9 @@ test.describe('Notification templates are refused at save', { tag: tags.api }, (
         for (const [label, attributes] of [['not Base64', [...base, notBase64]], ['missing', base]] as Array<[string, Json[]]>) {
             const name = ownName('wf21-g');
             const sent = await probeInstance(api, own.spec, instanceBody(connector, name, attributes));
+            const left = await recordNamed(api, 'instances', name, own.spec);
             expectRefusedAtSave(sent);
-            await expectNone(api, own.spec, name);
+            expect(left, 'a list by name shows no instance the refused request left').toEqual([]);
             test.info().annotations.push({ type: 'checked', description: `template ${label}: ${sent.status}` });
         }
     });
