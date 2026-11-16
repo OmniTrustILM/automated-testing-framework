@@ -8,9 +8,12 @@ import type { LedgerLine } from '../../utils/regression/ledger/ledger';
 import { partialOf } from './helpers/guardRig';
 import { expect, test } from '@playwright/test';
 import {
-    absentFamilies, algorithmListProblems, encryptedFamilies, FAMILIES, Family, MATRIX, expectedItemUsages, generatedFamilies, namesForbiddenDigest, offeredAlgorithms, pickSignatureOption, sameUsages, signedFamilies, signVariants,
+    absentFamilies, algorithmListProblems, cipherChoices, encryptedFamilies, FAMILIES, Family, MATRIX, expectedItemUsages, generatedFamilies, namesForbiddenDigest, offeredAlgorithms,
+    pickSignatureOption, sameUsages, signedFamilies, signVariants,
 } from '../../utils/regression/platform/cryptoAlgorithmCases';
-import { eventsOf, itemOf, KEY_EVENT, keyCreateBody, keyItemsOf, keyRequestAttributes } from '../../utils/regression/platform/keys';
+import { cipherAttributesFor, signatureAttributesFor } from '../../utils/regression/platform/keyOperations';
+import { deleteEachKey, eventsOf, itemOf, KEY_EVENT, keyCreateBody, keyItemsOf, keyRequestAttributes } from '../../utils/regression/platform/keys';
+import type { OwnRef } from '../../utils/regression/ledger/ledger';
 import { tokenAlias, tokenRequestAttributes } from '../../utils/regression/platform/tokens';
 import { requestAttributesFrom } from '../../utils/regression/customAttributes';
 import { expectedOverallStatus } from '../../utils/regression/platform/complianceProfiles';
@@ -99,6 +102,44 @@ test('keyRequestAttributes: the live algorithm option, the SCP size / curve / le
     expect(((body.attributes as JsonObject[])[0].content as JsonObject[])[0].data).toBe('qa_reg_x_key');
 });
 
+test('keyRequestAttributes takes the live callback options of every spec field: SLH-DSA category and mode, ML-KEM level', () => {
+    const defs = [
+        { name: 'data_keyAlgorithm', uuid: 'alg', content: [{ reference: 'SLH-DSA', data: 'SLH-DSA' }, { reference: 'ML-KEM', data: 'ML-KEM' }] },
+        { name: 'data_slhdsaSecurityCategory', uuid: 'cat', version: 2, contentType: 'string', content: [{ reference: 'CATEGORY_1', data: '1' }, { reference: 'CATEGORY_3', data: '3' }] },
+        { name: 'data_slhdsaSignatureMode', uuid: 'mode', version: 2, contentType: 'string', content: [{ reference: 'FAST', data: 'FAST' }, { reference: 'SMALL', data: 'SMALL' }] },
+    ];
+    const slh = keyRequestAttributes(defs, 'slh-dsa-sha2-128s', 'k');
+    expect(slh.slice(2)).toEqual([
+        { name: 'data_slhdsaSecurityCategory', uuid: 'cat', version: 'v2', contentType: 'string', content: [{ reference: 'CATEGORY_1', data: '1' }] },
+        { name: 'data_slhdsaSignatureMode', uuid: 'mode', version: 'v2', contentType: 'string', content: [{ reference: 'SMALL', data: 'SMALL' }] },
+    ]);
+    expect(keyRequestAttributes(defs, 'ml-kem-768', 'k')[2]).toMatchObject({ name: 'data_mlkemLevel', contentType: 'integer', content: [{ reference: 'CATEGORY_3', data: 3 }] });
+});
+
+test('the v2 split selection: RSA scheme + digest, ECDSA digest, a post-quantum selector; RSA encryption PKCS#1 or OAEP with hash and MGF', () => {
+    const sign = [
+        { name: 'data_rsaSigScheme', uuid: 's', version: 3, contentType: 'string', content: [{ reference: 'PKCS#1 v1.5', data: 'PKCS1-v1_5' }, { reference: 'PSS', data: 'PSS' }] },
+        { name: 'data_sigDigest', uuid: 'd', version: 3, contentType: 'string', content: [{ reference: 'SHA-256', data: 'SHA-256' }, { reference: 'SHA-512', data: 'SHA-512' }] },
+    ];
+    expect(signatureAttributesFor(sign, { family: 'rsa-2048', scheme: 'PSS', digest: 'SHA-512', label: '' })).toEqual([
+        { name: 'data_rsaSigScheme', uuid: 's', version: 'v3', contentType: 'string', content: [{ contentType: 'string', reference: 'PSS', data: 'PSS' }] },
+        { name: 'data_sigDigest', uuid: 'd', version: 'v3', contentType: 'string', content: [{ contentType: 'string', reference: 'SHA-512', data: 'SHA-512' }] },
+    ]);
+    expect((signatureAttributesFor(sign, { family: 'rsa-2048', scheme: 'PKCS1-v1_5', digest: 'SHA-256', label: '' }) ?? []).map((a) => (a.content as Array<{ data: string }>)[0].data)).toEqual(['PKCS1-v1_5', 'SHA-256']);
+    expect(signatureAttributesFor([sign[1]], { family: 'ec-p256', digest: 'SHA-256', label: '' })?.map((a) => a.name)).toEqual(['data_sigDigest']);
+    expect(signatureAttributesFor(sign, { family: 'ec-p384', digest: 'SHA-384', label: '' }), 'a digest the list does not offer').toBeUndefined();
+    expect(signatureAttributesFor([{ name: 'signatureAlgorithm', uuid: 'a', content: [{ reference: 'ML-DSA-65', data: 'ML-DSA-65' }] }], { family: 'ml-dsa-65', label: '' })?.[0].name).toBe('signatureAlgorithm');
+    expect(namesForbiddenDigest(sign.flatMap((d) => d.content))).toEqual([]);
+    const enc = [
+        { name: 'data_rsaEncScheme', uuid: 'e', version: 3, contentType: 'string', content: [{ reference: 'PKCS#1 v1.5', data: 'PKCS1-v1_5' }, { reference: 'OAEP', data: 'OAEP' }] },
+        { name: 'data_rsaOaepHash', uuid: 'h', version: 3, contentType: 'string', content: [{ reference: 'SHA-256', data: 'SHA-256' }] },
+        { name: 'data_rsaOaepMgf', uuid: 'm', version: 3, contentType: 'boolean', content: [{ data: true }] },
+    ];
+    expect(cipherChoices(enc).map((c) => c.label)).toEqual(['PKCS1-v1_5', 'OAEP SHA-256']);
+    expect(cipherAttributesFor(enc, cipherChoices(enc)[0])?.map((a) => a.name)).toEqual(['data_rsaEncScheme']);
+    expect(cipherAttributesFor(enc, cipherChoices(enc)[1])?.map((a) => [a.name, (a.content as Array<{ data: unknown }>)[0].data])).toEqual([['data_rsaEncScheme', 'OAEP'], ['data_rsaOaepHash', 'SHA-256'], ['data_rsaOaepMgf', true]]);
+});
+
 test('itemOf / keyItemsOf / eventsOf read a key detail and a history', () => {
     const detail = { items: [{ uuid: 'p', type: 'PrivateKey' }, { uuid: 'q', type: 'Public' }] };
     expect(itemOf(detail, 'private')?.uuid).toBe('p');
@@ -112,6 +153,27 @@ test('itemOf / keyItemsOf / eventsOf read a key detail and a history', () => {
         CREATE: 'Create Key', IMPORT: 'Import Key', EXPORT: 'Export Key', EXPORT_DISABLED: 'Disable Key Export', COMPROMISED: 'Compromised Key', DESTROY: 'Destroy Key',
         UPDATE_USAGE: 'Update Key Usages', SIGN: 'Sign Data', VERIFY: 'Verify Data', ENCRYPT: 'Encrypt Data', DECRYPT: 'Decrypt Data', ENABLE: 'Enable Key', DISABLE: 'Disable Key',
     });
+});
+
+test('deleteEachKey: a refused delete of a destroyed key warns (core#2455), the other keys are still deleted, any other failure throws', async () => {
+    const key = (uuid: string): OwnRef => ({ uuid, name: uuid, kind: 'own' });
+    const removed: string[] = [];
+    const warnings: string[] = [];
+    const run = (refused: string[], destroyed: string[]) => deleteEachKey([key('a'), key('b'), key('c')], {
+        remove: async (k) => {
+            if (refused.includes(k.uuid)) throw new Error(`DELETE /v1/keys/${k.uuid} answered 422`);
+            removed.push(k.uuid);
+        },
+        isDestroyed: async (k) => destroyed.includes(k.uuid),
+        warn: (text) => warnings.push(text),
+    });
+    await run(['a'], ['a']);
+    expect(removed).toEqual(['b', 'c']);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('core#2455');
+    removed.length = 0;
+    await expect(run(['a', 'b'], ['a'])).rejects.toThrow(/1 own key\(s\) failed: DELETE \/v1\/keys\/b answered 422/);
+    expect(removed, 'a failure does not skip the keys after it').toEqual(['c']);
 });
 
 test('Quartz subset: the six system crons parse; next fire in UTC; isFireTime; system-job problems', () => {

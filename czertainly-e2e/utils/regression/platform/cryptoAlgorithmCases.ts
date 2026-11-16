@@ -9,29 +9,48 @@ export type Family = 'rsa-1024' | 'rsa-2048' | 'rsa-3072' | 'rsa-4096' | 'ec-p25
 
 export type Algorithm = 'RSA' | 'ECDSA' | 'ML-DSA' | 'FALCON' | 'SLH-DSA' | 'ML-KEM';
 
+/** One key-spec field of a family: the attribute (a `SCP_ATTR` key) and the option it takes, by its reference. */
+export interface SpecChoice {
+    attribute: keyof typeof SCP_ATTR;
+    contentType: 'integer' | 'string';
+    reference: string;
+    data: string | number;
+}
+
 export interface FamilySpec {
     family: Family;
     algorithm: Algorithm;
-    option?: string;
-    optionData?: string | number;
+    /** The key-spec fields a create sends, size / curve / level first (the field a negative case overrides). */
+    spec: readonly SpecChoice[];
     size?: number;
     label: string;
 }
 
+const rsaSize = (size: number): SpecChoice[] => [{ attribute: 'rsaKeySize', contentType: 'integer', reference: `RSA_${size}`, data: size }];
+const curve = (name: string): SpecChoice[] => [{ attribute: 'ecdsaCurve', contentType: 'string', reference: name, data: name }];
+const mldsa = (level: 44 | 65 | 87, data: number): SpecChoice[] => [{ attribute: 'mldsaLevel', contentType: 'integer', reference: `MLDSA_${level}`, data }];
+
 export const FAMILIES: Readonly<Record<Family, FamilySpec>> = {
-    'rsa-1024': { family: 'rsa-1024', algorithm: 'RSA', option: 'RSA_1024', optionData: 1024, size: 1024, label: 'RSA 1024' },
-    'rsa-2048': { family: 'rsa-2048', algorithm: 'RSA', option: 'RSA_2048', optionData: 2048, size: 2048, label: 'RSA 2048' },
-    'rsa-3072': { family: 'rsa-3072', algorithm: 'RSA', option: 'RSA_3072', optionData: 3072, size: 3072, label: 'RSA 3072' },
-    'rsa-4096': { family: 'rsa-4096', algorithm: 'RSA', option: 'RSA_4096', optionData: 4096, size: 4096, label: 'RSA 4096' },
-    'ec-p256': { family: 'ec-p256', algorithm: 'ECDSA', option: 'secp256r1', optionData: 'secp256r1', size: 256, label: 'EC P-256' },
-    'ec-p384': { family: 'ec-p384', algorithm: 'ECDSA', option: 'secp384r1', optionData: 'secp384r1', size: 384, label: 'EC P-384' },
-    'ec-p521': { family: 'ec-p521', algorithm: 'ECDSA', option: 'secp521r1', optionData: 'secp521r1', size: 521, label: 'EC P-521' },
-    'ml-dsa-44': { family: 'ml-dsa-44', algorithm: 'ML-DSA', option: 'MLDSA_44', optionData: 2, size: 44, label: 'ML-DSA-44' },
-    'ml-dsa-65': { family: 'ml-dsa-65', algorithm: 'ML-DSA', option: 'MLDSA_65', optionData: 3, size: 65, label: 'ML-DSA-65' },
-    'ml-dsa-87': { family: 'ml-dsa-87', algorithm: 'ML-DSA', option: 'MLDSA_87', optionData: 5, size: 87, label: 'ML-DSA-87' },
-    'falcon-1024': { family: 'falcon-1024', algorithm: 'FALCON', label: 'FALCON-1024' },
-    'slh-dsa-sha2-128s': { family: 'slh-dsa-sha2-128s', algorithm: 'SLH-DSA', option: 'SLHDSA_SHA2_128S', optionData: 'SLHDSA_SHA2_128S', label: 'SLH-DSA SHA2-128s' },
-    'ml-kem-768': { family: 'ml-kem-768', algorithm: 'ML-KEM', option: 'MLKEM_768', optionData: 3, size: 768, label: 'ML-KEM-768' },
+    'rsa-1024': { family: 'rsa-1024', algorithm: 'RSA', spec: rsaSize(1024), size: 1024, label: 'RSA 1024' },
+    'rsa-2048': { family: 'rsa-2048', algorithm: 'RSA', spec: rsaSize(2048), size: 2048, label: 'RSA 2048' },
+    'rsa-3072': { family: 'rsa-3072', algorithm: 'RSA', spec: rsaSize(3072), size: 3072, label: 'RSA 3072' },
+    'rsa-4096': { family: 'rsa-4096', algorithm: 'RSA', spec: rsaSize(4096), size: 4096, label: 'RSA 4096' },
+    'ec-p256': { family: 'ec-p256', algorithm: 'ECDSA', spec: curve('secp256r1'), size: 256, label: 'EC P-256' },
+    'ec-p384': { family: 'ec-p384', algorithm: 'ECDSA', spec: curve('secp384r1'), size: 384, label: 'EC P-384' },
+    'ec-p521': { family: 'ec-p521', algorithm: 'ECDSA', spec: curve('secp521r1'), size: 521, label: 'EC P-521' },
+    'ml-dsa-44': { family: 'ml-dsa-44', algorithm: 'ML-DSA', spec: mldsa(44, 2), size: 44, label: 'ML-DSA-44' },
+    'ml-dsa-65': { family: 'ml-dsa-65', algorithm: 'ML-DSA', spec: mldsa(65, 3), size: 65, label: 'ML-DSA-65' },
+    'ml-dsa-87': { family: 'ml-dsa-87', algorithm: 'ML-DSA', spec: mldsa(87, 5), size: 87, label: 'ML-DSA-87' },
+    'falcon-1024': { family: 'falcon-1024', algorithm: 'FALCON', spec: [], label: 'FALCON-1024' },
+    // SHA2-128s: security category 1, the small signature mode (the SHA2 hash is the provider's fixed v2 parameter).
+    'slh-dsa-sha2-128s': {
+        family: 'slh-dsa-sha2-128s', algorithm: 'SLH-DSA', label: 'SLH-DSA SHA2-128s',
+        spec: [
+            { attribute: 'slhdsaSecurityCategory', contentType: 'string', reference: 'CATEGORY_1', data: '1' },
+            { attribute: 'slhdsaSignatureMode', contentType: 'string', reference: 'SMALL', data: 'SMALL' },
+        ],
+    },
+    'ml-kem-768': { family: 'ml-kem-768', algorithm: 'ML-KEM', spec: [{ attribute: 'mlkemLevel', contentType: 'integer', reference: 'CATEGORY_3', data: 3 }], size: 768, label: 'ML-KEM-768' },
 };
 
 export const SCP_ATTR = {
@@ -43,22 +62,14 @@ export const SCP_ATTR = {
     ecdsaCurve: { name: 'data_ecdsaCurve', uuid: '08730b36-90f3-4046-9f13-3cf827ad6cc7' },
     mldsaLevel: { name: 'data_mldsaLevel', uuid: '22e317d6-dd78-4968-9a26-c1823a4fb2e6' },
     mldsaPrehash: { name: 'data_mldsaPrehash', uuid: 'dd1a8f25-a529-42a6-9c3d-3b9a70fc7e9b' },
+    slhdsaSecurityCategory: { name: 'data_slhdsaSecurityCategory', uuid: 'b4d4cf43-d214-42e5-a402-3db66d9c1c6c' },
+    slhdsaSignatureMode: { name: 'data_slhdsaSignatureMode', uuid: '7a33f35a-8e32-4bcc-bf3e-37654b6a8107' },
+    mlkemLevel: { name: 'data_mlkemLevel', uuid: 'b574e0fb-9db5-4864-9652-40ccf9cff64d' },
     tokenOptions: { name: 'data_options', uuid: '6285683f-f474-4b21-a0ff-56accf28c604' },
     createTokenAction: { name: 'data_createTokenAction', uuid: 'cc781ba3-d90b-4fe9-915a-e8d44e1cff86' },
     newTokenName: { name: 'data_newTokenName', uuid: '21a79858-a246-4b2a-93e1-1677c8beb6a4' },
     tokenCode: { name: 'data_tokenCode', uuid: '181aae19-d2a3-40ca-b5c7-570c8dfbb3cb' },
 } as const;
-
-export function specAttributeOf(family: Family): { name: string; uuid: string; contentType: 'integer' | 'string' } | undefined {
-    const spec = FAMILIES[family];
-    switch (spec.algorithm) {
-        case 'RSA': return { ...SCP_ATTR.rsaKeySize, contentType: 'integer' };
-        case 'ECDSA': return { ...SCP_ATTR.ecdsaCurve, contentType: 'string' };
-        case 'ML-DSA': return { ...SCP_ATTR.mldsaLevel, contentType: 'integer' };
-        default: return undefined;
-    }
-}
-
 
 export type Cell = 'G' | 'GS' | 'GSE' | 'absent' | 'obs' | '?';
 
@@ -190,6 +201,74 @@ export function pickSignatureOption(options: AttributeOption[], variant: SignVar
         if (spec.algorithm === 'SLH-DSA') return /SLH-?DSA/.test(t);
         return false;
     });
+}
+
+/** Core's split selection fields: RSA scheme + digest, ECDSA digest; a post-quantum key keeps the one `signatureAlgorithm`. */
+const SPLIT_FIELDS = {
+    sigScheme: 'data_rsaSigScheme', sigDigest: 'data_sigDigest', encScheme: 'data_rsaEncScheme', oaepHash: 'data_rsaOaepHash', oaepMgf: 'data_rsaOaepMgf',
+} as const;
+
+export interface Selected {
+    def: AttributeDefinition;
+    option: AttributeOption;
+}
+
+const optionText = (o: AttributeOption): string => `${o.reference ?? ''} ${typeof o.data === 'string' ? o.data : JSON.stringify(o.data)}`.toUpperCase();
+const codeOf = (v: unknown): string => String(v ?? '').replace(/[-_\s]/g, '').toUpperCase();
+const optionWithCode = (def: AttributeDefinition | undefined, code: string): AttributeOption | undefined =>
+    (def?.content ?? []).find((o) => codeOf(o.data) === codeOf(code) || codeOf(o.reference) === codeOf(code));
+
+/** The live options that select `variant` (split fields where core serves them, else the one selector); undefined when not offered. */
+export function pickSignatureSelection(defs: AttributeDefinition[], variant: SignVariant): Selected[] | undefined {
+    const algorithm = FAMILIES[variant.family].algorithm;
+    const digestDef = defs.find((d) => d.name === SPLIT_FIELDS.sigDigest);
+    if (digestDef && (algorithm === 'RSA' || algorithm === 'ECDSA')) {
+        const digest = variant.digest ? optionWithCode(digestDef, variant.digest) : undefined;
+        if (!digest) return undefined;
+        if (algorithm === 'ECDSA') return [{ def: digestDef, option: digest }];
+        const schemeDef = defs.find((d) => d.name === SPLIT_FIELDS.sigScheme);
+        const scheme = (schemeDef?.content ?? []).find((o) => {
+            const pss = /PSS/.test(optionText(o));
+            return variant.scheme === 'PSS' ? pss : !pss && /PKCS/.test(optionText(o));
+        });
+        return schemeDef && scheme ? [{ def: schemeDef, option: scheme }, { def: digestDef, option: digest }] : undefined;
+    }
+    const def = defs.find((d) => /signatureAlgorithm/i.test(d.name)) ?? (digestDef ? undefined : defs[0]);
+    const option = def ? pickSignatureOption(def.content ?? [], variant) : undefined;
+    return def && option ? [{ def, option }] : undefined;
+}
+
+/** Every option of every live definition: the digests of a split list sit in their own field. */
+export const allOptions = (defs: AttributeDefinition[]): AttributeOption[] => defs.flatMap((d) => d.content ?? []);
+
+export interface CipherChoice {
+    label: string;
+    scheme: 'PKCS1' | 'OAEP';
+    hash?: string;
+}
+
+/** The RSA encryption choices the live split fields offer: PKCS#1 v1.5, and OAEP with each offered hash (MGF1 on, core's only OAEP form). */
+export function cipherChoices(defs: AttributeDefinition[]): CipherChoice[] {
+    const schemes = defs.find((d) => d.name === SPLIT_FIELDS.encScheme)?.content ?? [];
+    const out: CipherChoice[] = [];
+    if (schemes.some((o) => /PKCS/.test(optionText(o)))) out.push({ label: 'PKCS1-v1_5', scheme: 'PKCS1' });
+    if (schemes.some((o) => /OAEP/.test(optionText(o)))) {
+        for (const h of defs.find((d) => d.name === SPLIT_FIELDS.oaepHash)?.content ?? []) out.push({ label: `OAEP ${String(h.data)}`, scheme: 'OAEP', hash: String(h.data) });
+    }
+    return out;
+}
+
+/** The live options of one cipher choice; undefined when a field or option is missing. */
+export function pickCipherSelection(defs: AttributeDefinition[], choice: CipherChoice): Selected[] | undefined {
+    const schemeDef = defs.find((d) => d.name === SPLIT_FIELDS.encScheme);
+    const scheme = (schemeDef?.content ?? []).find((o) => (choice.scheme === 'OAEP' ? /OAEP/ : /PKCS/).test(optionText(o)));
+    if (!schemeDef || !scheme) return undefined;
+    if (choice.scheme === 'PKCS1') return [{ def: schemeDef, option: scheme }];
+    const hashDef = defs.find((d) => d.name === SPLIT_FIELDS.oaepHash);
+    const mgfDef = defs.find((d) => d.name === SPLIT_FIELDS.oaepMgf);
+    const hash = choice.hash ? optionWithCode(hashDef, choice.hash) : undefined;
+    if (!hashDef || !hash || !mgfDef) return undefined;
+    return [{ def: schemeDef, option: scheme }, { def: hashDef, option: hash }, { def: mgfDef, option: (mgfDef.content ?? []).find((o) => o.data === true) ?? { data: true } }];
 }
 
 export function namesForbiddenDigest(options: AttributeOption[]): string[] {

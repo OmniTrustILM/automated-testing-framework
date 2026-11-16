@@ -4,9 +4,10 @@
  */
 
 import type { APIRequestContext, APIResponse } from '@playwright/test';
-import { AttributeDefinition, AttributeOption, SignVariant, pickSignatureOption } from './cryptoAlgorithmCases';
+import { AttributeDefinition, CipherChoice, pickCipherSelection, pickSignatureSelection, Selected, SignVariant } from './cryptoAlgorithmCases';
 import type { GuardedApi } from '../guard/types';
 import { apiJson } from '../apiReads';
+import { requestVersion } from '../attributeVersion';
 import { KeyRef } from '../ledger/ledger';
 import { runId } from '../ledger/runState';
 import { isJsonObject, JsonObject } from '../json';
@@ -36,12 +37,23 @@ export const listSignAttributes = (api: APIRequestContext, item: ItemRef): Promi
 export const listEncryptAttributes = (api: APIRequestContext, item: ItemRef): Promise<AttributeDefinition[]> =>
     apiJson<AttributeDefinition[]>(api, 'GET', `${operationUrl(item, 'encrypt')}/attributes`);
 
+const requestAttributesOf = (picks: Selected[]): JsonObject[] => picks.map(({ def, option }) => {
+    const version = requestVersion(def);
+    const contentType = def.contentType ?? 'string';
+    return { name: def.name, uuid: def.uuid, version, contentType, content: [version === 'v3' ? { contentType, ...option } : { ...option }] };
+});
+
+/** The signature selection of `variant` from the live definitions; [] when none is asked for, undefined when it is not offered. */
 export function signatureAttributesFor(defs: AttributeDefinition[], variant: SignVariant): JsonObject[] | undefined {
-    const def = defs.find((d) => /signatureAlgorithm/i.test(d.name)) ?? defs[0];
-    if (!def) return [];
-    const option = pickSignatureOption((def.content ?? []) as AttributeOption[], variant);
-    if (!option) return undefined;
-    return [{ name: def.name, uuid: def.uuid, version: 'v2', contentType: def.contentType ?? 'string', content: [option] }];
+    if (!defs.length) return [];
+    const picks = pickSignatureSelection(defs, variant);
+    return picks && requestAttributesOf(picks);
+}
+
+/** The encryption selection of `choice` from the live split fields; undefined when it is not offered. */
+export function cipherAttributesFor(defs: AttributeDefinition[], choice: CipherChoice): JsonObject[] | undefined {
+    const picks = pickCipherSelection(defs, choice);
+    return picks && requestAttributesOf(picks);
 }
 
 export function signWithItem(api: GuardedApi, item: ItemRef, dataBase64: string, signatureAttributes: JsonObject[]): Promise<APIResponse> {
@@ -66,8 +78,12 @@ export function verificationOf(body: JsonObject): boolean | undefined {
 }
 export const cipherOutputOf = (body: JsonObject): string | undefined => stringOrUndefined(firstOf(body?.encryptedData ?? body?.decryptedData)?.data);
 
+/** The route produces an octet stream only: an Accept of JSON alone is refused before any gate runs. */
 export function exportKeyItem(api: GuardedApi, keyUuid: string, itemUuid: string, passphrase: string): Promise<APIResponse> {
-    return api.post(`/api/v1/keys/${keyUuid}/items/${itemUuid}/export`, { data: { passphrase, exportAttributes: [] } });
+    return api.post(`/api/v1/keys/${keyUuid}/items/${itemUuid}/export`, {
+        data: { passphrase, exportAttributes: [] },
+        headers: { Accept: 'application/octet-stream, application/json' },
+    });
 }
 
 export function disableKeyItemExport(api: GuardedApi, keyUuid: string, itemUuid: string): Promise<APIResponse> {
@@ -76,6 +92,8 @@ export function disableKeyItemExport(api: GuardedApi, keyUuid: string, itemUuid:
 
 export interface ImportRequest {
     name: string;
+    /** The key file (PEM or encrypted PKCS#8), sent base64-encoded in the body's `file`. */
+    file: string | Buffer;
     importAttributes: JsonObject[];
     inputPassphrase?: string;
     exportable?: boolean;
@@ -89,6 +107,7 @@ export function importKey(api: GuardedApi, chain: Pick<KeyChain, 'token' | 'toke
         data: {
             name: req.name,
             description: `REG run ${runId()} import`,
+            file: Buffer.from(req.file).toString('base64'),
             ...(req.inputPassphrase ? { inputPassphrase: req.inputPassphrase } : {}),
             exportable: req.exportable ?? false,
             importAttributes: req.importAttributes,
