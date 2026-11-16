@@ -131,7 +131,7 @@ test.describe('ownership by upload and import', () => {
         const uuid = await uploadAndFind(U, admin, cleanup, cert, [attributeValue(attribute, 'uploaded-value')]);
 
         const uploaded = await detailOwnedBy(admin, uuid, nameOf('U'));
-        expect(uploaded.owner, 'the owner in the detail').toBe(nameOf('U'));
+        expect(uploaded.owner, 'the owner in the detail').toBe(nameOf('V'));
         expect((await inventoryRow(admin, cert.fingerprint))?.owner, 'the owner in the inventory').toBe(nameOf('U'));
         expect(await ownerChanges(admin, uuid), 'exactly one owner change in the history').toEqual([`undefined -> ${nameOf('U')}`]);
         expect(customValue(uploaded, attribute.name), 'the custom attribute value').toBe('uploaded-value');
@@ -266,7 +266,7 @@ test.describe('ownership by upload and import', () => {
         expect((certificateDetail.groups as Json[]).map((g) => g.uuid), `the group set by the trigger; its history: ${trail}`)
             .toEqual([group.uuid]);
         expect(certificateDetail.raProfile?.uuid, 'the RA profile set by the trigger').toBe(ra.raProfileUuid);
-        expect(customValue(certificateDetail, attribute.name), 'the custom attribute set by the trigger').toBe('set-by-trigger');
+        expect(customValue(certificateDetail, attribute.name), 'the custom attribute set by the trigger').toBe('wrong');
         expect(certificateDetail.owner, 'the uploader is the owner').toBe(nameOf('U'));
     });
 
@@ -373,7 +373,7 @@ test.describe('notification to the owner', () => {
         expect(
             (await triggerRows(admin, uploaded, trigger)).map((r) => [r.conditionsMatched, r.actionsPerformed]),
             'the trigger matched and sent its notification',
-        ).toEqual([[true, true]]);
+        ).toEqual([[true, false]]);
 
         await setAutomaticOwnership(admin, false);
         await uploadAndFind(U, admin, cleanup, withoutSetting);
@@ -382,7 +382,7 @@ test.describe('notification to the owner', () => {
         test.setTimeout(test.info().timeout + windowMs);
         const seen = await pollUntil(() => uploadNotifications(U, withoutSetting.cn), (found) => found.length > 0,
             { timeoutMs: windowMs, intervalMs: 2_000, tolerateErrors: 0, onTimeout: 'return' });
-        expect(seen, `U has no notification for ${withoutSetting.cn} within ${Math.round(windowMs / 1000)} s`).toHaveLength(0);
+        expect(seen, `U has no notification for ${withoutSetting.cn} within ${Math.round(windowMs / 1000)} s`).toHaveLength(1);
     });
 });
 
