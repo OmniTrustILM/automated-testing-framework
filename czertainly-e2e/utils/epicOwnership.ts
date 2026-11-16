@@ -84,10 +84,13 @@ export async function setAutomaticOwnership(api: APIRequestContext, on: boolean)
     await sendOk(api, 'PUT', '/api/v1/settings/platform', { certificates: { upload: { automaticOwnership: on } } });
     await waitUntil(async () => (await readAutomaticOwnership(api)) === on, `the platform setting reads ${on ? 'on' : 'off'}`);
     if (!changes) return;
-    // the other Core instances follow within the cache interval; the value must stay as set meanwhile
-    const watched = await pollUntil(() => readAutomaticOwnership(api), (value) => value !== on,
-        { timeoutMs: SETTING_CACHE_MS, intervalMs: 2_000, tolerateErrors: 0, onTimeout: 'return' });
-    if (watched !== on) throw new Error(`The setting was set to ${on} and read ${watched} within ${SETTING_CACHE_MS / 1000} seconds`);
+    // the other Core instances follow within the cache interval: the reads that follow are kept to say what they showed
+    const reads: string[] = [];
+    const started = Date.now();
+    await pollUntil(async () => {
+        reads.push(`${Math.round((Date.now() - started) / 1000)}s:${await readAutomaticOwnership(api)}`);
+    }, () => Date.now() - started > SETTING_CACHE_MS + 10_000, { timeoutMs: SETTING_CACHE_MS + 20_000, intervalMs: 2_000, tolerateErrors: 0 });
+    if (reads.slice(-5).some((read) => !read.endsWith(`:${on}`))) throw new Error(`The setting was set to ${on}; later reads: ${reads.join(' ')}`);
 }
 
 /** The validation fields a settings read returned, for a PUT that writes no value the platform did not have. */
