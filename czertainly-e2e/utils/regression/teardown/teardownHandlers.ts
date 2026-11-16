@@ -400,16 +400,19 @@ const SETTLE_POLL_MS = 10_000;
 const AT_CONNECTOR = ['inProgress', 'stopped'];
 const UNFINISHED = [...TRANSIENT_DISCOVERY_STATUSES, 'stopped'];
 const running = (d: JsonObject): boolean => UNFINISHED.includes(String(d.status));
+/** Discoveries that did not end within one wait: a retry of the same item does not wait again. */
+const waitedOut = new Set<string>();
 
-/**
- * A running discovery is waited for, at most DISCOVERY_SETTLE_MS. A v2 run still at its connector (in progress or stopped) refuses
- * its delete until it ends, so it is cancelled first; a processing one can only be waited for.
- */
+/** Waits for a running discovery to end, at most once per run; an own v2 run still at its connector is cancelled first. */
 async function settled(ctx: TeardownContext, uuid: string, live: JsonObject): Promise<JsonObject> {
-    if (!running(live)) return live;
+    if (!running(live) || waitedOut.has(uuid)) return live;
     if (live.connectorInterface && AT_CONNECTOR.includes(String(live.status))) {
         const res = await ctx.api.patch(`/api/v1/discoveries/${uuid}/cancel`);
-        if (!res.ok()) ctx.warn(`cancel of the ${String(live.status)} discovery ${uuid} answered ${res.status()}`);
+        if (!res.ok()) {
+            ctx.warn(`cancel of the ${String(live.status)} discovery ${uuid} answered ${res.status()}: ${(await res.text()).slice(0, 300)}`);
+            // A stopped run never ends by itself.
+            if (live.status === 'stopped') return live;
+        }
     }
     const last = await pollUntil(
         async () => {
@@ -420,7 +423,10 @@ async function settled(ctx: TeardownContext, uuid: string, live: JsonObject): Pr
         (d) => !running(d),
         { attempts: Math.ceil(DISCOVERY_SETTLE_MS / SETTLE_POLL_MS), timeoutMs: DISCOVERY_SETTLE_MS, intervalMs: ctx.pollMs ?? SETTLE_POLL_MS, onTimeout: 'return' },
     );
-    if (running(last)) ctx.warn(`discovery ${uuid} is still ${String(last.status)} after ${DISCOVERY_SETTLE_MS / 60_000} minutes; it cannot be deleted before it ends`);
+    if (running(last)) {
+        waitedOut.add(uuid);
+        ctx.warn(`discovery ${uuid} is still ${String(last.status)} after ${DISCOVERY_SETTLE_MS / 60_000} minutes; it cannot be deleted before it ends`);
+    }
     return last;
 }
 
