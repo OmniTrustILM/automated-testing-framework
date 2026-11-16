@@ -92,6 +92,7 @@ export const PUBLIC_TEXT_ALLOWED: { re: RegExp; why: string; files?: RegExp; nea
     },
     { re: /^C[01]$/, near: /\bcontrol\b|\bcharacter\b/i, why: 'the Unicode C0 / C1 control-character sets' },
     { re: /^[RE]\d$/, near: /Let's Encrypt/, why: "the name of a Let's Encrypt intermediate CA" },
+    { re: /^r\d$/, near: /'@timeline-r\d'/, why: 'the check tags of an Epic timeline, one per later job run' },
 ];
 
 /** Names of private tooling, kept as SHA-256 prefixes so this public file does not spell them. */
