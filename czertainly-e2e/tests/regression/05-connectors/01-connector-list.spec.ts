@@ -5,11 +5,9 @@ import { expect, test } from '../../../fixtures/regressionFixtures';
 import { describeHealth, healthByVersion } from '../../../utils/regression/platform/connectorApi';
 import { CONNECTOR_SPECS, featuresByInterface, findRegisteredConnector, groupsOf, interfaceCodes, type ConnectorSpec } from '../../../utils/regression/platform/connectorKinds';
 import { listCredentialAttributes } from '../../../utils/regression/config/authorities';
-import { apiJson } from '../../../utils/regression/apiReads';
 import { testMeta, tags, type Needs } from '../../../utils/regression/tags';
 import type { AttributeDefinition } from '../../../utils/regression/platform/cryptoAlgorithmCases';
-import type { JsonObject } from '../../../utils/regression/json';
-import { CONNECTOR_FORM_MS, CONNECTOR_READ_TEST_MS, CONNECTOR_WRITE_TEST_MS } from '../../../utils/regression/timeouts';
+import { CONNECTOR_FORM_MS, CONNECTOR_READ_TEST_MS } from '../../../utils/regression/timeouts';
 
 interface ConnRow extends ConnectorSpec {
     id: string;
@@ -91,26 +89,4 @@ test.describe('Connector inventory (read-only)', { tag: tags.regression }, () =>
             expect(defs.filter((d) => d.attributeCallback || (d as AttributeDefinition & { callback?: unknown }).callback), 'no callback in a static form').toEqual([]);
         });
 
-    test.fixme('attribute callbacks answer through core and persist nothing',
-        testMeta({ id: 'REG-CONN-02', row: 'callbacks', prio: 'P2', issue: 'ilm#436', rule: ['callbackContext = legacy path forwarded with the free-form body; dependsOn = NG shared POST /v2/attributes/callback; core/getCredentials answered by core'] }),
-        async ({ api }, testInfo) => {
-            test.setTimeout(CONNECTOR_WRITE_TEST_MS);
-            testInfo.annotations.push({ type: 'fixme', description: 'pending guard change: the callback POSTs on pre-existing connectors are ownership-refused (core stores attribute definitions); a read-only callback probe is requested' });
-            const keystore = await findRow(api, P_CONN[2]);
-            if (keystore) {
-                const defs = await apiJson<JsonObject[]>(api, 'GET', `/api/v1/connectors/${keystore.list.uuid}/attributes/entityProvider/Keystore`);
-                const credential = defs.find((d) => d.name === 'credential');
-                expect(credential?.attributeCallback ?? credential?.callback, 'the entity credential attribute declares a callback').toBeTruthy();
-                const res = await api.post(`/api/v1/connectors/${keystore.list.uuid}/entityProvider/Keystore/callback`, {
-                    data: { uuid: credential!.uuid, name: 'credential', pathVariables: { credentialKind: 'Basic' }, queryParameters: {}, requestBody: {} },
-                });
-                expect(res.status(), await res.text()).toBe(200);
-                expect(Array.isArray(await res.json())).toBe(true);
-            }
-            const otpki = await findRow(api, P_CONN[6]);
-            if (otpki) {
-                const res = await api.post(`/api/v2/connectors/${otpki.list.uuid}/callback`, { data: { name: 'endEntityProfile', pathVariables: {}, queryParameters: {}, requestBody: {} } });
-                expect(res.status(), await res.text()).toBe(200);
-            }
-        });
 });

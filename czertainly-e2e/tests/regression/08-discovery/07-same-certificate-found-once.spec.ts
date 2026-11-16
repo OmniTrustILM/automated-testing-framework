@@ -60,7 +60,13 @@ test.describe('Fingerprint dedup of discovered certificates', { tag: tags.regres
                 const attr = await own.customAttribute('disc07-mark', { resources: ['certificates'] });
                 const chain = await createOwnChain(api, own.spec, 'disc07', { event: EVENT.discovered, executionItems: [setCustomAttributeAction(attr.attributeName, 'STRING', 'fired')] });
                 const run2 = await createOwnDiscovery(api, own.spec, 'disc07-2', { connector: v1, target: hosts, triggers: [chain.trigger] });
-                await waitForCompleted(api, run2.uuid, DISCOVERY_RUN_MS);
+                let onboarded2: string[] = [];
+                try {
+                    await waitForCompleted(api, run2.uuid, DISCOVERY_RUN_MS);
+                } finally {
+                    onboarded2 = await recordOnboarded(api, own.spec, run2);
+                }
+                expect(onboarded2, 'run 2 onboards nothing new').toEqual([]);
                 const rows = await listDiscoveredCertificates(api, run2.uuid);
                 expect(rows).toHaveLength(2);
                 expect(rows.every((r) => r.newlyDiscovered === false), 'every row of run 2 is EXISTING').toBe(true);
