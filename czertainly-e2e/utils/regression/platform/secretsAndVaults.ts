@@ -50,7 +50,7 @@ export async function createOwnVaultInstance(api: GuardedApi, spec: string, suff
 }
 
 /** The data attributes of the first pre-existing vault instance of a connector as request attributes; undefined when none. */
-async function copiedVaultAttributes(api: APIRequestContext, connectorUuid: string): Promise<JsonObject[] | undefined> {
+export async function copiedVaultAttributes(api: APIRequestContext, connectorUuid: string): Promise<JsonObject[] | undefined> {
     const rows = (await listVaultInstances(api)).filter((v) => !hasRunFamilyPrefix(String(v.name)));
     for (const row of rows.sort((a, b) => (String(a.name) < String(b.name) ? -1 : 1))) {
         const detail = await getVaultInstance(api, String(row.uuid));

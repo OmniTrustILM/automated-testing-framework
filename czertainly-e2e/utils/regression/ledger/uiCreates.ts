@@ -1,7 +1,5 @@
 /**
- * uiCreates — the ledger line of an object a UI form created, written from the form's ANSWER.
- * A spec calls it right after `submit...`, before any redirect wait or
- * assertion: the object is on a shared tier once the platform answered.
+ * uiCreates — the ledger line of an object a UI form created, written from the form's answer before any redirect wait or assertion.
  */
 import type { APIRequestContext } from '@playwright/test';
 import { Logger } from '../../Logger';
@@ -101,7 +99,18 @@ export const lookupKey = (api: APIRequestContext): NamedLookup => (name) =>
     everyPage(async (pageNumber) => {
         const res = await api.post('/api/v1/keys', { data: { itemsPerPage: PAGE_SIZE, pageNumber, filters: [] } });
         return { status: res.status(), ok: res.ok(), receivedAt: Date.now(), json: res.ok() ? ((await res.json()) as Record<string, unknown>) : {}, res };
-    }, 'POST /api/v1/keys', (p) => (p.cryptographicKeys as Array<Record<string, unknown>> | undefined) ?? [], name, 'creationTime');
+    }, 'POST /api/v1/keys', (p) => keysOfItemRows((p.cryptographicKeys as Array<Record<string, unknown>> | undefined) ?? []), name, 'creationTime');
+
+/** The key search lists one row per item ("<key> private key", uuid of the item); a lookup wants the key: its name and keyWrapperUuid. */
+export function keysOfItemRows(items: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+    const keys = new Map<unknown, Record<string, unknown>>();
+    for (const item of items) {
+        const uuid = item.keyWrapperUuid ?? item.uuid;
+        const name = typeof item.name === 'string' ? item.name.replace(/ (private|public|secret) key$/i, '') : item.name;
+        if (!keys.has(uuid)) keys.set(uuid, { uuid, name, creationTime: item.creationTime });
+    }
+    return [...keys.values()];
+}
 
 export const lookupDiscovery = (api: APIRequestContext): NamedLookup => (name) =>
     everyPage(async (pageNumber) => {

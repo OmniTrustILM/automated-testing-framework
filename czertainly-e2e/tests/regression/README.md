@@ -194,6 +194,10 @@ Install once with `npm ci`. None of the scripts names a tier: the smoke suite re
 the regression and API suites read the env file named by `REG_ENV_FILE` (or that `.env` when it is not set; a named file
 that does not exist stops the run). `.env.example` lists the variables.
 
+The local rows that reset the stack (REG-CORE-01..04: an empty-database start with `compose down -v`, a message-broker
+stop) skip unless `REG_ALLOW_STACK_RESET=true`. Set it only for a run of their own, after everything else:
+`REG_FLOW=secondary REG_ALLOW_STACK_RESET=true npx playwright test -c playwright.regression.config.ts --grep "REG-CORE-0[1-4]"`.
+
 | Command | Runs |
 |---|---|
 | `npm run typecheck` | `tsc --noEmit` |
