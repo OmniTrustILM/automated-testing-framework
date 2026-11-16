@@ -3,9 +3,6 @@
  * API contexts that renew their tokens; every object a test creates goes into a Cleanup, removed in dependency order also after a failure.
  */
 
-import { mkdirSync, rmSync, statSync } from 'fs';
-import { tmpdir } from 'os';
-import { join } from 'path';
 import { APIRequestContext } from '@playwright/test';
 import { TestEnv } from './env';
 import { openAuthenticatedApiContext } from './auth/apiContext';
@@ -16,7 +13,10 @@ import { requiredCustomAttributes } from './regression/customAttributes';
 import { getCertificateKeyUuid, deleteKeyIfOrphaned } from './keyUtils';
 import { findCryptoConnector, tokenRequestAttributes, tokenAlias, activationCode } from './regression/platform/tokens';
 import { PROFILE_USAGES } from './regression/platform/cryptoAlgorithmCases';
-import { fingerprintFilter, pollCertificateByFingerprint } from './regression/apiReads';
+import { ApiAnswer, answerOf, fingerprintFilter, pollCertificateByFingerprint } from './regression/apiReads';
+import { toBase64, uploadBody } from './regression/inventory/importFixtures';
+import { certificateDetail } from './regression/inventory/groupProbes';
+import { CERT_FIELD, ConditionItem, ExecutionItem } from './regression/events/workflowObjects';
 import { pollUntil } from './regression/wait';
 import { csrFromKey, derToPem, newKeyPair } from './regression/pkiBuilders';
 import { deleteCertificate, waitForCertificateState } from './certificateUtils';
@@ -51,21 +51,16 @@ export const apiAs = (grant: APIRequestContext, env: TestEnv, account: Account):
 /** The administrator's context (the smoke user), for reads and for the setup the accounts may not do. */
 export const adminApi = (grant: APIRequestContext, env: TestEnv): APIRequestContext => renewing(grant, env);
 
-export interface Answer { status: number; json: Json | any[] | undefined; text: string }
-
 export async function send(
     api: APIRequestContext, method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, data?: unknown,
-): Promise<Answer> {
-    const response = await api.fetch(url, { method, ...(data === undefined ? {} : { data }) });
-    const text = await response.text();
-    let json: Answer['json'];
-    try { json = text ? JSON.parse(text) : undefined; } catch { json = undefined; }
-    return { status: response.status(), json, text };
+): Promise<ApiAnswer> {
+    const started = Date.now();
+    return answerOf(await api.fetch(url, { method, ...(data === undefined ? {} : { data }) }), started);
 }
 
 export async function sendOk(
     api: APIRequestContext, method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, data?: unknown,
-): Promise<Answer> {
+): Promise<ApiAnswer> {
     const answer = await send(api, method, url, data);
     if (answer.status < 200 || answer.status >= 300) {
         throw new Error(`${method} ${url} answered ${answer.status}: ${answer.text.slice(0, 500)}`);
@@ -81,7 +76,7 @@ export async function readAutomaticOwnership(api: APIRequestContext): Promise<bo
     return (answer.json as Json).certificates?.upload?.automaticOwnership;
 }
 
-/** Sets the switch and waits until a read shows it; after a change the caches of the other Core instances follow within 30 seconds. */
+/** Sets the switch and waits until a read shows it; after a change the caches of the other Core instances follow within 30 seconds (about 40 more for some caches). */
 export async function setAutomaticOwnership(api: APIRequestContext, on: boolean): Promise<void> {
     const changes = (await readAutomaticOwnership(api)) !== on;
     await sendOk(api, 'PUT', '/api/v1/settings/platform', { certificates: { upload: { automaticOwnership: on } } });
@@ -107,66 +102,38 @@ export async function restoreValidation(admin: APIRequestContext, captured: Json
     await sendOk(admin, 'PUT', '/api/v1/settings/platform', { certificates: { validation: validationFields(captured) } });
 }
 
-const LOCK_DIR = join(tmpdir(), 'epic-ilm-364-exclusive.lock');
-const LOCK_STALE_MS = 20 * 60_000;
-
-/**
- * Lets one worker at a time run the exclusive tests: repeated runs (--repeat-each) and retries start in several workers,
- * and each of them changes the same platform setting. A lock older than 20 minutes belongs to a worker that died.
- */
-export async function acquireExclusiveLock(timeoutMs: number): Promise<void> {
-    const ok = await pollUntil(async () => {
-        try {
-            mkdirSync(LOCK_DIR);
-            return true;
-        } catch {
-            if (Date.now() - statSync(LOCK_DIR).mtimeMs > LOCK_STALE_MS) rmSync(LOCK_DIR, { recursive: true, force: true });
-            return false;
-        }
-    }, (held) => held, { timeoutMs, intervalMs: 2_000, tolerateErrors: 0, onTimeout: 'return' });
-    if (!ok) throw new Error('Timed out waiting for the worker that runs the exclusive tests');
-}
-
-export function releaseExclusiveLock(): void {
-    rmSync(LOCK_DIR, { recursive: true, force: true });
-}
-
 /** The shared poll of utils/regression/wait.ts with a message: an error of the check fails at once, as a timeout does. */
 export async function waitUntil(check: () => Promise<boolean>, what: string, timeoutMs = 30_000): Promise<void> {
     const ok = await pollUntil(check, (done) => done, { timeoutMs, intervalMs: 500, tolerateErrors: 0, onTimeout: 'return' });
     if (!ok) throw new Error(`Timed out waiting for: ${what}`);
 }
 
-const base64 = (text: string | Buffer): string => Buffer.from(text).toString('base64');
-
-const uploadRequest = (pem: string, customAttributes: unknown[] = []): Json => ({ certificate: base64(pem), customAttributes });
-
 export interface CertificateFile { pem: string; fingerprint: string }
 
 /** Sends a request that stores the registered certificates: the cleanup waits for them unless the platform refused it. */
-async function storing(cleanup: Cleanup | undefined, fingerprints: string[], request: () => Promise<Answer>): Promise<Answer> {
+async function storing(cleanup: Cleanup | undefined, fingerprints: string[], request: () => Promise<ApiAnswer>): Promise<ApiAnswer> {
     fingerprints.forEach((f) => cleanup?.expectStored(f, true));
     const answer = await request();
     if (answer.status >= 300) fingerprints.forEach((f) => cleanup?.expectStored(f, false));
     return answer;
 }
 
-export async function upload(api: APIRequestContext, pem: string, customAttributes: unknown[] = []): Promise<Answer> {
-    return send(api, 'POST', '/api/v1/certificates/upload', uploadRequest(pem, customAttributes));
+export async function upload(api: APIRequestContext, pem: string, customAttributes: unknown[] = []): Promise<ApiAnswer> {
+    return send(api, 'POST', '/api/v1/certificates/upload', uploadBody(Buffer.from(pem), customAttributes));
 }
 
-export async function uploadAsync(api: APIRequestContext, cleanup: Cleanup, cert: CertificateFile): Promise<Answer> {
+export async function uploadAsync(api: APIRequestContext, cleanup: Cleanup, cert: CertificateFile): Promise<ApiAnswer> {
     cleanup.certificate(cert.fingerprint);
-    return storing(cleanup, [cert.fingerprint], () => send(api, 'POST', '/api/v1/certificates/upload/async', uploadRequest(cert.pem)));
+    return storing(cleanup, [cert.fingerprint], () => send(api, 'POST', '/api/v1/certificates/upload/async', uploadBody(Buffer.from(cert.pem))));
 }
 
 /** Imports the entries by reference; a key-pair entry's reference names its key, so `stores` lists the certificates it brings in. */
 export async function importEntries(
     api: APIRequestContext, file: Buffer, entries: Array<{ entryReference: string; keyDestination?: Json }>,
     opts: { cleanup?: Cleanup; extra?: Json; stores?: string[] } = {},
-): Promise<Answer> {
+): Promise<ApiAnswer> {
     return storing(opts.cleanup, [...entries.map((e) => e.entryReference), ...(opts.stores ?? [])], () =>
-        send(api, 'POST', '/api/v1/certificates/import', { file: base64(file), entries, ...opts.extra }));
+        send(api, 'POST', '/api/v1/certificates/import', { file: toBase64(file), entries, ...opts.extra }));
 }
 
 export interface ImportResult {
@@ -177,10 +144,10 @@ export interface ImportResult {
     message?: string;
 }
 
-export const importResults = (answer: Answer): ImportResult[] => ((answer.json as Json)?.results ?? []) as ImportResult[];
+export const importResults = (answer: ApiAnswer): ImportResult[] => ((answer.json as Json)?.results ?? []) as ImportResult[];
 
 /** Registers the keys of the certificates an import created, before any assertion; a failed read only logs (the token sweep removes it). */
-export async function registerImportedKeys(admin: APIRequestContext, cleanup: Cleanup, answer: Answer): Promise<void> {
+export async function registerImportedKeys(admin: APIRequestContext, cleanup: Cleanup, answer: ApiAnswer): Promise<void> {
     for (const { certificateUuid } of importResults(answer)) {
         if (!certificateUuid) continue;
         try {
@@ -198,7 +165,7 @@ const fingerprintSearch = (fingerprint: string, includeArchived = false): Json =
     itemsPerPage: 10, pageNumber: 1, filters: fingerprintFilter(fingerprint), includeArchived,
 });
 
-export async function findByFingerprint(api: APIRequestContext, fingerprint: string): Promise<Answer> {
+export async function findByFingerprint(api: APIRequestContext, fingerprint: string): Promise<ApiAnswer> {
     return send(api, 'POST', '/api/v1/certificates', fingerprintSearch(fingerprint));
 }
 
@@ -217,16 +184,12 @@ export async function waitForCertificate(admin: APIRequestContext, fingerprint: 
     return String(row.uuid);
 }
 
-export async function detail(api: APIRequestContext, uuid: string): Promise<Json> {
-    return (await sendOk(api, 'GET', `/api/v1/certificates/${uuid}`)).json as Json;
-}
-
 /**
  * The detail once its owner is the expected one (`null` for none). The upload handler sets the owner after the certificate
  * is stored, so a read right after the certificate appears may still show the owner before; a wrong final owner fails with it.
  */
 export async function detailOwnedBy(api: APIRequestContext, uuid: string, owner: string | null): Promise<Json> {
-    const reached = await pollUntil(() => detail(api, uuid), (d) => (d.owner ?? null) === owner,
+    const reached = await pollUntil(() => certificateDetail(api, uuid), (d) => (d.owner ?? null) === owner,
         { timeoutMs: 30_000, intervalMs: 500, tolerateErrors: 0, onTimeout: 'return' });
     if ((reached.owner ?? null) !== owner) {
         const events = (await history(api, uuid)).map((e) => `${e.event}: ${e.message}`).join('; ');
@@ -240,7 +203,7 @@ export async function detailOwnedBy(api: APIRequestContext, uuid: string, owner:
  * certificate is stored, so a read right after it appears cannot show that nothing will change it.
  */
 export async function detailKeepsOwner(api: APIRequestContext, uuid: string, owner: string | null, windowMs = 8_000): Promise<Json> {
-    const changed = await pollUntil(() => detail(api, uuid), (d) => (d.owner ?? null) !== owner,
+    const changed = await pollUntil(() => certificateDetail(api, uuid), (d) => (d.owner ?? null) !== owner,
         { timeoutMs: windowMs, intervalMs: 1_000, tolerateErrors: 0, onTimeout: 'return' });
     if ((changed.owner ?? null) !== owner) {
         const events = (await history(api, uuid)).map((e) => `${e.event}: ${e.message}`).join('; ');
@@ -261,7 +224,7 @@ export async function ownerChanges(api: APIRequestContext, uuid: string): Promis
 /** Uploads as the account, registered for the cleanup, and returns the answer as it came. */
 async function uploadRegistered(
     as: APIRequestContext, cleanup: Cleanup, cert: CertificateFile, customAttributes: unknown[] = [],
-): Promise<Answer> {
+): Promise<ApiAnswer> {
     cleanup.certificate(cert.fingerprint);
     return storing(cleanup, [cert.fingerprint], () => upload(as, cert.pem, customAttributes));
 }
@@ -310,7 +273,7 @@ export async function removeFromInventory(admin: APIRequestContext, uuid: string
 
 /** The certificate as an upload sends it, read from the inventory. */
 export async function certificateFile(admin: APIRequestContext, uuid: string): Promise<CertificateFile> {
-    const stored = await detail(admin, uuid);
+    const stored = await certificateDetail(admin, uuid);
     return { pem: derToPem(Buffer.from(String(stored.certificateContent), 'base64')), fingerprint: String(stored.fingerprint) };
 }
 
@@ -470,25 +433,13 @@ export async function createCustomAttribute(
     return { uuid, name, contentType: 'string' };
 }
 
-export const attributeValue = (attr: { uuid: string; name: string; contentType: string }, value: string): Json => ({
-    uuid: attr.uuid,
-    name: attr.name,
-    contentType: attr.contentType,
-    content: [{ data: value }],
-});
-
-export const customValue = (certificateDetail: Json, name: string): unknown => {
-    const attribute = ((certificateDetail.customAttributes ?? []) as Json[]).find((a) => a.name === name);
-    return attribute?.content?.[0]?.data;
-};
-
 export interface TriggerSpec {
     name: string;
     /** Conditions on the certificate: the trigger applies when every item holds. */
-    conditions: Array<{ fieldSource: string; fieldIdentifier: string; operator: string; value?: unknown }>;
+    conditions: ConditionItem[];
     ignore?: boolean;
     /** Execution items of the "set field" action, or the notification profile of the "send notification" action. */
-    setFields?: Array<{ fieldSource: string; fieldIdentifier: string; data: unknown }>;
+    setFields?: ExecutionItem[];
     notificationProfileUuid?: string;
 }
 
@@ -551,6 +502,35 @@ export async function platformTriggers(admin: APIRequestContext): Promise<string
     return (((answer.json as Json).eventsMapping ?? {})[UPLOAD_EVENT] ?? []) as string[];
 }
 
+/** True when the item can never hold for a certificate with the common name; items the helper cannot judge count as possibly holding. */
+function failsForCommonName(item: ConditionItem, cn: string): boolean {
+    if (item.fieldSource !== 'property' || item.fieldIdentifier !== CERT_FIELD.commonName || typeof item.value !== 'string') return false;
+    const [name, value] = [cn.toLowerCase(), item.value.toLowerCase()];
+    switch (item.operator) {
+        case 'EQUALS': return name !== value;
+        case 'NOT_EQUALS': return name === value;
+        case 'STARTS_WITH': return !name.startsWith(value);
+        case 'ENDS_WITH': return !name.endsWith(value);
+        case 'CONTAINS': return !name.includes(value);
+        default: return false;
+    }
+}
+
+/**
+ * The platform triggers on the upload event that may apply to a certificate with the common name: every trigger except those
+ * whose rules each hold a condition with an item that cannot hold for it. Others' triggers that do not match the subject do not matter.
+ */
+export async function platformTriggersMatching(admin: APIRequestContext, cn: string): Promise<string[]> {
+    const matching: string[] = [];
+    for (const uuid of await platformTriggers(admin)) {
+        const rules = ((await sendOk(admin, 'GET', `/api/v1/workflows/triggers/${uuid}`)).json as Json).rules as Json[] | undefined ?? [];
+        const ruleFails = (rule: Json): boolean =>
+            ((rule.conditions ?? []) as Json[]).some((c) => ((c.items ?? []) as ConditionItem[]).some((item) => failsForCommonName(item, cn)));
+        if (rules.length === 0 || !rules.every(ruleFails)) matching.push(uuid);
+    }
+    return matching;
+}
+
 /** Puts the earlier platform list back, leaving out only triggers that are gone (404): any other failed read stops the restore. */
 async function restorePlatformTriggers(admin: APIRequestContext, before: string[]): Promise<void> {
     const existing: string[] = [];
@@ -577,14 +557,6 @@ async function associateWithUploadEvent(admin: APIRequestContext, cleanup: Clean
 
 /** A subject name that only this run's triggers' conditions match. */
 export const subjectOf = (runPrefix: string, scenario: string): string => `${runPrefix}-${scenario}.example.com`;
-
-export const commonNameIs = (cn: string): TriggerSpec['conditions'][number] => ({
-    fieldSource: 'property', fieldIdentifier: 'COMMON_NAME', operator: 'EQUALS', value: cn,
-});
-
-export const setOwner = (userUuid: string | null): NonNullable<TriggerSpec['setFields']>[number] => ({
-    fieldSource: 'property', fieldIdentifier: 'OWNER', data: userUuid,
-});
 
 /** An internal notification profile whose recipient is the owner of the certificate (nothing is sent outside the platform). */
 export async function createOwnerNotificationProfile(admin: APIRequestContext, cleanup: Cleanup, name: string): Promise<string> {
