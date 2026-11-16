@@ -69,7 +69,7 @@ test.describe('Key import and export', { tag: tags.api }, () => {
                     ownKeys.record({ status: again.status(), uuid: jsonUuid(againText), text: againText }, { name: `${name}-again`, note: `repeated ${kind} import`, parents: { token: c.token.uuid, tokenProfile: c.tokenProfile.uuid }, track: true });
                     expect(again.status(), againText.slice(0, 300)).toBe(200);
                     const againBody = JSON.parse(againText) as JsonObject;
-                    expect(String(againBody.uuid ?? ref!.uuid), 'the key already held is answered, nothing new imported').toBe(ref!.uuid);
+                    expect(againBody.uuid, 'the key already held is answered, nothing new imported').toBe(ref!.uuid);
                 });
             }
 
