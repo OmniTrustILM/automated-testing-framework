@@ -23,6 +23,7 @@ export const SECONDARY_FLOW: readonly string[] = [
     'tests/api/04-credentials/validation.api.spec.ts',
     'tests/api/05-discovery/',
     'tests/api/06-groups/crud.api.spec.ts',
+    'tests/api/07-keys/',
     'tests/api/08-notifications/',
     'tests/api/09-protocols/cmp.api.spec.ts',
     'tests/api/09-protocols/scep.api.spec.ts',

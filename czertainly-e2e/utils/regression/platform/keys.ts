@@ -4,10 +4,11 @@
  */
 
 import type { APIRequestContext, APIResponse } from '@playwright/test';
-import { AttributeDefinition, Family, FAMILIES, Provider, SCP_ATTR, specAttributeOf, Usage } from './cryptoAlgorithmCases';
+import { AttributeDefinition, Family, FAMILIES, Provider, SCP_ATTR, Usage } from './cryptoAlgorithmCases';
 import type { GuardedApi } from '../guard/types';
 import { assertOwnLive } from '../ledger/ownership';
-import { apiJson } from '../apiReads';
+import { apiJson, apiJsonWithDate } from '../apiReads';
+import { requestVersion } from '../attributeVersion';
 import { requiredCustomAttributes } from '../customAttributes';
 import { pollUntil } from '../wait';
 import { KeyRef, OwnRef, recordCreated, Ref } from '../ledger/ledger';
@@ -25,9 +26,24 @@ export function listCreateKeyAttributes(api: APIRequestContext, token: Pick<Ref,
 
 export const keyAlias = (name: string): string => tokenAlias(name);
 
+/** The key-spec group whose fields the provider answers once the algorithm is chosen (v2: `group_keySpecV2`). */
+const algorithmDependentGroup = (defs: AttributeDefinition[]): AttributeDefinition | undefined =>
+    defs.find((d) => d.type === 'group' && ((d.attributeCallback as { dependsOn?: string[] } | undefined)?.dependsOn ?? []).includes(SCP_ATTR.keyAlgorithm.name));
+
+/** The create-key definitions plus the key-spec fields the group callback answers for `family`'s algorithm (core#2837). */
+export async function listKeyCreateDefinitions(api: GuardedApi, token: Pick<Ref, 'uuid'>, profile: Pick<Ref, 'uuid'>, family: Family): Promise<AttributeDefinition[]> {
+    const defs = await listCreateKeyAttributes(api, token, profile);
+    const group = algorithmDependentGroup(defs);
+    if (!group) return defs;
+    const algorithm = keyRequestAttributes(defs, family, '').find((a) => a.name === SCP_ATTR.keyAlgorithm.name);
+    const fields = await apiJson<AttributeDefinition[]>(api, 'POST', `/api/v1/keys/${profile.uuid}/callback`, { uuid: group.uuid, name: group.name, attributes: [algorithm] });
+    return [...defs, ...(fields ?? [])];
+}
+
 /**
  * The request attributes of a key of `family` (pure): the algorithm comes from the LIVE definitions; throws with the offered names when it
- * is not offered.
+ * is not offered. Each spec field takes the live option of its reference when the definitions carry it, else the family's own value;
+ * `sizeOverride` replaces the first one (negative cases).
  */
 export function keyRequestAttributes(defs: AttributeDefinition[], family: Family, alias: string, sizeOverride?: string | number): JsonObject[] {
     const spec = FAMILIES[family];
@@ -39,12 +55,14 @@ export function keyRequestAttributes(defs: AttributeDefinition[], family: Family
         { name: SCP_ATTR.keyAlias.name, uuid: uuidOf(defs, SCP_ATTR.keyAlias), version: 'v2', contentType: 'string', content: [{ data: alias }] },
         { name: SCP_ATTR.keyAlgorithm.name, uuid: algorithmDef.uuid ?? SCP_ATTR.keyAlgorithm.uuid, version: 'v2', contentType: 'string', content: [option] },
     ];
-    const sizeAttr = specAttributeOf(family);
-    if (sizeAttr) {
-        const data = sizeOverride ?? spec.optionData;
-        const reference = sizeOverride === undefined ? spec.option : String(sizeOverride);
-        out.push({ name: sizeAttr.name, uuid: uuidOf(defs, sizeAttr), version: 'v2', contentType: sizeAttr.contentType, content: [{ reference, data }] });
-    }
+    spec.spec.forEach((choice, i) => {
+        const attr = SCP_ATTR[choice.attribute];
+        const def = defs.find((d) => d.name === attr.name);
+        const override = i === 0 ? sizeOverride : undefined;
+        const live = override === undefined ? (def?.content ?? []).find((c) => String(c.reference) === choice.reference) : undefined;
+        const content = live ?? (override === undefined ? { reference: choice.reference, data: choice.data } : { reference: String(override), data: override });
+        out.push({ name: attr.name, uuid: def?.uuid ?? attr.uuid, version: requestVersion(def), contentType: def?.contentType ?? choice.contentType, content: [content] });
+    });
     return out;
 }
 
@@ -88,7 +106,9 @@ export function keyCreateBody(defs: AttributeDefinition[], name: string, opts: K
 export async function createOwnKey(api: GuardedApi, spec: string, suffix: string, o: KeyOptions & { chain: Pick<KeyChain, 'token' | 'tokenProfile'> }): Promise<KeyRef & { detail: JsonObject }> {
     const { chain, ...opts } = o;
     const name = opts.name ?? ownName(suffix);
-    const defs = await listCreateKeyAttributes(api, chain.token, chain.tokenProfile, opts.type ?? 'keyPair');
+    const defs = opts.type === 'secret'
+        ? await listCreateKeyAttributes(api, chain.token, chain.tokenProfile, 'secret')
+        : await listKeyCreateDefinitions(api, chain.token, chain.tokenProfile, opts.family ?? 'rsa-2048');
     const { name: _name, ...body } = keyCreateBody(defs, name, opts, await requiredCustomAttributes(api, 'keys', runName('ca')));
     const { answer, ...ref } = await createOwn(api, spec, {
         type: 'keys',
@@ -107,7 +127,7 @@ export async function createOwnKey(api: GuardedApi, spec: string, suffix: string
  * Records every item of a key detail as a `keyItems` ledger line (parent `key`, the key's run-prefixed name); the teardown treats them as
  * gone with their key.
  */
-function recordKeyItems(detail: JsonObject, keyName: string, spec: string): string[] {
+export function recordKeyItems(detail: JsonObject, keyName: string, spec: string): string[] {
     const uuids: string[] = [];
     for (const item of (detail?.items ?? []) as JsonObject[]) {
         if (!item?.uuid) continue;
@@ -185,15 +205,6 @@ export async function destroyOwnKey(api: GuardedApi, key: OwnRef): Promise<APIRe
     return api.patch(`/api/v1/keys/${key.uuid}/destroy`);
 }
 
-/**
- * `PUT /v1/keys/{uuid}/usages` without `uuids` applies the list to every item, so a mixed set is refused with 422; use it only for sets
- * legal on both items (e.g. `[]`). The raw response.
- */
-async function updateOwnKeyUsages(api: GuardedApi, key: OwnRef, usages: readonly Usage[]): Promise<APIResponse> {
-    await ownKey(api, key, 'keys.updateOwnKeyUsages');
-    return api.put(`/api/v1/keys/${key.uuid}/usages`, { data: { usage: [...usages] } });
-}
-
 /** The per-item usage update (private: sign / decrypt, public: verify / encrypt). The raw response. */
 export function updateOwnKeyItemUsages(api: GuardedApi, itemUuid: string, usages: readonly Usage[]): Promise<APIResponse> {
     // The item is an own `keyItems` line; the guard types the bulk route `keyItems`.
@@ -219,3 +230,54 @@ export async function deleteOwnKey(api: GuardedApi, key: OwnRef, spec: string): 
     });
     if (!answer.status || (answer.status >= 300 && answer.status !== 404)) throw new Error(`DELETE /v1/keys/${key.uuid} answered ${answer.status} ${answer.text.slice(0, 300)}`);
 }
+
+/** A destroyed key whose delete core refuses (core#2455) is left to the run-end teardown; any other failure throws after every key. */
+export async function deleteEachKey(keys: readonly OwnRef[], o: {
+    remove: (key: OwnRef) => Promise<void>;
+    isDestroyed: (key: OwnRef) => Promise<boolean>;
+    warn: (text: string) => void;
+}): Promise<void> {
+    const failures: string[] = [];
+    for (const key of keys) {
+        try {
+            await o.remove(key);
+        } catch (e) {
+            if (await o.isDestroyed(key).catch(() => false)) o.warn(`key ${key.uuid} was destroyed by the test and its delete was refused (core#2455); left on the ledger for the run-end teardown`);
+            else failures.push(String(e instanceof Error ? e.message : e));
+        }
+    }
+    if (failures.length) throw new Error(`the delete of ${failures.length} own key(s) failed: ${failures.join(' | ')}`);
+}
+
+/** True when every item of the key is in a destroyed state (a read only). */
+export async function isDestroyedKey(api: GuardedApi, key: OwnRef): Promise<boolean> {
+    const items = (await getKey(api, key.uuid)).items ?? [];
+    return items.length > 0 && items.every((i) => /^destroyed/i.test(String(i.state)));
+}
+
+interface NamedKey {
+    uuid: string;
+}
+
+/** Every key whose item rows are named `name` (`<key> private key`; a v1 item carries the alias), created after `since` on the server clock. */
+export async function liveKeysNamed(api: GuardedApi, name: string, since?: number): Promise<NamedKey[]> {
+    const found = new Map<string, NamedKey>();
+    for (let pageNumber = 1; pageNumber <= 50; pageNumber++) {
+        const page = await apiJsonWithDate(api, 'POST', '/api/v1/keys', { itemsPerPage: 1000, pageNumber, filters: [] });
+        const skew = page.serverAt ? page.serverAt.getTime() - (page.startedAt.getTime() + page.elapsedMs) : 0;
+        for (const row of (page.json?.cryptographicKeys ?? []) as JsonObject[]) {
+            const rowName = String(row.name ?? '');
+            if (rowName !== name && !rowName.startsWith(`${name} `)) continue;
+            const created = Date.parse(String(row.creationTime ?? ''));
+            // Without the server clock the window is not judged: the name is unique to this run.
+            if (since !== undefined && page.serverAt && !Number.isNaN(created) && created < since + skew - 2_000) continue;
+            const uuid = String(row.keyWrapperUuid ?? row.uuid);
+            found.set(uuid, { uuid });
+        }
+        if (pageNumber >= Number(page.json?.totalPages ?? 1)) break;
+    }
+    return [...found.values()];
+}
+
+/** Why a row that destroys a key runs on a local stack only: core refuses to delete a destroyed v2 key (core#2455). */
+export const DESTROYED_KEY_STAYS = 'core#2455: a destroyed key on a v2 token cannot be deleted and would stay on the shared tier; the row runs on a local stack';
