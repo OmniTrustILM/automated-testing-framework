@@ -94,8 +94,15 @@ export async function waitForTriggerRows(api: GuardedApi, resource: string, uuid
     return r;
 }
 
+/** Epoch microseconds of an ISO instant: the triggers of one firing often share the millisecond `Date.parse` stops at. */
+export function instantMicros(iso: string): number {
+    const m = /^([^.]+?)(?:\.(\d+))?(Z|[+-]\d\d:?\d\d)$/.exec(iso);
+    if (!m) return Date.parse(iso) * 1000;
+    return Date.parse(`${m[1]}${m[3]}`) * 1000 + Number((m[2] ?? '').padEnd(6, '0').slice(0, 6));
+}
+
 export const inEvaluationOrder = (rows: ObjectHistoryRow[]): ObjectHistoryRow[] =>
-    [...rows].sort((a, b) => Date.parse(a.triggeredAt) - Date.parse(b.triggeredAt));
+    [...rows].sort((a, b) => instantMicros(a.triggeredAt) - instantMicros(b.triggeredAt));
 
 /**
  * The reason when a PLATFORM-level trigger already listens on any of `events` (it would act on this spec's certificates too), else

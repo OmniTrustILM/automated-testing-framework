@@ -14,6 +14,7 @@ import { ownName, ownCommonName } from '../ledger/runState';
 import { randomBytes } from 'crypto';
 import { uniqueSuffix } from '../text';
 import { ApiAnswer } from '../apiReads';
+import { revalidate } from '../lifecycle/preRegistration';
 import type { CertificateDetail } from '../apiReads';
 
 
@@ -51,6 +52,25 @@ export async function revokeOwnCertificateAndWait(api: GuardedApi, ra: OwnRaProf
     if (isOk(sent) || sent.status === 204) await waitForCertificateState(api, cert.uuid, 'revoked', 120_000);
     return sent;
 }
+
+export interface RevokeSeen {
+    status?: string;
+    /** No OCSP or CRL check could run (no URL in the certificate): validation cannot see the revoke. */
+    blind: boolean;
+}
+
+/**
+ * Validates a revoked OWN certificate, as its detail page does: the revoke raises only `Certificate action performed`; Certificate status
+ * changed comes from the validation, and only where an OCSP or CRL URL reports the revocation.
+ */
+export async function validateRevoked(api: GuardedApi, cert: OwnRef): Promise<RevokeSeen> {
+    const result = await revalidate(api, cert);
+    const checks = Object.entries((result.validationChecks ?? {}) as Record<string, { status?: string }>).filter(([k]) => /ocsp|crl/i.test(k));
+    if (checks.length === 0) throw new Error(`the validation of the revoked certificate lists no OCSP or CRL check: ${JSON.stringify(result).slice(0, 300)}`);
+    return { status: typeof result.resultStatus === 'string' ? result.resultStatus : undefined, blind: checks.every(([, c]) => c?.status === 'not_checked') };
+}
+
+export const BLIND_REVOKE_SKIP = 'the tier\'s CA issues certificates without an OCSP or CRL URL: validation cannot see a revoke, so no Certificate status changed is raised';
 
 export interface CertificateObjects {
     groupUuids?: string[];
