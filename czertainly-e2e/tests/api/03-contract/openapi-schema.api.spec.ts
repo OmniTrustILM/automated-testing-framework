@@ -160,10 +160,10 @@ test.describe('OpenAPI schema of the detail resources', { tag: tags.api }, () =>
         { name: 'oidEntry', list: { method: 'POST', url: '/api/v1/oids/list', body: SEARCH, member: 'items' }, details: [{ path: '/v1/oids/{oid}', url: (r) => (r.oid ? `/api/v1/oids/${encodeURIComponent(String(r.oid))}` : undefined) }] },
     ];
 
-    async function rowsOfList(api: GuardedApi, l: Resource['list']): Promise<{ status: number; rows: JsonObject[]; text: string }> {
+    async function rowsOfList(api: GuardedApi, l: Resource['list']): Promise<{ status: number; rows?: JsonObject[]; text: string }> {
         const p = await send(api, l.method, l.url, l.body ? { data: l.body } : {});
         const json = p.json as JsonObject | JsonObject[] | undefined;
-        const rows = Array.isArray(json) ? json : l.member && json && Array.isArray((json as JsonObject)[l.member]) ? ((json as JsonObject)[l.member] as JsonObject[]) : [];
+        const rows = Array.isArray(json) ? json : l.member && json && Array.isArray((json as JsonObject)[l.member]) ? ((json as JsonObject)[l.member] as JsonObject[]) : undefined;
         return { status: p.status, rows, text: p.text };
     }
 
@@ -176,20 +176,20 @@ test.describe('OpenAPI schema of the detail resources', { tag: tags.api }, () =>
             async ({ api }, testInfo) => {
                 test.setTimeout(WIDE_SWEEP_TEST_MS);
                 const v = loadedDocument();
+                const documented = r.details.filter((d) => v.has(response(d.path)));
+                test.skip(!documented.length, `the document has no 200 JSON schema for ${r.details.map((d) => d.path).join(', ')}`);
+                for (const d of r.details.filter((x) => !documented.includes(x))) testInfo.annotations.push({ type: 'not-in-document', description: `GET ${d.path} has no 200 JSON schema in the document` });
                 const list = await rowsOfList(api, r.list);
                 test.skip(list.status === 404 || list.status === 403, `${r.list.url} answers ${list.status} on this build: the resource is not served here`);
                 expect(list.status, `${r.list.url}: ${list.text.slice(0, 160)}`).toBe(200);
-                const existing = list.rows.filter((row) => !hasRunFamilyPrefix(String(row.name ?? row.commonName ?? ''))).slice(0, 3);
+                expect(list.rows, `${r.list.url} answers a list${r.list.member ? ` in "${r.list.member}"` : ''}: ${list.text.slice(0, 160)}`).toBeDefined();
+                const existing = list.rows!.filter((row) => !hasRunFamilyPrefix(String(row.name ?? row.commonName ?? ''))).slice(0, 3);
                 test.skip(!existing.length, `the tier holds no existing ${r.name} object to read`);
                 const problems: string[] = [];
                 for (const [i, row] of existing.entries()) {
-                    for (const d of r.details) {
+                    for (const d of documented) {
                         const url = d.url(row);
                         if (!url) continue;
-                        if (!v.has(response(d.path))) {
-                            testInfo.annotations.push({ type: 'not-in-document', description: `GET ${d.path} has no 200 JSON schema in the document` });
-                            continue;
-                        }
                         const p = await send(api, 'GET', url);
                         problems.push(conformity(v, testInfo, `${r.name} #${i + 1} ${d.path}`, p, response(d.path)));
                         if (r.name === 'credential' && p.status === 200) {
