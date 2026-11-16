@@ -31,6 +31,17 @@ export const SECONDARY_FLOW: readonly string[] = [
     'tests/api/11-scheduler/',
     'tests/api/12-workflows/',
     'tests/api/13-secrets/',
+    'tests/regression/01-sign-in-and-access/01-sign-in-and-session.spec.ts',
+    'tests/regression/01-sign-in-and-access/99-sign-out.spec.ts',
+    'tests/regression/02-certificates/40-filter-condition-catalogue.spec.ts',
+    'tests/regression/02-certificates/41-text-filters.spec.ts',
+    'tests/regression/02-certificates/42-date-and-duration-filters.spec.ts',
+    'tests/regression/02-certificates/43-list-and-enum-filters.spec.ts',
+    'tests/regression/02-certificates/49-list-sorting.spec.ts',
+    'tests/regression/02-certificates/50-list-paging.spec.ts',
+    'tests/regression/02-certificates/51-list-standard-columns.spec.ts',
+    'tests/regression/02-certificates/63-import-certificates-and-keys.spec.ts',
+    'tests/regression/02-certificates/68-create-forms-reject-invalid-input.spec.ts',
 ];
 
 const escaped = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

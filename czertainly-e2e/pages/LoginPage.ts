@@ -9,6 +9,11 @@ import { SHELL_VISIBLE_MS, LOGIN_FORM_PROBE_MS } from '../utils/regression/timeo
 
 const logger = new Logger('LoginPage');
 
+export interface Credentials {
+    username: string;
+    password: string;
+}
+
 export interface SessionCookie {
     value: string;
     path: string;
@@ -22,10 +27,12 @@ export class LoginPage {
     readonly usernameInput: Locator;
     readonly passwordInput: Locator;
     readonly signInButton: Locator;
+    readonly signInPage: Locator;
 
     // The app after the sign-in
     readonly shell: Locator;
     readonly userMenuHeader: Locator;
+    readonly logOutItem: Locator;
 
     constructor(private readonly page: Page, private readonly env: TestEnv) {
         // Scope by role + exact name: a partial text match collides on tiers with several "Internal*" providers.
@@ -33,18 +40,26 @@ export class LoginPage {
         this.usernameInput = page.getByRole('textbox', { name: 'Username' });
         this.passwordInput = page.getByRole('textbox', { name: 'Password' });
         this.signInButton = page.getByRole('button', { name: /sign in/i });
+        this.signInPage = page.getByTestId('login-page');
 
         this.shell = page.getByTestId('sidebar-sticky');
         this.userMenuHeader = page.getByTestId('header');
+        this.logOutItem = page.getByRole('menuitem', { name: 'Log out', exact: true });
+    }
+
+    /** The header's user menu: its trigger text is the signed-in username. */
+    userMenuTrigger(username: string): Locator {
+        return this.userMenuHeader.getByRole('button', { name: username });
     }
 
     async goto(): Promise<void> {
         await this.page.goto(new URL('administrator/', this.env.baseUrl).toString());
     }
 
-    async login(): Promise<void> {
+    /** Without `credentials` signs in as the suite's admin test user. */
+    async login(credentials?: Credentials): Promise<void> {
         if (this.env.authMode === 'local') {
-            await this.loginLocal();
+            await this.loginLocal(credentials ?? this.env);
         } else if (this.env.authMode === 'header') {
             await expect(this.shell).toBeVisible({ timeout: SHELL_VISIBLE_MS });
         }
@@ -71,7 +86,40 @@ export class LoginPage {
         await expect(this.passwordInput, 'no login form').toHaveCount(0);
     }
 
-    private async loginLocal(): Promise<void> {
+    async assertNoLoginForm(): Promise<void> {
+        await expect(this.passwordInput, 'no login form').toHaveCount(0);
+        await expect(this.signInPage, 'no sign-in page').toHaveCount(0);
+    }
+
+    /** User menu → Log out: the provider's end-session, then a sign-in screen. */
+    async logOut(username: string): Promise<void> {
+        await this.userMenuTrigger(username).click();
+        await expect(this.logOutItem, 'the user menu offers Log out').toBeVisible();
+        await this.logOutItem.click();
+        await this.assertLoggedOut();
+    }
+
+    async assertLoggedOut(): Promise<void> {
+        await expect(this.signInPage.or(this.usernameInput).first(), 'the sign-in screen is shown')
+            .toBeVisible({ timeout: SHELL_VISIBLE_MS });
+        await expect(this.shell, 'no authenticated shell').toHaveCount(0);
+    }
+
+    /** Opens the app after a sign-out and takes the provider choice when offered; `assertCredentialPrompt` judges what came up. */
+    async goToAppForCredentials(): Promise<void> {
+        await this.goto();
+        await expect(this.usernameInput.or(this.providerChoice).or(this.shell).first()).toBeVisible({ timeout: SHELL_VISIBLE_MS });
+        if (await this.providerChoice.isVisible()) await this.providerChoice.click();
+    }
+
+    /** After a sign-out the provider's own session must be gone too: no silent single sign-on. */
+    async assertCredentialPrompt(): Promise<void> {
+        await expect(this.usernameInput, 'the provider asks for credentials (no silent single sign-on)')
+            .toBeVisible({ timeout: SHELL_VISIBLE_MS });
+        await expect(this.shell).toHaveCount(0);
+    }
+
+    private async loginLocal(credentials: Credentials): Promise<void> {
         try {
             await this.usernameInput.waitFor({ state: 'visible', timeout: LOGIN_FORM_PROBE_MS });
             logger.info('Login form visible immediately. Skipping provider selection.');
@@ -82,8 +130,8 @@ export class LoginPage {
             await expect(this.usernameInput).toBeVisible();
         }
 
-        await this.usernameInput.fill(this.env.username);
-        await this.passwordInput.fill(this.env.password);
+        await this.usernameInput.fill(credentials.username);
+        await this.passwordInput.fill(credentials.password);
         await this.signInButton.click();
 
         await expect(this.shell).toBeVisible();
