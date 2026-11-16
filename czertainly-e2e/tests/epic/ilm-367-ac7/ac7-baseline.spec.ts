@@ -14,7 +14,8 @@ const QUIET_MS = 1000;
 
 const OBJECTS = {
     certificate: { uuid: 'ed2fb4f4-e335-4f53-b90a-b5f67f5ab0a1', path: (u: string) => `certificates/detail/${u}` },
-    key: { uuid: 'd6859cd3-bcf9-4c62-87df-93d8fc4f0069', path: (u: string) => `keys/detail/${u}` },
+    // key wrapper of the certificate qa-baseline-ilm259-leaf-rsa (the key list's `keyWrapperUuid`; its `uuid` is a key item)
+    key: { uuid: '37751267-9d2e-459e-85d7-1d0da459d230', path: (u: string) => `keys/detail/${u}` },
     raProfile: {
         uuid: '7f7d664f-62f1-4a6b-8e92-36f58677d424',
         path: (u: string) => `raprofiles/detail/7d25ae89-d080-4a37-8f35-cd674e666da4/${u}`,
@@ -98,9 +99,12 @@ test.describe('@ilm-367-ac7-baseline detail page load times', () => {
             test.skip(!u.username || !u.password, `no credentials for user ${u.id}`);
             const context = await browser.newContext();
             const page = await context.newPage();
-            const profileAnswer = page.waitForResponse((r) => r.url().includes('/api/v1/auth/profile'), { timeout: 60_000 });
             await signIn(page, u.username!, u.password!);
-            const profile = await (await profileAnswer).json().catch(() => ({}));
+            // read after sign-in through the session cookie (a listener before sign-in caught the unauthenticated answer)
+            const profileRes = await page.request.get(new URL('api/v1/auth/profile', process.env.BASE_URL).toString());
+            const profile = await profileRes.json().catch(() => ({}));
+            const certActions = (profile.permissions?.allowedActions ?? profile.allowedActions ?? []) as unknown;
+            console.log(`AC7-PROFILE ${u.id} status ${profileRes.status()} ${JSON.stringify({ roles: profile.roles, allowedListings: profile.allowedListings, allowedActions: certActions }).slice(0, 1500)}`);
             const result: Record<string, unknown> = {
                 takenAt: new Date().toISOString(), user: u.id, username: u.username, runs: RUNS, quietMs: QUIET_MS,
                 roles: (profile.roles ?? []).map((r: { name: string }) => r.name),
