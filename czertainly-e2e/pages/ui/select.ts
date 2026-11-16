@@ -26,6 +26,11 @@ export function selectOfTrigger(page: Page, trigger: Locator): SelectHandle {
     return { trigger, content: page.getByRole('listbox').last(), name: 'select' };
 }
 
+/** The Select `select-<id>`: its trigger inside `scope`, its popover (rendered outside `scope`) on the page. */
+export function selectById(page: Page, scope: Locator, id: string): SelectHandle {
+    return { trigger: scope.getByTestId(`select-${id}-trigger`), content: page.getByTestId(`select-${id}-content`), name: id };
+}
+
 const handleOf = (page: Page, ref: SelectRef): SelectHandle => ('trigger' in ref ? ref : selectOfTrigger(page, ref));
 
 export function selectTriggerByLabel(scope: Locator, label: string | RegExp): Locator {
