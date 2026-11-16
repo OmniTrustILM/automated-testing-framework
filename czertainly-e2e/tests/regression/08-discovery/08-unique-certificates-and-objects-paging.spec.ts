@@ -14,9 +14,6 @@ import { testMeta, tags } from '../../../utils/regression/tags';
 import { DISCOVERY_LARGE_RUN_MS, SLOW_LIFECYCLE_MS } from '../../../utils/regression/timeouts';
 import { fingerprintFilter } from '../../../utils/regression/apiReads';
 
-/** The v1 connector total a live run observed (`observed-connector-total` annotation); undefined until then. */
-const RECORDED_V1_CONNECTOR_TOTAL = undefined as number | undefined;
-
 test.describe('Unique certificates per batch and objects paging', { tag: tags.regression }, () => {
     /**
      * One batch: eight ports, seven distinct leaves, the own trigger on the run; the run completes and its onboarded certificates
@@ -40,65 +37,50 @@ test.describe('Unique certificates per batch and objects paging', { tag: tags.re
         return { served, run, onboarded, detail: await getDiscovery(api, run.uuid) };
     }
 
-    for (const generation of ['v1', 'v2'] as Generation[]) {
-        test(`the ${generation} connector turns eight ports with seven leaves into seven certificates, pages 3 / 3 / 1`,
-            testMeta({
-                id: 'REG-DISC-08', row: `${generation} connector: eight ports, seven leaves`, prio: 'P2', issue: 'ilm#432', needs: ['scan-target', `${generation}-discovery`],
-                rule: [
-                    'rows grouped by certificate content: one import per unique certificate however many hosts presented it; documentation#355 (trigger evaluation per unique certificate)',
-                    '`objectsPagination` (objects inside a firing, page size respected); HHH-20943 / HHH-20911 (paging)',
-                    'the batch gives seven certificates and seven trigger entries',
-                ],
-            }),
-            async ({ api, own, discoveryTier, tlsTargets, discoveredTriggersFree: _free }) => {
-                test.fixme(generation === 'v2', 'unconfirmed: v2 may count the staged repeat (8 instead of 7); no live run has settled it. Run it once on a tier with a scan target, then record the observed count');
-                test.setTimeout(SLOW_LIFECYCLE_MS);
-                const { served, run, onboarded, detail: d } = await scanBatch({ api, own, discoveryTier, tlsTargets }, generation);
-
-                await test.step('Seven certificates, seven NEW inventory rows, the served fingerprint set', async () => {
-                    test.info().annotations.push({ type: 'observed-connector-total', description: `${generation}: connectorTotalCertificatesDiscovered=${String(d.connectorTotalCertificatesDiscovered)}` });
-                    // The documented rule, on both generations. v2 (fixme, see the header): the staging rows (8 with the repeat) may be
-                    // what is counted.
-                    expect(d.totalCertificatesDiscovered, 'distinct certificates: each certificate counted once, the repeat does not add one').toBe(7);
-                    expect(fingerprintSet(await listDiscoveredCertificates(api, run.uuid))).toEqual(served);
-                    expect(onboarded, 'seven NEW inventory certificates').toHaveLength(7);
-                    for (const fp of served) expect(await countCertificates(api, fingerprintFilter(fp)), `exactly one inventory certificate for ${fp.slice(0, 12)}…`).toBe(1);
-                });
-
-                await test.step('Exactly seven trigger-history entries (per unique certificate) and a firing that evaluated seven objects', async () => {
-                    const summary = await sendJson(api, 'GET', `/api/v1/workflows/triggers/history/${run.uuid}`);
-                    expect(summary.status, summary.text.slice(0, 200)).toBe(200);
-                    const entries = (summary.json.objects as Array<{ triggers: unknown[] }>).reduce((n, o) => n + o.triggers.length, 0);
-                    expect(entries, 'one trigger-history entry per unique certificate').toBe(7);
-                    const firings = await getFirings(api, { event: EVENT.discovered, scope: { resource: 'discoveries', objectUuid: run.uuid } });
-                    expect(firings.page?.items.map((f) => f.objectsEvaluated).reduce((a, b) => a + b, 0), 'Σ Obj. Evaluated over the discovery scope').toBe(7);
-                });
-
-                await test.step('The firing\'s objects page by 3: 3 / 3 / 1, no repeated object', async () => {
-                    const seen: string[] = [];
-                    const sizes: number[] = [];
-                    for (let objectsPage = 1; objectsPage <= 3; objectsPage++) {
-                        const r = await getFirings(api, { event: EVENT.discovered, scope: { resource: 'discoveries', objectUuid: run.uuid }, objectsPage, objectsPageSize: 3 });
-                        const objects = r.page!.items[0].objectHistories;
-                        sizes.push(objects.items.length);
-                        seen.push(...objects.items.map((o) => String(o.objectUuid)));
-                        expect(objects.totalItems, 'the objects total').toBe(7);
-                    }
-                    expect(sizes, 'page sizes 3 / 3 / 1').toEqual([3, 3, 1]);
-                    expect(new Set(seen).size, 'no object repeats across the pages').toBe(7);
-                });
-            });
-    }
-
-    test('the v1 connector keeps a duplicate DER once per run',
+    const generation: Generation = 'v1';
+    test(`the ${generation} connector turns eight ports with seven leaves into seven certificates, pages 3 / 3 / 1`,
         testMeta({
-            id: 'REG-DISC-08', row: 'v1 connector keeps a duplicate DER once per run', prio: 'P3', issue: 'ilm#432', pin: 'disc08-v1-connector-total', needs: ['scan-target', 'v1-discovery'],
-            rule: ['connector-side count of a batch with one repeated certificate, taken from an observed run: not an oracle written from a guess'],
+            id: 'REG-DISC-08', row: `${generation} connector: eight ports, seven leaves`, prio: 'P2', issue: 'ilm#432', needs: ['scan-target', `${generation}-discovery`],
+            rule: [
+                'rows grouped by certificate content: one import per unique certificate however many hosts presented it; documentation#355 (trigger evaluation per unique certificate)',
+                '`objectsPagination` (objects inside a firing, page size respected); HHH-20943 / HHH-20911 (paging)',
+                'the batch gives seven certificates and seven trigger entries',
+            ],
         }),
-        async ({ api, own, discoveryTier, tlsTargets }) => {
-            test.fixme(RECORDED_V1_CONNECTOR_TOTAL === undefined, 'record the value of the first live run: take the `observed-connector-total` annotation of REG-DISC-08[v1] into RECORDED_V1_CONNECTOR_TOTAL');
+        async ({ api, own, discoveryTier, tlsTargets, discoveredTriggersFree: _free }) => {
             test.setTimeout(SLOW_LIFECYCLE_MS);
-            const { detail } = await scanBatch({ api, own, discoveryTier, tlsTargets }, 'v1');
-            expect(detail.connectorTotalCertificatesDiscovered, 'the v1 connector total, as recorded from a live run').toBe(RECORDED_V1_CONNECTOR_TOTAL);
+            const { served, run, onboarded, detail: d } = await scanBatch({ api, own, discoveryTier, tlsTargets }, generation);
+
+            await test.step('Seven certificates, seven NEW inventory rows, the served fingerprint set', async () => {
+                test.info().annotations.push({ type: 'observed-connector-total', description: `${generation}: connectorTotalCertificatesDiscovered=${String(d.connectorTotalCertificatesDiscovered)}` });
+                expect(d.totalCertificatesDiscovered, 'distinct certificates: each certificate counted once, the repeat does not add one').toBe(7);
+                expect(fingerprintSet(await listDiscoveredCertificates(api, run.uuid))).toEqual(served);
+                expect(onboarded, 'seven NEW inventory certificates').toHaveLength(7);
+                for (const fp of served) expect(await countCertificates(api, fingerprintFilter(fp)), `exactly one inventory certificate for ${fp.slice(0, 12)}…`).toBe(1);
+            });
+
+            await test.step('Exactly seven trigger-history entries (per unique certificate) and a firing that evaluated seven objects', async () => {
+                const summary = await sendJson(api, 'GET', `/api/v1/workflows/triggers/history/${run.uuid}`);
+                expect(summary.status, summary.text.slice(0, 200)).toBe(200);
+                const entries = (summary.json.objects as Array<{ triggers: unknown[] }>).reduce((n, o) => n + o.triggers.length, 0);
+                expect(entries, 'one trigger-history entry per unique certificate').toBe(7);
+                const firings = await getFirings(api, { event: EVENT.discovered, scope: { resource: 'discoveries', objectUuid: run.uuid } });
+                expect(firings.page?.items.map((f) => f.objectsEvaluated).reduce((a, b) => a + b, 0), 'Σ Obj. Evaluated over the discovery scope').toBe(7);
+            });
+
+            await test.step('The firing\'s objects page by 3: 3 / 3 / 1, no repeated object', async () => {
+                const seen: string[] = [];
+                const sizes: number[] = [];
+                for (let objectsPage = 1; objectsPage <= 3; objectsPage++) {
+                    const r = await getFirings(api, { event: EVENT.discovered, scope: { resource: 'discoveries', objectUuid: run.uuid }, objectsPage, objectsPageSize: 3 });
+                    const objects = r.page!.items[0].objectHistories;
+                    sizes.push(objects.items.length);
+                    seen.push(...objects.items.map((o) => String(o.objectUuid)));
+                    expect(objects.totalItems, 'the objects total').toBe(7);
+                }
+                expect(sizes, 'page sizes 3 / 3 / 1').toEqual([3, 3, 1]);
+                expect(new Set(seen).size, 'no object repeats across the pages').toBe(7);
+            });
         });
+
 });

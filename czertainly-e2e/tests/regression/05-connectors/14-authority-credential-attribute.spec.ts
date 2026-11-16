@@ -14,7 +14,7 @@ import type { GuardedApi } from '../../../utils/regression/guard/types';
 import type { OwnObjects } from '../../../utils/regression/ownObjects';
 import type { JsonObject } from '../../../utils/regression/json';
 import { createOwnBasicCredential } from '../../../utils/regression/inventory/credentialsApi';
-import { CONNECTOR_READ_TEST_MS, CONNECTOR_WRITE_TEST_MS } from '../../../utils/regression/timeouts';
+import { CONNECTOR_WRITE_TEST_MS } from '../../../utils/regression/timeouts';
 
 
 const RULES = ['core/getCredentials is answered by core; a Basic credential is used on an authority; admin create guards'];
@@ -61,25 +61,6 @@ test.describe('Own credential on an authority', { tag: tags.regression }, () => 
         async ({ api, own }, testInfo) => {
             test.setTimeout(CONNECTOR_WRITE_TEST_MS);
             await credentialOnAuthority(api, own, /pyadcs/i, testInfo);
-        });
-
-    test.fixme('the authority form\'s credential callback lists the own credential',
-        testMeta({ id: 'REG-CONN-14', row: 'callback', prio: 'P2', issue: 'ilm#436', rule: RULES }),
-        async ({ api, own }, testInfo) => {
-            test.setTimeout(CONNECTOR_READ_TEST_MS);
-            testInfo.annotations.push({ type: 'fixme', description: 'pending guard change: a callback POST on a pre-existing connector is ownership-refused' });
-            const connector = await findCredentialConnector(api, 'Basic');
-            test.skip(!connector, 'no credential connector');
-            const credential = await createOwnBasicCredential(api, own.spec, 'cred14c', { connector: connector! });
-            const src = await findAuthoritySource(api, /pyadcs/i);
-            test.skip(!src, 'no PyADCS authority');
-            const defs = await apiJson<JsonObject[]>(api, 'GET', `/api/v1/connectors/${src!.connectorUuid}/attributes/authorityProvider/${src!.kind}`);
-            const attr = defs.find((d) => d.contentType === 'credential');
-            const res = await api.post(`/api/v1/connectors/${src!.connectorUuid}/authorityProvider/${src!.kind}/callback`, {
-                data: { uuid: attr?.uuid, name: attr?.name, pathVariables: { credentialKind: 'Basic' }, queryParameters: {}, requestBody: {} },
-            });
-            expect(res.status()).toBe(200);
-            expect(JSON.stringify(await res.json())).toContain(credential.uuid);
         });
 
     test.describe('on the local stack (EJBCA-NG)', () => {

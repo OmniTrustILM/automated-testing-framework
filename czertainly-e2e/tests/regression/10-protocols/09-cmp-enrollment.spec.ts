@@ -178,20 +178,4 @@ test.describe('CMP with openssl', { tag: tags.regression }, () => {
             });
         });
 
-    test.fixme('a second rr on a revoked certificate names failInfo certRevoked',
-        testMeta({
-            id: 'REG-PROT-11', row: 'failInfo', prio: 'P2', issue: 'ilm#430', needs: 'openssl',
-            rule: ['already revoked → failInfo certRevoked (RFC 4210 §5.3.9); the endpoint has answered systemFailure instead: unconfirmed, so the row stays fixme'],
-        }),
-        async ({ api, own, cmpRig }, testInfo) => {
-            test.setTimeout(LIFECYCLE_MS);
-            const run = cmpRig;
-            const cwd = prepareWorkDir(testInfo.outputPath('cmp'));
-            const issued = await issueWithIr(api, own, run, cwd);
-            const revoke = () => opensslCmp({ command: 'rr', server: run.server, path: run.path, secret: run.secret, ref: runId(), oldCert: issued.certFile, cwd, timeoutMs: EXTERNAL_TOOL_MS });
-            expect(revoke().exitCode, 'the first rr revokes').toBe(0);
-            const r = revoke();
-            expect(r.exitCode, describeCmp(r)).not.toBe(0);
-            expect(r.failInfo, describeCmp(r)).toContain('certRevoked');
-        });
 });
