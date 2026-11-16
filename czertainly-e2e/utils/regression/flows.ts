@@ -49,6 +49,7 @@ export const SECONDARY_FLOW: readonly string[] = [
     'tests/regression/09-keys-and-tokens/',
     'tests/regression/10-protocols/',
     'tests/regression/11-secrets/',
+    'tests/regression/13-workflows-and-notifications/',
 ];
 
 const escaped = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

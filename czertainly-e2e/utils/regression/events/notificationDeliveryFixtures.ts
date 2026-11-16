@@ -1,11 +1,11 @@
 /**
  * notificationDeliveryFixtures — the own objects the `@local` delivery rows need: an own RA profile, group, owner and certificate, and one
- * trigger on `Certificate status changed` whose execution sends the given profiles; revoking the certificate fires it.
+ * trigger on `Certificate status changed` whose execution sends the given profiles; revoking and validating the certificate fires it.
  */
 import { GuardedApi } from '../guard/types';
 import { createOwnGroup } from '../ownGroups';
 import { createOwnRaProfile, OwnRaProfile } from '../ownRaProfiles';
-import { issueOwnCertificateInGroup, revokeOwnCertificateAndWait } from './workflowFixtures';
+import { issueOwnCertificateInGroup, RevokeSeen, revokeOwnCertificateAndWait, validateRevoked } from './workflowFixtures';
 import { OwnCertificate } from '../ownCertificates';
 import { createOwnUser } from '../ownUsers';
 import { OwnRef } from '../ledger/ledger';
@@ -47,9 +47,16 @@ export async function armGroup(api: GuardedApi, spec: string, rig: Pick<Rig, 'gr
     return { triggerName: trigger.name, triggerUuid: trigger.uuid };
 }
 
-export async function fire(api: GuardedApi, rig: Rig, armed: { triggerName: string }): Promise<ObjectHistoryRow> {
+/** Revokes and validates the rig's certificate; `blind` is the spec's skip (`BLIND_REVOKE_SKIP`): nothing fires then. */
+export async function revokeAndValidate(api: GuardedApi, rig: Rig): Promise<RevokeSeen> {
     const revoked = await revokeOwnCertificateAndWait(api, rig.ra, rig.cert);
     if (revoked.status >= 300) throw new Error(`revoke → ${revoked.status} ${revoked.text.slice(0, 300)}`);
+    const seen = await validateRevoked(api, rig.cert);
+    if (!seen.blind && seen.status !== 'revoked') throw new Error(`the validation of the revoked certificate answered ${seen.status}`);
+    return seen;
+}
+
+export async function firedRow(api: GuardedApi, rig: Rig, armed: { triggerName: string }): Promise<ObjectHistoryRow> {
     await waitForFinishedFirings(api, { event: EVENT.statusChanged, scope: { resource: 'groups', objectUuid: rig.group.uuid } }, 1, { timeoutMs: 180_000 });
     const rows = await waitForTriggerRows(api, 'certificates', rig.cert.uuid, [armed.triggerName], { timeoutMs: 180_000 });
     return rows.find((r) => r.trigger.name === armed.triggerName)!;
