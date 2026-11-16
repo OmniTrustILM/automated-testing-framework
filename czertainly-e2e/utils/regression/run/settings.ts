@@ -92,6 +92,8 @@ export function settings(env: NodeJS.ProcessEnv = process.env) {
             };
         },
         get upgradeFromTag(): string | undefined { return env.REG_UPGRADE_FROM_TAG; },
+        /** true only when REG_ALLOW_STACK_RESET=true: the local rows that wipe the database or stop the broker may run. */
+        get allowStackReset(): boolean { return env.REG_ALLOW_STACK_RESET === 'true'; },
         get dockerBinOverride(): string | undefined { return env.REG_DOCKER_BIN || undefined; },
         get kubectlBin(): string { return env.REG_KUBECTL_BIN || 'kubectl'; },
         toolBin(tool: 'openssl' | 'sscep' | 'docker' | 'kubectl'): string { return env[TOOL_VARIABLES[tool]] ?? tool; },
