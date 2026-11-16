@@ -333,10 +333,6 @@ test('every row that takes the run RA profile declares @needs:ca, so a tier with
 const MARKER_BEFORE_ASSERTION = new Set([
     'tests/api/07-keys/create.api.spec.ts: the algorithm list offers no unknown or deprecated entry',
     'tests/api/07-keys/create.api.spec.ts: an algorithm the connector cannot create is refused with a 4',
-    "tests/api/07-keys/edge-cases.api.spec.ts: a certificate issued for a token key carries that key's publ",
-    'tests/api/09-protocols/scep.api.spec.ts: form-encoded random bytes answer 400 with an empty body',
-    'tests/api/09-protocols/wrong-content-type-refused.api.spec.ts: an ACME JWS sent as JSON is refused with 415',
-    'tests/api/09-protocols/wrong-content-type-refused.api.spec.ts: a CMP POST sent as JSON is refused with 415',
 ]);
 
 test('a known-bug test keeps a hard assertion BEFORE its unconditional test.fail(), so the marker cannot mask the whole test (a shrink-only list holds the older exceptions)', () => {
@@ -362,7 +358,7 @@ test('a known-bug test keeps a hard assertion BEFORE its unconditional test.fail
     // holds the marker (the main-flow branch lacks some specs).
     const inTree = (k: string): boolean => fs.existsSync(path.join(ROOT, k.slice(0, k.indexOf(':'))));
     expect([...MARKER_BEFORE_ASSERTION].filter((k) => inTree(k) && !found.has(k)), 'stale entries: lower the list').toEqual([]);
-    expect(MARKER_BEFORE_ASSERTION.size, 'the list can only shrink').toBeLessThanOrEqual(6);
+    expect(MARKER_BEFORE_ASSERTION.size, 'the list can only shrink').toBeLessThanOrEqual(2);
 });
 
 test('no spec or helper holds a literal password or secret value (a generated one, or the empty string of a pin)', () => {
