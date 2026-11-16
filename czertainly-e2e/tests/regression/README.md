@@ -140,16 +140,16 @@ order.
 
 **Main flow and secondary flow.** The main flow is what a release must pass first. It holds the eighteen release-checklist
 flows (Deployment `07-deployment/01` to `02`, Configuration `03-configuration/01` to `09`, Usage `12-main-usage/01` to
-`07`), the certificate lifecycle UI tests (`02-certificates/07`, `10`, `12`, `16`), the API tests of those features (the
-files of `tests/api` that cover them), the run infrastructure (snapshot, run-setup, non-interference), the smoke suite
-(default config) and the two developers' blocks (devblock config). The secondary flow is everything else on top: the
-extension rows of the other areas (certificate filters, sorting and paging, discovery, protocols, keys and tokens,
-workflows, compliance, secrets, sign-in), the API filter and sort matrix, the negative rows of the configuration objects
-and the remaining API areas. Both live in these folders and run in the same configs, in area order.
+`07`), the certificate lifecycle UI tests (`02-certificates/07`, `10`, `12`, `16`), the restricted user
+(`01-sign-in-and-access/08`), the page sweep (`02-certificates/60`), the API tests of those features (the files of
+`tests/api` that cover them), the run infrastructure (snapshot, run-setup, non-interference), the smoke suite (default
+config) and the two developers' blocks (devblock config). The secondary flow is everything else on top: the extension rows
+of the other areas (certificate filters, sorting and paging, discovery, protocols, keys and tokens, workflows, compliance,
+secrets, sign-in and sign-out), the API filter and sort matrix, the negative rows of the configuration objects and the
+remaining API areas. Both live in these folders and run in the same configs, in area order.
 `utils/regression/flows.ts` lists the secondary files and folders; every other row is the main flow. `REG_FLOW` picks the
 rows of a run: `main` (the default), `secondary` or `all`. The run infrastructure and the API gate run in each flow. The
-sign-out spec belongs to the secondary flow, so it is listed when it is added and the main flow's sign-out project selects
-nothing (a unit test holds it).
+sign-out spec belongs to the secondary flow, so the main flow's sign-out project selects nothing (a unit test holds it).
 
 ## Configs, commands and reports
 
