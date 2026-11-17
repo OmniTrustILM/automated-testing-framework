@@ -47,6 +47,9 @@ function pairName(result: OnboardingResult): string {
 }
 
 export function onboardedKey(result: OnboardingResult): { uuid: string; name: string } {
+    if (result.outcome !== 'onboarded') {
+        throw new Error(`The onboarding of ${pairName(result)} reports ${result.outcome}; only an onboarded result names a new key`);
+    }
     if (!result.keyUuid || !result.keyName) {
         throw new Error(`The onboarding of ${pairName(result)} reports onboarded without ${result.keyUuid ? 'a key name' : 'a key uuid'}; it cannot be recorded`);
     }

@@ -1,5 +1,5 @@
 import { CertificateDetail, KeyDetail } from '../../utils/keyOnboarding/adminApi';
-import { expect, keyPairMetaOf, labelled, onboardedKey, test } from '../../utils/keyOnboarding/fixtures';
+import { expect, keyPairMetaOf, onboardedKey, plantedKeyByStorageName, test } from '../../utils/keyOnboarding/fixtures';
 import { signThroughCore, verifiesWithRecordedPublicKey } from '../../utils/keyOnboarding/signing';
 import { ledgerSpec } from '../../utils/keyOnboarding/provisioning';
 import { devTests } from '../../utils/keyOnboarding/tags';
@@ -18,7 +18,7 @@ test.describe.serial('Onboarding a key pair into the key holding its public key'
 
     const keys = await admin.allTokenKeys(provisioned.token.uuid, provisioned.tokenProfile.uuid);
 
-    expect(labelled(keys, provisioned.planted.certified)).toMatchObject({
+    expect(plantedKeyByStorageName(keys, provisioned.planted.certified)).toMatchObject({
       status: 'onboardableIntoKey',
       inventoryKeyUuid: record.uuid,
       inventoryKeyName: record.name,
@@ -34,7 +34,7 @@ test.describe.serial('Onboarding a key pair into the key holding its public key'
       ])
     ).results;
 
-    expect(result).toMatchObject({ onboarded: true, intoExistingKey: true, keyUuid: record.uuid, keyName: record.name });
+    expect(result).toMatchObject({ outcome: 'joinedExistingKey', keyUuid: record.uuid, keyName: record.name });
     const merged = await admin.get<KeyDetail>(`/v1/keys/${record.uuid}`);
     // Children of the derived key: the guard lets the run sign with them once the key is in the run's token profile.
     const createdAfter = checkOwnership({ uuid: record.uuid }).line?.createdAfter;
@@ -64,7 +64,7 @@ test.describe.serial('Onboarding a key pair into the key holding its public key'
   test('lists the pair as held by the merged key', devTests(), async ({ admin, provisioned }) => {
     const keys = await admin.allTokenKeys(provisioned.token.uuid, provisioned.tokenProfile.uuid);
 
-    expect(labelled(keys, provisioned.planted.certified)).toMatchObject({ status: 'inInventory', inventoryKeyUuid: record.uuid });
+    expect(plantedKeyByStorageName(keys, provisioned.planted.certified)).toMatchObject({ status: 'inInventory', inventoryKeyUuid: record.uuid });
   });
 
   test('removes the whole merged key from the inventory and keeps the certificate', devTests(), async ({ admin, provisioned }, testInfo) => {
@@ -75,7 +75,7 @@ test.describe.serial('Onboarding a key pair into the key holding its public key'
     expect((await admin.raw('GET', `/v1/keys/${record.uuid}`)).status()).toBe(404);
     expect((await admin.raw('GET', `/v1/certificates/${certificate.uuid}`)).status()).toBe(200);
     const keys = await admin.allTokenKeys(provisioned.token.uuid, provisioned.tokenProfile.uuid);
-    expect(labelled(keys, provisioned.planted.certified).status).toBe('onboardable');
+    expect(plantedKeyByStorageName(keys, provisioned.planted.certified).status).toBe('onboardable');
   });
 
   test('onboards the pair again as a new key, which the certificate links to', devTests(), async ({ admin, provisioned }, testInfo) => {
@@ -86,7 +86,7 @@ test.describe.serial('Onboarding a key pair into the key holding its public key'
         { keyPairMeta: keyPairMetaOf(keys, provisioned.planted.certified) },
       ])
     ).results;
-    if (result.onboarded && !result.intoExistingKey) {
+    if (result.outcome === 'onboarded') {
       recordCreated('keys', onboardedKey(result), {
         spec: ledgerSpec(testInfo),
         note: 'onboarded token key',
@@ -94,9 +94,10 @@ test.describe.serial('Onboarding a key pair into the key holding its public key'
       });
     }
 
-    expect(result).toMatchObject({ onboarded: true, intoExistingKey: false });
-    expect(result.keyUuid).not.toBe(record.uuid);
+    expect(result.outcome).toBe('onboarded');
+    const { uuid } = onboardedKey(result);
+    expect(uuid).not.toBe(record.uuid);
     const reread = await admin.get<CertificateDetail>(`/v1/certificates/${certificate.uuid}`);
-    expect(reread).toMatchObject({ privateKeyAvailability: true, key: { uuid: result.keyUuid } });
+    expect(reread).toMatchObject({ privateKeyAvailability: true, key: { uuid } });
   });
 });

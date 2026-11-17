@@ -182,8 +182,9 @@ export interface TokenKey {
     | 'inInventory'
     | 'inInventoryWithoutToken'
     | 'importInProgress'
-    | 'noPublicKey'
-    | 'noUsableId'
+    | 'publicKeyUnavailable'
+    | 'unaddressable'
+    | 'refused'
     | 'unsupportedKeyType'
     | 'unreadable'
     | 'gone';
@@ -192,7 +193,11 @@ export interface TokenKey {
   inventoryKeyUuid?: string;
   inventoryKeyName?: string;
   reason?: string;
+  diagnostic?: ConnectorDiagnostic;
 }
+
+/** Operator text from the token's connector naming the cause and its fix. Clients display it and never parse it. */
+export type ConnectorDiagnostic = string;
 
 export interface TokenKeyPage {
   items: TokenKey[];
@@ -207,14 +212,35 @@ export interface TokenKeySelection {
   name?: string;
 }
 
-export interface OnboardingResult {
+export type OnboardingResult = OnboardedResult | JoinedExistingKeyResult | NameTakenResult | BlockedResult | FailedResult;
+
+interface ResultFor<Outcome extends string> {
   keyPairMeta: MetadataAttribute[];
-  onboarded: boolean;
-  intoExistingKey: boolean;
+  outcome: Outcome;
+}
+
+/** Core names an existing key only to a caller who may see it in detail. */
+interface NamedKey {
   keyUuid?: string;
   keyName?: string;
-  reason?: string;
 }
+
+interface Refusal {
+  reason?: string;
+  diagnostic?: ConnectorDiagnostic;
+}
+
+export interface OnboardedResult extends ResultFor<'onboarded'>, NamedKey {}
+
+export interface JoinedExistingKeyResult extends ResultFor<'joinedExistingKey'>, NamedKey {}
+
+export interface NameTakenResult extends ResultFor<'nameTaken'>, Refusal {}
+
+export interface BlockedResult extends ResultFor<'blocked'>, NamedKey, Refusal {
+  status?: TokenKey['status'];
+}
+
+export interface FailedResult extends ResultFor<'failed'>, Refusal {}
 
 export interface OnboardingResults {
   results: OnboardingResult[];

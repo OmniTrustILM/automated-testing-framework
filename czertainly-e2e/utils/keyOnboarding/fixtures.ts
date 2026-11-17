@@ -35,16 +35,16 @@ export const test = base.extend<{ admin: AdminApi; provisioned: Provisioning }, 
 
 export { expect };
 
-export function labelled(keys: TokenKey[], label: string): TokenKey {
-    const found = keys.find((key) => key.storageName === label);
+export function plantedKeyByStorageName(keys: TokenKey[], storageName: string): TokenKey {
+    const found = keys.find((key) => key.storageName === storageName);
     if (!found) {
-        throw new Error(`The token lists no key pair labelled ${label}`);
+        throw new Error(`The token lists no key pair under the storage name ${storageName}`);
     }
     return found;
 }
 
 export function keyPairMetaOf(keys: TokenKey[], label: string): MetadataAttribute[] {
-    const { keyPairMeta } = labelled(keys, label);
+    const { keyPairMeta } = plantedKeyByStorageName(keys, label);
     if (!keyPairMeta) {
         throw new Error(`The token lists the key pair labelled ${label} without metadata`);
     }
