@@ -45,6 +45,8 @@ export interface IssuedCertificate extends OwnCertificate {
 
 export interface IssueOptions {
     suffix?: string;
+    /** The exact CN, recorded as the ledger name (default: a unique own CN from `suffix`); it must start with the run prefix. */
+    cn?: string;
     sans?: Partial<SanSet>;
     keys?: forge.pki.rsa.KeyPair;
     body?: JsonObject;
@@ -58,7 +60,7 @@ export interface IssueOptions {
  * asserted here: the uuid is recorded first, the caller asserts the contract.
  */
 export async function submitOwnCertificate(api: GuardedApi, ra: RaLike, spec: string, opts: IssueOptions = {}): Promise<IssuedCertificate> {
-    const cn = certificateName(opts.suffix);
+    const cn = opts.cn ?? certificateName(opts.suffix);
     const sans: SanSet = { dns: opts.sans?.dns ?? [cn], ip: opts.sans?.ip ?? ['192.0.2.20'] };
     const keys = opts.keys ?? newKeyPair();
     const csr = csrFromKey(keys, cn, sans);

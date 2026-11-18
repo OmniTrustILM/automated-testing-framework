@@ -13,7 +13,8 @@ import { pickHealthyAuthority, RaProfileSourceMissing, createOwnRaProfileLike, r
 import { OwnRef, readLedger } from '../ledger/ledger';
 import { runName, runId } from '../ledger/runState';
 import { createOwnGroup, groupUuidsOf } from '../ownGroups';
-import { uploadOwnCertificate } from '../ownCertificates';
+import { issueOwnCertificate, uploadOwnCertificate, waitIssued } from '../ownCertificates';
+import { Logger } from '../../Logger';
 import { createOwnRole } from '../ownRoles';
 import { createOwn } from '../ownCrud';
 import { userBody } from '../ownUsers';
@@ -21,6 +22,7 @@ import type { JsonObject } from '../json';
 import { rowsOf } from '../json';
 import { Fixture, RbacRefs, fixtureDocument, CertKey, CERT_KEYS, expectedResourceActions, CERT_PLAN } from './permissionMatrix';
 
+const logger = new Logger('PermissionObjects');
 
 function ledgerRef(type: string, name: string): OwnRef | undefined {
     let found: OwnRef | undefined;
@@ -68,23 +70,44 @@ export async function ensureRbacObjects(api: GuardedApi, spec: string): Promise<
     const g2 = await group('g2');
     const refs = { p1, p2, g1, g2 };
 
+    // A certificate on an RA profile is issued through it: the platform puts a certificate on an RA profile only when that profile's CA
+    // identifies it, so a PATCH of raProfileUuid on a self-signed upload answers 400 "not identified by authority". The rest are uploads.
+    // Issued in parallel, so the first test's budget holds two issue waits; one found again is waited for, so a failed one stops the setup.
+    const onRa = CERT_KEYS.filter((k) => CERT_PLAN[k].ra);
+    const issued = new Map<CertKey, OwnRef>(await Promise.all(onRa.map(async (key): Promise<[CertKey, OwnRef]> => {
+        const cn = runName(`rbac-${key}`);
+        const known = ledgerRef('certificates', cn);
+        if (known) {
+            await waitIssued(api, known.uuid);
+            return [key, known];
+        }
+        const ra = refs[CERT_PLAN[key].ra!];
+        logger.info(`issuing ${cn} through ${ra.name} on ${pick.connectorName}`);
+        const cert = await issueOwnCertificate(api, { uuid: ra.uuid, name: ra.name, authorityUuid: pick.authorityUuid }, spec, {
+            cn,
+            sans: { dns: [`${runId()}.example.test`], ip: [] },
+            fillRequiredAttributes: true,
+            note: `RBAC fixture certificate ${key} (issued through ${CERT_PLAN[key].ra!.toUpperCase()})`,
+        });
+        return [key, cert];
+    })));
+
     const certs = {} as Record<CertKey, OwnRef>;
     for (const key of CERT_KEYS) {
         const cn = runName(`rbac-${key}`);
-        const known = ledgerRef('certificates', cn);
-        const cert = known ?? await uploadOwnCertificate(api, selfSignedPem(cn).pem, cn, spec, `RBAC fixture certificate ${key} (self-signed upload)`);
+        const known = issued.has(key) ? undefined : ledgerRef('certificates', cn);
+        const cert = issued.get(key) ?? known ?? await uploadOwnCertificate(api, selfSignedPem(cn).pem, cn, spec, `RBAC fixture certificate ${key} (self-signed upload)`);
         certs[key] = cert;
         const plan = CERT_PLAN[key];
-        if (!plan.ra && !plan.groups.length) continue;
         const ra = plan.ra ? refs[plan.ra].uuid : undefined;
         const groups = plan.groups.map((g) => refs[g].uuid);
-        // A certificate found again keeps its plan only if the earlier PATCH landed; otherwise the permission rows must not run.
-        if (known) {
-            const live = await apiJson<JsonObject>(api, 'GET', `/api/v1/certificates/${cert.uuid}`);
-            const liveRa = (live.raProfile as JsonObject | undefined)?.uuid;
-            if ((!ra || liveRa === ra) && (!groups.length || groupUuidsOf(live).join() === [...groups].sort().join())) continue;
-        }
-        await apiJson(api, 'PATCH', `/api/v1/certificates/${cert.uuid}`, { ...(ra ? { raProfileUuid: ra } : {}), ...(groups.length ? { groupUuids: groups } : {}) });
+        if (!groups.length && !issued.has(key)) continue;
+        // A certificate keeps its plan only if its RA profile and the earlier group PATCH landed; otherwise the permission rows must not run.
+        const live = await apiJson<JsonObject>(api, 'GET', `/api/v1/certificates/${cert.uuid}`);
+        const liveRa = (live.raProfile as JsonObject | undefined)?.uuid;
+        if (ra) expect(liveRa, `RBAC fixture certificate ${key}: the RA profile it was issued through`).toBe(ra);
+        if (!groups.length || groupUuidsOf(live).join() === [...groups].sort().join()) continue;
+        await apiJson(api, 'PATCH', `/api/v1/certificates/${cert.uuid}`, { groupUuids: groups });
     }
     return { authorityUuid: pick.authorityUuid, source: { uuid: pick.uuid, authorityUuid: pick.authorityUuid }, ...refs, certs };
 }
