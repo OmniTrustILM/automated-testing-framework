@@ -183,6 +183,13 @@ export function pkcs12(cn: string, password: string): Pkcs12Fixture {
     return { bytes: Buffer.from(forge.asn1.toDer(asn1).getBytes(), 'binary'), identity, password };
 }
 
+/** A PKCS#12 with a new end-entity certificate signed by `intermediate`, its key, and the chain `intermediate`, `root`. */
+export function pkcs12Chain(cn: string, intermediate: Identity, root: Identity, password: string): Pkcs12Fixture {
+    const identity = certificate(cn, { issuer: intermediate });
+    const asn1 = forge.pkcs12.toPkcs12Asn1(identity.keys.privateKey, [identity.cert, intermediate.cert, root.cert], password, { algorithm: '3des' });
+    return { bytes: Buffer.from(forge.asn1.toDer(asn1).getBytes(), 'binary'), identity, password };
+}
+
 const OID = (id: string) => forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.OID, false, forge.asn1.oidToDer(id).getBytes());
 const SEQ = (items: forge.asn1.Asn1[]) => forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SEQUENCE, true, items);
 const EXPLICIT0 = (items: forge.asn1.Asn1[]) => forge.asn1.create(forge.asn1.Class.CONTEXT_SPECIFIC, 0, true, items);

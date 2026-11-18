@@ -24,6 +24,8 @@ export type TestEnv = {
   smokePersist: boolean;  // SMOKE_PERSIST=true → reuse state between runs, skip teardown
   kubeconfigPath?: string;  // KUBECONFIG_PATH — for local k8s access; ignored in-cluster (uses ServiceAccount token)
   smoke: SmokeEnv;
+  /** The prepared accounts of the Epic tests by letter, from EPIC_USER_<letter>_USERNAME / _PASSWORD; checked where a test uses them. */
+  epicUsers?: Partial<Record<string, { username: string; password: string }>>;
 };
 
 export type SmokeEnv = {
@@ -97,6 +99,7 @@ export function loadEnv(): TestEnv {
     localAuthProviderName: required('LOCAL_AUTH_PROVIDER_NAME'),
     smokePersist: process.env.SMOKE_PERSIST === 'true',
     kubeconfigPath: process.env.KUBECONFIG_PATH,
+    epicUsers: epicUsersFrom(process.env),
     smoke: {
       discoveryProviderName: process.env.DISCOVERY_PROVIDER_NAME,
       discoveryProviderUrl: process.env.DISCOVERY_PROVIDER_URL,
@@ -126,6 +129,16 @@ export function loadEnv(): TestEnv {
   }
 
   return env;
+}
+
+function epicUsersFrom(vars: NodeJS.ProcessEnv): NonNullable<TestEnv['epicUsers']> {
+  const users: NonNullable<TestEnv['epicUsers']> = {};
+  for (const [name, username] of Object.entries(vars)) {
+    const letter = /^EPIC_USER_([A-Z])_USERNAME$/.exec(name)?.[1];
+    const password = letter ? vars[`EPIC_USER_${letter}_PASSWORD`] : undefined;
+    if (letter && username && password) users[letter] = { username, password };
+  }
+  return users;
 }
 
 /** Names of the SMK-required env vars that are missing (camelCase field names as SCREAMING_SNAKE_CASE). */
