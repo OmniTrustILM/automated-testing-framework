@@ -19,7 +19,7 @@ import devBlockGlobalTeardown from '../../utils/devBlocks/globalTeardown';
 import type { TeardownHandler } from '../../utils/regression/teardown/runTeardown';
 import { plantingMarkerFile } from '../../utils/keyOnboarding/config';
 import { PLANT_EXEC_SCRIPT, PLANT_SCRIPT, plantingLeftover, plantingMarkerExists, plantKeys, readMarker, UNPLANT_EXEC_SCRIPT, UNPLANT_SCRIPT, unplantRunKeys } from '../../utils/keyOnboarding/provision/plant';
-import { offlineBlocker, pinLooksLikeAnId, uriNamesToken } from '../../utils/keyOnboarding/provision/preflight';
+import { offlineBlocker, pinLooksLikeAnId, referenceNamesToken } from '../../utils/keyOnboarding/provision/preflight';
 import { provisionKeyOnboarding, SETUP_LEDGER_SPEC, writeSummary } from '../../utils/keyOnboarding/provision/provision';
 import type { KeyOnboardingSummary } from '../../utils/keyOnboarding/types';
 import { guardApiWithSeams } from '../../utils/regression/guard/createGuard';
@@ -62,7 +62,7 @@ const defaultConnectors = (): Json[] => [
 
 interface FakeOptions {
     connectors?: Json[];
-    tokenUris?: string[];
+    tokenReferences?: string[];
     /** `METHOD /path/{id}` → a status answered instead of the route's (with a body that must never reach a reason). */
     statusFor?: Record<string, number>;
     echoBody?: boolean;
@@ -118,8 +118,8 @@ function fakeCore(opts: FakeOptions = {}) {
             { uuid: U(21), name: 'token', contentType: 'string', type: 'data' },
             { uuid: U(22), name: 'pin', contentType: 'resource', type: 'data' },
         ]]],
-        ['POST', new RegExp(`^/v2/connectors/${UUID}/callback$`), () => [200, (opts.tokenUris ?? ['pkcs11:model=SoftHSM%20v2;token=softhsm;serial=1', 'pkcs11:token=other;serial=2'])
-            .map((data, i) => ({ data, reference: `token ${i}` }))]],
+        ['POST', new RegExp(`^/v2/connectors/${UUID}/callback$`), () => [200, (opts.tokenReferences ?? ['softhsm, serial 1', 'other, serial 2'])
+            .map((reference, i) => ({ data: `softhsm-route-${i}`, reference }))]],
         ['POST', /^\/v1\/vaults$/, (_m, b) => [200, create(b)]],
         ['GET', new RegExp(`^/v1/vaults/(${UUID})$`), (m) => named(m[1])],
         ['POST', new RegExp(`^/v1/vaults/${UUID}/vaultProfiles$`), (_m, b) => [200, create(b)]],
@@ -301,8 +301,8 @@ test('preflight: a missing, a waiting, a v1-only connector, no keyList, no secre
             'no credential-provider connector (v2) is registered at KO_VAULT_CONNECTOR_URL (the setup never registers one)'],
         ['no secret interface', { connectors: defaultConnectors().map((c) => (c.uuid === C_VAULT ? { ...c, interfaces: [] } : c)) },
             'the credential-provider connector at KO_VAULT_CONNECTOR_URL exposes no secret interface'],
-        ['token not offered', { tokenUris: ['pkcs11:token=other'] }, /offers 0 tokens labelled as KO_PKCS11_TOKEN says \(exactly one is needed/],
-        ['token offered twice', { tokenUris: ['pkcs11:token=softhsm;serial=1', 'pkcs11:token=softhsm;serial=2'] }, /offers 2 tokens labelled as KO_PKCS11_TOKEN says/],
+        ['token not offered', { tokenReferences: ['other, serial 1', 'serial 2'] }, /offers 0 tokens labelled as KO_PKCS11_TOKEN says \(exactly one is needed/],
+        ['token offered twice', { tokenReferences: ['softhsm, serial 1', 'softhsm, serial 2'] }, /offers 2 tokens labelled as KO_PKCS11_TOKEN says/],
     ];
     for (const [what, fake, reason] of cases) {
         const run = await runSetup(testInfo, fake);
@@ -315,13 +315,13 @@ test('preflight: a missing, a waiting, a v1-only connector, no keyList, no secre
     expect(readLedger(ledgerPath())).toEqual([]);
 });
 
-test('uriNamesToken reads the token label of a PKCS#11 URI path, percent-decoded, and nothing else', () => {
-    expect(uriNamesToken('pkcs11:model=SoftHSM%20v2;token=softhsm;serial=1', 'softhsm')).toBe(true);
-    expect(uriNamesToken('pkcs11:token=soft%20hsm', 'soft hsm')).toBe(true);
-    expect(uriNamesToken('pkcs11:token=softhsm2', 'softhsm')).toBe(false);
-    expect(uriNamesToken('pkcs11:model=token=softhsm', 'softhsm')).toBe(false);
-    expect(uriNamesToken('pkcs11:serial=1?token=softhsm', 'softhsm'), 'a query attribute is not the token').toBe(false);
-    expect(uriNamesToken('pkcs11:token=%ZZ', 'x'), 'a malformed escape is no match, not an error').toBe(false);
+test('referenceNamesToken reads the token label that leads a broker route\'s reference, and nothing else', () => {
+    expect(referenceNamesToken('softhsm, serial 1372fc5ead6e0527', 'softhsm')).toBe(true);
+    expect(referenceNamesToken('soft hsm', 'soft hsm'), 'a token without a serial').toBe(true);
+    expect(referenceNamesToken('softhsm2, serial 1', 'softhsm')).toBe(false);
+    expect(referenceNamesToken('serial softhsm', 'softhsm'), 'a token without a label').toBe(false);
+    expect(referenceNamesToken('other, serial softhsm', 'softhsm')).toBe(false);
+    expect(referenceNamesToken(undefined, 'softhsm'), 'an option without a reference').toBe(false);
 });
 
 test('provisioning follows the source suite\'s order and records every object once, right after its create, with its parents', async ({}, testInfo) => {
@@ -382,7 +382,7 @@ test('request bodies follow the source suite: the vault on the secret interface,
     expect(token.connectorUuid).toBe(C_PKCS11);
     expect(token.attributes.map((a: Json) => [a.name, a.version, a.content])).toEqual([
         ['profile', 'v3', [{ contentType: 'string', data: 'softhsm' }]],
-        ['token', 'v3', [{ contentType: 'string', data: 'pkcs11:model=SoftHSM%20v2;token=softhsm;serial=1', reference: 'token 0' }]],
+        ['token', 'v3', [{ contentType: 'string', data: 'softhsm-route-0', reference: 'softhsm, serial 1' }]],
         ['pin', 'v3', [{ contentType: 'resource', data: { resource: 'secrets', uuid: run.ledger.find((l) => l.type === 'secrets')!.uuid, name: secret.name } }]],
     ]);
     expect(post(/tokenProfiles$/).usage).toEqual(['sign', 'verify', 'encrypt', 'decrypt']);
@@ -654,7 +654,7 @@ test('plant-keys.sh reads the PIN from the environment, never puts it on the pkc
 const NS = 'ilm';
 const DEPLOYMENT = 'pkcs11-cryptography-provider';
 const POD = `${DEPLOYMENT}-7d9f8c6b5-x2k4p`;
-const CONTAINER = 'proxy-softhsm';
+const CONTAINER = 'broker-softhsm';
 const CONTEXT = 'develop-01';
 const CLUSTER_PKCS11_URL = `http://${DEPLOYMENT}.${NS}.svc.cluster.local:8080`;
 const clusterConnectors = (): Json[] => defaultConnectors().map((c) => (c.url === PKCS11_URL ? { ...c, url: CLUSTER_PKCS11_URL } : c));

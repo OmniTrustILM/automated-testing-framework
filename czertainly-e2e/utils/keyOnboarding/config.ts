@@ -41,7 +41,7 @@ export function keyOnboardingConfig(env: NodeJS.ProcessEnv = process.env): KeyOn
         kube: {
             namespace: env.KO_KUBE_NAMESPACE ?? 'ilm',
             deployment: env.KO_KUBE_DEPLOYMENT ?? 'pkcs11-cryptography-provider',
-            container: env.KO_KUBE_CONTAINER ?? 'proxy-softhsm',
+            container: env.KO_KUBE_CONTAINER ?? 'broker-softhsm',
             module: env.KO_PKCS11_MODULE ?? '/usr/lib/softhsm/libsofthsm2.so',
         },
     };
