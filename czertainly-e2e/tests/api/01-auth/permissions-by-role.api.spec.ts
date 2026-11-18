@@ -44,6 +44,10 @@ async function prepare(fx: Fixtures): Promise<Matrix> {
     return { api: fx.api, spec, own: fx.own, refs, sw: restrictedRoleSwitch(fx.api, user, fx.restrictedToken!), token: fx.restrictedToken! };
 }
 
+// core#2842: with Detail on the RA profile but without certificate Create, the v2 issue answers 400 instead of 403.
+const hitsCore2842 = (f: Fixture, p: 'p1' | 'p2'): boolean =>
+    cellStatus((p === 'p1' ? MATRIX_B_RA_DETAIL_P1 : MATRIX_B_RA_DETAIL_P2)[f]) === 200 && cellStatus((p === 'p1' ? MATRIX_B_ISSUE_P1 : MATRIX_B_ISSUE_P2)[f]) === 403;
+
 function expectCell(what: string, answer: ApiAnswer, cell: Cell): void {
     expect(answer.status, `${what}: ${answer.text.slice(0, 200)}`).toBe(cellStatus(cell));
     if (cellStatus(cell) === 403) expect(accessDeniedProblems(answer.contentType, answer.json, cellPair(cell)), `${what}: the 403 body`).toEqual([]);
@@ -199,11 +203,9 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
     }
 
     for (const fixture of FIXTURES) {
-        // core#2842: a role that passes the RA profile Detail gate but lacks certificate Create gets 400 on issue, not 403.
-        const issueBug = cellStatus(MATRIX_B_RA_DETAIL_P1[fixture]) === 200 && cellStatus(MATRIX_B_ISSUE_P1[fixture]) === 403;
         test(`${GATE_WORDS[fixture]}`,
             testMeta({
-                id: 'API-AUTH-32', row: fixture, prio: 'P1', issue: 'ilm#427', needs: ['second-identity', 'ca'], ...(issueBug ? { bug: 'core#2842' } : {}),
+                id: 'API-AUTH-32', row: fixture, prio: 'P1', issue: 'ilm#427', needs: ['second-identity', 'ca'],
                 rule: [
                     'issue = RA_PROFILE:DETAIL on the profile + AUTHORITY:DETAIL, then CERTIFICATE:CREATE, then the asynchronous CERTIFICATE:ISSUE; RA profile create = RA_PROFILE:CREATE + AUTHORITY:DETAIL; RA profile list = RA_PROFILE:LIST + AUTHORITY:LIST; core#2153; ilm#427 steps 4–6',
                     'write operations; Spring Security 7 method security: the nested-bean gates answer 403, never a silent 2xx',
@@ -213,7 +215,6 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
             async ({ api, env, own, restrictedToken }) => {
                 test.setTimeout(ISSUING_MATRIX_ROW_TEST_MS);
                 const m = await prepare({ api, env, own, restrictedToken: restrictedToken?.bearer() });
-                test.fail(issueBug, 'core#2842: with RA profile Detail but without certificate Create, the v2 issue answers 400 "Failed to submit certificate request" instead of 403');
                 const auditor = fixture === 'F6' ? await auditorDocument(m.api) : undefined;
                 await test.step(`${ROLE_WORDS[fixture]} is the second identity's only role and is in force`, async () => applyFixture(m.api, m.sw, fixture, m.refs, m.spec, auditor));
                 const { p1, p2, authorityUuid } = m.refs;
@@ -241,14 +242,16 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
                     expectCell(`${ROLE_WORDS[fixture]} create RA profile`, res, MATRIX_B_RA_CREATE[fixture]);
                 });
 
-                await test.step('v2 issue on P1 (accepted and issued for the issuing, the one-RA-profile-object and the allow-all roles; 403 otherwise) and on P2 (403 for all)', async () => {
+                await test.step('v2 issue on P1 (accepted and issued for the issuing, the one-RA-profile-object and the allow-all roles; 403 otherwise) and on P2 (403 for all); a core#2842 cell is checked in its own test', async () => {
                     const csr = csrWithSan(runName(`rbac-issue-${fixture.toLowerCase()}`), [`${runId()}.example.test`]);
                     const issue = (ra: string) => callAs(m.api, m.token, 'POST', `/api/v2/operations/authorities/${authorityUuid}/raProfiles/${ra}/certificates`, { request: csr.derBase64, format: 'pkcs10', attributes: [], customAttributes: [] });
-                    const onP1 = await issue(p1.uuid);
-                    const accepted = m.own.probe('certificates', onP1, { name: runName(`rbac-issue-${fixture.toLowerCase()}`), note: 'issued by the second identity in the matrix' });
-                    expectCell(`${ROLE_WORDS[fixture]} issue on P1`, onP1, MATRIX_B_ISSUE_P1[fixture]);
-                    if (accepted) await waitIssued(m.api, accepted.uuid);
-                    expectCell(`${ROLE_WORDS[fixture]} issue on P2`, await issue(p2.uuid), MATRIX_B_ISSUE_P2[fixture]);
+                    if (!hitsCore2842(fixture, 'p1')) {
+                        const onP1 = await issue(p1.uuid);
+                        const accepted = m.own.probe('certificates', onP1, { name: runName(`rbac-issue-${fixture.toLowerCase()}`), note: 'issued by the second identity in the matrix' });
+                        expectCell(`${ROLE_WORDS[fixture]} issue on P1`, onP1, MATRIX_B_ISSUE_P1[fixture]);
+                        if (accepted) await waitIssued(m.api, accepted.uuid);
+                    }
+                    if (!hitsCore2842(fixture, 'p2')) expectCell(`${ROLE_WORDS[fixture]} issue on P2`, await issue(p2.uuid), MATRIX_B_ISSUE_P2[fixture]);
                 });
 
                 await test.step('Administration: roles list, users list, role create, the second identity\'s own permissions endpoint', async () => {
@@ -278,6 +281,34 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
                         }
                     });
                 }
+            });
+    }
+
+    for (const fixture of FIXTURES.filter((f) => hitsCore2842(f, 'p1') || hitsCore2842(f, 'p2'))) {
+        test(`${ROLE_WORDS[fixture]}: the v2 issue is refused with 403`,
+            testMeta({
+                id: 'API-AUTH-32', row: `${fixture}-issue`, prio: 'P1', issue: 'ilm#427', needs: ['second-identity', 'ca'], bug: 'core#2842',
+                rule: ['issue = RA_PROFILE:DETAIL on the profile, then CERTIFICATE:CREATE; a role without Create is refused with 403 naming Create / Certificate'],
+            }),
+            async ({ api, env, own, restrictedToken }) => {
+                test.setTimeout(ISSUING_MATRIX_ROW_TEST_MS);
+                const m = await prepare({ api, env, own, restrictedToken: restrictedToken?.bearer() });
+                const auditor = fixture === 'F6' ? await auditorDocument(m.api) : undefined;
+                await test.step(`${ROLE_WORDS[fixture]} is the second identity's only role and is in force`, async () => applyFixture(m.api, m.sw, fixture, m.refs, m.spec, auditor));
+                const name = runName(`rbac-issue-${fixture.toLowerCase()}`);
+                const csr = csrWithSan(name, [`${runId()}.example.test`]);
+                const answers: Array<[string, ApiAnswer, Cell]> = [];
+                for (const p of (['p1', 'p2'] as const).filter((k) => hitsCore2842(fixture, k))) {
+                    await test.step(`v2 issue on ${p.toUpperCase()} is refused, nothing is issued`, async () => {
+                        const res = await callAs(m.api, m.token, 'POST', `/api/v2/operations/authorities/${m.refs.authorityUuid}/raProfiles/${m.refs[p].uuid}/certificates`, { request: csr.derBase64, format: 'pkcs10', attributes: [], customAttributes: [] });
+                        m.own.probe('certificates', res, { name, note: 'issued by the second identity although its role has no certificate Create' });
+                        expect(res.status, `${ROLE_WORDS[fixture]} issue on ${p.toUpperCase()} is a 4xx refusal: ${res.text.slice(0, 200)}`).toBeGreaterThanOrEqual(400);
+                        expect(res.status, `${ROLE_WORDS[fixture]} issue on ${p.toUpperCase()} is never a 5xx`).toBeLessThan(500);
+                        answers.push([p.toUpperCase(), res, (p === 'p1' ? MATRIX_B_ISSUE_P1 : MATRIX_B_ISSUE_P2)[fixture]]);
+                    });
+                }
+                test.fail(true, 'core#2842: with RA profile Detail but without certificate Create, the v2 issue answers 400 "Failed to submit certificate request" instead of 403');
+                for (const [p, res, cell] of answers) expectCell(`${ROLE_WORDS[fixture]} issue on ${p}`, res, cell);
             });
     }
 

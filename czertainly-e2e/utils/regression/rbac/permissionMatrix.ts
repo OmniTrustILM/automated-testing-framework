@@ -69,7 +69,7 @@ export interface Pair {
 export type Cell = 200 | 201 | 403 | { status: 403; pair: Pair };
 
 const ok: Cell = 200;
-/** A create the role may make: the contract answers 201 "added" (RA profile create, interfaces RAProfileManagementController). */
+/** A create the role may make: the RA profile and role creates answer 201 by contract. */
 const created: Cell = 201;
 const no: Cell = 403;
 const denied = (action: string, resource: string): Cell => ({ status: 403, pair: { action, resource } });
@@ -157,7 +157,7 @@ export const MATRIX_B_ISSUE_P2: Record<Fixture, Cell> = row(no, no, no, no, no, 
 
 export const MATRIX_B_ROLES_LIST: Record<Fixture, Cell> = row(no, no, no, no, no, no, no, no, ok, ok);
 export const MATRIX_B_USERS_LIST: Record<Fixture, Cell> = MATRIX_B_ROLES_LIST;
-export const MATRIX_B_ROLE_CREATE: Record<Fixture, Cell> = row(no, no, no, no, no, no, no, no, ok, denied('Create', 'Role'));
+export const MATRIX_B_ROLE_CREATE: Record<Fixture, Cell> = row(no, no, no, no, no, no, no, no, created, denied('Create', 'Role'));
 export const MATRIX_B_USER_PERMISSIONS: Record<Fixture, Cell> = row(no, no, no, no, no, no, no, no, ok, ok);
 
 export const NESTED_GATE_FIXTURES: readonly Fixture[] = ['F0', 'F1', 'F3', 'F4a', 'F4b', 'F4c', 'F6'];

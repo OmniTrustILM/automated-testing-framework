@@ -70,9 +70,7 @@ export async function ensureRbacObjects(api: GuardedApi, spec: string): Promise<
     const g2 = await group('g2');
     const refs = { p1, p2, g1, g2 };
 
-    // A certificate on an RA profile is issued through it: the platform puts a certificate on an RA profile only when that profile's CA
-    // identifies it, so a PATCH of raProfileUuid on a self-signed upload answers 400 "not identified by authority". The rest are uploads.
-    // Issued in parallel, so the first test's budget holds two issue waits; one found again is waited for, so a failed one stops the setup.
+    // an RA profile takes only a certificate its CA identifies: a self-signed upload is refused with 400 "not identified by authority"
     const onRa = CERT_KEYS.filter((k) => CERT_PLAN[k].ra);
     const issued = new Map<CertKey, OwnRef>(await Promise.all(onRa.map(async (key): Promise<[CertKey, OwnRef]> => {
         const cn = runName(`rbac-${key}`);
