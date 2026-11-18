@@ -199,9 +199,11 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
     }
 
     for (const fixture of FIXTURES) {
+        // core#2842: a role that passes the RA profile Detail gate but lacks certificate Create gets 400 on issue, not 403.
+        const issueBug = cellStatus(MATRIX_B_RA_DETAIL_P1[fixture]) === 200 && cellStatus(MATRIX_B_ISSUE_P1[fixture]) === 403;
         test(`${GATE_WORDS[fixture]}`,
             testMeta({
-                id: 'API-AUTH-32', row: fixture, prio: 'P1', issue: 'ilm#427', needs: ['second-identity', 'ca'],
+                id: 'API-AUTH-32', row: fixture, prio: 'P1', issue: 'ilm#427', needs: ['second-identity', 'ca'], ...(issueBug ? { bug: 'core#2842' } : {}),
                 rule: [
                     'issue = RA_PROFILE:DETAIL on the profile + AUTHORITY:DETAIL, then CERTIFICATE:CREATE, then the asynchronous CERTIFICATE:ISSUE; RA profile create = RA_PROFILE:CREATE + AUTHORITY:DETAIL; RA profile list = RA_PROFILE:LIST + AUTHORITY:LIST; core#2153; ilm#427 steps 4–6',
                     'write operations; Spring Security 7 method security: the nested-bean gates answer 403, never a silent 2xx',
@@ -211,6 +213,7 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
             async ({ api, env, own, restrictedToken }) => {
                 test.setTimeout(ISSUING_MATRIX_ROW_TEST_MS);
                 const m = await prepare({ api, env, own, restrictedToken: restrictedToken?.bearer() });
+                test.fail(issueBug, 'core#2842: with RA profile Detail but without certificate Create, the v2 issue answers 400 "Failed to submit certificate request" instead of 403');
                 const auditor = fixture === 'F6' ? await auditorDocument(m.api) : undefined;
                 await test.step(`${ROLE_WORDS[fixture]} is the second identity's only role and is in force`, async () => applyFixture(m.api, m.sw, fixture, m.refs, m.spec, auditor));
                 const { p1, p2, authorityUuid } = m.refs;

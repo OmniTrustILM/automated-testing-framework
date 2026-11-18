@@ -237,7 +237,7 @@ test('matrix B is internally consistent: issue needs RA-profile detail on P1; P2
     for (const f of FIXTURES) {
         if (cellStatus(MATRIX_B_ISSUE_P1[f]) === 200) expect(cellStatus(MATRIX_B_RA_DETAIL_P1[f]), `${f}: issue on P1 needs detail on P1`).toBe(200);
         expect(cellStatus(MATRIX_B_ISSUE_P2[f]), `${f}: nobody issues on P2`).toBe(403);
-        if (cellStatus(MATRIX_B_RA_CREATE[f]) === 200) expect(cellStatus(MATRIX_B_ROLES_LIST[f]), `${f}: the only creator holds every resource`).toBe(200);
+        if (cellStatus(MATRIX_B_RA_CREATE[f]) === 201) expect(cellStatus(MATRIX_B_ROLES_LIST[f]), `${f}: the only creator holds every resource`).toBe(200);
     }
     for (const f of ['F4a', 'F4b', 'F4c'] as const) {
         const n = DENY_NUANCES[f];

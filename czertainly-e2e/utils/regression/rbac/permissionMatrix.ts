@@ -66,9 +66,11 @@ export interface Pair {
     resource: string;
 }
 
-export type Cell = 200 | 403 | { status: 403; pair: Pair };
+export type Cell = 200 | 201 | 403 | { status: 403; pair: Pair };
 
 const ok: Cell = 200;
+/** A create the role may make: the contract answers 201 "added" (RA profile create, interfaces RAProfileManagementController). */
+const created: Cell = 201;
 const no: Cell = 403;
 const denied = (action: string, resource: string): Cell => ({ status: 403, pair: { action, resource } });
 const dtCert = denied('Detail', 'Certificate');
@@ -149,7 +151,7 @@ export const MATRIX_B_RA_LIST: Record<Fixture, RaListCell> = {
 
 export const MATRIX_B_RA_DETAIL_P1: Record<Fixture, Cell> = row(no, no, ok, ok, no, ok, ok, ok, ok, ok);
 export const MATRIX_B_RA_DETAIL_P2: Record<Fixture, Cell> = row(no, no, dtRap, dtRap, no, dtRap, ok, ok, dtRap, ok);
-export const MATRIX_B_RA_CREATE: Record<Fixture, Cell> = row(dtAuthority, dtAuthority, crRap, crRap, dtAuthority, crRap, crRap, crRap, ok, crRap);
+export const MATRIX_B_RA_CREATE: Record<Fixture, Cell> = row(dtAuthority, dtAuthority, crRap, crRap, dtAuthority, crRap, crRap, crRap, created, crRap);
 export const MATRIX_B_ISSUE_P1: Record<Fixture, Cell> = row(no, no, ok, ok, no, no, no, no, ok, no);
 export const MATRIX_B_ISSUE_P2: Record<Fixture, Cell> = row(no, no, no, no, no, no, no, no, no, no);
 
