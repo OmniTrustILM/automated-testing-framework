@@ -72,7 +72,7 @@ export async function ensureRbacObjects(api: GuardedApi, spec: string): Promise<
 
     // an RA profile takes only a certificate its CA identifies: a self-signed upload is refused with 400 "not identified by authority"
     const onRa = CERT_KEYS.filter((k) => CERT_PLAN[k].ra);
-    const issued = new Map<CertKey, OwnRef>(await Promise.all(onRa.map(async (key): Promise<[CertKey, OwnRef]> => {
+    const settled = await Promise.allSettled(onRa.map(async (key): Promise<[CertKey, OwnRef]> => {
         const cn = runName(`rbac-${key}`);
         const known = ledgerRef('certificates', cn);
         if (known) {
@@ -88,7 +88,11 @@ export async function ensureRbacObjects(api: GuardedApi, spec: string): Promise<
             note: `RBAC fixture certificate ${key} (issued through ${CERT_PLAN[key].ra!.toUpperCase()})`,
         });
         return [key, cert];
-    })));
+    }));
+    // both issuances finish and record what they created before a failure stops the setup
+    const failed = settled.find((s): s is PromiseRejectedResult => s.status === 'rejected');
+    if (failed) throw failed.reason;
+    const issued = new Map<CertKey, OwnRef>(settled.map((s) => (s as PromiseFulfilledResult<[CertKey, OwnRef]>).value));
 
     const certs = {} as Record<CertKey, OwnRef>;
     for (const key of CERT_KEYS) {
