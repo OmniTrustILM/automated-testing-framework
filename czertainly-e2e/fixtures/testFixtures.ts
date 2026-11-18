@@ -54,7 +54,8 @@ export const test = base.extend<{
   restrictedToken: async ({ request, env }, use, testInfo) => {
     const ded = restrictedIdentity();
     if (env.authMode === 'header' || !ded) return use(undefined);
-    const { token, skip } = await tokenOrSkip(request, env, ded, RESTRICTED_TOKEN_UNAVAILABLE);
+    // The RBAC rows hold this token while their first row issues fixtures: never take a cached one that is about to expire.
+    const { token, skip } = await tokenOrSkip(request, env, ded, RESTRICTED_TOKEN_UNAVAILABLE, { minLifetimeMs: minLifetimeForTest(testInfo.timeout) });
     if (skip) testInfo.skip(true, skip);
     await use(token);
   },

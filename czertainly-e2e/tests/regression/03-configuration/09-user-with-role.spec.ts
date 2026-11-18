@@ -1,12 +1,17 @@
 /**
  * REG-CFG-09 — Users in the admin UI (release checklist: Configuration 9; ilm#427). Creates a user with the run role
- * (enabled, role shown on both sides), edits it with the username locked (.b) and deletes it (.c).
+ * (enabled, role shown on both sides), signs in as the second test user with that role, edits a user with the username locked (.b)
+ * and deletes one (.c).
  */
 import { expect, test } from '../../../fixtures/regressionFixtures';
+import { LoginPage } from '../../../pages/LoginPage';
 import { RolePage } from '../../../pages/RolePage';
 import { UserPage } from '../../../pages/UserPage';
 import { apiJson } from '../../../utils/regression/apiReads';
 import { ensureRunRole } from '../../../utils/regression/ownRoles';
+import { expectRolesAfterSignIn, restrictedIdentity } from '../../../utils/regression/rbac/identities';
+import { setRestrictedEnabled } from '../../../utils/regression/rbac/permissionObjects';
+import { deleteOwnUserOrRole } from '../../../utils/regression/rbac/authApi';
 import { setOwnUserRoles } from '../../../utils/regression/ownUsers';
 import { findByName } from '../../../utils/regression/listReads';
 import { ownName } from '../../../utils/regression/ledger/runState';
@@ -61,14 +66,46 @@ test.describe('User with a role', { tag: tags.regression }, () => {
             });
         });
 
-    // The reason is the `parked` annotation of the declaration: it reaches the report (a fixme body never runs).
-    test.fixme('the new user can sign in when an identity-provider account exists for it',
+    test('a user with the run role signs in to the UI and keeps the role',
         testMeta({
-            id: 'REG-CFG-09', row: 'sign in as the new user', prio: 'P1', issue: 'ilm#427',
-            rule: ['sign in as the new user (the username must match an identity-provider account)'],
-            parked: 'needs an identity-provider account whose username is the new user; the suite cannot create one',
+            id: 'REG-CFG-09', row: 'sign in as the new user', prio: 'P1', issue: 'ilm#427', needs: 'second-identity',
+            rule: [
+                'sign in as a user with a role: the username must match an identity-provider account, so the row uses the tier\'s second test user',
+                'its ILM user is made by this run, holds only the run role and is deleted at the end; the UI sign-in keeps the role the API set (core#2226 sync policy)',
+            ],
         }),
-        async () => {});
+        async ({ browser, api, own, env }) => {
+            test.skip(env.authMode !== 'local', `AUTH_MODE=${env.authMode}: no identity-provider sign-in form on this tier`);
+            const role = await test.step('Prerequisite: the run role', async () => ensureRunRole(api, own.spec));
+            const identity = restrictedIdentity()!;
+            const user = await test.step('Prerequisite: the second test user\'s ILM user, made by this run, with the run role', async () => {
+                const created = await own.restrictedUser();
+                await setOwnUserRoles(api, created, [role]);
+                const enabled = await setRestrictedEnabled(api, created, true);
+                expect(enabled.status, `enabling the user: ${enabled.text.slice(0, 300)}`).toBeLessThan(300);
+                return created;
+            });
+
+            const context = await browser.newContext({ baseURL: env.baseUrl, ignoreHTTPSErrors: true });
+            let passed = false;
+            try {
+                const page = await context.newPage();
+                const login = new LoginPage(page, { ...env, username: identity.username, password: identity.password });
+                await test.step('A fresh browser → sign-in form → the second test user\'s credentials', async () => {
+                    await login.goto();
+                    await login.login();
+                });
+                await test.step('The app opens signed in as that user', async () => login.assertSignedInAs(user.name));
+                await test.step('API as that user: the profile holds exactly the run role', async () => expectRolesAfterSignIn(page, [role.uuid]));
+                passed = true;
+            } finally {
+                await context.close();
+                // The API run makes this user under its own run id; one left behind would skip its RBAC rows. The teardown is the
+                // fallback, so a failed delete never hides the row's own failure.
+                await test.step('Cleanup: delete the ILM user again', async () => deleteOwnUserOrRole(api, 'users', user, own.spec, 'REG-CFG-09 sign-in user'))
+                    .catch((e: unknown) => { if (passed) throw e; });
+            }
+        });
 
     test('editing a user keeps its locked username, and first name, last name and e-mail persist',
         testMeta({

@@ -8,12 +8,12 @@ import { listAll, PermissionDocument, readPermissions, replaceOwnUserRoles, save
 import { callAs, Credentials, parseProfile, Profile } from './identities';
 import { GuardedApi } from '../guard/types';
 import { selfSignedPem } from '../pkiBuilders';
-import { apiJson } from '../apiReads';
+import { apiJson, getCertificate } from '../apiReads';
 import { pickHealthyAuthority, RaProfileSourceMissing, createOwnRaProfileLike, raProfileBodyLike } from '../ownRaProfiles';
 import { OwnRef, readLedger } from '../ledger/ledger';
 import { runName, runId } from '../ledger/runState';
 import { createOwnGroup, groupUuidsOf } from '../ownGroups';
-import { uploadOwnCertificate } from '../ownCertificates';
+import { issueOwnCertificate, uploadOwnCertificate } from '../ownCertificates';
 import { createOwnRole } from '../ownRoles';
 import { createOwn } from '../ownCrud';
 import { userBody } from '../ownUsers';
@@ -29,6 +29,16 @@ function ledgerRef(type: string, name: string): OwnRef | undefined {
         found = l.event === 'created' ? { uuid: l.uuid, name: l.name, kind: 'own' } : undefined;
     }
     return found;
+}
+
+/** The newest live `created` line of this run whose name starts with `prefix` (a name made with a unique suffix). */
+function ledgerRefByPrefix(type: string, prefix: string): OwnRef | undefined {
+    const names = [...new Set(readLedger().filter((l) => l.runId === runId() && l.type === type && l.name.startsWith(prefix)).map((l) => l.name))];
+    for (const name of names.reverse()) {
+        const ref = ledgerRef(type, name);
+        if (ref) return ref;
+    }
+    return undefined;
 }
 
 export interface RbacObjects extends RbacRefs {
@@ -70,21 +80,27 @@ export async function ensureRbacObjects(api: GuardedApi, spec: string): Promise<
 
     const certs = {} as Record<CertKey, OwnRef>;
     for (const key of CERT_KEYS) {
-        const cn = runName(`rbac-${key}`);
-        const known = ledgerRef('certificates', cn);
-        const cert = known ?? await uploadOwnCertificate(api, selfSignedPem(cn).pem, cn, spec, `RBAC fixture certificate ${key} (self-signed upload)`);
-        certs[key] = cert;
         const plan = CERT_PLAN[key];
-        if (!plan.ra && !plan.groups.length) continue;
-        const ra = plan.ra ? refs[plan.ra].uuid : undefined;
+        const cn = runName(`rbac-${key}`);
+        // A certificate on an RA profile is issued through it: core lets a certificate move to an RA profile only when that
+        // profile's authority identifies it, which a self-signed upload never is.
+        const onRa = plan.ra ? refs[plan.ra] : undefined;
+        let known = onRa ? ledgerRefByPrefix('certificates', `${cn}-`) : ledgerRef('certificates', cn);
+        // An issue whose wait failed is ledgered but not issued: issue a new one rather than build the matrix on it.
+        if (known && onRa && (await getCertificate(api, known.uuid)).state !== 'issued') known = undefined;
+        const cert = known ?? (onRa
+            ? await issueOwnCertificate(api, { uuid: onRa.uuid, name: onRa.name, authorityUuid: pick.authorityUuid }, spec,
+                { suffix: `rbac-${key}`, fillRequiredAttributes: true, note: `RBAC fixture certificate ${key} (issued on ${plan.ra!.toUpperCase()})` })
+            : await uploadOwnCertificate(api, selfSignedPem(cn).pem, cn, spec, `RBAC fixture certificate ${key} (self-signed upload)`));
+        certs[key] = { uuid: cert.uuid, name: cert.name, kind: 'own' };
         const groups = plan.groups.map((g) => refs[g].uuid);
+        if (!groups.length) continue;
         // A certificate found again keeps its plan only if the earlier PATCH landed; otherwise the permission rows must not run.
         if (known) {
             const live = await apiJson<JsonObject>(api, 'GET', `/api/v1/certificates/${cert.uuid}`);
-            const liveRa = (live.raProfile as JsonObject | undefined)?.uuid;
-            if ((!ra || liveRa === ra) && (!groups.length || groupUuidsOf(live).join() === [...groups].sort().join())) continue;
+            if (groupUuidsOf(live).join() === [...groups].sort().join()) continue;
         }
-        await apiJson(api, 'PATCH', `/api/v1/certificates/${cert.uuid}`, { ...(ra ? { raProfileUuid: ra } : {}), ...(groups.length ? { groupUuids: groups } : {}) });
+        await apiJson(api, 'PATCH', `/api/v1/certificates/${cert.uuid}`, { groupUuids: groups });
     }
     return { authorityUuid: pick.authorityUuid, source: { uuid: pick.uuid, authorityUuid: pick.authorityUuid }, ...refs, certs };
 }

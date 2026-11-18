@@ -183,6 +183,12 @@ class AuthCore extends BaseCore {
             this.certs.set(uuid, { uuid, commonName: cn, key: { uuid: this.next() } });
             return { status: 200, body: { uuid } };
         }
+        if ((m = /^\/api\/v2\/operations\/authorities\/([0-9a-f-]{36})\/raProfiles\/([0-9a-f-]{36})\/certificates$/.exec(path)) && a.method === 'POST') {
+            const csr = forge.pki.certificationRequestFromAsn1(forge.asn1.fromDer(Buffer.from(String(body.request), 'base64').toString('binary')));
+            const uuid = this.next();
+            this.certs.set(uuid, { uuid, commonName: csr.subject.getField('CN').value as string, state: 'issued', raProfile: { uuid: m[2] } });
+            return { status: 200, body: { uuid, certificateData: '' } };
+        }
         if ((m = /^\/api\/v1\/certificates\/([0-9a-f-]{36})$/.exec(path)) && this.certs.has(m[1])) {
             if (a.method === 'PATCH') {
                 if (this.failNextCertPatch) {
@@ -425,7 +431,7 @@ test('applyFixture: the fixture role is built from its document, becomes DED\'s 
     expect(await sw.profile()).toBeDefined();
 });
 
-test('ensureRbacObjects: two own RA profiles under the pre-existing authority, two groups, six certificates given their RA profile and groups; a second call sends nothing', async () => {
+test('ensureRbacObjects: two own RA profiles under the pre-existing authority, two groups, six certificates (issued on their RA profile, or uploaded and given their groups); a second call sends nothing', async () => {
     const refs = await ensureRbacObjects(api, 'T');
     expect(refs.authorityUuid).toBe(A_EJBCA);
     expect([refs.p1.name, refs.p2.name, refs.g1.name, refs.g2.name]).toEqual([runName('rbac-p1'), runName('rbac-p2'), runName('rbac-g1'), runName('rbac-g2')]);
@@ -434,8 +440,13 @@ test('ensureRbacObjects: two own RA profiles under the pre-existing authority, t
     expect(wire().filter((w) => w.startsWith('POST /api/v1/authorities/'))).toHaveLength(2);
     expect(wire().filter((w) => w.endsWith('/enable'))).toHaveLength(2);
     const patches = Object.fromEntries(server.arrived.filter((a) => a.method === 'PATCH').map((a) => [a.url.split('/').pop(), a.body ? JSON.parse(a.body) : {}]));
-    expect(patches[refs.certs.c1.uuid]).toEqual({ raProfileUuid: refs.p1.uuid });
-    expect(patches[refs.certs.c2.uuid]).toEqual({ raProfileUuid: refs.p2.uuid });
+    expect(wire().filter((w) => w.startsWith('POST /api/v2/operations/')), 'c1 and c2 are issued on P1 and P2').toEqual([
+        `POST /api/v2/operations/authorities/${A_EJBCA}/raProfiles/${refs.p1.uuid}/certificates`,
+        `POST /api/v2/operations/authorities/${A_EJBCA}/raProfiles/${refs.p2.uuid}/certificates`,
+    ]);
+    expect(core.certs.get(refs.certs.c1.uuid)!.raProfile).toEqual({ uuid: refs.p1.uuid });
+    expect(patches[refs.certs.c1.uuid] ?? {}, 'no RA profile switch: core refuses one the authority cannot identify').toEqual({});
+    expect(patches[refs.certs.c2.uuid] ?? {}).toEqual({});
     expect(patches[refs.certs.c3.uuid] ?? {}).toEqual({});
     expect(patches[refs.certs.cg12.uuid]).toEqual({ groupUuids: [refs.g1.uuid, refs.g2.uuid] });
     expect(patches[refs.certs.cg2.uuid]).toEqual({ groupUuids: [refs.g2.uuid] });
@@ -450,17 +461,30 @@ test('ensureRbacObjects: two own RA profiles under the pre-existing authority, t
     expect(wire()).toEqual([]);
 });
 
-test('ensureRbacObjects: a ledgered certificate whose PATCH was lost gets its RA profile again; one already in place is left alone', async () => {
+test('ensureRbacObjects: a ledgered certificate whose group PATCH was lost gets its groups again; one already in place is left alone', async () => {
     core.failNextCertPatch = true;
-    await expect(ensureRbacObjects(api, 'T'), 'the PATCH of the first certificate fails that call').rejects.toThrow();
+    await expect(ensureRbacObjects(api, 'T'), 'the first group PATCH fails that call').rejects.toThrow();
     server.reset();
     const refs = await ensureRbacObjects(api, 'T');
-    const c1 = refs.certs.c1.uuid;
-    expect(wire().filter((w) => w === `PATCH /api/v1/certificates/${c1}`), 'the lost PATCH is sent again').toHaveLength(1);
-    expect(core.certs.get(c1)!.raProfile).toEqual({ uuid: refs.p1.uuid });
+    const cg1 = refs.certs.cg1.uuid;
+    expect(wire().filter((w) => w === `PATCH /api/v1/certificates/${cg1}`), 'the lost PATCH is sent again').toHaveLength(1);
+    expect(wire().filter((w) => w.startsWith('POST /api/v2/operations/')), 'the issued certificates are found again, not issued twice').toEqual([]);
+    expect(core.certs.get(cg1)!.groups).toEqual([{ uuid: refs.g1.uuid }]);
     server.reset();
     await ensureRbacObjects(api, 'T');
     expect(wire(), 'every certificate carries its plan: nothing is sent').toEqual([]);
+});
+
+test('ensureRbacObjects: a ledgered RA-profile certificate that is not issued is replaced by a new issue, which later calls find', async () => {
+    const refs = await ensureRbacObjects(api, 'T');
+    core.certs.get(refs.certs.c1.uuid)!.state = 'failed';
+    server.reset();
+    const again = await ensureRbacObjects(api, 'T');
+    expect(wire(), 'only c1 is issued again, on P1').toEqual([`POST /api/v2/operations/authorities/${A_EJBCA}/raProfiles/${refs.p1.uuid}/certificates`]);
+    expect(again.certs.c1.uuid).not.toBe(refs.certs.c1.uuid);
+    server.reset();
+    expect((await ensureRbacObjects(api, 'T')).certs.c1.uuid, 'the newest issue is the one found').toBe(again.certs.c1.uuid);
+    expect(wire()).toEqual([]);
 });
 
 test('ensureRbacObjects: groups are compared as a set; a ledgered certificate missing one of its groups gets them again', async () => {

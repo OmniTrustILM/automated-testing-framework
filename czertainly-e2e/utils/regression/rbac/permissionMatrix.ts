@@ -66,10 +66,12 @@ export interface Pair {
     resource: string;
 }
 
-export type Cell = 200 | 403 | { status: 403; pair: Pair };
+export type Cell = 200 | 201 | 403 | { status: 403; pair: Pair };
 
 const ok: Cell = 200;
 const no: Cell = 403;
+/** A create the role may make answers 201 Created (core: ResponseEntity.created). */
+const created: Cell = 201;
 const denied = (action: string, resource: string): Cell => ({ status: 403, pair: { action, resource } });
 const dtCert = denied('Detail', 'Certificate');
 const mbRap = denied('Members', 'RA Profile');
@@ -149,13 +151,13 @@ export const MATRIX_B_RA_LIST: Record<Fixture, RaListCell> = {
 
 export const MATRIX_B_RA_DETAIL_P1: Record<Fixture, Cell> = row(no, no, ok, ok, no, ok, ok, ok, ok, ok);
 export const MATRIX_B_RA_DETAIL_P2: Record<Fixture, Cell> = row(no, no, dtRap, dtRap, no, dtRap, ok, ok, dtRap, ok);
-export const MATRIX_B_RA_CREATE: Record<Fixture, Cell> = row(dtAuthority, dtAuthority, crRap, crRap, dtAuthority, crRap, crRap, crRap, ok, crRap);
+export const MATRIX_B_RA_CREATE: Record<Fixture, Cell> = row(dtAuthority, dtAuthority, crRap, crRap, dtAuthority, crRap, crRap, crRap, created, crRap);
 export const MATRIX_B_ISSUE_P1: Record<Fixture, Cell> = row(no, no, ok, ok, no, no, no, no, ok, no);
 export const MATRIX_B_ISSUE_P2: Record<Fixture, Cell> = row(no, no, no, no, no, no, no, no, no, no);
 
 export const MATRIX_B_ROLES_LIST: Record<Fixture, Cell> = row(no, no, no, no, no, no, no, no, ok, ok);
 export const MATRIX_B_USERS_LIST: Record<Fixture, Cell> = MATRIX_B_ROLES_LIST;
-export const MATRIX_B_ROLE_CREATE: Record<Fixture, Cell> = row(no, no, no, no, no, no, no, no, ok, denied('Create', 'Role'));
+export const MATRIX_B_ROLE_CREATE: Record<Fixture, Cell> = row(no, no, no, no, no, no, no, no, created, denied('Create', 'Role'));
 export const MATRIX_B_USER_PERMISSIONS: Record<Fixture, Cell> = row(no, no, no, no, no, no, no, no, ok, ok);
 
 export const NESTED_GATE_FIXTURES: readonly Fixture[] = ['F0', 'F1', 'F3', 'F4a', 'F4b', 'F4c', 'F6'];

@@ -9,16 +9,36 @@ import { STATE_LABELS, stateGuardText } from '../../../utils/regression/lifecycl
 import { cancelPending, confirmRevoke, finalizeIssue, issueExisting, rekeyOwnCertificate, renewOwnCertificate, revokeOwnCertificate } from '../../../utils/regression/lifecycle/certificateOperations';
 import { newChallenge, registerOwnCertificate } from '../../../utils/regression/lifecycle/preRegistration';
 import { expectRefused } from '../../../utils/regression/errorContract';
-import { csrWithEmailSan, newKeyPair, csrFromKey } from '../../../utils/regression/pkiBuilders';
+import { csrFromKeyWithSubject, csrWithEmailSan, newKeyPair, csrFromKey, sansOfDetail } from '../../../utils/regression/pkiBuilders';
 import { submitOwnCertificate, waitRevoked } from '../../../utils/regression/ownCertificates';
 import type { RaLike } from '../../../utils/regression/ownRaProfiles';
 import type { GuardedApi } from '../../../utils/regression/guard/types';
 import { getCertificate, ApiAnswer } from '../../../utils/regression/apiReads';
 import { OwnRef } from '../../../utils/regression/ledger/ledger';
+import type { OwnObjects } from '../../../utils/regression/ownObjects';
 import { ownCommonName } from '../../../utils/regression/ledger/runState';
 import { testMeta, tags } from '../../../utils/regression/tags';
-import { ISSUED_WAIT_MS, ISSUE_MS, LEFTOVER_APPROVAL_LOOKUP_MS, LIFECYCLE_MS, MANY_STEPS_TEST_MS, QUICK_STATE_WAIT_MS, STATE_CHANGE_WAIT_MS } from '../../../utils/regression/timeouts';
+import { FAILED_FIXTURE_ROW_TEST_MS, ISSUED_WAIT_MS, ISSUE_MS, LEFTOVER_APPROVAL_LOOKUP_MS, LIFECYCLE_MS, MANY_STEPS_TEST_MS, QUICK_STATE_WAIT_MS, STATE_CHANGE_WAIT_MS } from '../../../utils/regression/timeouts';
 import { waitForCertificateState } from '../../../utils/regression/wait/certificateState';
+
+/** A failed successor from two parallel renews of one own certificate (EJBCA-NG rolls one back, API-CERT-36); undefined when both issue. */
+async function failedByParallelRenew(api: GuardedApi, own: OwnObjects, ra: RaLike): Promise<OwnRef | undefined> {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+        const a = await own.certificate.issue(ra, { suffix: `c08fr${attempt}` });
+        const detail = await getCertificate(api, a.uuid);
+        const csr = csrFromKeyWithSubject(a.keys, String(detail.subjectDn), sansOfDetail(detail.subjectAlternativeNames));
+        const both = await Promise.all([1, 2].map((n) =>
+            renewOwnCertificate(api, a, ra, own.spec, { csrDerBase64: csr.derBase64, note: `API-CERT-08 failed fixture (parallel renew ${n})` })));
+        for (const r of both) expect(r.status, r.text.slice(0, 300)).toBe(200);
+        const outcomes = await Promise.all(both.map((r) => waitForCertificateState(api, r.successor!.uuid, 'issued', ISSUED_WAIT_MS).then(
+            () => 'issued',
+            (e: unknown) => { if (/reached "failed"/.test(String(e))) return 'failed'; throw e; })));
+        for (const r of both) await own.derivedKey(r.successor!.uuid, r.createdAfter);
+        const at = outcomes.indexOf('failed');
+        if (at >= 0) return both[at].successor!;
+    }
+    return undefined;
+}
 
 /** The matrix on one fixture: every operation refused with its text, body a one-element string array, never 5xx. */
 async function assertMatrix(api: GuardedApi, spec: string, cert: OwnRef & { name: string }, ra: RaLike, state: string): Promise<void> {
@@ -126,9 +146,12 @@ test.describe('Certificate state and operation refusal matrix', { tag: tags.api 
         });
 
     test('every operation on a failed certificate is refused',
-        testMeta({ id: 'API-CERT-08', row: 'failed', prio: 'P1', issue: 'ilm#429', needs: ['ejbca-ng', 'ca'], rule: [...RULES, 'EJBCA-NG end-entity profile refuses an e-mail SAN: the only shared-tier producer of failed'] }),
+        testMeta({
+            id: 'API-CERT-08', row: 'failed', prio: 'P1', issue: 'ilm#429', needs: ['ejbca-ng', 'ca'],
+            rule: [...RULES, 'shared-tier producers of failed: EJBCA-NG refuses an e-mail SAN (end-entity profile), else it rolls back one of two parallel renews of one end entity (API-CERT-36)'],
+        }),
         async ({ api, own, ownRaProfile }) => {
-            test.setTimeout(ISSUE_MS);
+            test.setTimeout(FAILED_FIXTURE_ROW_TEST_MS);
             const ra = ownRaProfile;
             const cert = await test.step('Fixture: an issue with an e-mail SAN the end-entity profile refuses → failed', async () => {
                 const cn = ownCommonName('c08fl');
@@ -137,14 +160,16 @@ test.describe('Certificate state and operation refusal matrix', { tag: tags.api 
                 expect(c.answer.status, c.answer.text.slice(0, 300)).toBe(200);
                 try {
                     await waitForCertificateState(api, c.uuid, 'failed', ISSUED_WAIT_MS, { failOn: ['issued', 'rejected'] });
+                    return c;
                 } catch (e) {
-                    const state = (await getCertificate(api, c.uuid)).state;
-                    // Not decidable before the issue: only the CA's answer to the e-mail SAN says whether the fixture
-                    // ends `failed` or `issued`.
-                    test.skip(state === 'issued', 'the CA accepted the e-mail SAN: no failed fixture on this tier (end-entity profile configuration)');
-                    throw e;
+                    // Only the CA's answer to the e-mail SAN says whether the fixture ends `failed` or `issued`; any other wait error fails.
+                    if (!/reached "issued" instead of "failed"/.test(String(e))) throw e;
+                    return undefined;
                 }
-                return c;
+            }) ?? await test.step('Fixture fallback: the CA accepted the e-mail SAN → two parallel renews, the one EJBCA rolls back is failed', async () => {
+                const failed = await failedByParallelRenew(api, own, ra);
+                test.skip(!failed, 'the CA accepted the e-mail SAN and rolled back neither of two parallel renews: no failed fixture on this tier');
+                return failed!;
             });
             await assertMatrix(api, own.spec, cert, ra, 'failed');
         });

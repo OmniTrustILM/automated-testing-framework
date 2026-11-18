@@ -139,6 +139,9 @@ export const ISSUE_AND_REVOKE_TEST_MS = 6 * MINUTE_MS;
 
 export const ISSUING_MATRIX_ROW_TEST_MS = 10 * MINUTE_MS;
 
+/** API-CERT-08 failed row: up to five issued waits in a row (the e-mail SAN probe, then two attempts of an issue and a parallel renew), then the matrix. */
+export const FAILED_FIXTURE_ROW_TEST_MS = 5 * ISSUED_WAIT_MS + MANY_STEPS_TEST_MS;
+
 export const ASYNC_UPLOAD_WAIT_MS = 90 * 1000;
 
 export const LEFTOVER_APPROVAL_LOOKUP_MS = 10 * 1000;
