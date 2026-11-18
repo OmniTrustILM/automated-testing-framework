@@ -253,14 +253,18 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
                 });
 
                 await test.step('v2 issue on P1 (accepted and issued for the issuing, the one-RA-profile-object and the allow-all roles; 403 otherwise) and on P2 (403 for all)', async () => {
-                    const csr = csrWithSan(runName(`rbac-issue-${fixture.toLowerCase()}`), [`${runId()}.example.test`]);
+                    const issueName = runName(`rbac-issue-${fixture.toLowerCase()}`);
+                    const csr = csrWithSan(issueName, [`${runId()}.example.test`]);
                     const issue = (ra: string) => callAs(m.api, m.token, 'POST', `/api/v2/operations/authorities/${authorityUuid}/raProfiles/${ra}/certificates`, { request: csr.derBase64, format: 'pkcs10', attributes: [], customAttributes: [] });
                     const onP1 = await issue(p1.uuid);
-                    const accepted = m.own.probe('certificates', onP1, { name: runName(`rbac-issue-${fixture.toLowerCase()}`), note: 'issued by the second identity in the matrix' });
+                    const accepted = m.own.probe('certificates', onP1, { name: issueName, note: 'issued by the second identity in the matrix' });
                     if (issueBug) knownIssueAnswers.push(knownIssueAnswer(fixture, 'issue on P1', onP1, MATRIX_B_ISSUE_P1[fixture]));
                     else expectCell(`${ROLE_WORDS[fixture]} issue on P1`, onP1, MATRIX_B_ISSUE_P1[fixture]);
                     if (accepted) await waitIssued(m.api, accepted.uuid);
                     const onP2 = await issue(p2.uuid);
+                    m.own.probe('certificates', onP2, { name: issueName, note: 'issued on P2 by the second identity in the matrix' });
+                    // core#2842 hides only the refusal's status: a refused issue must store nothing
+                    if (issueBug) expect(await m.own.recordNamed(issueName, 'stored by a refused issue of the second identity'), `${ROLE_WORDS[fixture]}: a refused issue stores no certificate`).toEqual([]);
                     if (ISSUE_P2_400_BUG.has(fixture)) knownIssueAnswers.push(knownIssueAnswer(fixture, 'issue on P2', onP2, MATRIX_B_ISSUE_P2[fixture]));
                     else expectCell(`${ROLE_WORDS[fixture]} issue on P2`, onP2, MATRIX_B_ISSUE_P2[fixture]);
                 });
