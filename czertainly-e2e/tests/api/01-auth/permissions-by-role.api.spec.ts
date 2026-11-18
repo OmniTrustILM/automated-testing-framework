@@ -8,6 +8,7 @@ import { callAs, isNotGrantableAction, replicaBlocker } from '../../../utils/reg
 import { accessDeniedProblems, Cell, cellPair, cellStatus, CERT_KEYS, CertKey, DENY_NUANCES, Fixture, FIXTURES, MATRIX_A_DETAIL, MATRIX_A_LIST, MATRIX_A_PROFILE, MATRIX_B_ISSUE_P1, MATRIX_B_ISSUE_P2, MATRIX_B_RA_CREATE, MATRIX_B_RA_DETAIL_P1, MATRIX_B_RA_DETAIL_P2, MATRIX_B_RA_LIST, MATRIX_B_ROLE_CREATE, MATRIX_B_ROLES_LIST, MATRIX_B_USER_PERMISSIONS, MATRIX_B_USERS_LIST, NESTED_GATE_FIXTURES } from '../../../utils/regression/rbac/permissionMatrix';
 import { applyFixture, auditorDocument, ensureRbacObjects, raProfileCreateBody, RbacObjects, restrictedRoleSwitch, RoleSwitch } from '../../../utils/regression/rbac/permissionObjects';
 import { waitIssued } from '../../../utils/regression/ownCertificates';
+import { recordCertificatesNamed } from '../../../utils/regression/issuedRecords';
 import { csrWithSan, selfSignedPem } from '../../../utils/regression/pkiBuilders';
 import { runName, runId } from '../../../utils/regression/ledger/runState';
 import { testMeta, tags } from '../../../utils/regression/tags';
@@ -297,18 +298,21 @@ test.describe('RBAC matrix as the restricted second identity', { tag: tags.api }
                 await test.step(`${ROLE_WORDS[fixture]} is the second identity's only role and is in force`, async () => applyFixture(m.api, m.sw, fixture, m.refs, m.spec, auditor));
                 const name = runName(`rbac-issue-${fixture.toLowerCase()}`);
                 const csr = csrWithSan(name, [`${runId()}.example.test`]);
-                const answers: Array<[string, ApiAnswer, Cell]> = [];
+                const bugShaped: Array<[string, ApiAnswer, Cell]> = [];
                 for (const p of (['p1', 'p2'] as const).filter((k) => hitsCore2842(fixture, k))) {
                     await test.step(`v2 issue on ${p.toUpperCase()} is refused, nothing is issued`, async () => {
+                        const what = `${ROLE_WORDS[fixture]} issue on ${p.toUpperCase()}`;
+                        const cell = (p === 'p1' ? MATRIX_B_ISSUE_P1 : MATRIX_B_ISSUE_P2)[fixture];
                         const res = await callAs(m.api, m.token, 'POST', `/api/v2/operations/authorities/${m.refs.authorityUuid}/raProfiles/${m.refs[p].uuid}/certificates`, { request: csr.derBase64, format: 'pkcs10', attributes: [], customAttributes: [] });
                         m.own.probe('certificates', res, { name, note: 'issued by the second identity although its role has no certificate Create' });
-                        expect(res.status, `${ROLE_WORDS[fixture]} issue on ${p.toUpperCase()} is a 4xx refusal: ${res.text.slice(0, 200)}`).toBeGreaterThanOrEqual(400);
-                        expect(res.status, `${ROLE_WORDS[fixture]} issue on ${p.toUpperCase()} is never a 5xx`).toBeLessThan(500);
-                        answers.push([p.toUpperCase(), res, (p === 'p1' ? MATRIX_B_ISSUE_P1 : MATRIX_B_ISSUE_P2)[fixture]]);
+                        expect(await recordCertificatesNamed(m.api, name, m.spec, 'stored by a refused issue of the second identity'), `${what}: no certificate is stored`).toEqual([]);
+                        // only the bug's own answer is left to the marker; any other answer is checked as the 403 cell now
+                        if (res.status === 400 && /^Failed to submit certificate request/.test(String(res.json?.message ?? ''))) bugShaped.push([p.toUpperCase(), res, cell]);
+                        else expectCell(what, res, cell);
                     });
                 }
                 test.fail(true, 'core#2842: with RA profile Detail but without certificate Create, the v2 issue answers 400 "Failed to submit certificate request" instead of 403');
-                for (const [p, res, cell] of answers) expectCell(`${ROLE_WORDS[fixture]} issue on ${p}`, res, cell);
+                for (const [p, res, cell] of bugShaped) expectCell(`${ROLE_WORDS[fixture]} issue on ${p}`, res, cell);
             });
     }
 
