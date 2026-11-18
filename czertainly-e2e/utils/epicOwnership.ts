@@ -518,7 +518,8 @@ function failsForCommonName(item: ConditionItem, cn: string): boolean {
 
 /**
  * The platform triggers on the upload event that may apply to a certificate with the common name: every trigger except those
- * whose rules each hold a condition with an item that cannot hold for it. Others' triggers that do not match the subject do not matter.
+ * with a rule that has a condition item that cannot hold for it (the platform applies a trigger only when all its rules hold).
+ * A trigger without rules matches everything. Others' triggers that do not match the subject do not matter.
  */
 export async function platformTriggersMatching(admin: APIRequestContext, cn: string): Promise<string[]> {
     const matching: string[] = [];
@@ -526,7 +527,7 @@ export async function platformTriggersMatching(admin: APIRequestContext, cn: str
         const rules = ((await sendOk(admin, 'GET', `/api/v1/workflows/triggers/${uuid}`)).json as Json).rules as Json[] | undefined ?? [];
         const ruleFails = (rule: Json): boolean =>
             ((rule.conditions ?? []) as Json[]).some((c) => ((c.items ?? []) as ConditionItem[]).some((item) => failsForCommonName(item, cn)));
-        if (rules.length === 0 || !rules.every(ruleFails)) matching.push(uuid);
+        if (!rules.some(ruleFails)) matching.push(uuid);
     }
     return matching;
 }

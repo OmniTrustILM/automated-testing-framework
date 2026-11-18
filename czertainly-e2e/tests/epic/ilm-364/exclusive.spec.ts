@@ -670,7 +670,7 @@ test.describe('known bugs', () => {
         // never masked by the known bug: the upload is refused and nothing is stored (watched for a few seconds)
         expect(answer.status, `the discarded upload is refused: ${answer.text}`).toBeGreaterThanOrEqual(400);
         const stored = await pollUntil(() => inventoryRow(admin, cert.fingerprint, { includeArchived: true }), (row) => row !== undefined,
-            { timeoutMs: 5_000, intervalMs: 1_000, onTimeout: 'return' });
+            { timeoutMs: 5_000, intervalMs: 1_000, tolerateErrors: 0, onTimeout: 'return' });
         expect(stored, 'no certificate with that fingerprint exists').toBeUndefined();
         // before the known bug: a 500 of another failure carries another message, so it cannot pass as core#2878
         expect(answer.text, 'the message points to the event history').toContain(DISCARDED);
