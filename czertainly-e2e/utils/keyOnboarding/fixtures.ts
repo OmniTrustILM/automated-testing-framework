@@ -36,7 +36,7 @@ export const test = base.extend<{ admin: AdminApi; provisioned: Provisioning }, 
 export { expect };
 
 export function labelled(keys: TokenKey[], label: string): TokenKey {
-    const found = keys.find((key) => key.label === label);
+    const found = keys.find((key) => key.storageName === label);
     if (!found) {
         throw new Error(`The token lists no key pair labelled ${label}`);
     }
