@@ -1,5 +1,5 @@
 import { KeyDetail, TokenKey } from '../../utils/keyOnboarding/adminApi';
-import { expect, identityOf, keyPairMetaOf, labelled, onboardedKey, test } from '../../utils/keyOnboarding/fixtures';
+import { expect, identityOf, keyPairMetaOf, onboardedKey, plantedKeyByStorageName, test } from '../../utils/keyOnboarding/fixtures';
 import { ledgerSpec, provisioningOrSkip } from '../../utils/keyOnboarding/provisioning';
 import { devTests } from '../../utils/keyOnboarding/tags';
 import { recordCreated, recordDeleted } from '../../utils/regression/ledger/ledger';
@@ -15,22 +15,22 @@ test.describe.serial('Removing an onboarded key from the inventory', devTests(),
         { keyPairMeta: keyPairMetaOf(keys, provisioned.planted.removable) },
       ])
     ).results;
-    if (onboarded.onboarded) {
+    if (onboarded.outcome === 'onboarded') {
       recordCreated('keys', onboardedKey(onboarded), {
         spec: ledgerSpec(testInfo),
         note: 'onboarded token key',
         parents: { token: provisioned.token.uuid, tokenProfile: provisioned.tokenProfile.uuid },
       });
     }
-    expect(onboarded.onboarded).toBe(true);
-    keyUuid = onboarded.keyUuid ?? '';
+    expect(onboarded.outcome).toBe('onboarded');
+    keyUuid = onboardedKey(onboarded).uuid;
 
     const removal = await admin.removeKeyFromInventory(keyUuid);
 
     expect(removal.status()).toBe(204);
     recordDeleted('keys', onboardedKey(onboarded), ledgerSpec(testInfo), 'removed from the inventory');
     expect((await admin.raw('GET', `/v1/keys/${keyUuid}`)).status()).toBe(404);
-    const relisted = labelled(await admin.allTokenKeys(provisioned.token.uuid, provisioned.tokenProfile.uuid), provisioned.planted.removable);
+    const relisted = plantedKeyByStorageName(await admin.allTokenKeys(provisioned.token.uuid, provisioned.tokenProfile.uuid), provisioned.planted.removable);
     expect(relisted.status).toBe('onboardable');
   });
 
@@ -42,7 +42,7 @@ test.describe.serial('Removing an onboarded key from the inventory', devTests(),
         { keyPairMeta: keyPairMetaOf(keys, provisioned.planted.removable) },
       ])
     ).results;
-    if (again.onboarded) {
+    if (again.outcome === 'onboarded') {
       recordCreated('keys', onboardedKey(again), {
         spec: ledgerSpec(testInfo),
         note: 'onboarded token key',
@@ -50,10 +50,10 @@ test.describe.serial('Removing an onboarded key from the inventory', devTests(),
       });
     }
 
-    expect(again.onboarded).toBe(true);
-    expect(again.keyUuid).toBeDefined();
-    expect(again.keyUuid).not.toBe(keyUuid);
-    const key = await admin.get<KeyDetail>(`/v1/keys/${again.keyUuid}`);
+    expect(again.outcome).toBe('onboarded');
+    const { uuid } = onboardedKey(again);
+    expect(uuid).not.toBe(keyUuid);
+    const key = await admin.get<KeyDetail>(`/v1/keys/${uuid}`);
     expect(key.tokenProfileUuid).toBe(provisioned.tokenProfile.uuid);
     expect(key.items).toHaveLength(2);
   });
@@ -90,15 +90,15 @@ test.describe.serial('Removing keys from the inventory in bulk', devTests(), () 
       [...planted.bulkRemovable, planted.compromised].map((label) => ({ keyPairMeta: keyPairMetaOf(keys, label) })),
     );
     for (const result of results) {
-      if (result.onboarded) {
+      if (result.outcome === 'onboarded') {
         const key = onboardedKey(result);
         recordCreated('keys', key, { spec: ledgerSpec(testInfo), note: 'onboarded token key', parents });
         keyNames.set(key.uuid, key.name);
       }
     }
-    expect(results.map((result) => result.onboarded)).toEqual([true, true, true]);
-    onboardedUuids = results.slice(0, planted.bulkRemovable.length).map((result) => result.keyUuid ?? '');
-    compromisedUuid = results[planted.bulkRemovable.length].keyUuid ?? '';
+    expect(results.map((result) => result.outcome)).toEqual(['onboarded', 'onboarded', 'onboarded']);
+    onboardedUuids = results.slice(0, planted.bulkRemovable.length).map((result) => onboardedKey(result).uuid);
+    compromisedUuid = onboardedKey(results[planted.bulkRemovable.length]).uuid;
     await admin.compromiseKey(compromisedUuid);
   });
 
@@ -142,7 +142,7 @@ test.describe.serial('Removing keys from the inventory in bulk', devTests(), () 
     expect((await admin.raw('GET', `/v1/keys/${compromisedUuid}`)).status()).toBe(200);
     const keys = await admin.allTokenKeys(provisioned.token.uuid, provisioned.tokenProfile.uuid);
     for (const label of provisioned.planted.bulkRemovable) {
-      expect(labelled(keys, label).status).toBe('onboardable');
+      expect(plantedKeyByStorageName(keys, label).status).toBe('onboardable');
     }
     expect(createdPair).toBeDefined();
     expect(keys.find((key) => identityOf(key) === createdPair)?.status).toBe('onboardable');

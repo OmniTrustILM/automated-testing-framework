@@ -165,9 +165,10 @@ test('the scanner understands the shapes the specs use', () => {
     expect(HEADER(found[0])).toContain('devTests(');
 });
 
-test('onboardedKey: the uuid and name of an onboarded result, or a clear failure when the answer lacks either', () => {
+test('onboardedKey: the uuid and name of an onboarded result, or a clear failure for another outcome or an answer lacking either', () => {
     const uuid = '55555555-5555-4555-8555-555555555555';
-    expect(onboardedKey({ keyPairMeta: [{ uuid: 'm', name: 'label', content: [{ data: 'h1' }] }], onboarded: true, intoExistingKey: false, keyUuid: uuid, keyName: 'qa-reg-x-ko-rsa' })).toEqual({ uuid, name: 'qa-reg-x-ko-rsa' });
-    expect(() => onboardedKey({ keyPairMeta: [{ uuid: 'm', name: 'label', content: [{ data: 'h2' }] }], onboarded: true, intoExistingKey: false, keyName: 'n' })).toThrow(/h2 reports onboarded without a key uuid/);
-    expect(() => onboardedKey({ keyPairMeta: [{ uuid: 'm', name: 'label', content: [{ data: 'h3' }] }], onboarded: true, intoExistingKey: false, keyUuid: uuid })).toThrow(/h3 reports onboarded without a key name/);
+    expect(onboardedKey({ keyPairMeta: [{ uuid: 'm', name: 'label', content: [{ data: 'h1' }] }], outcome: 'onboarded', keyUuid: uuid, keyName: 'qa-reg-x-ko-rsa' })).toEqual({ uuid, name: 'qa-reg-x-ko-rsa' });
+    expect(() => onboardedKey({ keyPairMeta: [{ uuid: 'm', name: 'label', content: [{ data: 'h2' }] }], outcome: 'onboarded', keyName: 'n' })).toThrow(/h2 reports onboarded without a key uuid/);
+    expect(() => onboardedKey({ keyPairMeta: [{ uuid: 'm', name: 'label', content: [{ data: 'h3' }] }], outcome: 'onboarded', keyUuid: uuid })).toThrow(/h3 reports onboarded without a key name/);
+    expect(() => onboardedKey({ keyPairMeta: [{ uuid: 'm', name: 'label', content: [{ data: 'h4' }] }], outcome: 'joinedExistingKey', keyUuid: uuid, keyName: 'n' })).toThrow(/h4 reports joinedExistingKey; only an onboarded result names a new key/);
 });

@@ -1,5 +1,5 @@
 import { MAX_TOKEN_KEYS_PER_PAGE } from '../../utils/keyOnboarding/adminApi';
-import { expect, identityOf, labelled, test } from '../../utils/keyOnboarding/fixtures';
+import { expect, identityOf, plantedKeyByStorageName, test } from '../../utils/keyOnboarding/fixtures';
 import { devTests } from '../../utils/keyOnboarding/tags';
 
 test.describe('Listing the key pairs on a token', devTests(), () => {
@@ -12,26 +12,31 @@ test.describe('Listing the key pairs on a token', devTests(), () => {
   test('lists each planted key pair with whether it can be onboarded', devTests(), async ({ admin, provisioned }) => {
     const keys = await admin.allTokenKeys(provisioned.token.uuid, provisioned.tokenProfile.uuid);
 
-    expect(labelled(keys, provisioned.planted.rsa)).toMatchObject({
+    expect(plantedKeyByStorageName(keys, provisioned.planted.rsa)).toMatchObject({
       status: 'onboardable',
       keyAlgorithm: 'RSA',
       length: 2048,
       suggestedName: provisioned.planted.rsa,
     });
-    expect(labelled(keys, provisioned.planted.ec)).toMatchObject({ status: 'onboardable', keyAlgorithm: 'ECDSA', length: 256 });
-    expect(labelled(keys, provisioned.planted.orphan)).toMatchObject({ status: 'noPublicKey', keyAlgorithm: 'RSA' });
-    expect(labelled(keys, provisioned.planted.orphan).suggestedName).toBeUndefined();
-    expect(labelled(keys, provisioned.planted.orphan).reason).toContain('no public key');
+    expect(plantedKeyByStorageName(keys, provisioned.planted.ec)).toMatchObject({ status: 'onboardable', keyAlgorithm: 'ECDSA', length: 256 });
+    expect(plantedKeyByStorageName(keys, provisioned.planted.orphan)).toMatchObject({ status: 'publicKeyUnavailable', keyAlgorithm: 'RSA' });
+    expect(plantedKeyByStorageName(keys, provisioned.planted.orphan).suggestedName).toBeUndefined();
+    expect(plantedKeyByStorageName(keys, provisioned.planted.orphan).reason).toContain('no public key');
   });
 
-  test('lists a key pair without a usable ID as not onboardable and without metadata', devTests(), async ({ admin, provisioned }) => {
+  test('lists a key pair the connector cannot address as not onboardable, without metadata and with the connector\'s diagnostic', devTests(), async ({ admin, provisioned }) => {
     const keys = await admin.allTokenKeys(provisioned.token.uuid, provisioned.tokenProfile.uuid);
 
-    for (const label of [provisioned.planted.noIdEc, ...provisioned.planted.idSharingEc]) {
-      const key = labelled(keys, label);
-      expect(key).toMatchObject({ status: 'noUsableId', keyAlgorithm: 'ECDSA', length: 256 });
+    const causes = [
+      { label: provisioned.planted.noIdEc, diagnostic: 'has no CKA_ID' },
+      ...provisioned.planted.idSharingEc.map((label) => ({ label, diagnostic: 'share this private key\'s CKA_ID' })),
+    ];
+    for (const { label, diagnostic } of causes) {
+      const key = plantedKeyByStorageName(keys, label);
+      expect(key).toMatchObject({ status: 'unaddressable', keyAlgorithm: 'ECDSA', length: 256 });
       expect(key.keyPairMeta).toBeUndefined();
-      expect(key.reason).toContain('without an ID the platform can address it by');
+      expect(key.reason).toContain('cannot address this key');
+      expect(key.diagnostic).toContain(diagnostic);
     }
   });
 

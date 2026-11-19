@@ -1,6 +1,6 @@
 import { KeyDetail, OnboardingResult } from '../../utils/keyOnboarding/adminApi';
 import { requestAttribute } from '../../utils/keyOnboarding/attributes';
-import { expect, keyPairMetaOf, labelled, onboardedKey, test } from '../../utils/keyOnboarding/fixtures';
+import { expect, keyPairMetaOf, onboardedKey, plantedKeyByStorageName, test } from '../../utils/keyOnboarding/fixtures';
 import { signThroughCore, verifiesWithRecordedPublicKey } from '../../utils/keyOnboarding/signing';
 import { ledgerSpec, recordOwnKeyItems } from '../../utils/keyOnboarding/provisioning';
 import { devTests } from '../../utils/keyOnboarding/tags';
@@ -33,7 +33,7 @@ test.describe.serial('Onboarding key pairs from a token', devTests(), () => {
       )
     ).results;
     for (const result of results) {
-      if (result.onboarded) {
+      if (result.outcome === 'onboarded') {
         const key = onboardedKey(result);
         recordCreated('keys', key, {
           spec: ledgerSpec(testInfo),
@@ -45,15 +45,14 @@ test.describe.serial('Onboarding key pairs from a token', devTests(), () => {
       }
     }
 
-    expect(results.map((result) => result.onboarded)).toEqual([true, true, false]);
-    expect(results.map((result) => result.intoExistingKey)).toEqual([false, false, false]);
-    expect(results[0].keyName).toBe(provisioned.planted.rsa);
-    expect(results[1].keyName).toBe(chosenEcName);
-    expect(results[2].reason).toContain('no public key');
+    expect(results.map((result) => result.outcome)).toEqual(['onboarded', 'onboarded', 'blocked']);
+    expect(onboardedKey(results[0]).name).toBe(provisioned.planted.rsa);
+    expect(onboardedKey(results[1]).name).toBe(chosenEcName);
+    expect(results[2]).toMatchObject({ status: 'publicKeyUnavailable', reason: expect.stringContaining('no public key') });
   });
 
   test('records an onboarded key as disabled, not exportable and with the custom attributes sent', devTests(), async ({ admin, provisioned }) => {
-    const key = await admin.get<KeyDetail>(`/v1/keys/${results[0].keyUuid}`);
+    const key = await admin.get<KeyDetail>(`/v1/keys/${onboardedKey(results[0]).uuid}`);
 
     expect(key.tokenProfileUuid).toBe(provisioned.tokenProfile.uuid);
     expect(key.items).toHaveLength(2);
@@ -69,8 +68,9 @@ test.describe.serial('Onboarding key pairs from a token', devTests(), () => {
     ['an EC key under a short ID', 1],
   ] as const) {
     test(`signs through Core with ${label} once it is enabled`, devTests(), async ({ admin, provisioned }) => {
-      await admin.enableKey(results[resultIndex].keyUuid ?? '');
-      const key = await admin.get<KeyDetail>(`/v1/keys/${results[resultIndex].keyUuid}`);
+      const { uuid } = onboardedKey(results[resultIndex]);
+      await admin.enableKey(uuid);
+      const key = await admin.get<KeyDetail>(`/v1/keys/${uuid}`);
       const data = Buffer.from(`signed by ${key.name}`);
 
       const signature = await signThroughCore(admin, provisioned, key, data);
@@ -81,7 +81,7 @@ test.describe.serial('Onboarding key pairs from a token', devTests(), () => {
 
   test('lists the onboarded pairs as held by their keys and refuses to onboard one again', devTests(), async ({ admin, provisioned }) => {
     const keys = await admin.allTokenKeys(provisioned.token.uuid, provisioned.tokenProfile.uuid);
-    const rsa = labelled(keys, provisioned.planted.rsa);
+    const rsa = plantedKeyByStorageName(keys, provisioned.planted.rsa);
 
     const again = (
       await admin.onboardTokenKeys(provisioned.token.uuid, provisioned.tokenProfile.uuid, [
@@ -89,10 +89,14 @@ test.describe.serial('Onboarding key pairs from a token', devTests(), () => {
       ])
     ).results[0];
 
-    expect(rsa).toMatchObject({ status: 'inInventory', inventoryKeyUuid: results[0].keyUuid });
-    expect(labelled(keys, provisioned.planted.ec)).toMatchObject({ status: 'inInventory', inventoryKeyName: chosenEcName });
-    expect(again).toMatchObject({ onboarded: false, keyUuid: results[0].keyUuid });
-    expect(again.reason).toContain(provisioned.planted.rsa);
+    expect(rsa).toMatchObject({ status: 'inInventory', inventoryKeyUuid: onboardedKey(results[0]).uuid });
+    expect(plantedKeyByStorageName(keys, provisioned.planted.ec)).toMatchObject({ status: 'inInventory', inventoryKeyName: chosenEcName });
+    expect(again).toMatchObject({
+      outcome: 'blocked',
+      status: 'inInventory',
+      keyUuid: onboardedKey(results[0]).uuid,
+      reason: expect.stringContaining(provisioned.planted.rsa),
+    });
   });
 
   test('refuses the metadata of a listed pair stripped of its content', devTests(), async ({ admin, provisioned }) => {
