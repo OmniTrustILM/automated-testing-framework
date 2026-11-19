@@ -81,7 +81,7 @@ test.describe('content-signing canary', devTests(), () => {
       workflow: {
         type: 'content_signing',
         family: 'cades',
-        maxLevel: 'signed',
+        level: 'signed',
         signatureFormattingConnectorUuid: ts.connectors.timestampFormatting.uuid,
         signatureFormattingConnectorAttributes: [],
       },
