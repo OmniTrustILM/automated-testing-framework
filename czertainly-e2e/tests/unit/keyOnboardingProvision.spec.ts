@@ -321,6 +321,8 @@ test('referenceNamesToken reads the token label that leads a broker route\'s ref
     expect(referenceNamesToken('softhsm2, serial 1', 'softhsm')).toBe(false);
     expect(referenceNamesToken('serial softhsm', 'softhsm'), 'a token without a label').toBe(false);
     expect(referenceNamesToken('other, serial softhsm', 'softhsm')).toBe(false);
+    expect(referenceNamesToken('softhsm, serial backup, serial 2', 'softhsm'), 'a longer label that itself holds ", serial "').toBe(false);
+    expect(referenceNamesToken('softhsm, serial backup, serial 2', 'softhsm, serial backup')).toBe(true);
     expect(referenceNamesToken(undefined, 'softhsm'), 'an option without a reference').toBe(false);
 });
 

@@ -119,7 +119,9 @@ function definitionNamed(defs: AttributeDefinition[], name: string, form: string
 
 /** Whether a broker route's option names the token label: the connector's reference reads `<label>, serial <serial>`, or the label alone. */
 export function referenceNamesToken(reference: string | undefined, label: string): boolean {
-    return reference === label || (reference?.startsWith(`${label}, serial `) ?? false);
+    if (reference === undefined) return false;
+    const serialAt = reference.lastIndexOf(', serial ');
+    return reference === label || (serialAt >= 0 && reference.slice(0, serialAt) === label);
 }
 
 /** The token form: the profile item, and the token item the `token` callback offers, which must name exactly one token. */
