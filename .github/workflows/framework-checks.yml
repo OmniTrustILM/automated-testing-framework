@@ -51,6 +51,9 @@ jobs:
       - name: Unit tests
         run: npm run test:unit
 
+      - name: EST unit tests with coverage
+        run: npm run test:unit:coverage
+
       - name: Unit tests left the tree unchanged
         run: git diff --exit-code
 
@@ -78,3 +81,7 @@ jobs:
       # disabled on develop-01.
       - name: All specs parse (key-onboarding block)
         run: DEV_BLOCK=key-onboarding npx playwright test -c playwright.devblock.config.ts --list --pass-with-no-tests
+
+      # The EST suite has its own config.
+      - name: EST specs parse
+        run: npx playwright test --list -c playwright.est.config.ts
