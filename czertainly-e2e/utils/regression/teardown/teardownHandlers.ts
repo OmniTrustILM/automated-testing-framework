@@ -12,6 +12,8 @@ import type { TeardownContext, TeardownHandler } from './teardownTypes';
 import { pollUntil } from '../wait';
 import { objectOf } from '../json';
 import type { JsonObject } from '../json';
+import { TRANSIENT_DISCOVERY_STATUSES } from './snapshotModel';
+import { DISCOVERY_SETTLE_MS } from '../timeouts';
 
 
 const parent = (line: LedgerLine, key: string): string | undefined => {
@@ -83,7 +85,7 @@ async function ownLive(ctx: TeardownContext, type: string, line: LedgerLine | { 
 }
 
 async function authorityOfRaProfile(ctx: TeardownContext, raProfileUuid: string): Promise<string | undefined> {
-    const own = ctx.ledger.find((l) => l.uuid === raProfileUuid && l.event === 'created');
+    const own = ctx.ledger.find((l) => l.uuid.toLowerCase() === raProfileUuid.toLowerCase() && l.event === 'created');
     const fromLedger = own && parent(own, 'authority');
     if (fromLedger) return fromLedger;
     const authority = (await getJson(ctx.api, `/api/v1/raProfiles/${raProfileUuid}`))?.authorityInstanceUuid;
@@ -290,8 +292,14 @@ const certificates: TeardownHandler = {
             if (found.length) ctx.warn(`certificate ${line.uuid}: its certKey_ key ${found.join(', ')} was not in the ledger; recorded now, the keys step removes it`);
         }
         if (cert.state === 'issued') {
-            const raProfileUuid = parent(line, 'raProfile') ?? stringOf(objectOf(cert.raProfile).uuid);
-            const authorityUuid = parent(line, 'authority') ?? stringOf(objectOf(cert.raProfile).authorityInstanceUuid);
+            // A Set field action can move the certificate to another own RA profile; core revokes only through the current one.
+            const liveRa = stringOf(objectOf(cert.raProfile).uuid);
+            const movedToOwn = !!liveRa && liveOwnUuids(ctx, 'raProfiles').has(liveRa.toLowerCase()) && liveRa.toLowerCase() !== parent(line, 'raProfile')?.toLowerCase();
+            const raProfileUuid = movedToOwn ? liveRa : parent(line, 'raProfile') ?? liveRa;
+            const liveAuthority = stringOf(objectOf(cert.raProfile).authorityInstanceUuid);
+            const authorityUuid = movedToOwn
+                ? liveAuthority ?? await authorityOfRaProfile(ctx, liveRa!).catch(() => undefined) ?? parent(line, 'authority')
+                : parent(line, 'authority') ?? liveAuthority;
             if (raProfileUuid && authorityUuid) {
                 try {
                     await revokeThroughAuthority(ctx.api, { authorityUuid, raProfileUuid, certUuid: line.uuid, reason: 'unspecified' });
@@ -388,10 +396,44 @@ const keyItems: TeardownHandler = {
 
 const stringOf = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
 
+const SETTLE_POLL_MS = 10_000;
+const AT_CONNECTOR = ['inProgress', 'stopped'];
+const UNFINISHED = [...TRANSIENT_DISCOVERY_STATUSES, 'stopped'];
+const running = (d: JsonObject): boolean => UNFINISHED.includes(String(d.status));
+/** Discoveries that did not end within one wait: a retry of the same item does not wait again. */
+const waitedOut = new Set<string>();
+
+/** Waits for a running discovery to end, at most once per run; an own v2 run still at its connector is cancelled first. */
+async function settled(ctx: TeardownContext, uuid: string, live: JsonObject): Promise<JsonObject> {
+    if (!running(live) || waitedOut.has(uuid)) return live;
+    if (live.connectorInterface && AT_CONNECTOR.includes(String(live.status))) {
+        const res = await ctx.api.patch(`/api/v1/discoveries/${uuid}/cancel`);
+        if (!res.ok()) {
+            ctx.warn(`cancel of the ${String(live.status)} discovery ${uuid} answered ${res.status()}: ${(await res.text()).slice(0, 300)}`);
+            // A stopped run never ends by itself.
+            if (live.status === 'stopped') return live;
+        }
+    }
+    const last = await pollUntil(
+        async () => {
+            const res = await ctx.api.get(`/api/v1/discoveries/${uuid}`);
+            if (!res.ok()) throw new Error(`GET discovery ${uuid} answered ${res.status()}`);
+            return (await res.json()) as JsonObject;
+        },
+        (d) => !running(d),
+        { attempts: Math.ceil(DISCOVERY_SETTLE_MS / SETTLE_POLL_MS), timeoutMs: DISCOVERY_SETTLE_MS, intervalMs: ctx.pollMs ?? SETTLE_POLL_MS, onTimeout: 'return' },
+    );
+    if (running(last)) {
+        waitedOut.add(uuid);
+        ctx.warn(`discovery ${uuid} is still ${String(last.status)} after ${DISCOVERY_SETTLE_MS / 60_000} minutes; it cannot be deleted before it ends`);
+    }
+    return last;
+}
+
 const discoveries: TeardownHandler = {
-    action: 'record the certificates it onboarded as new (derived; createdAfter from the server clock, else the keeping bound), then delete the discovery',
+    action: 'cancel an own v2 run still at its connector and wait for a running discovery to end, record the certificates it onboarded as new (derived; createdAfter from the server clock, else the keeping bound), then delete it',
     async remove(ctx, line) {
-        const discovery = ctx.live!;
+        const discovery = await settled(ctx, line.uuid, ctx.live!);
         // The server's clock (the discovery's start time, else the create response's Date); with neither, the certificates are recorded
         // with the keeping bound.
         const serverTime = stringOf(discovery.startTime) ?? line.serverAt;

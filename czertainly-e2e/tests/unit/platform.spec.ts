@@ -17,7 +17,7 @@ import { expectedOverallStatus } from '../../utils/regression/platform/complianc
 import { findConnectorWithInterface } from '../../utils/regression/platform/connectorLookup';
 import { secretAttributesFor, secretContentFor, stringValues, waitForSecretState } from '../../utils/regression/platform/secretsAndVaults';
 import { composeArgs, coreStartLogFacts, PlatformStack, stackConfig, stackProblem, restartCore, restartPlan } from '../../utils/regression/platform/localStack';
-import { isFireTime, nextFireUtc, parseQuartzCron, SYSTEM_JOBS, systemJobProblems, JOBS_URL, teardownHandlers } from '../../utils/regression/platform/schedulerApi';
+import { isFireTime, listJobs, nextFireUtc, parseQuartzCron, SYSTEM_JOBS, systemJobProblems, JOBS_URL, teardownHandlers } from '../../utils/regression/platform/schedulerApi';
 import { diffSnapshots, parseSchemaHistory, schemaHistoryProblems, Snapshot, takeSnapshot, upgradeDirectionProblem } from '../../utils/regression/platform/upgradeRunner';
 import { randomUUID } from 'node:crypto';
 import type { JsonObject } from '../../utils/regression/json';
@@ -138,6 +138,16 @@ test('Quartz subset: the six system crons parse; next fire in UTC; isFireTime; s
     const broken = jobs.map((j, i) => (i === 0 ? { ...j, cronExpression: '0 5 * ? * *' } : j)).concat([{ jobName: 'extraJob', cronExpression: '* * * ? * *', system: true, oneTime: false, jobType: 'X', enabled: true, scheduleState: 'scheduled' }]);
     expect(systemJobProblems(broken)).toEqual([`${SYSTEM_JOBS[0].jobName}: cron "0 5 * ? * *" (expected "0 0 * ? * *")`, 'unexpected system job extraJob']);
     expect(systemJobProblems(jobs.slice(1))).toEqual([`system job ${SYSTEM_JOBS[0].jobName} is missing`]);
+});
+
+test('listJobs reads every page of the job list', async () => {
+    const job = (n: number) => ({ jobName: `job-${n}`, system: false });
+    const { api, calls } = fakeApi((c) => {
+        const page = Number(new URL(c.url, 'https://core.invalid').searchParams.get('pageNumber'));
+        return { status: 200, body: { scheduledJobs: page === 1 ? [job(1), job(2)] : [job(3)], pageNumber: page, totalPages: 2 } };
+    });
+    expect((await listJobs(partialOf<APIRequestContext>(api))).map((j) => j.jobName)).toEqual(['job-1', 'job-2', 'job-3']);
+    expect(calls.map((c) => c.url)).toEqual([`${JOBS_URL}?itemsPerPage=100&pageNumber=1`, `${JOBS_URL}?itemsPerPage=100&pageNumber=2`]);
 });
 
 const snap = (types: Snapshot['types'], extra: Partial<Snapshot> = {}): Snapshot => ({

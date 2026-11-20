@@ -16,24 +16,23 @@ import { objectOf } from './json';
 const logger = new Logger('IssuedRecords');
 
 /**
- * Records the key the platform linked to a run certificate as a DERIVED object with a server-clock `createdAfter`; without server time it
- * is recorded with `keepingBound()` so the teardown keeps it.
+ * Records the key and the alternative key (a hybrid certificate) the platform linked to a run certificate as DERIVED objects with a
+ * server-clock `createdAfter`; without server time each is recorded with `keepingBound()` so the teardown keeps it.
  */
 export async function recordDerivedKeyOf(api: APIRequestContext, certificateUuid: string, createdAfter: string | undefined, spec: string): Promise<void> {
     const cert = await getCertificate(api, certificateUuid);
-    const keyUuid = objectOf(cert.key).uuid as string | undefined;
-    if (!keyUuid) {
-        logger.info(`certificate ${certificateUuid}: no linked key; no derived key recorded`);
-        return;
+    const linked: Array<[string, string | undefined]> = [['key', objectOf(cert.key).uuid as string | undefined], ['alternative key', objectOf(cert.altKey).uuid as string | undefined]];
+    if (!linked[0][1]) logger.info(`certificate ${certificateUuid}: no linked key; no derived key recorded`);
+    for (const [what, keyUuid] of linked) {
+        if (!keyUuid || checkOwnership({ uuid: keyUuid }).own) continue;
+        let bound = createdAfter;
+        if (!bound) {
+            // Never a silent no-op: a bound it can never reach makes the teardown keep the key and warn.
+            bound = keepingBound();
+            logger.warn(`certificate ${certificateUuid}: no createdAfter for its ${what} ${keyUuid}; recorded with a bound the teardown keeps (check by hand)`);
+        }
+        recordDerived('keys', { uuid: keyUuid, name: `${what} of certificate ${certificateUuid}` }, { spec, createdAfter: bound, note: `${what} the platform linked to a run certificate`, parents: { certificate: certificateUuid } });
     }
-    if (checkOwnership({ uuid: keyUuid }).own) return;
-    let bound = createdAfter;
-    if (!bound) {
-        // Never a silent no-op: a bound it can never reach makes the teardown keep the key and warn.
-        bound = keepingBound();
-        logger.warn(`certificate ${certificateUuid}: no createdAfter for its key ${keyUuid}; recorded with a bound the teardown keeps (check by hand)`);
-    }
-    recordDerived('keys', { uuid: keyUuid, name: `key of certificate ${certificateUuid}` }, { spec, createdAfter: bound, note: 'key the platform linked to a run certificate', parents: { certificate: certificateUuid } });
 }
 
 /** `recordDerivedKeyOf` with the by-name fallback of `recordingIssued` when the detail read throws; a failure of that surfaces. */
