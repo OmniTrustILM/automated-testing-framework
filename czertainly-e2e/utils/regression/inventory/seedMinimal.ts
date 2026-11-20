@@ -1,14 +1,12 @@
 /**
- * seedMinimal — the three-certificate seed of the migration checks: two with the run's owner, two with a custom attribute value, so a sort
- * puts the empty one last in both directions; own objects only, ledger first, manifest reused within a run.
+ * seedMinimal — the three-certificate seed of the sort check: two with a custom attribute value, so a sort puts the empty one last in
+ * both directions; own objects only, ledger first, manifest reused within a run.
  */
 import { Logger } from '../../Logger';
 import { GuardedApi } from '../guard/types';
 import { checkOwnership } from '../ledger/ownership';
 import { selfSignedPem } from '../pkiBuilders';
 import { uploadOwnCertificate } from '../ownCertificates';
-import { createOwnUser } from '../ownUsers';
-import { apiJson } from '../apiReads';
 import { requiredCustomAttributes, createOwnCustomAttribute } from '../customAttributes';
 import { readRunState, runName, runId, updateRunState } from '../ledger/runState';
 import { uniqueSuffix } from '../text';
@@ -17,12 +15,10 @@ import type { JsonObject } from '../json';
 const logger = new Logger('InventorySeed');
 
 type SeedKey = 'a' | 'b' | 'c';
-export type SeedField = 'owner' | 'rank';
 
 interface SeedCertificatePlan {
     key: SeedKey;
     commonName: string;
-    owner: boolean;
     rank: number | null;
 }
 
@@ -30,14 +26,12 @@ export interface SeedSubsetPlan {
     kind: 'b1-null-last-subset';
     prefix: string;
     attribute: { name: string; label: string; contentType: 'integer' };
-    owner: { username: string };
     certificates: SeedCertificatePlan[];
 }
 
 export interface SeedSubsetManifest extends SeedSubsetPlan {
     runId: string;
     attributeUuid: string;
-    ownerUuid: string;
     certificates: Array<SeedCertificatePlan & { uuid: string }>;
 }
 
@@ -48,23 +42,20 @@ export function planSeedSubset(name: (suffix: string) => string = runName, stamp
         kind: 'b1-null-last-subset',
         prefix,
         attribute: { name: name(`seed-${stamp}-rank`), label: `Seed rank ${stamp}`, contentType: 'integer' },
-        owner: { username: name(`seed-${stamp}-owner`) },
         certificates: [
-            { key: 'a', commonName: `${prefix}a`, owner: true, rank: 2 },
-            { key: 'b', commonName: `${prefix}b`, owner: true, rank: null },
-            { key: 'c', commonName: `${prefix}c`, owner: false, rank: 1 },
+            { key: 'a', commonName: `${prefix}a`, rank: 2 },
+            { key: 'b', commonName: `${prefix}b`, rank: null },
+            { key: 'c', commonName: `${prefix}c`, rank: 1 },
         ],
     };
 }
 
-export function manifestValue(m: SeedSubsetManifest, uuid: string, field: SeedField): string | number | null | undefined {
-    const c = m.certificates.find((x) => x.uuid === uuid);
-    if (!c) return undefined;
-    return field === 'owner' ? (c.owner ? m.owner.username : null) : c.rank;
+export function manifestValue(m: SeedSubsetManifest, uuid: string): number | null | undefined {
+    return m.certificates.find((x) => x.uuid === uuid)?.rank;
 }
 
-export function nullRows(m: SeedSubsetManifest, field: SeedField): string[] {
-    return m.certificates.filter((c) => (field === 'owner' ? !c.owner : c.rank === null)).map((c) => c.uuid);
+export function nullRows(m: SeedSubsetManifest): string[] {
+    return m.certificates.filter((c) => c.rank === null).map((c) => c.uuid);
 }
 
 export function seedFilter(m: Pick<SeedSubsetPlan, 'prefix'>): JsonObject[] {
@@ -79,19 +70,18 @@ export function manifestProblems(m: SeedSubsetManifest, ofRun: string = runId())
     if (m.certificates.length !== 3) problems.push(`${m.certificates.length} certificates (3 expected)`);
     if (new Set(m.certificates.map((c) => c.uuid)).size !== m.certificates.length) problems.push('duplicate certificate uuids');
     if (!m.certificates.every((c) => c.commonName.startsWith(m.prefix))) problems.push('a certificate outside the prefix');
-    if (nullRows(m, 'owner').length !== 1) problems.push(`${nullRows(m, 'owner').length} certificates without an owner (1 expected)`);
-    if (nullRows(m, 'rank').length !== 1) problems.push(`${nullRows(m, 'rank').length} certificates without a rank (1 expected)`);
+    if (nullRows(m).length !== 1) problems.push(`${nullRows(m).length} certificates without a rank (1 expected)`);
     const ranks = m.certificates.map((c) => c.rank).filter((r): r is number => r !== null);
     if (new Set(ranks).size !== ranks.length) problems.push('equal ranks (the value order would be a tie)');
     return problems;
 }
 
 const stillOwn = (m: SeedSubsetManifest): boolean =>
-    [m.attributeUuid, m.ownerUuid, ...m.certificates.map((c) => c.uuid)].every((uuid) => checkOwnership({ uuid }).own);
+    [m.attributeUuid, ...m.certificates.map((c) => c.uuid)].every((uuid) => checkOwnership({ uuid }).own);
 
 /**
- * Builds the subset through the guarded API (or returns this run's earlier one): own custom attribute and disabled user, three self-signed
- * uploads, then the owner on a and b; ledger first for every object.
+ * Builds the subset through the guarded API (or returns this run's earlier one): own custom attribute and three self-signed uploads;
+ * ledger first for every object.
  */
 export async function buildSeedSubset(api: GuardedApi, spec: string, plan: SeedSubsetPlan = planSeedSubset()): Promise<SeedSubsetManifest> {
     const earlier = readRunState().inventorySeed?.b1Subset as SeedSubsetManifest | undefined;
@@ -105,8 +95,6 @@ export async function buildSeedSubset(api: GuardedApi, spec: string, plan: SeedS
         note: 'seed custom attribute (not required)',
     });
 
-    const owner = await createOwnUser(api, spec, 'seed-owner', { name: plan.owner.username, enabled: false, note: 'seed owner (disabled)' });
-
     const required = await requiredCustomAttributes(api, 'certificates', runName('ca'));
     const certificates: SeedSubsetManifest['certificates'] = [];
     for (const c of plan.certificates) {
@@ -118,11 +106,8 @@ export async function buildSeedSubset(api: GuardedApi, spec: string, plan: SeedS
         const uploaded = await uploadOwnCertificate(api, pem, c.commonName, spec, `seed ${c.key} (self-signed upload)`, customAttributes);
         certificates.push({ ...c, uuid: uploaded.uuid });
     }
-    for (const c of certificates.filter((x) => x.owner)) {
-        await apiJson(api, 'PATCH', `/api/v1/certificates/${c.uuid}`, { ownerUuid: owner.uuid });
-    }
 
-    const manifest: SeedSubsetManifest = { ...plan, runId: runId(), attributeUuid: attr.uuid, ownerUuid: owner.uuid, certificates };
+    const manifest: SeedSubsetManifest = { ...plan, runId: runId(), attributeUuid: attr.uuid, certificates };
     updateRunState({ inventorySeed: { ...(readRunState().inventorySeed ?? {}), b1Subset: manifest } });
     logger.info(`seed subset built: ${certificates.length} certificates under the run prefix`);
     return manifest;
