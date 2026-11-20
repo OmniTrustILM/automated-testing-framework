@@ -1,0 +1,52 @@
+# What SMK-005 needs, and nothing more.
+#
+# The test issues a certificate through the ACME protocol with cert-manager acting as the client:
+# it creates an Issuer pointing at the platform's ACME directory, asks for a Certificate, and reads
+# the Secret cert-manager writes when the order completes.
+#
+# The HTTP-01 challenge is solved by cert-manager itself - the solver Pod, Service and Ingress are
+# created by the cert-manager controller under its own service account, not by the caller - so the
+# runner needs no permission over pods, services or ingresses. Orders and Challenges are likewise
+# cert-manager's to create; they are readable here only so that a failed challenge can be explained
+# rather than guessed at.
+#
+# Secrets already carry create and get in this namespace. Delete is added so a run can clean up
+# after itself, which the suite now treats as part of the result rather than as a courtesy.
+#
+# Apply with cluster-admin:
+#   kubectl apply -f czertainly-e2e/k8s/smoke-acme-rbac.yaml
+#
+# Confirm afterwards by running the reconnaissance with SMOKE_RECON=true: it prints ALLOWED or
+# DENIED for each of these, and needs no permission of its own to ask.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: smoke-acme-client
+  namespace: testkube-runner
+rules:
+  - apiGroups: ["cert-manager.io"]
+    resources: ["issuers", "certificates"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+
+  # Read-only, for diagnosing a challenge that does not complete.
+  - apiGroups: ["acme.cert-manager.io"]
+    resources: ["orders", "challenges"]
+    verbs: ["get", "list", "watch"]
+
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: smoke-acme-client
+  namespace: testkube-runner
+subjects:
+  - kind: ServiceAccount
+    name: exec-sa-testkube-runner
+    namespace: testkube-runner
+roleRef:
+  kind: Role
+  name: smoke-acme-client
+  apiGroup: rbac.authorization.k8s.io
