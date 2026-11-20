@@ -1,6 +1,8 @@
 /**
- * API-GEN-32 — The migration gate: six checks of behaviour a framework migration must keep (ilm#425, ilm#426, ilm#428,
- * ilm#436).
+ * API-GEN-32 — The migration gate: five checks of behaviour a framework migration must keep (ilm#425, ilm#426, ilm#428,
+ * ilm#436), and one sort check outside the gate. Core's integration tests cover null ordering on every sort path on
+ * PostgreSQL (SecurityFilterRepositoryITest, AttributeColumnSortITest); the sort row here checks it end to end on an
+ * attribute the run owns, so no platform setting (such as automatic ownership) can change its data.
  */
 import { FEW_CALLS_TEST_MS, SEED_SORT_TEST_MS, SEVERAL_STEPS_TEST_MS, SINGLE_PROBE_TEST_MS } from '../../../utils/regression/timeouts';
 import { expect, test } from '../../../fixtures/regressionFixtures';
@@ -15,7 +17,6 @@ import {
     manifestProblems,
     manifestValue,
     nullRows,
-    SeedField,
     SeedSubsetManifest,
     seedFilter,
 } from '../../../utils/regression/inventory/seedMinimal';
@@ -130,32 +131,24 @@ test.describe('migration sentinel gate', { tag: tags.api }, () => {
         });
 
     test('rows without a value sort last in both directions',
-        testMeta({ id: 'API-GEN-32', row: 'sort', prio: 'P1', issue: 'ilm#428', gate: true, rule: 'objects without a value sort last in both directions (core#2394); custom attribute columns sort (core#2033); Hibernate 7 null ordering' }),
+        testMeta({ id: 'API-GEN-32', row: 'sort', prio: 'P2', issue: 'ilm#428', rule: 'objects without a value sort last in both directions (core#2394); custom attribute columns sort (core#2033); Hibernate 7 null ordering' }),
         async ({ api, own }) => {
             test.setTimeout(SEED_SORT_TEST_MS);
-            const m = await test.step('Seed: the run\'s 3-certificate subset (own attribute, own user, own uploads)', async () => buildSeedSubset(api, own.spec));
+            const m = await test.step('Seed: the run\'s 3-certificate subset (own attribute, own uploads)', async () => buildSeedSubset(api, own.spec));
             expect(manifestProblems(m), 'the seed manifest is a usable subset').toEqual([]);
             const expected = m.certificates.map((c) => c.uuid).sort();
-
-            const check = async (field: SeedField, sort: (dir: 'asc' | 'desc') => Json) => {
-                for (const dir of ['asc', 'desc'] as const) {
-                    const rows = await seedPage(api, m, sort(dir));
-                    expect(rows.map((r) => String(r.uuid)).sort(), `${field} ${dir}: exactly the seed subset`).toEqual(expected);
-                    expectSorted(rows, field, dir, { get: (r) => manifestValue(m, String(r.uuid), field) });
-                    expect(String(rows[rows.length - 1].uuid), `${field} ${dir}: the row without a value is last`).toBe(nullRows(m, field)[0]);
-                }
-            };
-
-            await test.step('Sorted by OWNER: the certificate without an owner is last, ascending and descending', async () => {
-                await check('owner', (dir) => ({ fieldSource: 'property', fieldIdentifier: 'OWNER', direction: dir }));
-            });
 
             await test.step('Sorted by the seed custom attribute: the certificate without a value is last; the others by value', async () => {
                 const field = fieldsOf(await readCatalogue(api), 'custom')
                     .find((f) => f.fieldLabel === m.attribute.label || String(f.fieldIdentifier).startsWith(`${m.attribute.name}|`));
                 expect(field, 'the seed attribute is in the searchable-fields catalogue').toBeTruthy();
                 expect(field!.sortable, 'a custom attribute column is sortable (core#2033)').toBe(true);
-                await check('rank', (dir) => ({ fieldSource: 'custom', fieldIdentifier: field!.fieldIdentifier, direction: dir }));
+                for (const dir of ['asc', 'desc'] as const) {
+                    const rows = await seedPage(api, m, { fieldSource: 'custom', fieldIdentifier: field!.fieldIdentifier, direction: dir });
+                    expect(rows.map((r) => String(r.uuid)).sort(), `rank ${dir}: exactly the seed subset`).toEqual(expected);
+                    expectSorted(rows, 'rank', dir, { get: (r) => manifestValue(m, String(r.uuid)) });
+                    expect(String(rows[rows.length - 1].uuid), `rank ${dir}: the row without a value is last`).toBe(nullRows(m)[0]);
+                }
             });
         });
 });

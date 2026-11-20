@@ -304,16 +304,13 @@ test('createOwnRole / createOwnUser / setOwnUserRoles: creates and own-to-own as
     expect(wire()).toEqual([]);
 });
 
-test('buildSeedSubset: own attribute, own disabled user, three uploads, owner PATCHes on own certificates; ledger first; idempotent', async () => {
-    core.usersRequireAttr = false;
+test('buildSeedSubset: own attribute, three uploads; ledger first; idempotent', async () => {
     const plan = planSeedSubset(runName, 'wire');
     const m = await buildSeedSubset(api, 'T', plan);
     expect(manifestProblems(m)).toEqual([]);
-    const [a, b, c] = m.certificates;
     expect(wire()).toEqual([
-        'POST /api/v1/attributes/custom', 'POST /api/v1/users',
+        'POST /api/v1/attributes/custom',
         'POST /api/v1/certificates/upload', 'POST /api/v1/certificates/upload', 'POST /api/v1/certificates/upload',
-        `PATCH /api/v1/certificates/${a.uuid}`, `PATCH /api/v1/certificates/${b.uuid}`,
     ]);
     const attr = bodyOf('POST', '/api/v1/attributes/custom');
     expect(attr).toMatchObject({ name: plan.attribute.name, contentType: 'integer', required: false, resources: ['certificates'] });
@@ -323,10 +320,8 @@ test('buildSeedSubset: own attribute, own disabled user, three uploads, owner PA
         [],
         [{ uuid: m.attributeUuid, name: plan.attribute.name, contentType: 'integer', content: [{ data: 1 }] }],
     ]);
-    expect(bodyOf('PATCH', `/api/v1/certificates/${a.uuid}`)).toEqual({ ownerUuid: m.ownerUuid });
-    expect(c.owner).toBe(false);
     const lines = readLedger().filter((l) => l.event === 'created');
-    expect(lines.map((l) => l.type)).toEqual(['customAttributes', 'users', 'certificates', 'keys', 'certificates', 'keys', 'certificates', 'keys']);
+    expect(lines.map((l) => l.type)).toEqual(['customAttributes', 'certificates', 'keys', 'certificates', 'keys', 'certificates', 'keys']);
     expect(lines.filter((l) => l.type === 'keys').every((l) => l.derived && !!l.createdAfter)).toBe(true);
     server.reset();
     expect((await buildSeedSubset(api, 'T')).certificates.map((x) => x.uuid)).toEqual(m.certificates.map((x) => x.uuid));
