@@ -117,16 +117,11 @@ function definitionNamed(defs: AttributeDefinition[], name: string, form: string
     return def;
 }
 
-export function uriNamesToken(uri: string, label: string): boolean {
-    const pathAttributes = uri.replace(/^pkcs11:/, '').split('?')[0].split(';');
-    return pathAttributes.some((attribute) => {
-        if (!attribute.startsWith('token=')) return false;
-        try {
-            return decodeURIComponent(attribute.slice('token='.length)) === label;
-        } catch {
-            return false;
-        }
-    });
+/** Whether a broker route's option names the token label: the connector's reference reads `<label>, serial <serial>`, or the label alone. */
+export function referenceNamesToken(reference: string | undefined, label: string): boolean {
+    if (reference === undefined) return false;
+    const serialAt = reference.lastIndexOf(', serial ');
+    return reference === label || (serialAt >= 0 && reference.slice(0, serialAt) === label);
 }
 
 /** The token form: the profile item, and the token item the `token` callback offers, which must name exactly one token. */
@@ -142,9 +137,9 @@ async function tokenForm(admin: Admin, cfg: KeyOnboardingConfig, pkcs11: Connect
         interfaceUuid: pkcs11.interfaceUuid,
         attributes: [profile],
     });
-    const matches = (offered ?? []).filter((item) => typeof item?.data === 'string' && uriNamesToken(item.data, cfg.pkcs11Token));
+    const matches = (offered ?? []).filter((item) => typeof item?.data === 'string' && referenceNamesToken(item.reference, cfg.pkcs11Token));
     if (matches.length !== 1) {
-        logger.warn(`profile ${cfg.pkcs11Profile} offers ${matches.length} token(s) labelled ${cfg.pkcs11Token}; offered: ${(offered ?? []).map((o) => String(o?.data)).join(', ') || 'none'}`);
+        logger.warn(`profile ${cfg.pkcs11Profile} offers ${matches.length} token(s) labelled ${cfg.pkcs11Token}; offered: ${(offered ?? []).map((o) => `${String(o?.reference)} (${String(o?.data)})`).join(', ') || 'none'}`);
         return `the profile KO_PKCS11_PROFILE names offers ${matches.length} tokens labelled as KO_PKCS11_TOKEN says (exactly one is needed; the offered ones are in the setup log)`;
     }
     const token = requestAttribute(tokenDef, [{ data: matches[0].data, ...(matches[0].reference !== undefined ? { reference: matches[0].reference } : {}) }]);

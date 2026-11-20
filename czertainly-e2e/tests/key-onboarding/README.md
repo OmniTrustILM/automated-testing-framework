@@ -42,7 +42,7 @@ The onboard request names a pair by its listed `keyPairMeta`; the guard waives o
 | KO_SIDECAR_CONTAINER (local) | pkcs11-sidecar-softhsm |
 | KO_KUBE_NAMESPACE | ilm |
 | KO_KUBE_DEPLOYMENT | pkcs11-cryptography-provider |
-| KO_KUBE_CONTAINER | proxy-softhsm |
+| KO_KUBE_CONTAINER | broker-softhsm |
 | KO_PKCS11_MODULE | /usr/lib/softhsm/libsofthsm2.so |
 | KO_KUBE_CONTEXT | none (in a pod: its service account; elsewhere required) |
 | KO_KUBE_EXEC_TIMEOUT_MS | 180000 |
