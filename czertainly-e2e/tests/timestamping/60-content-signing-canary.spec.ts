@@ -1,9 +1,10 @@
 import { recordCreated } from '../../utils/regression/ledger/ledger';
 import { runName } from '../../utils/regression/ledger/runState';
-import { SigningRecordListItem } from '../../utils/timestamping/adminApi';
+import { attributeValues, SigningRecordListItem } from '../../utils/timestamping/adminApi';
 import { waitFor } from '../../utils/timestamping/docker';
 import { expect, test } from '../../utils/timestamping/fixtures';
 import { ledgerSpec, primaryFamily, runStartedAt } from '../../utils/timestamping/provisioning';
+import { signatureField } from '../../utils/timestamping/signatureOptions';
 import { devTests } from '../../utils/timestamping/tags';
 import { describeOutcome, requestTimestamp } from '../../utils/timestamping/tsp';
 
@@ -76,6 +77,12 @@ test.describe('content-signing canary', devTests(), () => {
     const primary = primaryFamily();
     const set = primary.nonQualified;
     const name = runName(`content-signing-${Date.now().toString(36)}`);
+    // Core resolves the signing algorithm before it asks the connector, so the profile signs the way timestamping does.
+    const timestampingProfile = await admin.getSigningProfile(set.signingProfile.uuid);
+    const offer = await admin.signatureAttributes(set.certificate.uuid);
+    const signingOptions = Object.entries(
+      attributeValues(timestampingProfile.signingScheme?.signingOperationAttributes ?? []),
+    ).map(([option, [value]]) => signatureField(offer, option, value));
     const response = await admin.raw('POST', '/v1/signingProfiles', {
       name,
       workflow: {
@@ -89,7 +96,7 @@ test.describe('content-signing canary', devTests(), () => {
         signingScheme: 'managed',
         managedSigningType: 'static_key',
         certificateUuid: set.certificate.uuid,
-        signingOperationAttributes: [],
+        signingOperationAttributes: signingOptions,
       },
       customAttributes: [],
     });
@@ -99,7 +106,7 @@ test.describe('content-signing canary', devTests(), () => {
       recordCreated('signingProfiles', { uuid: (JSON.parse(body) as { uuid: string }).uuid, name }, { spec: ledgerSpec(testInfo), note: 'accepted although a refusal was expected' });
     }
     expect(response.status(), `content-signing profile creation: ${body}`).toBe(422);
-    expect(body, 'the refusal names the missing content-signing capability').toMatch(/Content Signing/i);
+    expect(body, 'the refusal names the family the connector does not declare').toMatch(/does not declare the cades family/);
     expect(body, 'the refusal names the connector it checked').toContain(ts.connectors.timestampFormatting.name);
 
     const afterwards = await requestTimestamp(tsp, {
