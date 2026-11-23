@@ -23,7 +23,7 @@ export interface UserFields {
     firstName?: string;
     lastName?: string;
     email?: string;
-    roleNames?: string[];
+    roles?: Array<{ uuid: string; name: string }>;
 }
 
 export class UserPage {
@@ -146,12 +146,14 @@ export class UserPage {
         await expect(this.createUserDialog).toBeVisible();
     }
 
-    /** Picks the roles by name in the "Assigned User Roles" multi-select; the trigger then shows each of them. */
-    private async chooseRoles(roleNames: string[]): Promise<void> {
-        if (!roleNames.length) return;
-        const reason = 'the option shows the role description after its name (showOptionDescriptionInDropdown)';
-        await chooseOptions(this.page, this.rolesSelect, roleNames.map((prefix) => ({ prefix, reason })));
-        for (const name of roleNames) await expect(this.rolesSelect.trigger, `role ${name} is selected`).toContainText(name);
+    /**
+     * Picks the roles in the "Assigned User Roles" multi-select by uuid (the option's `data-value`): an option's name also
+     * carries the role's description. The trigger then shows each role's name.
+     */
+    private async chooseRoles(roles: Array<{ uuid: string; name: string }>): Promise<void> {
+        if (!roles.length) return;
+        await chooseOptions(this.page, this.rolesSelect, roles.map((r) => ({ value: r.uuid })));
+        for (const r of roles) await expect(this.rolesSelect.trigger, `role ${r.name} is selected`).toContainText(r.name);
     }
 
     /**
@@ -166,9 +168,9 @@ export class UserPage {
         await fillText(this.emailInput, fields.email ?? `${fields.username}@example.test`);
         await expect(this.enabledSwitch).toBeChecked();
         await fillRequiredCustomAttributes(this.page, this.createUserDialog, 'qa-reg', await customAttributesDefined(this.page, 'users'));
-        await this.chooseRoles(fields.roleNames ?? []);
+        await this.chooseRoles(fields.roles ?? []);
         const createCall = watchApiCall(this.page, { method: 'POST', path: /\/api\/v1\/users$/ });
-        const rolesCall = (fields.roleNames ?? []).length
+        const rolesCall = (fields.roles ?? []).length
             ? watchApiCall(this.page, { method: 'PATCH', path: new RegExp(`/api/v1/users/${UUID}/roles$`) })
             : undefined;
         const startedAt = Date.now();

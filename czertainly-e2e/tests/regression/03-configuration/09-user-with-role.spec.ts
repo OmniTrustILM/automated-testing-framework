@@ -35,7 +35,7 @@ test.describe('User with a role', { tag: tags.regression }, () => {
                 await users.goToList();
                 const answer = await submitRecordingByNameOnFailure(
                     { type: 'users', name, spec: own.spec, note: `role ${role.name}`, lookup: lookupInList(api, '/api/v1/users', 'username') },
-                    () => users.createUser({ username: name, roleNames: [role.name] }));
+                    () => users.createUser({ username: name, roles: [role] }));
                 // Ledger before anything else: the user exists once the POST answered (its uuid is in the answer),
                 // whatever the PATCH does.
                 const ref = own.record('users', answer, { name, note: `role ${role.name}` });
