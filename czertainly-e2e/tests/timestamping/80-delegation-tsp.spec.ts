@@ -1,10 +1,10 @@
 /**
- * delegation on TSP — Epic ilm#486 scenario 8 of #118: the timestamping endpoint accepts, refuses and records delegation
- * tokens as the API does. In this block for its ready TSP profile and the mapped user that may timestamp on it.
- * Changes the audit settings and adds own OAuth2 providers (the block runs in one worker), all restored in afterAll.
+ * delegation on TSP — Epic ilm#486 scenario 8 of #118: TSP accepts, refuses and records delegation tokens as the API does.
+ * Own bearer-only TSP profile on the block's signing profile (the block's own profiles keep their Basic-only challenge),
+ * granted to the block's role; audit settings, providers and the role's permissions are restored in afterAll.
  */
 import { request as playwrightRequest, APIRequestContext } from '@playwright/test';
-import { adminApi, Json } from '../../utils/epicOwnership';
+import { adminApi, Json, sendOk } from '../../utils/epicOwnership';
 import {
     DelegationRealm, enableFullAudit, expectAttributed, expectRefused, invokeTsp, newSigner, provisionDelegationRealm, providersStartingWith,
     putProvider, removeProvider, restoreLogging, Signer, sweepRealms, untilStatus,
@@ -40,6 +40,9 @@ let signedSettings: Json;
 let kc: DelegationRealm | undefined;
 let user: { uuid: string; username: string };
 let profileName: string;
+let tspProfileUuid: string | undefined;
+let roleUuid: string;
+let originalPermissions: Json | undefined;
 const providers = new Set<string>();
 const issued: string[] = [];
 
@@ -50,6 +53,14 @@ const signed = (act?: unknown): string => {
     issued.push(token);
     return token;
 };
+/** The role's permissions plus `timestamp` and `detail` on one more TSP profile. */
+function withTspGrant(permissions: Json, profile: { uuid: string; name: string }): Json {
+    const resources = ((permissions.resources ?? []) as Json[]).filter((r) => r.name !== 'tspProfiles');
+    const tsp = ((permissions.resources ?? []) as Json[]).find((r) => r.name === 'tspProfiles') ?? { name: 'tspProfiles', allowAllActions: false, actions: [], objects: [] };
+    const objects = [...((tsp.objects ?? []) as Json[]), { uuid: profile.uuid, name: profile.name, allow: ['timestamp', 'detail'], deny: [] }];
+    return { ...permissions, resources: [...resources, { ...tsp, objects }] };
+}
+
 const put = async (name: string, settings: Json): Promise<void> => {
     providers.add(name);
     await putProvider(admin, name, settings);
@@ -60,13 +71,27 @@ test.beforeAll(async () => {
     const summary = readSummary();
     test.skip(summary.status !== 'ready', summary.status === 'ready' ? '' : summary.reason);
     if (summary.status !== 'ready') return;
-    user = summary.provisioning.mappedUser;
-    profileName = primaryFamily().nonQualified.tspProfile.name;
+    const provisioning = summary.provisioning;
+    user = provisioning.mappedUser;
+    roleUuid = provisioning.role.uuid;
     env = loadEnv();
     grant = await playwrightRequest.newContext({ ignoreHTTPSErrors: true });
     // settings writes: the block's guarded admin refuses them, so these use the smoke user's plain context, as the Epic tests do
     admin = adminApi(grant, env);
     originalLogging = await enableFullAudit(admin);
+
+    profileName = `${PROVIDER_PREFIX}${run}`;
+    const created = (await sendOk(admin, 'POST', '/api/v1/tspProfiles', {
+        name: profileName, vaultProfileUuid: provisioning.vaultProfile.uuid, allowedAuthenticationMethods: ['bearerToken'], customAttributes: [],
+    })).json as Json;
+    tspProfileUuid = created.uuid as string;
+    await sendOk(admin, 'PUT', `/api/v1/tspProfiles/${tspProfileUuid}`, {
+        name: profileName, defaultSigningProfileUuid: primaryFamily().nonQualified.signingProfile.uuid, vaultProfileUuid: provisioning.vaultProfile.uuid,
+        allowedAuthenticationMethods: ['bearerToken'], customAttributes: [],
+    });
+    await sendOk(admin, 'PATCH', `/api/v1/tspProfiles/${tspProfileUuid}/enable`);
+    originalPermissions = (await sendOk(admin, 'GET', `/api/v1/roles/${roleUuid}/permissions`)).json as Json;
+    await sendOk(admin, 'POST', `/api/v1/roles/${roleUuid}/permissions`, withTspGrant(originalPermissions, { uuid: tspProfileUuid, name: profileName }));
     for (const stale of await providersStartingWith(admin, PROVIDER_PREFIX)) await removeProvider(admin, stale);
     const audience = `${run}-fixtures`;
     signer = newSigner(`https://${run}.example.test`, audience);
@@ -94,6 +119,13 @@ test.afterAll(async () => {
     };
     if (admin) for (const name of providers) await attempt(`provider ${name}`, () => removeProvider(admin, name));
     if (kc) await attempt('Keycloak realm', () => kc!.dispose());
+    if (admin && originalPermissions) await attempt('role permissions', () => sendOk(admin, 'POST', `/api/v1/roles/${roleUuid}/permissions`, originalPermissions));
+    if (admin && tspProfileUuid) {
+        await attempt('TSP profile', async () => {
+            await sendOk(admin, 'PATCH', `/api/v1/tspProfiles/${tspProfileUuid}/disable`);
+            await sendOk(admin, 'DELETE', `/api/v1/tspProfiles/${tspProfileUuid}`);
+        });
+    }
     if (admin && originalLogging) await attempt('logging settings', () => restoreLogging(admin, originalLogging!));
     await admin?.dispose();
     await grant?.dispose();
