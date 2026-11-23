@@ -146,10 +146,11 @@ export class UserPage {
         await expect(this.createUserDialog).toBeVisible();
     }
 
-    /** Picks the roles by their exact names in the "Assigned User Roles" multi-select; the trigger then shows each of them. */
+    /** Picks the roles by name in the "Assigned User Roles" multi-select; the trigger then shows each of them. */
     private async chooseRoles(roleNames: string[]): Promise<void> {
         if (!roleNames.length) return;
-        await chooseOptions(this.page, this.rolesSelect, roleNames);
+        const reason = 'the option shows the role description after its name (showOptionDescriptionInDropdown)';
+        await chooseOptions(this.page, this.rolesSelect, roleNames.map((prefix) => ({ prefix, reason })));
         for (const name of roleNames) await expect(this.rolesSelect.trigger, `role ${name} is selected`).toContainText(name);
     }
 
