@@ -117,6 +117,7 @@ test.describe('certificate search filters', { tag: tags.api }, () => {
                 const m = await certificateSeedPlan(api, testInfo, own.spec);
                 const p = (await searchSeedCertificates(api, m, [propertyFilter('GROUP_NAME', r.condition, r.value)])).probe;
                 if (r.anyRefusal) {
+                    expect(p.status, `${r.row}: the request must be refused: ${p.text.slice(0, 300)}`).toBeGreaterThanOrEqual(400);
                     expect(p.status, `${r.row}: a refusal is never a 5xx: ${p.text.slice(0, 300)}`).toBeLessThan(500);
                 } else {
                     expectRefused(p, { status: 422, text: r.text!, among: true, what: `${r.condition} ${JSON.stringify(r.value)}` });
