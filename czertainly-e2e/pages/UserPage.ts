@@ -8,6 +8,7 @@ import { Logger } from '../utils/Logger';
 import { ApiAnswer } from '../utils/regression/apiReads';
 import { CreateAnswer, createAnswerOf } from './ui/createAnswer';
 import { cancelIfOpen, customAttributeEditor, customAttributesDefined, fillRequiredCustomAttributes, fillText } from './ui/form';
+import { chooseOptions, SelectHandle } from './ui/select';
 import { widgetTitled } from './ui/widget';
 import { actAndReadAnswer, actAndWaitForApi, answerFrom, UUID, watchApiCall } from './ui/waitForResponse';
 import { FORM_READY_MS } from '../utils/regression/timeouts';
@@ -51,6 +52,7 @@ export class UserPage {
     readonly emailInput: Locator;
     readonly enabledSwitch: Locator;
     readonly createButton: Locator;
+    readonly rolesSelect: SelectHandle;
 
     // Edit User dialog
     readonly editUserDialog: Locator;
@@ -93,6 +95,11 @@ export class UserPage {
         this.emailInput = this.createUserDialog.getByTestId('text-input-email');
         this.enabledSwitch = this.createUserDialog.getByTestId('switch-enabled-input');
         this.createButton = this.createUserDialog.getByTestId('progress-button').last();
+        this.rolesSelect = {
+            trigger: this.createUserDialog.getByTestId('select-userRoles-trigger'),
+            content: this.createUserDialog.getByTestId('select-userRoles-content'),
+            name: 'Assigned User Roles',
+        };
 
         this.editUserDialog = page.getByRole('dialog', { name: 'Edit User' });
         this.editDialogSpinner = this.editUserDialog.getByTestId('spinner');
@@ -115,9 +122,6 @@ export class UserPage {
         return this.usersList.getByRole('link', { name: username, exact: true });
     }
 
-    roleRow(roleName: string): Locator {
-        return this.createUserDialog.getByRole('row').filter({ has: this.page.getByRole('cell', { name: roleName, exact: true }) });
-    }
 
     async goToList(): Promise<void> {
         await this.page.goto('/administrator/#/users');
@@ -142,15 +146,11 @@ export class UserPage {
         await expect(this.createUserDialog).toBeVisible();
     }
 
-    /** Ticks the row that has the role's name cell, without `force`, so a covered or disabled box fails. */
-    private async tickRole(roleName: string): Promise<void> {
-        const row = this.roleRow(roleName);
-        await expect(row).toHaveCount(1);
-        const box = row.getByRole('checkbox');
-        await box.scrollIntoViewIfNeeded();
-        await expect(box).toBeEnabled();
-        await box.check();
-        await expect(box).toBeChecked();
+    /** Picks the roles by their exact names in the "Assigned User Roles" multi-select; the trigger then shows each of them. */
+    private async chooseRoles(roleNames: string[]): Promise<void> {
+        if (!roleNames.length) return;
+        await chooseOptions(this.page, this.rolesSelect, roleNames);
+        for (const name of roleNames) await expect(this.rolesSelect.trigger, `role ${name} is selected`).toContainText(name);
     }
 
     /**
@@ -165,7 +165,7 @@ export class UserPage {
         await fillText(this.emailInput, fields.email ?? `${fields.username}@example.test`);
         await expect(this.enabledSwitch).toBeChecked();
         await fillRequiredCustomAttributes(this.page, this.createUserDialog, 'qa-reg', await customAttributesDefined(this.page, 'users'));
-        for (const r of fields.roleNames ?? []) await this.tickRole(r);
+        await this.chooseRoles(fields.roleNames ?? []);
         const createCall = watchApiCall(this.page, { method: 'POST', path: /\/api\/v1\/users$/ });
         const rolesCall = (fields.roleNames ?? []).length
             ? watchApiCall(this.page, { method: 'PATCH', path: new RegExp(`/api/v1/users/${UUID}/roles$`) })
