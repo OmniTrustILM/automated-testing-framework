@@ -6,17 +6,18 @@
 import { request as playwrightRequest, APIRequestContext } from '@playwright/test';
 import { adminApi, Json, sendOk } from '../../utils/epicOwnership';
 import {
-    DelegationRealm, enableFullAudit, expectAttributed, expectRefused, invokeTsp, newSigner, provisionDelegationRealm, providersStartingWith,
+    DelegationRealm, enableFullAudit, expectAttributed, expectRefused, invokeTsp, keycloakUrl, newSigner, provisionDelegationRealm, providersStartingWith,
     putProvider, removeProvider, restoreLogging, Signer, sweepRealms, untilStatus,
 } from '../../utils/epicDelegation';
 import { loadEnv, TestEnv } from '../../utils/env';
 import { uniqueName } from '../../utils/names';
 import { timestampingConfig } from '../../utils/timestamping/config';
 import { expect, test } from '../../utils/timestamping/fixtures';
-import { primaryFamily, readSummary } from '../../utils/timestamping/provisioning';
+import { ledgerSpec, primaryFamily, readSummary } from '../../utils/timestamping/provisioning';
+import { recordCreated } from '../../utils/regression/ledger/ledger';
+import { runName } from '../../utils/regression/ledger/runState';
 import { devTests } from '../../utils/timestamping/tags';
 
-const EPIC = { tag: [...devTests().tag, '@epic-486'] };
 const PROVIDER_PREFIX = 'qa-e486-tsp-';
 /** Settings spread waits (40 s) plus audit polls of up to 30 s, above the block's spec timeout. */
 const TEST_TIMEOUT_MS = 300_000;
@@ -66,7 +67,7 @@ const put = async (name: string, settings: Json): Promise<void> => {
     await putProvider(admin, name, settings);
 };
 
-test.beforeAll(async () => {
+test.beforeAll(async ({}, testInfo) => {
     test.setTimeout(120_000);
     const summary = readSummary();
     test.skip(summary.status !== 'ready', summary.status === 'ready' ? '' : summary.reason);
@@ -80,11 +81,15 @@ test.beforeAll(async () => {
     admin = adminApi(grant, env);
     originalLogging = await enableFullAudit(admin);
 
-    profileName = `${PROVIDER_PREFIX}${run}`;
+    // run-owned and in the ledger: the block teardown deletes it before the signing profile it names, also when afterAll does not run
+    profileName = runName('e486-tsp');
     const created = (await sendOk(admin, 'POST', '/api/v1/tspProfiles', {
         name: profileName, vaultProfileUuid: provisioning.vaultProfile.uuid, allowedAuthenticationMethods: ['bearerToken'], customAttributes: [],
     })).json as Json;
     tspProfileUuid = created.uuid as string;
+    recordCreated('tspProfiles', { uuid: tspProfileUuid, name: profileName }, {
+        spec: ledgerSpec(testInfo), note: 'bearer-only TSP profile of the ilm#486 delegation scenario', parents: { vaultProfile: provisioning.vaultProfile.uuid },
+    });
     await sendOk(admin, 'PUT', `/api/v1/tspProfiles/${tspProfileUuid}`, {
         name: profileName, defaultSigningProfileUuid: primaryFamily().nonQualified.signingProfile.uuid, vaultProfileUuid: provisioning.vaultProfile.uuid,
         allowedAuthenticationMethods: ['bearerToken'], customAttributes: [],
@@ -99,8 +104,8 @@ test.beforeAll(async () => {
 
     const kcAdmin = process.env.KC_DELEGATION_ADMIN_USERNAME;
     const kcPassword = process.env.KC_DELEGATION_ADMIN_PASSWORD;
-    if (kcAdmin && kcPassword && env.authBaseUrl) {
-        const keycloak = { keycloakUrl: env.authBaseUrl, adminUsername: kcAdmin, adminPassword: kcPassword };
+    if (kcAdmin && kcPassword) {
+        const keycloak = { keycloakUrl: keycloakUrl(env), adminUsername: kcAdmin, adminPassword: kcPassword };
         await sweepRealms(keycloak, 'e486tsp-');
         kc = await provisionDelegationRealm({ ...keycloak, realm: `${run}-realm`, username: user.username });
         issued.push(kc.subjectToken, kc.delegateToken);
@@ -132,8 +137,8 @@ test.afterAll(async () => {
     if (failures.length) throw new Error(`Cleanup failed: ${failures.join('; ')}`);
 });
 
-test.describe('delegation on the timestamping endpoint (Epic ilm#486)', EPIC, () => {
-    test('S8a: with a signed delegation token TSP grants a timestamp recorded with the delegate, refuses a removed delegate and a malformed act', EPIC, async ({ ts }) => {
+test.describe('delegation on the timestamping endpoint (Epic ilm#486)', { tag: [...devTests().tag, '@epic-486'] }, () => {
+    test('S8a: with a signed delegation token TSP grants a timestamp recorded with the delegate, refuses a removed delegate and a malformed act', { tag: [...devTests().tag, '@epic-486'] }, async ({ ts }) => {
         expect(ts.mappedUser.uuid, 'the mapped user of the block').toBe(user.uuid);
         await put(signedProvider, signedSettings);
         const granted = await untilStatus(() => stamp(signed({ client_id: outer, sub: OUTER_SUBJECT })), 200, 'a delegation token on TSP');
@@ -144,7 +149,7 @@ test.describe('delegation on the timestamping endpoint (Epic ilm#486)', EPIC, ()
         await expectRefused(admin, () => stamp(signed({ client_id: outer, sub: OUTER_SUBJECT })), issued, signedProvider, outer);
     });
 
-    test('S8b: a real Keycloak delegation token gets a timestamp as the user with the client as delegate; the own token none; a removed delegate 401', EPIC, async () => {
+    test('S8b: a real Keycloak delegation token gets a timestamp as the user with the client as delegate; the own token none; a removed delegate 401', { tag: [...devTests().tag, '@epic-486'] }, async () => {
         test.skip(!kc, 'no Keycloak admin for the disposable realm (KC_DELEGATION_ADMIN_USERNAME / _PASSWORD not set)');
         await put(kcProvider, {
             issuerUrl: kc!.issuer, jwkSet: kc!.jwkSet, usernameClaim: 'preferred_username', audiences: [kc!.actorClientId],

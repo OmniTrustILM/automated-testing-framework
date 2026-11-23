@@ -6,6 +6,7 @@ import { generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import { inflateRawSync } from 'node:zlib';
 import { APIRequestContext, expect } from '@playwright/test';
 import { Json, send, sendOk } from './epicOwnership';
+import { TestEnv } from './env';
 
 /** Settings changes reach every Core instance through its scheduled refresh (30 s by default), plus a margin. */
 const SETTINGS_SPREAD_MS = 40_000;
@@ -90,6 +91,9 @@ export interface DelegationRealm {
  * A disposable realm (the platform's Keycloak has the delegation features wherever MCP signs in through it) with an actor
  * client, a subject client and the user; a hardcoded `may_act` mapper stands in for production consent and FGAP v2.
  */
+/** The platform's Keycloak: AUTH_BASE_URL, else BASE_URL/kc, as the token client does (utils/auth/accessToken.ts). */
+export const keycloakUrl = (env: TestEnv): string => (env.authBaseUrl ?? `${env.baseUrl.replace(/\/$/, '')}/kc`).replace(/\/$/, '');
+
 export interface KeycloakAdmin {
     keycloakUrl: string;
     adminUsername: string;
@@ -280,12 +284,13 @@ export async function untilStatus<T extends Invocation>(call: () => Promise<T>, 
     throw new Error(`${what}: did not answer ${status} ${inARow} times in a row within ${SETTINGS_SPREAD_MS + 20_000} ms (last ${last?.status})`);
 }
 
-/** The audit log settings this test needs: every module and resource, written to the database. */
+/** The audit log settings this test needs: every module and resource, none ignored, written to the database; returns the settings read before. */
 export async function enableFullAudit(admin: APIRequestContext): Promise<Json> {
     const logging = (await sendOk(admin, 'GET', '/api/v1/settings/logging')).json as Json;
     await sendOk(admin, 'PUT', '/api/v1/settings/logging', {
         ...logging,
-        auditLogs: { ...logging.auditLogs, logAllModules: true, logAllResources: true, output: 'DATABASE' },
+        // the ignore lists win over logAll*, so they are emptied too; restoreLogging puts them back
+        auditLogs: { ...logging.auditLogs, logAllModules: true, logAllResources: true, ignoredModules: [], ignoredResources: [], output: 'DATABASE' },
     });
     return logging;
 }

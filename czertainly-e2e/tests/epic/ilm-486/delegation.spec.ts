@@ -11,7 +11,7 @@ import { adminApi, Cleanup, Json, sendOk } from '../../../utils/epicOwnership';
 import {
     auditFilteredByDelegate, auditSearchFields, claims, DELEGATE_FIELD, DelegationRealm, enableFullAudit, expectAttributed, expectRefused,
     exportByDelegate, invoke, Invocation, leaksToken, newSigner, provisionDelegationRealm, providersStartingWith, putProvider,
-    removeProvider, restoreLogging, Signer, sweepRealms, untilStatus,
+    keycloakUrl, removeProvider, restoreLogging, Signer, sweepRealms, untilStatus,
 } from '../../../utils/epicDelegation';
 
 const TAGS = ['@epic-486', '@exclusive', '@regression'];
@@ -97,8 +97,7 @@ test.beforeAll(async () => {
     const kcAdmin = process.env.KC_DELEGATION_ADMIN_USERNAME;
     const kcPassword = process.env.KC_DELEGATION_ADMIN_PASSWORD;
     if (kcAdmin && kcPassword) {
-        if (!env.authBaseUrl) throw new Error('AUTH_BASE_URL is not set, so the platform\'s Keycloak is unknown');
-        const keycloak = { keycloakUrl: env.authBaseUrl, adminUsername: kcAdmin, adminPassword: kcPassword };
+        const keycloak = { keycloakUrl: keycloakUrl(env), adminUsername: kcAdmin, adminPassword: kcPassword };
         const swept = await sweepRealms(keycloak, 'e486-');
         if (swept.length) console.log(`removed ${swept.length} realm(s) an earlier run left: ${swept.join(', ')}`);
         kc = await provisionDelegationRealm({ ...keycloak, realm: `${run}-realm`, username });

@@ -4,7 +4,8 @@ Goal: the `timestamping` block runs create-only on a shared tier (develop-01, Te
 (timestamp-formatting connector, time-quality monitor + NTP, `messaging.timeQuality` on core, an EJBCA authority with the TSA
 profiles), with the suite's safety model untouched: every write goes through the guarded API, every created object is
 run-prefixed and in the ledger before any assertion, ownership = ledger line + live run-prefixed name, teardown deletes only
-own objects with read-back, nothing pre-existing is changed, no platform-wide setting is touched. Core read: `integration/spring-boot-4.1` (on `main` since core#2540).
+own objects with read-back, nothing pre-existing is changed, no platform-wide setting is touched (one exception, the QA spec
+`80-delegation-tsp.spec.ts` of Epic ilm#486: audit settings and own OAuth2 providers, restored in its afterAll; README.md). Core read: `integration/spring-boot-4.1` (on `main` since core#2540).
 
 ## Per object
 
