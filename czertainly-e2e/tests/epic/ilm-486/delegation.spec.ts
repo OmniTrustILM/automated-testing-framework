@@ -16,7 +16,7 @@ import { adminApi, Cleanup, Json, sendOk } from '../../../utils/epicOwnership';
 import {
     auditFilteredByDelegate, auditOf, auditSearchFields, auditWatermark, claims, DELEGATE_FIELD, DelegationRealm, enableFullAudit,
     exportByDelegate, invoke, Invocation, leaksToken, newSigner, provisionDelegationRealm, providersStartingWith, putProvider,
-    refusalAudit, removeProvider, restoreLogging, settingsSpread, Signer, untilStatus,
+    refusalAudit, removeProvider, restoreLogging, settingsSpread, Signer, sweepRealms, untilStatus,
 } from '../../../utils/epicDelegation';
 
 const TAGS = ['@epic-486', '@exclusive', '@regression'];
@@ -121,7 +121,9 @@ test.beforeAll(async () => {
     const kcPassword = process.env.KC_DELEGATION_ADMIN_PASSWORD;
     if (kcAdmin && kcPassword) {
         if (!env.authBaseUrl) throw new Error('AUTH_BASE_URL is not set, so the platform\'s Keycloak is unknown');
-        kc = await provisionDelegationRealm({ keycloakUrl: env.authBaseUrl, adminUsername: kcAdmin, adminPassword: kcPassword, realm: `${run}-realm`, username });
+        const keycloak = { keycloakUrl: env.authBaseUrl, adminUsername: kcAdmin, adminPassword: kcPassword };
+        await sweepRealms(keycloak, 'e486-');
+        kc = await provisionDelegationRealm({ ...keycloak, realm: `${run}-realm`, username });
         issued.push(kc.subjectToken, kc.delegateToken);
         kcSettings = {
             issuerUrl: kc.issuer, jwkSet: kc.jwkSet, usernameClaim: 'preferred_username', audiences: [kc.actorClientId],

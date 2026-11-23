@@ -102,20 +102,42 @@ export interface DelegationRealm {
  * for the consent and FGAP v2 policy of a production realm, so the exchange is deterministic. The realm is deleted by
  * `dispose`, also when provisioning fails half way.
  */
-export async function provisionDelegationRealm(o: {
-    keycloakUrl: string; adminUsername: string; adminPassword: string; realm: string; username: string;
-}): Promise<DelegationRealm> {
+export interface KeycloakAdmin {
+    keycloakUrl: string;
+    adminUsername: string;
+    adminPassword: string;
+}
+
+async function tokenOf(url: string, realm: string, form: Record<string, string>): Promise<string> {
+    const data = await json(`${url}/realms/${realm}/protocol/openid-connect/token`, { method: 'POST', body: new URLSearchParams(form) });
+    if (typeof data.access_token !== 'string') throw new Error(`realm ${realm}: no access token in the answer (contents withheld)`);
+    return data.access_token as string;
+}
+
+/** Admin API headers with a fresh master-realm token: it lives about a minute, so every admin step takes its own. */
+async function adminHeaders(o: KeycloakAdmin): Promise<Record<string, string>> {
+    const token = await tokenOf(o.keycloakUrl.replace(/\/$/, ''), 'master', {
+        grant_type: 'password', client_id: 'admin-cli', username: o.adminUsername, password: o.adminPassword,
+    });
+    return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+}
+
+/** Deletes the realms whose name starts with `prefix` that the test admin can see (those an earlier run left). */
+export async function sweepRealms(o: KeycloakAdmin, prefix: string): Promise<string[]> {
     const url = o.keycloakUrl.replace(/\/$/, '');
-    const tokenOf = async (realm: string, form: Record<string, string>): Promise<string> => {
-        const data = await json(`${url}/realms/${realm}/protocol/openid-connect/token`, { method: 'POST', body: new URLSearchParams(form) });
-        if (typeof data.access_token !== 'string') throw new Error(`realm ${realm}: no access token in the answer (contents withheld)`);
-        return data.access_token as string;
-    };
-    const admin = await tokenOf('master', { grant_type: 'password', client_id: 'admin-cli', username: o.adminUsername, password: o.adminPassword });
-    const headers = { Authorization: `Bearer ${admin}`, 'Content-Type': 'application/json' };
+    const headers = await adminHeaders(o);
+    const stale = (await json<Json[]>(`${url}/admin/realms?briefRepresentation=true`, { headers }))
+        .map((r) => String(r.realm)).filter((name) => name.startsWith(prefix));
+    for (const name of stale) await http(`${url}/admin/realms/${encodeURIComponent(name)}`, { method: 'DELETE', headers }, [204, 404]);
+    return stale;
+}
+
+export async function provisionDelegationRealm(o: KeycloakAdmin & { realm: string; username: string }): Promise<DelegationRealm> {
+    const url = o.keycloakUrl.replace(/\/$/, '');
+    const headers = await adminHeaders(o);
     const base = `${url}/admin/realms/${encodeURIComponent(o.realm)}`;
     const dispose = async (): Promise<void> => {
-        await http(base, { method: 'DELETE', headers }, [204, 404]);
+        await http(base, { method: 'DELETE', headers: await adminHeaders(o) }, [204, 404]);
     };
     const actorClientId = `${o.realm}-actor`;
     const subjectClientId = `${o.realm}-subject`;
@@ -159,11 +181,11 @@ export async function provisionDelegationRealm(o: {
         const certs = await json<{ keys: Json[] }>(discovery.jwks_uri as string);
         const signing = certs.keys.filter((k) => k.use === 'sig' && k.alg === 'RS256');
         if (!signing.length) throw new Error(`realm ${o.realm}: no RS256 signing key`);
-        const subjectToken = await tokenOf(o.realm, {
+        const subjectToken = await tokenOf(url, o.realm, {
             grant_type: 'password', client_id: subjectClientId, client_secret: subjectSecret, username: o.username, password, scope: 'openid',
         });
-        const actorToken = await tokenOf(o.realm, { grant_type: 'client_credentials', client_id: actorClientId, client_secret: actorSecret });
-        const delegateToken = await tokenOf(o.realm, {
+        const actorToken = await tokenOf(url, o.realm, { grant_type: 'client_credentials', client_id: actorClientId, client_secret: actorSecret });
+        const delegateToken = await tokenOf(url, o.realm, {
             grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange', client_id: actorClientId, client_secret: actorSecret,
             subject_token: subjectToken, actor_token: actorToken,
             subject_token_type: 'urn:ietf:params:oauth:token-type:access_token',
