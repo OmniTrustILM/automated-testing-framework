@@ -14,7 +14,7 @@ import { uniqueName } from '../../utils/names';
 import { timestampingConfig } from '../../utils/timestamping/config';
 import { expect, test } from '../../utils/timestamping/fixtures';
 import { ledgerSpec, primaryFamily, readSummary } from '../../utils/timestamping/provisioning';
-import { recordCreated } from '../../utils/regression/ledger/ledger';
+import { recordCreated, recordDeleted } from '../../utils/regression/ledger/ledger';
 import { runName } from '../../utils/regression/ledger/runState';
 import { devTests } from '../../utils/timestamping/tags';
 
@@ -112,7 +112,7 @@ test.beforeAll(async ({}, testInfo) => {
     }
 });
 
-test.afterAll(async () => {
+test.afterAll(async ({}, testInfo) => {
     test.setTimeout(120_000);
     const failures: string[] = [];
     const attempt = async (what: string, step: () => Promise<unknown>): Promise<void> => {
@@ -129,6 +129,7 @@ test.afterAll(async () => {
         await attempt('TSP profile', async () => {
             await sendOk(admin, 'PATCH', `/api/v1/tspProfiles/${tspProfileUuid}/disable`);
             await sendOk(admin, 'DELETE', `/api/v1/tspProfiles/${tspProfileUuid}`);
+            recordDeleted('tspProfiles', { uuid: tspProfileUuid!, name: profileName }, ledgerSpec(testInfo));
         });
     }
     if (admin && originalLogging) await attempt('logging settings', () => restoreLogging(admin, originalLogging!));
