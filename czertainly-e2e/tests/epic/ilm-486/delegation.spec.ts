@@ -9,9 +9,9 @@ import { uniqueName } from '../../../utils/names';
 import { requiredCustomAttributes } from '../../../utils/regression/customAttributes';
 import { adminApi, Cleanup, Json, sendOk } from '../../../utils/epicOwnership';
 import {
-    auditFilteredByDelegate, auditOf, auditSearchFields, auditWatermark, claims, DELEGATE_FIELD, DelegationRealm, enableFullAudit,
+    auditFilteredByDelegate, auditSearchFields, claims, DELEGATE_FIELD, DelegationRealm, enableFullAudit, expectAttributed, expectRefused,
     exportByDelegate, invoke, Invocation, leaksToken, newSigner, provisionDelegationRealm, providersStartingWith, putProvider,
-    refusalAudit, removeProvider, restoreLogging, settingsSpread, Signer, sweepRealms, untilStatus,
+    removeProvider, restoreLogging, Signer, sweepRealms, untilStatus,
 } from '../../../utils/epicDelegation';
 
 const TAGS = ['@epic-486', '@exclusive', '@regression'];
@@ -60,31 +60,10 @@ const put = async (name: string, settings: Json): Promise<void> => {
 };
 const keycloakOnly = (): void => test.skip(!kc, 'no Keycloak admin for the disposable realm (KC_DELEGATION_ADMIN_USERNAME / _PASSWORD not set)');
 
-/** The marked request's audit record shows the run's user as actor, with the given outermost delegate or none. */
-async function expectAttributed(request: Invocation, delegate?: { identifier: string; subject: string }): Promise<Json[]> {
-    const records = await auditOf(admin, request);
-    expect(leaksToken(records, issued), 'the audit record holds no bearer token or signature').toBe(false);
-    const mine = records.filter((r) => r.operationResult === 'success' && r.actor?.type === 'user' && r.actor?.uuid === user.uuid);
-    expect(mine.length, `a successful record of request ${request.marker} names the user ${user.username}`).toBeGreaterThan(0);
-    for (const r of mine) {
-        if (delegate) {
-            expect(r.actor.delegate?.identifier, 'the delegate identifier').toBe(delegate.identifier);
-            expect(r.actor.delegate?.subject, 'the delegate subject').toBe(delegate.subject);
-        } else {
-            expect(r.actor.delegate ?? null, 'no delegate on the user\'s own request').toBeNull();
-        }
-    }
-    return mine;
-}
-
-/** The token is refused with 401 on every Core instance, and a failure record names the provider and the delegate. */
-async function expectRefused(token: string, provider: string, delegate: string): Promise<void> {
-    await settingsSpread();
-    const watermark = await auditWatermark(admin);
-    await untilStatus(() => call(ALLOWED_PATH, token), 401, `delegate ${delegate} through ${provider}`);
-    const records = await refusalAudit(admin, watermark, provider, delegate);
-    expect(leaksToken(records, issued), 'the refusal record holds no bearer token or signature').toBe(false);
-}
+const attributed = (request: Invocation, delegate?: { identifier: string; subject: string }): Promise<Json[]> =>
+    expectAttributed(admin, request, user, issued, delegate);
+const refused = (token: string, provider: string, delegate: string): Promise<void> =>
+    expectRefused(admin, () => call(ALLOWED_PATH, token), issued, provider, delegate);
 
 test.beforeAll(async () => {
     test.setTimeout(120_000);
@@ -158,7 +137,7 @@ test.describe('RFC 8693 delegation tokens', { tag: TAGS }, () => {
         expect(exchanged.act?.sub, 'the exchange names the actor\'s service account').toBe(kc!.actorSubject);
         await put(kcProvider, kcSettings);
         const accepted = await untilStatus(() => call(ALLOWED_PATH, kc!.delegateToken), 200, 'the delegation token');
-        const records = await expectAttributed(accepted, { identifier: kc!.actorClientId, subject: kc!.actorSubject });
+        const records = await attributed(accepted, { identifier: kc!.actorClientId, subject: kc!.actorSubject });
         recorded = { identifier: kc!.actorClientId, subject: kc!.actorSubject, ids: records.map((r) => String(r.id)) };
     });
 
@@ -166,7 +145,7 @@ test.describe('RFC 8693 delegation tokens', { tag: TAGS }, () => {
         keycloakOnly();
         const own = await call(ALLOWED_PATH, kc!.subjectToken);
         expect(own.status, 'the user\'s own token').toBe(200);
-        await expectAttributed(own);
+        await attributed(own);
     });
 
     test('S2: a delegation token has the user\'s permissions, no more: both tokens are denied a read the user may not do', async () => {
@@ -178,13 +157,13 @@ test.describe('RFC 8693 delegation tokens', { tag: TAGS }, () => {
     test('S4: a delegate removed from the provider is refused with 401, and the refusal names provider and delegate', async () => {
         keycloakOnly();
         await put(kcProvider, { ...kcSettings, allowedDelegates: [] });
-        await expectRefused(kc!.delegateToken, kcProvider, kc!.actorClientId);
+        await refused(kc!.delegateToken, kcProvider, kc!.actorClientId);
     });
 
     test('S5: a provider without allowed delegates refuses a delegation token', async () => {
         const { allowedDelegates: _none, ...withoutDelegates } = signedSettings;
         await put(signedProvider, withoutDelegates);
-        await expectRefused(signed({ client_id: outer, sub: OUTER_SUBJECT }), signedProvider, outer);
+        await refused(signed({ client_id: outer, sub: OUTER_SUBJECT }), signedProvider, outer);
     });
 
     test('S6: a malformed act is refused; of nested actors only the outermost decides and is recorded', async () => {
@@ -192,7 +171,7 @@ test.describe('RFC 8693 delegation tokens', { tag: TAGS }, () => {
         const nested = await untilStatus(
             () => call(ALLOWED_PATH, signed({ client_id: outer, sub: OUTER_SUBJECT, act: { client_id: 'unlisted-inner', sub: 'inner-service-account' } })),
             200, 'a nested act with an allowed outer delegate');
-        const records = await expectAttributed(nested, { identifier: outer, subject: OUTER_SUBJECT });
+        const records = await attributed(nested, { identifier: outer, subject: OUTER_SUBJECT });
         recorded ??= { identifier: outer, subject: OUTER_SUBJECT, ids: records.map((r) => String(r.id)) };
         for (const act of ['not-an-object', [], null, {}, { sub: 'missing-client' }, { client_id: 7 }]) {
             expect((await call(ALLOWED_PATH, signed(act))).status, `act ${JSON.stringify(act)}`).toBe(401);
@@ -204,7 +183,7 @@ test.describe('RFC 8693 delegation tokens', { tag: TAGS }, () => {
         const accepted = await untilStatus(
             () => call(ALLOWED_PATH, signed({ application_id: custom, client_id: 'unlisted-client', sub: 'custom-service-account' })),
             200, 'the custom delegate claim');
-        await expectAttributed(accepted, { identifier: custom, subject: 'custom-service-account' });
+        await attributed(accepted, { identifier: custom, subject: 'custom-service-account' });
     });
 
     test('S9: the audit log filters and exports by delegate', async () => {

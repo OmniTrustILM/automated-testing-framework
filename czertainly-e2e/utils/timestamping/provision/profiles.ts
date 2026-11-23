@@ -23,7 +23,8 @@ const NTP_SERVERS_MIN_REACHABLE = 1;
 const LEAP_SECOND_GUARD = true;
 
 /** On create and on the link's PUT (a PUT replaces the resource). */
-const AUTH_METHODS = ['clientCertificate', 'basicPassword'];
+// bearerToken serves the delegation scenario of Epic ilm#486 (tests/timestamping/80-delegation-tsp.spec.ts).
+const AUTH_METHODS = ['clientCertificate', 'basicPassword', 'bearerToken'];
 
 
 export async function createVaultProfile(ctx: SetupContext, vault: NamedUuid, name: string): Promise<OwnRef> {

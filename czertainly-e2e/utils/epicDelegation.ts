@@ -4,7 +4,7 @@
  */
 import { generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import { inflateRawSync } from 'node:zlib';
-import { APIRequestContext } from '@playwright/test';
+import { APIRequestContext, expect } from '@playwright/test';
 import { Json, send, sendOk } from './epicOwnership';
 
 /** Settings changes reach every Core instance through its scheduled refresh (30 s by default), plus a margin. */
@@ -214,6 +214,38 @@ export async function invoke(baseUrl: string, path: string, token: string): Prom
     return { status, marker };
 }
 
+/** An RFC 3161 request (v1, SHA-256 of 32 zero bytes, certReq) needs no secret, so every call can send the same one. */
+const TIMESTAMP_REQUEST = Buffer.from(`30390201013031300d060960864801650304020105000420${'00'.repeat(32)}0101ff`, 'hex');
+
+/** Asks a TSP profile for a timestamp with a bearer token; `pkiStatus` is the RFC 3161 status of a 200 answer. */
+export async function invokeTsp(tspBaseUrl: string, profileName: string, token: string): Promise<Invocation & { pkiStatus?: number }> {
+    const marker = `ilm-delegation/${randomUUID()}`;
+    const { status, body } = await http(`${tspBaseUrl.replace(/\/$/, '')}/api/v1/protocols/tsp/${encodeURIComponent(profileName)}`, {
+        method: 'POST', body: TIMESTAMP_REQUEST,
+        headers: { Authorization: `Bearer ${token}`, 'User-Agent': marker, 'Content-Type': 'application/timestamp-query' },
+    }, [200, 401, 403]);
+    return { status, marker, ...(status === 200 ? { pkiStatus: pkiStatusOf(body) } : {}) };
+}
+
+/** The PKIStatus integer at the start of a TimeStampResp (SEQUENCE { PKIStatusInfo SEQUENCE { INTEGER … } … }). */
+function pkiStatusOf(bytes: Buffer): number {
+    let offset = 0;
+    const enter = (tag: number): number => {
+        if (bytes[offset++] !== tag) throw new Error('not a TimeStampResp');
+        let length = bytes[offset++];
+        if (length & 0x80) {
+            const count = length & 0x7f;
+            length = 0;
+            for (let i = 0; i < count; i++) length = length * 256 + bytes[offset++];
+        }
+        return length;
+    };
+    enter(0x30);
+    enter(0x30);
+    if (enter(0x02) !== 1) throw new Error('not a TimeStampResp');
+    return bytes[offset];
+}
+
 const providerPath = (name: string): string => `/api/v1/settings/authentication/oauth2Providers/${encodeURIComponent(name)}`;
 
 export async function putProvider(admin: APIRequestContext, name: string, settings: Json): Promise<void> {
@@ -235,10 +267,10 @@ export async function providersStartingWith(admin: APIRequestContext, prefix: st
  * Repeats the call until it answers `status` on every try of a row (several Core instances follow a settings change
  * one by one), within the settings spread time.
  */
-export async function untilStatus(call: () => Promise<Invocation>, status: number, what: string, inARow = 3): Promise<Invocation> {
+export async function untilStatus<T extends Invocation>(call: () => Promise<T>, status: number, what: string, inARow = 3): Promise<T> {
     const deadline = Date.now() + SETTINGS_SPREAD_MS + 20_000;
     let streak = 0;
-    let last: Invocation | undefined;
+    let last: T | undefined;
     while (Date.now() < deadline) {
         last = await call();
         streak = last.status === status ? streak + 1 : 0;
@@ -355,4 +387,39 @@ function csvRows(bytes: Buffer, separator = ','): Array<Record<string, string>> 
 export function leaksToken(value: unknown, tokens: string[]): boolean {
     const text = JSON.stringify(value);
     return tokens.some((token) => text.includes(token) || text.includes(token.split('.')[2] ?? '\u0000'));
+}
+
+export interface DelegationUser {
+    uuid: string;
+    username: string;
+}
+
+/** The marked request's audit records show the user as actor, with the given outermost delegate or none. */
+export async function expectAttributed(
+    admin: APIRequestContext, request: Invocation, user: DelegationUser, issued: string[], delegate?: { identifier: string; subject: string },
+): Promise<Json[]> {
+    const records = await auditOf(admin, request);
+    expect(leaksToken(records, issued), 'the audit record holds no bearer token or signature').toBe(false);
+    const mine = records.filter((r) => r.operationResult === 'success' && r.actor?.type === 'user' && r.actor?.uuid === user.uuid);
+    expect(mine.length, `a successful record of request ${request.marker} names the user ${user.username}`).toBeGreaterThan(0);
+    for (const r of mine) {
+        if (delegate) {
+            expect(r.actor.delegate?.identifier, 'the delegate identifier').toBe(delegate.identifier);
+            expect(r.actor.delegate?.subject, 'the delegate subject').toBe(delegate.subject);
+        } else {
+            expect(r.actor.delegate ?? null, 'no delegate on the user\'s own request').toBeNull();
+        }
+    }
+    return mine;
+}
+
+/** After the settings spread, the attempt is refused with 401 on every Core instance, and a failure record names provider and delegate. */
+export async function expectRefused(
+    admin: APIRequestContext, attempt: () => Promise<Invocation>, issued: string[], provider: string, delegate: string,
+): Promise<void> {
+    await settingsSpread();
+    const watermark = await auditWatermark(admin);
+    await untilStatus(attempt, 401, `delegate ${delegate} through ${provider}`);
+    const records = await refusalAudit(admin, watermark, provider, delegate);
+    expect(leaksToken(records, issued), 'the refusal record holds no bearer token or signature').toBe(false);
 }
