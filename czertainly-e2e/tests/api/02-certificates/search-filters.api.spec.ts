@@ -112,19 +112,10 @@ test.describe('certificate search filters', { tag: tags.api }, () => {
             ? `GROUP_NAME ${r.condition} ${JSON.stringify(r.value)} (a JSON number) is refused with a 4xx, never a 5xx`
             : `GROUP_NAME ${r.condition} ${JSON.stringify(r.value)} is refused 422, not parsed as an Integer`;
         test(title,
-            testMeta({ id: 'API-CERT-45', row: r.row, prio: r.prio ?? 'P1', issue: ISSUE, bug: r.bug, rule: `COUNT_* take an integer (unparsable = 422); a refusal is a 4xx, never 5xx; core FilterPredicatesBuilder parses the value for COUNT_GREATER_THAN / COUNT_LESS_THAN; core's own FilterPredicatesBuilderITest expects a ValidationException for COUNT_EQUAL / COUNT_NOT_EQUAL too${r.bug ? `; known bug ${r.bug}: COUNT_EQUAL / COUNT_NOT_EQUAL do not parse the value and answer 500` : ''}` }),
+            testMeta({ id: 'API-CERT-45', row: r.row, prio: r.prio ?? 'P1', issue: ISSUE, rule: 'COUNT_* take an integer (unparsable = 422); a refusal is a 4xx, never 5xx; core FilterPredicatesBuilder parses the value for every COUNT_* condition (COUNT_EQUAL / COUNT_NOT_EQUAL since core#2799, which fixed core#2562); core\'s own FilterPredicatesBuilderITest expects a ValidationException' }),
             async ({ api, own }, testInfo) => {
                 const m = await certificateSeedPlan(api, testInfo, own.spec);
-                if (r.bug) {
-                    const control = (await searchSeedCertificates(api, m, [propertyFilter('GROUP_NAME', r.condition, 1)])).probe;
-                    expect(control.status, `${r.row} control (${r.condition} 1): ${control.text.slice(0, 300)}`).toBe(200);
-                }
                 const p = (await searchSeedCertificates(api, m, [propertyFilter('GROUP_NAME', r.condition, r.value)])).probe;
-                if (r.bug) {
-                    // A hard assertion before the marker: the request is not ACCEPTED.
-                    expect(p.status, `${r.row}: the request must not be accepted: ${p.text.slice(0, 300)}`).toBeGreaterThanOrEqual(400);
-                    test.fail(true, `${r.bug}: ${r.condition} does not parse its value, so an unparsable value answers 500 instead of a 4xx`);
-                }
                 if (r.anyRefusal) {
                     expect(p.status, `${r.row}: a refusal is never a 5xx: ${p.text.slice(0, 300)}`).toBeLessThan(500);
                 } else {
@@ -135,7 +126,7 @@ test.describe('certificate search filters', { tag: tags.api }, () => {
 
     for (const r of COUNT_PINS) {
         test(`GROUP_NAME ${r.condition} ${JSON.stringify(r.value)} (a JSON number) answers 200 with no seed`,
-            testMeta({ id: 'API-CERT-45', row: r.row, prio: 'P3', issue: ISSUE, pin: 'negative-count', rule: 'pinned as today\'s behaviour: a negative number (-1) on COUNT_EQUAL is not refused today (the unparsable string and the number 1.5 are the known bug core#2562, see the rows before); no group count equals it, so 200 and no seed row' }),
+            testMeta({ id: 'API-CERT-45', row: r.row, prio: 'P3', issue: ISSUE, pin: 'negative-count', rule: 'pinned as today\'s behaviour: a negative number (-1) on COUNT_EQUAL is not refused today (the unparsable string and the number 1.5 are refused since core#2799, see the rows before); no group count equals it, so 200 and no seed row' }),
             async ({ api, own }, testInfo) => {
                 const m = await certificateSeedPlan(api, testInfo, own.spec);
                 const r2 = await searchSeedCertificates(api, m, [propertyFilter('GROUP_NAME', r.condition, r.value)]);

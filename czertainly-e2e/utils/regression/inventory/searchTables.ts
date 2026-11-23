@@ -171,15 +171,14 @@ export const OWNER_REFUSALS: ReadonlyArray<{ row: string; condition: string; val
 ];
 
 /**
- * COUNT_* conditions with a non-integer value: intended answer is 422 "cannot be parsed as an Integer." for all four.
- * EQUAL / NOT_EQUAL answer 500 today (core#2562, rows carry `bug`); the JSON-number row asserts only "a 4xx, never a 5xx" (`anyRefusal`).
+ * COUNT_* conditions with a non-integer value: 422 "cannot be parsed as an Integer." for all four (EQUAL / NOT_EQUAL since
+ * core#2799, which fixed core#2562); the JSON-number row asserts only "a 4xx, never a 5xx" (`anyRefusal`).
  */
 export interface CountRefusal {
     row: string;
     condition: string;
     value: unknown;
     text?: RegExp;
-    bug?: string;
     anyRefusal?: true;
     prio?: 'P2';
 }
@@ -188,9 +187,9 @@ export const COUNT_REFUSALS: ReadonlyArray<CountRefusal> = [
     { row: 'G-5a', condition: 'COUNT_GREATER_THAN', value: 'x', text: /Filter field value x cannot be parsed as an Integer\./ },
     { row: 'G-5b', condition: 'COUNT_GREATER_THAN', value: '1.5', text: /Filter field value 1\.5 cannot be parsed as an Integer\./ },
     { row: 'G-5c', condition: 'COUNT_LESS_THAN', value: 'x', text: /Filter field value x cannot be parsed as an Integer\./ },
-    { row: 'G-5d', condition: 'COUNT_EQUAL', value: 'x', text: /Filter field value x cannot be parsed as an Integer\./, bug: 'core#2562' },
-    { row: 'G-5e', condition: 'COUNT_NOT_EQUAL', value: '1.5', text: /Filter field value 1\.5 cannot be parsed as an Integer\./, bug: 'core#2562' },
-    { row: 'G-5f', condition: 'COUNT_EQUAL', value: 1.5, bug: 'core#2562', anyRefusal: true, prio: 'P2' },
+    { row: 'G-5d', condition: 'COUNT_EQUAL', value: 'x', text: /Filter field value x cannot be parsed as an Integer\./ },
+    { row: 'G-5e', condition: 'COUNT_NOT_EQUAL', value: '1.5', text: /Filter field value 1\.5 cannot be parsed as an Integer\./ },
+    { row: 'G-5f', condition: 'COUNT_EQUAL', value: 1.5, anyRefusal: true, prio: 'P2' },
 ];
 
 /** Pin: a negative JSON number on COUNT_EQUAL answers 200 with no seed today; the pin flips if core decides on a 422. */
