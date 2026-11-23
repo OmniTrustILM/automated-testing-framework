@@ -97,7 +97,7 @@ export class UserPage {
         this.createButton = this.createUserDialog.getByTestId('progress-button').last();
         this.rolesSelect = {
             trigger: this.createUserDialog.getByTestId('select-userRoles-trigger'),
-            content: this.createUserDialog.getByTestId('select-userRoles-content'),
+            content: page.getByTestId('select-userRoles-content'), // rendered in a portal, outside the dialog
             name: 'Assigned User Roles',
         };
 
