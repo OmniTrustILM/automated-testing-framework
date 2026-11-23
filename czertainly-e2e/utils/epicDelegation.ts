@@ -1,11 +1,6 @@
 /**
- * epicDelegation — helpers of the Epic ilm#486 tests (RFC 8693 delegation tokens, scenarios of
- * automated-testing-framework#118): a disposable Keycloak realm with a real token exchange, test-signed tokens,
- * the run's own OAuth2 provider, and the audit log.
- *
- * Every call that carries a bearer token of the delegation tests goes through Node's fetch, not through Playwright,
- * so no token reaches a trace, a report or a Testkube artifact. Errors name the status only, never a body that could
- * echo a token.
+ * epicDelegation — Epic ilm#486 helpers: a disposable Keycloak realm, test-signed tokens, OAuth2 providers, the audit log.
+ * Token-bearing calls use Node's fetch, not Playwright, so no token reaches a trace or report; errors name the status only.
  */
 import { generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import { inflateRawSync } from 'node:zlib';
@@ -13,7 +8,7 @@ import { APIRequestContext } from '@playwright/test';
 import { Json, send, sendOk } from './epicOwnership';
 
 /** Settings changes reach every Core instance through its scheduled refresh (30 s by default), plus a margin. */
-export const SETTINGS_SPREAD_MS = 40_000;
+const SETTINGS_SPREAD_MS = 40_000;
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -49,8 +44,6 @@ export function claims(token: string): Json {
     }
 }
 
-// ---------------------------------------------------------------------------------------------------------------- tokens
-
 /**
  * A key pair that lives only in this process, and tokens signed with it. Mint tokens only for the run's own users:
  * a provider that trusts this key accepts a token for any existing ILM user name.
@@ -81,8 +74,6 @@ export function newSigner(issuer: string, audience: string): Signer {
     };
 }
 
-// ------------------------------------------------------------------------------------------------------------- Keycloak
-
 export interface DelegationRealm {
     issuer: string;
     /** The realm's signing keys as an inline JWK set (base64 of the JSON), so Core does not fetch them itself. */
@@ -96,11 +87,8 @@ export interface DelegationRealm {
 }
 
 /**
- * A disposable realm on the platform's Keycloak (its `token-exchange-delegation` and `parameterized-scopes` features
- * are on wherever MCP signs in through it): an actor client with a service account and standard token exchange, a
- * subject client with the password grant, and a user with the ILM user's name. A hardcoded `may_act` mapper stands in
- * for the consent and FGAP v2 policy of a production realm, so the exchange is deterministic. The realm is deleted by
- * `dispose`, also when provisioning fails half way.
+ * A disposable realm (the platform's Keycloak has the delegation features wherever MCP signs in through it) with an actor
+ * client, a subject client and the user; a hardcoded `may_act` mapper stands in for production consent and FGAP v2.
  */
 export interface KeycloakAdmin {
     keycloakUrl: string;
@@ -207,8 +195,6 @@ export async function provisionDelegationRealm(o: KeycloakAdmin & { realm: strin
     }
 }
 
-// ------------------------------------------------------------------------------------------------------------ ILM calls
-
 export interface Invocation {
     status: number;
     /** The unique User-Agent of this request, which its audit record carries as `source.userAgent`. */
@@ -257,8 +243,6 @@ export async function untilStatus(call: () => Promise<Invocation>, status: numbe
     }
     throw new Error(`${what}: did not answer ${status} ${inARow} times in a row within ${SETTINGS_SPREAD_MS + 20_000} ms (last ${last?.status})`);
 }
-
-// ------------------------------------------------------------------------------------------------------------ audit log
 
 /** The audit log settings this test needs: every module and resource, written to the database. */
 export async function enableFullAudit(admin: APIRequestContext): Promise<Json> {

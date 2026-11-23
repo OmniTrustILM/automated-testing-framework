@@ -1,12 +1,7 @@
 /**
- * delegation — Epic ilm#486: RFC 8693 delegation tokens, the scenarios of automated-testing-framework#118 (ported from
- * the draft in automated-testing-framework#119). Scenario 8 (the timestamping endpoint) needs a TSP profile and is not
- * here yet; 10 (UI) and 11 (no token in logs) stay manual.
- *
- * Every test changes platform-wide state (the audit log settings and the run's own OAuth2 providers): @exclusive,
- * serial, everything restored or removed in afterAll. The real Keycloak exchange runs in a disposable realm of the
- * platform's Keycloak and needs KC_DELEGATION_ADMIN_USERNAME / KC_DELEGATION_ADMIN_PASSWORD (a master-realm user with
- * only the create-realm role); without them those scenarios skip. The other scenarios sign their own tokens.
+ * delegation — Epic ilm#486, the RFC 8693 scenarios of #118 (ported from #119); S8 (TSP) is not here yet, S10–S11 are manual.
+ * @exclusive: changes the audit settings and adds own OAuth2 providers, all restored in afterAll. The real exchange needs
+ * KC_DELEGATION_ADMIN_USERNAME / _PASSWORD (a master-realm user with only create-realm); without them S1–S4 skip.
  */
 import { test, expect, request as playwrightRequest, APIRequestContext } from '@playwright/test';
 import { loadEnv, TestEnv } from '../../../utils/env';
@@ -26,7 +21,9 @@ const ALLOWED_PATH = '/api/v1/settings/platform';
 /** A read the run's user may not do (no connector permission). */
 const DENIED_PATH = '/api/v1/connectors';
 
-test.describe.configure({ mode: 'serial', timeout: 300_000 });
+/** Two waits for the settings spread (40 s each) plus audit polls of up to 30 s, above the 30-second default. */
+const TEST_TIMEOUT_MS = 300_000;
+test.describe.configure({ mode: 'serial', timeout: TEST_TIMEOUT_MS });
 
 const run = uniqueName('e486').toLowerCase();
 const kcProvider = `${PROVIDER_PREFIX}${run}-keycloak`;
@@ -34,6 +31,7 @@ const signedProvider = `${PROVIDER_PREFIX}${run}-signed`;
 const audience = `${run}-fixtures`;
 const outer = `${run}-outer`;
 const custom = `${run}-custom`;
+const OUTER_SUBJECT = 'outer-service-account';
 
 let env: TestEnv;
 let grant: APIRequestContext;
@@ -122,7 +120,8 @@ test.beforeAll(async () => {
     if (kcAdmin && kcPassword) {
         if (!env.authBaseUrl) throw new Error('AUTH_BASE_URL is not set, so the platform\'s Keycloak is unknown');
         const keycloak = { keycloakUrl: env.authBaseUrl, adminUsername: kcAdmin, adminPassword: kcPassword };
-        await sweepRealms(keycloak, 'e486-');
+        const swept = await sweepRealms(keycloak, 'e486-');
+        if (swept.length) console.log(`removed ${swept.length} realm(s) an earlier run left: ${swept.join(', ')}`);
         kc = await provisionDelegationRealm({ ...keycloak, realm: `${run}-realm`, username });
         issued.push(kc.subjectToken, kc.delegateToken);
         kcSettings = {
@@ -152,7 +151,7 @@ test.afterAll(async () => {
 });
 
 test.describe('RFC 8693 delegation tokens', { tag: TAGS }, () => {
-    test('1: a real Keycloak delegation token is accepted as the user, and the audit names the client as delegate', async () => {
+    test('S1: a real Keycloak delegation token is accepted as the user, and the audit names the client as delegate', async () => {
         keycloakOnly();
         const exchanged = claims(kc!.delegateToken);
         expect(exchanged.sub, 'the exchange keeps the user as subject').toBe(claims(kc!.subjectToken).sub);
@@ -163,44 +162,44 @@ test.describe('RFC 8693 delegation tokens', { tag: TAGS }, () => {
         recorded = { identifier: kc!.actorClientId, subject: kc!.actorSubject, ids: records.map((r) => String(r.id)) };
     });
 
-    test('3: after a delegated request, the user\'s own token records no delegate', async () => {
+    test('S3: after a delegated request, the user\'s own token records no delegate', async () => {
         keycloakOnly();
         const own = await call(ALLOWED_PATH, kc!.subjectToken);
         expect(own.status, 'the user\'s own token').toBe(200);
         await expectAttributed(own);
     });
 
-    test('2: a delegation token has the user\'s permissions, no more: both tokens are denied a read the user may not do', async () => {
+    test('S2: a delegation token has the user\'s permissions, no more: both tokens are denied a read the user may not do', async () => {
         keycloakOnly();
         expect((await call(DENIED_PATH, kc!.subjectToken)).status, 'the user\'s own token').toBe(403);
         expect((await call(DENIED_PATH, kc!.delegateToken)).status, 'the delegation token').toBe(403);
     });
 
-    test('4: a delegate removed from the provider is refused with 401, and the refusal names provider and delegate', async () => {
+    test('S4: a delegate removed from the provider is refused with 401, and the refusal names provider and delegate', async () => {
         keycloakOnly();
         await put(kcProvider, { ...kcSettings, allowedDelegates: [] });
         await expectRefused(kc!.delegateToken, kcProvider, kc!.actorClientId);
     });
 
-    test('5: a provider without allowed delegates refuses a delegation token', async () => {
+    test('S5: a provider without allowed delegates refuses a delegation token', async () => {
         const { allowedDelegates: _none, ...withoutDelegates } = signedSettings;
         await put(signedProvider, withoutDelegates);
-        await expectRefused(signed({ client_id: outer, sub: 'outer-service-account' }), signedProvider, outer);
+        await expectRefused(signed({ client_id: outer, sub: OUTER_SUBJECT }), signedProvider, outer);
     });
 
-    test('6: a malformed act is refused; of nested actors only the outermost decides and is recorded', async () => {
+    test('S6: a malformed act is refused; of nested actors only the outermost decides and is recorded', async () => {
         await put(signedProvider, signedSettings);
         const nested = await untilStatus(
-            () => call(ALLOWED_PATH, signed({ client_id: outer, sub: 'outer-service-account', act: { client_id: 'unlisted-inner', sub: 'inner-service-account' } })),
+            () => call(ALLOWED_PATH, signed({ client_id: outer, sub: OUTER_SUBJECT, act: { client_id: 'unlisted-inner', sub: 'inner-service-account' } })),
             200, 'a nested act with an allowed outer delegate');
-        const records = await expectAttributed(nested, { identifier: outer, subject: 'outer-service-account' });
-        recorded ??= { identifier: outer, subject: 'outer-service-account', ids: records.map((r) => String(r.id)) };
+        const records = await expectAttributed(nested, { identifier: outer, subject: OUTER_SUBJECT });
+        recorded ??= { identifier: outer, subject: OUTER_SUBJECT, ids: records.map((r) => String(r.id)) };
         for (const act of ['not-an-object', [], null, {}, { sub: 'missing-client' }, { client_id: 7 }]) {
             expect((await call(ALLOWED_PATH, signed(act))).status, `act ${JSON.stringify(act)}`).toBe(401);
         }
     });
 
-    test('7: a custom delegate claim decides which delegate is allowed and recorded', async () => {
+    test('S7: a custom delegate claim decides which delegate is allowed and recorded', async () => {
         await put(signedProvider, { ...signedSettings, allowedDelegates: [custom], delegateClaim: 'application_id' });
         const accepted = await untilStatus(
             () => call(ALLOWED_PATH, signed({ application_id: custom, client_id: 'unlisted-client', sub: 'custom-service-account' })),
@@ -208,7 +207,7 @@ test.describe('RFC 8693 delegation tokens', { tag: TAGS }, () => {
         await expectAttributed(accepted, { identifier: custom, subject: 'custom-service-account' });
     });
 
-    test('9: the audit log filters and exports by delegate', async () => {
+    test('S9: the audit log filters and exports by delegate', async () => {
         test.skip(!recorded, 'no delegated request was recorded earlier in this run');
         expect(await auditSearchFields(admin), 'the delegate is a search field').toContain(DELEGATE_FIELD);
         const filtered = await auditFilteredByDelegate(admin, recorded!.identifier);
