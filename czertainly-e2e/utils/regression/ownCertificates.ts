@@ -6,18 +6,19 @@ import type * as forge from 'node-forge';
 import { waitForCertificateState } from './wait/certificateState';
 import { GuardedApi } from './guard/types';
 import { APIRequestContext, expect } from '@playwright/test';
-import { ISSUED_WAIT_MS, REVOKED_WAIT_MS } from './timeouts';
+import { ISSUED_WAIT_MS, QUICK_STATE_WAIT_MS, REVOKED_WAIT_MS } from './timeouts';
 import { opsBase } from './lifecycle/certificateLabels';
 import { sendRaw } from './lifecycle/rawAnswers';
 import { GeneratedCsr, csrFromKey, newKeyPair, SanSet, sameSans, sansOfDetail, selfSignedPem } from './pkiBuilders';
 import { RaLike } from './ownRaProfiles';
 import { Logger } from '../Logger';
-import { ApiAnswer, apiJsonWithDate, createdAfterOf } from './apiReads';
+import { ApiAnswer, apiJson, apiJsonWithDate, createdAfterOf, getCertificate } from './apiReads';
 import { requiredCustomAttributes } from './customAttributes';
 import { recordDerivedKeyOf, recordDerivedKeyOrNamed } from './issuedRecords';
 import { OwnRef, recordCreated } from './ledger/ledger';
 import { runName, ownName, ownCommonName } from './ledger/runState';
 import { settings } from './run/settings';
+import { pollUntil } from './wait';
 import type { JsonObject } from './json';
 
 const logger = new Logger('OwnCertificates');
@@ -103,7 +104,30 @@ export async function uploadOwnCertificate(api: GuardedApi, pem: string, name: s
     });
     const ref = recordCreated('certificates', { uuid: answer.json.uuid, name }, { spec, note });
     await recordDerivedKeyOrNamed(api, answer.json.uuid, name, createdAfterOf(answer, 'upload'), spec, note);
+    await dropUploaderOwner(api, ref);
     return { ...ref, cn: name };
+}
+
+async function automaticOwnershipOn(api: GuardedApi): Promise<boolean> {
+    try {
+        const platform = await apiJson<{ certificates?: { upload?: { automaticOwnership?: boolean } } } | undefined>(api, 'GET', '/api/v1/settings/platform');
+        return platform?.certificates?.upload?.automaticOwnership === true;
+    } catch (e) {
+        logger.warn(`the platform settings could not be read (${String(e instanceof Error ? e.message : e).split('\n')[0].slice(0, 200)}); an own upload may keep the uploader as owner`);
+        return false;
+    }
+}
+
+/** With automatic ownership on (core#2698) the sync upload answers with the uploader as owner; the suites expect none, so it is removed. */
+async function dropUploaderOwner(api: GuardedApi, ref: OwnRef): Promise<void> {
+    if (!(await automaticOwnershipOn(api))) return;
+    const detail = await pollUntil(() => getCertificate(api, ref.uuid), () => true, { timeoutMs: QUICK_STATE_WAIT_MS, what: `certificate ${ref.uuid} detail` });
+    if (!detail.ownerUuid) {
+        logger.info(`certificate ${ref.uuid}: automatic ownership is on, but the upload has no owner (an upload trigger may have set none)`);
+        return;
+    }
+    await apiJsonWithDate(api, 'PATCH', `/api/v1/certificates/${ref.uuid}`, { ownerUuid: '' });
+    logger.info(`certificate ${ref.uuid}: automatic ownership is on; the uploader's ownership is removed`);
 }
 
 export async function uploadOwnSelfSigned(api: GuardedApi, spec: string, suffix = 'cert'): Promise<OwnCertificate> {
