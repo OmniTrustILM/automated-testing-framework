@@ -78,19 +78,6 @@ test.describe('provisioning', devTests(), () => {
     });
   }
 
-  // A re-run under pinned names must find every object again.
-  const NO_PREVIOUS = 'per-run provisioning: there is no previous summary to compare';
-
-  test('re-provisioning reused every shared object', devTests(), async () => {
-    test.skip(true, NO_PREVIOUS);
-  });
-
-  for (const planned of plannedFamilies()) {
-    test(`re-provisioning reused every object of the ${planned.label} family`, devTests(), async () => {
-      test.skip(true, NO_PREVIOUS);
-    });
-  }
-
   test('the time-quality configuration matches what was provisioned', devTests(), async ({ admin, ts }) => {
     const configuration = await admin.get<{ uuid: string; name: string; accuracy: string }>(
       `/v1/timeQualityConfigurations/${ts.timeQuality.uuid}`,

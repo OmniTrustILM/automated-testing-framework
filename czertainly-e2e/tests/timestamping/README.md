@@ -114,8 +114,9 @@ instance and a software cryptography provider v2. `TSA_CRYPTO_PROVIDER=software-
 
 Fixed while porting: 40:106 / 40:152 (run-prefixed user and Basic credential, generated passwords, recorded in the
 ledger), 60:77 and 70:113 / 70:136 (run-prefixed profile names, recorded after an unexpected create), 20:49 / 20:112
-(artifacts per test), 50 / 55 (real `@slow` / `@disruptive` tags and the opt-in), 10:94 / 10:100 (skipped with the reason
-"per-run provisioning: there is no previous summary to compare"). 40:59 still disables the shared-looking primary signing
+(artifacts per test), 50 / 55 (real `@slow` / `@disruptive` tags and the opt-in), 10:94 / 10:100 (the three
+"re-provisioning reused …" rows: per-run provisioning has no previous summary to compare, so they were always skipped;
+removed with the authors' agreement in 2026-11). 40:59 still disables the shared-looking primary signing
 profile, but it is now the run's own, with the `finally` re-enable.
 
 ## Known weak spots kept as in the source (for the authors)
