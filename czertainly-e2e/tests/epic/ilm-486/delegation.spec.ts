@@ -21,7 +21,7 @@ import {
 
 const TAGS = ['@epic-486', '@exclusive', '@regression'];
 const PROVIDER_PREFIX = 'qa-e486-';
-/** A read the run's user may do (settings detail), audited when the audit log records every resource. */
+/** A read the run's user may do (Core asks for settings list), audited as CORE / SETTINGS / DETAIL. */
 const ALLOWED_PATH = '/api/v1/settings/platform';
 /** A read the run's user may not do (no connector permission). */
 const DENIED_PATH = '/api/v1/connectors';
@@ -98,12 +98,12 @@ test.beforeAll(async () => {
     for (const stale of await providersStartingWith(admin, PROVIDER_PREFIX)) await removeProvider(admin, stale);
 
     const role = (await sendOk(admin, 'POST', '/api/v1/roles', {
-        name: `${run}-role`, description: 'Epic ilm#486: settings detail only',
+        name: `${run}-role`, description: 'Epic ilm#486: settings list only',
         customAttributes: await requiredCustomAttributes(admin, 'roles', run),
     })).json as Json;
     cleanup.add('role', role.name, () => sendOk(admin, 'DELETE', `/api/v1/roles/${role.uuid}`));
     await sendOk(admin, 'POST', `/api/v1/roles/${role.uuid}/permissions`, {
-        allowAllResources: false, resources: [{ name: 'settings', allowAllActions: false, actions: ['detail'] }],
+        allowAllResources: false, resources: [{ name: 'settings', allowAllActions: false, actions: ['list'] }],
     });
     const username = `${run}-user`;
     const created = (await sendOk(admin, 'POST', '/api/v1/users', {
