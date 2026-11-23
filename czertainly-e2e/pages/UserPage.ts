@@ -146,10 +146,7 @@ export class UserPage {
         await expect(this.createUserDialog).toBeVisible();
     }
 
-    /**
-     * Picks the roles in the "Assigned User Roles" multi-select by uuid (the option's `data-value`): an option's name also
-     * carries the role's description. The trigger then shows each role's name.
-     */
+    /** By uuid (`data-value`): an option's accessible name also carries the role's description. */
     private async chooseRoles(roles: Array<{ uuid: string; name: string }>): Promise<void> {
         if (!roles.length) return;
         await chooseOptions(this.page, this.rolesSelect, roles.map((r) => ({ value: r.uuid })));
