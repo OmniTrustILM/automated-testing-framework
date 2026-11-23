@@ -110,12 +110,16 @@ async function adminHeaders(o: KeycloakAdmin): Promise<Record<string, string>> {
     return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 }
 
-/** Deletes the realms whose name starts with `prefix` that the test admin can see (those an earlier run left). */
+/**
+ * Deletes the realms starting with `prefix` that an earlier run left. A create-realm-only admin may list realms only
+ * while it owns one, so 403 means there is nothing to sweep.
+ */
 export async function sweepRealms(o: KeycloakAdmin, prefix: string): Promise<string[]> {
     const url = o.keycloakUrl.replace(/\/$/, '');
     const headers = await adminHeaders(o);
-    const stale = (await json<Json[]>(`${url}/admin/realms?briefRepresentation=true`, { headers }))
-        .map((r) => String(r.realm)).filter((name) => name.startsWith(prefix));
+    const listed = await http(`${url}/admin/realms?briefRepresentation=true`, { headers }, [200, 403]);
+    if (listed.status === 403) return [];
+    const stale = (JSON.parse(listed.body.toString()) as Json[]).map((r) => String(r.realm)).filter((name) => name.startsWith(prefix));
     for (const name of stale) await http(`${url}/admin/realms/${encodeURIComponent(name)}`, { method: 'DELETE', headers }, [204, 404]);
     return stale;
 }
