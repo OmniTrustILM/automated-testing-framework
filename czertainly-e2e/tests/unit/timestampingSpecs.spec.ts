@@ -63,8 +63,8 @@ function bodySpans(src: string): Array<[number, number]> {
     return spans;
 }
 
-test('the block has its ten specs, in file order', () => {
-    expect(specs.map((s) => s.slice(0, 2))).toEqual(['00', '10', '20', '30', '40', '45', '50', '55', '60', '70']);
+test('the block has its eleven specs, in file order', () => {
+    expect(specs.map((s) => s.slice(0, 2))).toEqual(['00', '10', '20', '30', '40', '45', '50', '55', '60', '70', '80']);
 });
 
 const LOCAL_ONLY_SPECS = ['50-time-quality.spec.ts', '55-connector-outage.spec.ts'];

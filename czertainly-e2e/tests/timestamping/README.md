@@ -9,6 +9,11 @@ same numbers and titles as the source, file order kept), every test tagged `@dev
 `@local`, and the stop-a-container ones `@slow @disruptive`. Test bodies, assertions and titles are the developers'; only the plumbing,
 the plan-driven titles and a few safety fixes changed. The block runs create-only on a shared tier too: SHARED-TIER.md (design, per object).
 
+**One QA spec is not the developers':** `80-delegation-tsp.spec.ts`, scenario 8 of the Epic ilm#486 delegation tests (#118), tagged
+`@dev-tests` and `@epic-486`. It needs the block's ready signing chain and mapped user. It is the block's only exception to "no
+platform-wide setting is touched": it switches the audit log on and adds own OAuth2 providers through the smoke user's plain context
+(the guard refuses settings writes), and restores both in its afterAll. Its bearer-only TSP profile is run-named and in the ledger.
+
 ## WHY
 
 The source suite provisioned with a bash script (fixed names, reuse and modify, state files) and read admin
