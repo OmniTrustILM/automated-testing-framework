@@ -11,8 +11,23 @@
     "typecheck": "tsc --noEmit",
     "test:unit": "playwright test -c playwright.unit.config.ts",
     "test:unit:quick": "playwright test -c playwright.unit.config.ts --grep-invert @integration",
+    "test:unit:coverage": "c8 playwright test -c playwright.unit.config.ts tests/unit/est",
     "test:regression": "playwright test -c playwright.regression.config.ts",
-    "test:api": "playwright test -c playwright.api.config.ts"
+    "test:api": "playwright test -c playwright.api.config.ts",
+    "test:est": "playwright test -c playwright.est.config.ts"
+  },
+  "c8": {
+    "include": [
+      "utils/est*.ts"
+    ],
+    "exclude": [],
+    "check-coverage": true,
+    "lines": 80,
+    "branches": 80,
+    "reporter": [
+      "text",
+      "lcov"
+    ]
   },
   "license": "Apache-2.0",
   "type": "commonjs",
@@ -24,6 +39,7 @@
     "@types/node-forge": "^1.3.14",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
+    "c8": "^12.0.0",
     "node-forge": "^1.4.0",
     "reflect-metadata": "^0.2.2",
     "typescript": "^6.0.3"

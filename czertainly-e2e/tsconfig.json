@@ -21,6 +21,7 @@
     "playwright.unit.config.ts",
     "playwright.visual.config.ts",
     "playwright.devblock.config.ts",
-    "playwright.epic.config.ts"
+    "playwright.epic.config.ts",
+    "playwright.est.config.ts"
   ]
 }
