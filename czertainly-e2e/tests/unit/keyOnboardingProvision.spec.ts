@@ -55,7 +55,7 @@ const ECHO = 'ECHO-OF-THE-REQUEST-BODY';
 
 const defaultConnectors = (): Json[] => [
     { uuid: U(9), name: 'software-cryptography-provider-v2', url: 'http://localhost:8230', version: 'v2', status: 'connected', interfaces: [{ uuid: U(10), code: 'cryptography' }] },
-    { uuid: C_PKCS11, name: 'pkcs11-cryptography-provider', url: PKCS11_URL, version: 'v2', status: 'connected', interfaces: [{ uuid: I_CRYPTO, code: 'cryptography', features: ['keyList'] }] },
+    { uuid: C_PKCS11, name: 'pkcs11-cryptography-provider', url: PKCS11_URL, version: 'v2', status: 'connected', interfaces: [{ uuid: I_CRYPTO, code: 'cryptography', features: ['stateless'] }] },
     { uuid: U(11), name: 'common-credential-provider', url: VAULT_URL, version: 'v1', status: 'connected', interfaces: [] },
     { uuid: C_VAULT, name: 'common-credential-provider-v2', url: VAULT_URL, version: 'v2', status: 'connected', interfaces: [{ uuid: I_SECRET, code: 'secret' }] },
 ];
@@ -287,7 +287,7 @@ test('control: the strict guard refuses the token-form callback the preflight di
     });
 });
 
-test('preflight: a missing, a waiting, a v1-only connector, no keyList, no secret interface and no single token are named reasons; nothing is written', async ({}, testInfo) => {
+test('preflight: a missing, a waiting, a v1-only connector, an unlistable token, no cryptography or secret interface and no single token are named reasons; nothing is written', async ({}, testInfo) => {
     const cases: Array<[string, FakeOptions, string | RegExp]> = [
         ['missing PKCS#11 connector', { connectors: defaultConnectors().filter((c) => c.uuid !== C_PKCS11) },
             'no PKCS#11 cryptography-provider connector (v2) is registered at KO_PKCS11_CONNECTOR_URL (the setup never registers one)'],
@@ -295,8 +295,10 @@ test('preflight: a missing, a waiting, a v1-only connector, no keyList, no secre
             'the PKCS#11 cryptography-provider connector at KO_PKCS11_CONNECTOR_URL is waiting for approval (the setup never approves a connector; approve it on the local stack and re-run)'],
         ['offline PKCS#11 connector', { connectors: defaultConnectors().map((c) => (c.uuid === C_PKCS11 ? { ...c, status: 'offline' } : c)) },
             'the PKCS#11 cryptography-provider connector at KO_PKCS11_CONNECTOR_URL is offline, not connected'],
-        ['no keyList', { connectors: defaultConnectors().map((c) => (c.uuid === C_PKCS11 ? { ...c, interfaces: [{ uuid: I_CRYPTO, code: 'cryptography', features: [] }] } : c)) },
-            'the PKCS#11 connector at KO_PKCS11_CONNECTOR_URL does not advertise the keyList feature on its cryptography interface'],
+        ['unlistable token', { connectors: defaultConnectors().map((c) => (c.uuid === C_PKCS11 ? { ...c, interfaces: [{ uuid: I_CRYPTO, code: 'cryptography', features: ['stateless', 'unlistableToken'] }] } : c)) },
+            'the PKCS#11 connector at KO_PKCS11_CONNECTOR_URL declares unlistableToken on its cryptography interface, so its tokens cannot list keys'],
+        ['no cryptography interface', { connectors: defaultConnectors().map((c) => (c.uuid === C_PKCS11 ? { ...c, interfaces: [] } : c)) },
+            'the PKCS#11 connector at KO_PKCS11_CONNECTOR_URL exposes no cryptography interface'],
         ['vault connector v1 only', { connectors: defaultConnectors().filter((c) => c.uuid !== C_VAULT) },
             'no credential-provider connector (v2) is registered at KO_VAULT_CONNECTOR_URL (the setup never registers one)'],
         ['no secret interface', { connectors: defaultConnectors().map((c) => (c.uuid === C_VAULT ? { ...c, interfaces: [] } : c)) },
