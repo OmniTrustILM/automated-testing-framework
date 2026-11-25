@@ -3,8 +3,7 @@
  * Nothing here creates or deletes anything. Columns are found by the header's data id, never by position.
  */
 import { expect, Locator, Page } from '@playwright/test';
-import { badgeTextOf } from '../utils/regression/inventory/fieldLabels';
-import { ListObservation, observeListRequest } from './ui/list';
+import { filterBadgeLocator, ListObservation, observeListRequest, readFilterBadges } from './ui/list';
 import { openHashRoute } from './ui/openHashRoute';
 
 export class CertificateListPage {
@@ -28,7 +27,7 @@ export class CertificateListPage {
         this.page = page;
         this.main = page.locator('main');
 
-        this.filterBadges = this.main.getByTestId('badge').filter({ has: page.getByRole('button', { name: 'Remove badge' }) });
+        this.filterBadges = filterBadgeLocator(page);
 
         this.table = this.main.getByTestId('custom-table');
         this.rows = this.table.locator('tbody tr[data-id]');
@@ -73,7 +72,7 @@ export class CertificateListPage {
     }
 
     private async filterBadgeTexts(): Promise<string[]> {
-        return (await this.filterBadges.allTextContents()).map(badgeTextOf);
+        return readFilterBadges(this.filterBadges);
     }
 
     private async allHeaderIds(): Promise<string[]> {
