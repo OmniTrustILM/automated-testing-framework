@@ -1,0 +1,28 @@
+# The edge's TLS certificate for ilm.kind.local, from a throw-away CA (cert-manager).
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata: { name: edge-selfsigned, namespace: ilm }
+spec: { selfSigned: {} }
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: { name: edge-ca, namespace: ilm }
+spec:
+  isCA: true
+  commonName: ILM kind edge CA
+  secretName: edge-ca
+  privateKey: { algorithm: ECDSA, size: 256 }
+  issuerRef: { name: edge-selfsigned, kind: Issuer }
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata: { name: edge-ca, namespace: ilm }
+spec: { ca: { secretName: edge-ca } }
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: { name: ilm-edge-tls, namespace: ilm }
+spec:
+  secretName: ilm-edge-tls
+  dnsNames: [ilm.kind.local]
+  issuerRef: { name: edge-ca, kind: Issuer }

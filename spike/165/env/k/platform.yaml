@@ -1,5 +1,5 @@
 # Throw-away ILM for ATF#165: the shared environment's Platform (version develop, digests from image-refs.yaml)
-# with the operator e2e `full` block's managed database and edge, sized for one kind node.
+# with the operator e2e `full` block's managed database, sized for one kind node.
 apiVersion: otilm.com/v1alpha1
 kind: Platform
 metadata:
@@ -7,6 +7,12 @@ metadata:
   namespace: ilm
 spec:
   version: develop
+  common:
+    hostName: ilm.kind.local
+    trustedCertificates:
+      secretRef: ilm-trusted-ca
+  networkPolicy:
+    ingressNamespace: kube-system # Traefik runs in kube-system, as on the shared environment
   database:
     mode: managed
     managed:
@@ -38,11 +44,18 @@ spec:
     password:
       enabled: true
       secretRef: ilm-admin-password
-    certificate:
+    certificate: # from the edge CA (edge/edge-tls.yaml), which ilm-trusted-ca and the edge trust
       enabled: true
       source: generated
+      issuerRef:
+        name: edge-ca
+        kind: Issuer
+  core:
+    clientCertHeader: X-Forwarded-Tls-Client-Cert
+  # The edge is Traefik in front (edge/), as on the shared environment; the operator's own edge stays off.
   edge:
-    enabled: true
-    host: ilm.kind.local
-    tls:
-      source: internal
+    enabled: false
+  gateway: # Kong must trust Traefik's X-Forwarded-* headers
+    trustedIps:
+      - "0.0.0.0/0"
+      - "::/0"

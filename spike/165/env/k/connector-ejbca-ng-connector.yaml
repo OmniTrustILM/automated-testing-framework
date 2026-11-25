@@ -9,7 +9,7 @@ spec:
     tag: develop-latest
   service:
     port: 8080
-  probes: # this connector serves the v1 health paths
+  probes: # as on the shared environment: this connector serves the v1 health paths
     liveness: { path: /health/liveness, initialDelaySeconds: 15, periodSeconds: 10, failureThreshold: 3 }
     readiness: { path: /health/readiness, initialDelaySeconds: 5, periodSeconds: 10, failureThreshold: 3 }
     startup: { path: /health/liveness, periodSeconds: 10, failureThreshold: 45 }

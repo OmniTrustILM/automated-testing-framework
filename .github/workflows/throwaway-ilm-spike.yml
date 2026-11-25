@@ -39,6 +39,8 @@ jobs:
               l = s["attributes"]["labels"]; rows.append((int(m), l["io.kubernetes.pod.namespace"] + "/" + l["io.kubernetes.container.name"]))
           rows.sort(reverse=True); print("sum GiB %.2f" % (sum(r[0] for r in rows) / 2**30))
           for m, n in rows[:15]: print("%6.0f MiB %s" % (m / 2**20, n))'
+      - name: Edge checks (client certificates, forged headers, EST route, kind network)
+        run: CLUSTER=atf165 bash spike/165/env/edge/edge-check.sh /tmp/atf165
       - name: Connector off and on
         run: |
           export KUBECONFIG=/tmp/atf165/kubeconfig

@@ -9,7 +9,7 @@ metadata:
 spec:
   containers:
     - name: core
-      image: hub.omnitrustregistry.com/ilm/core:develop-latest@sha256:f73047f273a706cac0eb26f9dd325a14a203067631bfe8009b05ff015bc17027
+      image: hub.omnitrustregistry.com/ilm/core:develop-latest@sha256:be7eee3932d0991f4db76a0af9f01625aaf7e2ecafa6e6b161f45b96c4367a08
     - name: auth
       image: hub.omnitrustregistry.com/ilm/auth:develop-latest@sha256:a2d9d9d8b7f640c185e317515cd6567189c38a66b26e0aceaefa2a27c4236881
     - name: scheduler

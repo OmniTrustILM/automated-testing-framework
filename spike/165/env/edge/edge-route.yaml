@@ -1,0 +1,44 @@
+# Client certificates at the edge, as on the shared environment: asked for but not required, checked against
+# ilm-trusted-ca, forwarded to Core in X-Forwarded-Tls-Client-Cert; any such header a client sends is removed first.
+apiVersion: traefik.io/v1alpha1
+kind: TLSOption
+metadata: { name: ilm-client-certificate, namespace: ilm }
+spec:
+  clientAuth:
+    clientAuthType: VerifyClientCertIfGiven
+    secretNames: [ilm-trusted-ca]
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: { name: ilm-client-certificate, namespace: ilm }
+spec:
+  passTLSClientCert: { pem: true }
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: { name: ilm-clear-client-certificate, namespace: ilm }
+spec:
+  headers:
+    customRequestHeaders:
+      ssl-client-cert: ""
+      X-Forwarded-Tls-Client-Cert: ""
+      X-Forwarded-Tls-Client-Cert-Info: ""
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata: { name: ilm-platform-core, namespace: ilm }
+spec:
+  ingressClassName: traefik
+  entryPoints: [websecure]
+  routes:
+    - match: Host(`ilm.kind.local`)
+      kind: Rule
+      middlewares:
+        - name: ilm-clear-client-certificate
+        - name: ilm-client-certificate
+      services:
+        - name: api-gateway
+          port: 8000
+  tls:
+    secretName: ilm-edge-tls
+    options: { name: ilm-client-certificate }

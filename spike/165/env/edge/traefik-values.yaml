@@ -1,0 +1,26 @@
+# Traefik as the shared environment runs it: CRD provider only (class traefik), header aliases deleted
+# before the backend sees them. A NodePort, reached on the kind node's address from the docker network: never through
+# kubectl port-forward, which delivers every request from 127.0.0.1, and Core treats such a request as its localhost
+# system user with all permissions.
+additionalArguments:
+  - "--entryPoints.websecure.http.aliasHeadersStrategy=delete"
+service:
+  spec:
+    type: NodePort
+ports:
+  websecure:
+    nodePort: 30443
+ingressClass:
+  enabled: false
+gateway:
+  enabled: false
+gatewayClass:
+  enabled: false
+providers:
+  kubernetesCRD:
+    enabled: true
+    ingressClass: traefik
+  kubernetesIngress:
+    enabled: false
+  kubernetesGateway:
+    enabled: false
