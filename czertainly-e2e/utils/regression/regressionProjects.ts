@@ -4,6 +4,7 @@
  * would be skipped).
  */
 import { devices, PlaywrightTestProject } from '@playwright/test';
+import { flowOf, withFlow } from './flows';
 import { withTierFilters } from './projectFilters';
 
 export const SETUP_FILES = /tier-snapshot\.setup\.ts$/;
@@ -16,7 +17,7 @@ const ROW_USE = { ...devices['Desktop Chrome'], viewport: { width: 1440, height:
 
 export function regressionProjects(env: NodeJS.ProcessEnv = process.env): PlaywrightTestProject[] {
     return withTierFilters(
-        [
+        withFlow([
             { name: 'snapshot', testDir: './tests/api', testMatch: SETUP_FILES, teardown: 'non-interference', timeout: 120_000 },
             { name: 'non-interference', testDir: './tests/api', testMatch: NON_INTERFERENCE, timeout: 120_000 },
             // Makes the run objects once; skips with a named reason and never fails (a dependent project starts only when every dependency
@@ -30,21 +31,21 @@ export function regressionProjects(env: NodeJS.ProcessEnv = process.env): Playwr
                 use: ROW_USE,
             },
             { name: 'logout', testMatch: LOGOUT_FILE, use: ROW_USE },
-        ],
+        ], ['regression', 'logout'], flowOf(env)),
         { env, infrastructure: ['snapshot', 'non-interference', 'run-setup'] },
     );
 }
 
 export function apiProjects(env: NodeJS.ProcessEnv = process.env): PlaywrightTestProject[] {
     return withTierFilters(
-        [
+        withFlow([
             { name: 'snapshot', testMatch: SETUP_FILES, teardown: 'non-interference' },
             { name: 'non-interference', testMatch: NON_INTERFERENCE },
             { name: 'gate', grep: /@gate\b/, testIgnore: NON_INTERFERENCE, dependencies: ['snapshot'],
                 use: { ...devices['Desktop Chrome'], extraHTTPHeaders: {} } },
             { name: 'api-p1', grep: /@p1\b/, grepInvert: /@gate\b/, testIgnore: NON_INTERFERENCE, dependencies: ['snapshot'] },
             { name: 'api-rest', grep: /@p2\b|@p3\b/, testIgnore: NON_INTERFERENCE, dependencies: ['gate'] },
-        ],
+        ], ['api-p1', 'api-rest'], flowOf(env)),
         { env, infrastructure: ['snapshot', 'non-interference'] },
     );
 }

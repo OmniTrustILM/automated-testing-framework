@@ -385,6 +385,17 @@ test('expectOrderedText skips rows without a value and names the two neighbours'
     expect(() => expectOrderedText('t asc', data('a', undefined, 'c', 'b'), val, 'asc', key)).toThrow(/t asc: r2="c" comes before r3="b"/);
 });
 
+test('expectOrderedText accepts a list in one punctuation-blind order and rejects a list mixing two orders', () => {
+    const val = (r: ListRow) => (r.v === undefined ? undefined : String(r.v));
+    const data = (...vals: string[]): ListRow[] => vals.map((x, i) => ({ uuid: `r${i}`, v: x }));
+    const glibc = data('certKey_qa-baseline-ilm259-leaf-rsa', 'certKey_qa-baseline-ilm259 Root CA');
+    expect(() => expectOrderedText('pb asc', glibc, val, 'asc', key)).not.toThrow();
+    expect(() => expectOrderedText('pb desc', [...glibc].reverse(), val, 'desc', key)).not.toThrow();
+    // "a c" < "ab-z" by code units and en, the reverse with punctuation skipped; the last pair holds only with punctuation skipped
+    const mixed = data('a c', 'ab-z', 'certKey_x-leaf', 'certKey_x Root');
+    expect(() => expectOrderedText('mix', mixed, val, 'asc', key)).toThrow(/mix: r2="certKey_x-leaf" comes before r3="certKey_x Root"/);
+});
+
 test('expectTieBreakAscending counts equal-value neighbours and names rows ordered by descending key', () => {
     const val = (r: ListRow) => (r.v === undefined ? undefined : String(r.v));
     const ok: ListRow[] = [{ uuid: '1', v: 'x' }, { uuid: '2', v: 'x' }, { uuid: '3', v: 'y' }, { uuid: '4' }];

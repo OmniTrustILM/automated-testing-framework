@@ -1,19 +1,20 @@
 /**
  * playwrightConfigs — the regression and API configs loaded with a fake environment.
  */
-import { test, expect } from '@playwright/test';
+import { test, expect, PlaywrightTestProject } from '@playwright/test';
 import { spawn, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as net from 'net';
 import * as path from 'path';
 import { ResolvedFilter, resolveProjectFilters, selectsTest } from '../../utils/regression/projectFilters';
+import { projectsSelectingFile } from '../../utils/regression/regressionProjects';
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const INTEGRATION = '@integration';
 
 const CONFIGS = ['playwright.regression.config.ts', 'playwright.api.config.ts'];
 const RUN_ENV_KEYS = [
-    'TIER_KIND', 'BASE_URL', 'REG_STATE_DIR', 'REG_PHASE', 'REG_ENV_FILE', 'REG_ENV_FILE_PINNED', 'API_ENV_FILE', 'REG_RUN_ID', 'API_RUN_ID',
+    'TIER_KIND', 'BASE_URL', 'REG_STATE_DIR', 'REG_PHASE', 'REG_FLOW', 'REG_ENV_FILE', 'REG_ENV_FILE_PINNED', 'API_ENV_FILE', 'REG_RUN_ID', 'API_RUN_ID',
     'API_DELETE_OWN', 'CLEANUP_LEDGER_FILE', 'TIER_LOCAL_HOSTS', 'AUTH_MODE', 'REG_RA_PROFILE_NAME', 'REG_TIER_ID', 'REG_LOCAL_CORE_URL',
     'REG_LOCAL_CORE_MARKER', 'REG_LOCAL_COMPOSE_PROJECT', 'REG_DOCKER_BIN', 'DOCKER_HOST', 'REG_RUN_ID_REUSE', 'REG_KEPT_STRICT',
     'API_TEARDOWN_DRY_RUN', 'AUTH_CLIENT_CERT',
@@ -167,6 +168,18 @@ for (const file of CONFIGS) {
             expect(selectsTest(byName('run-setup'), title('@p1'))).toBe(true);
             expect(selectsTest(byName('run-setup'), title('@p1 @local'))).toBe(false);
         }
+    });
+
+    test(`${file}: REG_FLOW reaches the project table, and an unknown flow refuses to load`, ({}, testInfo) => {
+        const isApi = file === 'playwright.api.config.ts';
+        // a listed secondary API file, and a main REG file
+        const probe = isApi ? 'tests/api/05-discovery/create-rejections.api.spec.ts' : 'tests/regression/12-main-usage/05-issue-with-an-acme-client.spec.ts';
+        const rows = (flow: string) => (loadConfig(file, { REG_FLOW: flow }, testInfo.outputDir).projects as PlaywrightTestProject[])
+            .filter((p) => ['regression', 'logout', 'api-p1', 'api-rest'].includes(p.name ?? ''));
+        const selected = (flow: string) => projectsSelectingFile(rows(flow), probe, isApi ? './tests/api' : './tests/regression');
+        expect(selected('main')).toEqual(isApi ? [] : ['regression']);
+        expect(selected('secondary')).toEqual(isApi ? ['api-p1', 'api-rest'] : []);
+        expect(() => loadConfig(file, { REG_FLOW: 'nightly' }, testInfo.outputDir)).toThrow(/REG_FLOW="nightly"/);
     });
 
     test(`${file}: the run-end teardown is the globalTeardown`, ({}, testInfo) => {
