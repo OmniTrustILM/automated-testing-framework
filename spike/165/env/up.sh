@@ -25,7 +25,7 @@ kubectl -n ilm create secret generic ilm-trusted-ca --from-file=ca.crt="$OUT/edg
 helm install traefik traefik --repo https://traefik.github.io/charts --version 42.4.3 -n kube-system \
   -f "$HERE/edge/traefik-values.yaml" --wait --timeout 5m >/dev/null
 kubectl apply -f "$HERE/edge/edge-route.yaml" >/dev/null; mark edge
-( umask 077; openssl rand -base64 18 | tr -d '/+=' > "$OUT/admin-password" )
+( umask 077; printf '%s' "$(openssl rand -base64 18 | tr -d '/+=')" > "$OUT/admin-password" ) # no newline: it would become part of the password
 kubectl -n ilm create secret generic ilm-admin-password --from-file=password="$OUT/admin-password" >/dev/null
 for c in common-credential-provider software-cryptography-provider; do
   kubectl -n ilm create secret generic "$c-encryption" --from-literal=key="$(openssl rand -hex 16)" >/dev/null; done

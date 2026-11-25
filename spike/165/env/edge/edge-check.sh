@@ -14,6 +14,6 @@ echo "4 profile, no certificate, forged headers:   $(c -o /dev/null -w '%{http_c
 echo "5 /api/v1/info, certificate of unknown CA:   $(c -o /dev/null -w '%{http_code}' --cert "$D/stranger.crt" --key "$D/stranger.key" $U/api/v1/info; echo " (curl exit $?)")"
 echo "6 /.well-known/est/cacerts:                  $(c -o "$D/est.out" -w '%{http_code}' $U/.well-known/est/cacerts) $(head -c 80 "$D/est.out")"
 NODE=$(docker inspect "${CLUSTER:-atf165}-control-plane" --format '{{(index .NetworkSettings.Networks "kind").IPAddress}}')
-echo "7 from the kind network, admin certificate:  $(docker run --rm --network kind -v "$D:/d:ro" curlimages/curl:8.11.1 -s \
+echo "7 from the kind network, admin certificate:  $(docker run --rm --user "$(id -u):$(id -g)" --network kind -v "$D:/d:ro" curlimages/curl:8.11.1 -s \
   --resolve ilm.kind.local:30443:$NODE --cacert /d/edge-ca.pem --cert /d/admin.crt --key /d/admin.key \
   -o /dev/null -w '%{http_code}' $U/api/v1/auth/profile)"
