@@ -152,9 +152,12 @@ export async function discoverConnectors(admin: Admin, cfg: KeyOnboardingConfig)
     const pkcs11Row = connectorAt(rows, cfg.pkcs11ConnectorUrl, 'PKCS#11 cryptography-provider', 'KO_PKCS11_CONNECTOR_URL');
     if (typeof pkcs11Row === 'string') return { reason: pkcs11Row };
     const cryptography = interfaceOf(pkcs11Row, 'cryptography');
-    if (!cryptography?.uuid || !((cryptography.features ?? []) as string[]).includes('keyList')) {
+    if (!cryptography?.uuid) {
         logger.warn(`the PKCS#11 connector's interfaces: ${JSON.stringify(pkcs11Row.interfaces ?? [])}`);
-        return { reason: 'the PKCS#11 connector at KO_PKCS11_CONNECTOR_URL does not advertise the keyList feature on its cryptography interface' };
+        return { reason: 'the PKCS#11 connector at KO_PKCS11_CONNECTOR_URL exposes no cryptography interface' };
+    }
+    if (((cryptography.features ?? []) as string[]).includes('unlistableToken')) {
+        return { reason: 'the PKCS#11 connector at KO_PKCS11_CONNECTOR_URL declares unlistableToken on its cryptography interface, so its tokens cannot list keys' };
     }
     const pkcs11: ConnectorRef = { name: String(pkcs11Row.name ?? ''), uuid: String(pkcs11Row.uuid), interfaceUuid: String(cryptography.uuid) };
 

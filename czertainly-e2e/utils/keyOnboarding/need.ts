@@ -1,6 +1,6 @@
 /**
  * need — the `@needs:key-onboarding` check: `undefined` when the runner can plant and remove key pairs and the tier has the
- * PKCS#11 connector with `keyList` and a credential-provider with a `secret` interface, else the skip reason. Reads only.
+ * PKCS#11 connector with listable tokens and a credential-provider with a `secret` interface, else the skip reason. Reads only.
  */
 import type { GuardedApi } from '../regression/guard/types';
 import { Admin, TierError } from '../devBlocks/provision/transport';
