@@ -1,7 +1,8 @@
 /**
  * list — list helpers: real-row waits, filter badges, one text filter and the certificate list request an action causes.
  */
-import { expect, Page, Request } from '@playwright/test';
+import { expect, Locator, Page, Request } from '@playwright/test';
+import { badgeTextOf } from '../../utils/regression/inventory/fieldLabels';
 import type { JsonObject } from '../../utils/regression/json';
 import { FILTER_LIST_REQUEST_MS, FILTER_REQUEST_SEEN_MS } from '../../utils/regression/timeouts';
 import { chooseOption, selectTriggerByLabel } from './select';
@@ -10,9 +11,32 @@ export async function waitForListRows(page: Page): Promise<void> {
     await expect(page.locator('main table tbody tr a[href*="/detail/"]').first()).toBeVisible({ timeout: 30_000 });
 }
 
+/** The removable filter badges of a list (each `badge` with its "Remove badge" button). */
+export function filterBadgeLocator(page: Page): Locator {
+    return page.locator('main').getByTestId('badge').filter({ has: page.getByRole('button', { name: 'Remove badge' }) });
+}
+
+/**
+ * The text of each badge as `Property 'State' equals 'Issued'`. A list value is shown as one chip per value
+ * (fe-administrator#2425); its chips are read as `'a OR b'`, the form the badge had before.
+ */
+export async function readFilterBadges(badges: Locator): Promise<string[]> {
+    const parts = await badges.evaluateAll((els) => els.map((el) => {
+        const chips = [...el.querySelectorAll('[data-testid="filter-value-chip"]')].map((c) => c.textContent ?? '');
+        const label = el.cloneNode(true) as Element;
+        label.querySelectorAll('[data-testid="filter-value-chip"]').forEach((c) => c.remove());
+        return { label: label.textContent ?? '', chips };
+    }));
+    return parts
+        .map(({ label, chips }) => {
+            const text = badgeTextOf(label);
+            return chips.length ? `${text} '${chips.map((c) => c.replace(/\s+/g, ' ').trim()).join(' OR ')}'` : text;
+        })
+        .filter(Boolean);
+}
+
 export async function filterBadges(page: Page): Promise<string[]> {
-    const raw = await page.locator('main').getByRole('button', { name: /Remove badge$/ }).allInnerTexts();
-    return raw.map((t) => t.replace(/\s*Remove badge$/, '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+    return readFilterBadges(filterBadgeLocator(page));
 }
 
 /** Source → Field → Condition → value → Apply. The value box is readonly until focused. */

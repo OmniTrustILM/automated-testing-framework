@@ -499,8 +499,15 @@ const APP_JS = String.raw`
     var fd = g && g.searchFieldData.filter(function (x) { return x.fieldIdentifier === fl.fieldIdentifier; })[0];
     var remove = h('button', { type: 'button', onclick: function (e) { e.stopPropagation(); S.filters.splice(i, 1); S.badge = -1; S.page = 1; load(); } },
       h('span', { class: 'sr-only' }, 'Remove badge'));
-    return h('button', { type: 'button', 'data-testid': 'badge', onclick: function () { editBadge(i); } },
-      h('b', {}, label('FilterFieldSource', fl.fieldSource) + ' '), "'" + (fd ? fd.fieldLabel : fl.fieldIdentifier) + "' " + label('FilterConditionOperator', fl.condition) + ' ' + badgeValue(fl, fd), remove);
+    // as the admin UI since fe-administrator#2425: a list value is one chip per value, after the toggle button
+    var name = fd ? fd.fieldLabel : fl.fieldIdentifier;
+    var chips = Array.isArray(fl.value) && !(fd && fd.type === 'boolean')
+      ? fl.value.map(function (v) { var t = fd && fd.platformEnum ? label(fd.platformEnum, v) : String(v);
+          return h('span', { 'data-testid': 'filter-value-chip' }, t, h('button', { type: 'button', 'aria-label': 'Remove ' + t + ' from ' + name })); })
+      : null;
+    var toggle = h('button', { type: 'button', onclick: function () { editBadge(i); } },
+      h('b', {}, label('FilterFieldSource', fl.fieldSource) + ' '), "'" + name + "' " + label('FilterConditionOperator', fl.condition) + (chips ? '' : ' ' + badgeValue(fl, fd)));
+    return h('span', { 'data-testid': 'badge' }, toggle, h('span', {}, chips || []), remove);
   }
   function editBadge(i) {
     var fl = S.filters[i];
