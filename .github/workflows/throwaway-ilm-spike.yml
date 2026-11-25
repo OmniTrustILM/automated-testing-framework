@@ -1,0 +1,51 @@
+name: Spike throw-away ILM (ATF#165)
+
+# Measures, on a standard GitHub runner, what the laptop run measured: time to a running ILM (operator + kind +
+# develop-latest images + connectors + own EJBCA) and the memory it takes. No secrets, no private images, no tests.
+on:
+  push:
+    branches: [spike/165-throwaway-ilm]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  up:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Runner
+        run: |
+          nproc; free -m; df -h / | tail -1
+          kind version || true; kubectl version --client; helm version --short
+      - name: Install kind when the image has none
+        run: command -v kind || { curl -fsSLo kind https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64 && sudo install kind /usr/local/bin/kind; }
+      - name: Bring the throw-away ILM up
+        run: OUT=/tmp/atf165 CLUSTER=atf165 bash spike/165/env/up.sh
+      - name: Memory after 5 minutes of idle
+        if: always()
+        run: |
+          sleep 300
+          free -m
+          docker stats --no-stream --format '{{.Name}} {{.MemUsage}} {{.CPUPerc}}' atf165-control-plane
+          docker exec atf165-control-plane crictl stats -o json | python3 -c '
+          import sys, json
+          rows = []
+          for s in json.load(sys.stdin)["stats"]:
+              m = s.get("memory", {}).get("workingSetBytes", {}).get("value")
+              if m is None: continue
+              l = s["attributes"]["labels"]; rows.append((int(m), l["io.kubernetes.pod.namespace"] + "/" + l["io.kubernetes.container.name"]))
+          rows.sort(reverse=True); print("sum GiB %.2f" % (sum(r[0] for r in rows) / 2**30))
+          for m, n in rows[:15]: print("%6.0f MiB %s" % (m / 2**20, n))'
+      - name: Connector off and on
+        run: |
+          export KUBECONFIG=/tmp/atf165/kubeconfig
+          t=$(date +%s); kubectl -n ilm patch connectors.otilm.com software-cryptography-provider --type merge -p '{"spec":{"replicas":0}}'
+          kubectl -n ilm wait --for=delete pod -l app.kubernetes.io/name=software-cryptography-provider --timeout=120s; echo "off: $(( $(date +%s)-t ))s"
+          t=$(date +%s); kubectl -n ilm patch connectors.otilm.com software-cryptography-provider --type merge -p '{"spec":{"replicas":1}}'
+          kubectl -n ilm rollout status deploy/software-cryptography-provider --timeout=5m; echo "on: $(( $(date +%s)-t ))s"
+      - name: Timings
+        if: always()
+        run: cat /tmp/atf165/times.log || true

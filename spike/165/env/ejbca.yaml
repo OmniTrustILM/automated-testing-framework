@@ -1,0 +1,45 @@
+# Throw-away EJBCA CE for ATF#165: embedded database, gone with the cluster.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ejbca
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ejbca
+  namespace: ejbca
+spec:
+  replicas: 1
+  strategy: { type: Recreate } # one embedded database: never two pods at once
+  selector: { matchLabels: { app: ejbca } }
+  template:
+    metadata: { labels: { app: ejbca } }
+    spec:
+      containers:
+        - name: ejbca
+          image: keyfactor/ejbca-ce:9.6.3
+          env:
+            - { name: TLS_SETUP_ENABLED, value: simple }
+            - { name: HTTPSERVER_HOSTNAME, value: ejbca.ejbca.svc.cluster.local } # the TLS server certificate's name
+          ports:
+            - { containerPort: 8080 }
+            - { containerPort: 8443 }
+          resources:
+            requests: { memory: 1Gi }
+            limits: { memory: 2Gi }
+          readinessProbe:
+            httpGet: { path: /ejbca/publicweb/healthcheck/ejbcahealth, port: 8080 }
+            periodSeconds: 10
+            failureThreshold: 60
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ejbca
+  namespace: ejbca
+spec:
+  selector: { app: ejbca }
+  ports:
+    - { name: http, port: 8080 }
+    - { name: https, port: 8443 }

@@ -1,0 +1,44 @@
+apiVersion: otilm.com/v1alpha1
+kind: Connector
+metadata:
+  name: ejbca-ng-connector
+  namespace: ilm
+spec:
+  image:
+    repository: hub.omnitrustregistry.com/ilm/ejbca-ng-connector
+    tag: develop-latest
+  service:
+    port: 8080
+  probes: # this connector serves the v1 health paths
+    liveness: { path: /health/liveness, initialDelaySeconds: 15, periodSeconds: 10, failureThreshold: 3 }
+    readiness: { path: /health/readiness, initialDelaySeconds: 5, periodSeconds: 10, failureThreshold: 3 }
+    startup: { path: /health/liveness, periodSeconds: 10, failureThreshold: 45 }
+  volumes:
+    - name: tmp
+      mountPath: /tmp
+      emptyDir:
+        medium: Memory
+        sizeLimit: 256Mi
+  env:
+    - name: PORT
+      value: "8080"
+    - name: JDBC_URL
+      value: jdbc:postgresql://ilm-db-rw.ilm.svc:5432/ilm?characterEncoding=UTF-8
+  secretRefs:
+    - name: ilm-db-app
+      type: env
+      keys:
+        - secretKey: username
+          envVar: JDBC_USERNAME
+        - secretKey: password
+          envVar: JDBC_PASSWORD
+  configMapRefs: # trusts the throw-away EJBCA's TLS server certificate (issued by its ManagementCA)
+    - name: ejbca-management-ca
+      type: env
+      keys:
+        - configMapKey: ca.pem
+          envVar: TRUSTED_CERTIFICATES
+  registration:
+    name: EJBCA NG Connector
+    platformUrl: http://core.ilm.svc:8080/api
+    authType: none

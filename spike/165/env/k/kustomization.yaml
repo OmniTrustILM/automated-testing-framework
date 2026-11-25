@@ -1,0 +1,27 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - image-refs.yaml
+  - platform.yaml
+  - connector-common-credential-provider.yaml
+  - connector-ejbca-ng-connector.yaml
+  - connector-software-cryptography-provider.yaml
+replacements:
+  - source: { kind: Pod, name: ilm-image-refs, fieldPath: "spec.containers.[name=core].image", options: { delimiter: "@", index: 1 } }
+    targets: [{ select: { kind: Platform, name: ilm }, fieldPaths: [spec.core.image.digest], options: { create: true } }]
+  - source: { kind: Pod, name: ilm-image-refs, fieldPath: "spec.containers.[name=auth].image", options: { delimiter: "@", index: 1 } }
+    targets: [{ select: { kind: Platform, name: ilm }, fieldPaths: [spec.auth.image.digest], options: { create: true } }]
+  - source: { kind: Pod, name: ilm-image-refs, fieldPath: "spec.containers.[name=scheduler].image", options: { delimiter: "@", index: 1 } }
+    targets: [{ select: { kind: Platform, name: ilm }, fieldPaths: [spec.scheduler.image.digest], options: { create: true } }]
+  - source: { kind: Pod, name: ilm-image-refs, fieldPath: "spec.containers.[name=auth-opa-policies].image", options: { delimiter: "@", index: 1 } }
+    targets: [{ select: { kind: Platform, name: ilm }, fieldPaths: [spec.authOpaPolicies.image.digest], options: { create: true } }]
+  - source: { kind: Pod, name: ilm-image-refs, fieldPath: "spec.containers.[name=frontend-administrator].image", options: { delimiter: "@", index: 1 } }
+    targets: [{ select: { kind: Platform, name: ilm }, fieldPaths: [spec.feAdministrator.image.digest], options: { create: true } }]
+  - source: { kind: Pod, name: ilm-image-refs, fieldPath: "spec.containers.[name=keycloak-theme].image", options: { delimiter: "@", index: 1 } }
+    targets: [{ select: { kind: Platform, name: ilm }, fieldPaths: [spec.keycloak.managed.themeImage.digest], options: { create: true } }]
+  - source: { kind: Pod, name: ilm-image-refs, fieldPath: "spec.containers.[name=common-credential-provider].image", options: { delimiter: "@", index: 1 } }
+    targets: [{ select: { kind: Connector, name: common-credential-provider }, fieldPaths: [spec.image.digest], options: { create: true } }]
+  - source: { kind: Pod, name: ilm-image-refs, fieldPath: "spec.containers.[name=ejbca-ng-connector].image", options: { delimiter: "@", index: 1 } }
+    targets: [{ select: { kind: Connector, name: ejbca-ng-connector }, fieldPaths: [spec.image.digest], options: { create: true } }]
+  - source: { kind: Pod, name: ilm-image-refs, fieldPath: "spec.containers.[name=software-cryptography-provider].image", options: { delimiter: "@", index: 1 } }
+    targets: [{ select: { kind: Connector, name: software-cryptography-provider }, fieldPaths: [spec.image.digest], options: { create: true } }]

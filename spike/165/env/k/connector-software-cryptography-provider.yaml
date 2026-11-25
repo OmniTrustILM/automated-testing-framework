@@ -1,0 +1,39 @@
+apiVersion: otilm.com/v1alpha1
+kind: Connector
+metadata:
+  name: software-cryptography-provider
+  namespace: ilm
+spec:
+  image:
+    repository: hub.omnitrustregistry.com/ilm/software-cryptography-provider
+    tag: develop-latest
+  service:
+    port: 8080
+  volumes:
+    - name: tmp
+      mountPath: /tmp
+      emptyDir:
+        medium: Memory
+        sizeLimit: 256Mi
+  env:
+    - name: PORT
+      value: "8080"
+    - name: JDBC_URL
+      value: jdbc:postgresql://ilm-db-rw.ilm.svc:5432/ilm?characterEncoding=UTF-8
+  secretRefs:
+    - name: ilm-db-app
+      type: env
+      keys:
+        - secretKey: username
+          envVar: JDBC_USERNAME
+        - secretKey: password
+          envVar: JDBC_PASSWORD
+    - name: software-cryptography-provider-encryption
+      type: env
+      keys:
+        - secretKey: key
+          envVar: ENCRYPTION_KEY
+  registration:
+    name: Software-Cryptography-Provider v2
+    platformUrl: http://core.ilm.svc:8080/api
+    authType: none

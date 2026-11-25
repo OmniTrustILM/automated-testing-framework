@@ -1,0 +1,48 @@
+# Throw-away ILM for ATF#165: the shared environment's Platform (version develop, digests from image-refs.yaml)
+# with the operator e2e `full` block's managed database and edge, sized for one kind node.
+apiVersion: otilm.com/v1alpha1
+kind: Platform
+metadata:
+  name: ilm
+  namespace: ilm
+spec:
+  version: develop
+  database:
+    mode: managed
+    managed:
+      instances: 1
+      version: "16"
+      storage:
+        size: 2Gi
+  messaging:
+    mode: managed
+    brokerType: rabbitmq
+    managed:
+      replicas: 1
+      version: "4.3.1"
+      storage:
+        size: 1Gi
+    timeQuality:
+      enabled: true
+  keycloak:
+    mode: managed
+    realm: ilm
+    managed:
+      instances: 1
+  registerAdmin:
+    enabled: true
+    username: admin
+    name: Platform
+    lastName: Administrator
+    email: admin@ilm.kind.local
+    password:
+      enabled: true
+      secretRef: ilm-admin-password
+    certificate:
+      enabled: true
+      source: generated
+  edge:
+    enabled: true
+    host: ilm.kind.local
+    tls:
+      source: internal

@@ -1,0 +1,28 @@
+# The develop-latest images this environment runs. up.sh resolves each to the registry's current digest at run time
+# (resolve-digests.py), as Argo CD Image Updater does for the shared environment; the digest below is only a placeholder.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ilm-image-refs
+  annotations:
+    config.kubernetes.io/local-config: "true"
+spec:
+  containers:
+    - name: core
+      image: hub.omnitrustregistry.com/ilm/core:develop-latest@sha256:f73047f273a706cac0eb26f9dd325a14a203067631bfe8009b05ff015bc17027
+    - name: auth
+      image: hub.omnitrustregistry.com/ilm/auth:develop-latest@sha256:a2d9d9d8b7f640c185e317515cd6567189c38a66b26e0aceaefa2a27c4236881
+    - name: scheduler
+      image: hub.omnitrustregistry.com/ilm/scheduler:develop-latest@sha256:d70e5c2c78a43c2177f791f8bc602500f0efca3c9d4d490c5b2a55aa1ce18777
+    - name: auth-opa-policies
+      image: hub.omnitrustregistry.com/ilm/auth-opa-policies:develop-latest@sha256:0f7254b6df425ff1c0be2b57404e88f231a742aa199e2c88e794851be1bbbde7
+    - name: frontend-administrator
+      image: hub.omnitrustregistry.com/ilm/frontend-administrator:develop-latest@sha256:e1767051b5f1445fd2110f2fa0e0a08b245eb59cd09bbbb4a3ca014f8faac9b8
+    - name: keycloak-theme
+      image: hub.omnitrustregistry.com/ilm/keycloak-theme:develop-latest@sha256:b240b8c49865a21f27b0b4433baafc5571957a4c781d6413a79b0ddb9034a956
+    - name: common-credential-provider
+      image: hub.omnitrustregistry.com/ilm/common-credential-provider:develop-latest@sha256:bc3acc9969e896553a36acd2ca4e0e2f1b02a4a2ee2948ca17042014da5da2bc
+    - name: ejbca-ng-connector
+      image: hub.omnitrustregistry.com/ilm/ejbca-ng-connector:develop-latest@sha256:58c9af0baca119a63c10490427434574d91c173d14ad1eb88f4ca8390aed41f3
+    - name: software-cryptography-provider
+      image: hub.omnitrustregistry.com/ilm/software-cryptography-provider:develop-latest@sha256:2e2d3f923bf0f4f69f9d4b7fdde79f61ea3aa4bd7e24797a74c953fa1fb0e5a3
