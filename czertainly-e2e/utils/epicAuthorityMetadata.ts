@@ -8,6 +8,7 @@ import type { APIRequestContext } from '@playwright/test';
 import { Json, send, sendOk, waitUntil } from './epicOwnership';
 import { Logger } from './Logger';
 import { ApiAnswer, answerOf } from './regression/apiReads';
+import { requiredCustomAttributes } from './regression/customAttributes';
 import { AUTHORITY_CREATE_MS } from './regression/timeouts';
 
 const logger = new Logger('EpicAuthorityMetadata');
@@ -81,7 +82,8 @@ export async function createAccountKey(
     api: APIRequestContext, vault: { vaultUuid: string; profileUuid: string }, name: string, track: (key: AccountKey) => void,
 ): Promise<AccountKey> {
     const pem = newAccountKeyPem();
-    const body = { name, description: 'ATF authority metadata', secret: { type: 'privateKey', content: pem }, attributes: [], customAttributes: [] };
+    const customAttributes = await requiredCustomAttributes(api, 'secrets', 'qa');
+    const body = { name, description: 'ATF authority metadata', secret: { type: 'privateKey', content: pem }, attributes: [], customAttributes };
     const created = (await sendOk(api, 'POST', `/api/v1/vaults/${vault.vaultUuid}/vaultProfiles/${vault.profileUuid}/secrets`, body)).json as Json;
     const key: AccountKey = { uuid: String(created.uuid), name, pem, thumbprint: jwkThumbprint(pem) };
     track(key);
