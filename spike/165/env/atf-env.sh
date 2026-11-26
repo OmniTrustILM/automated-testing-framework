@@ -12,6 +12,7 @@ umask 077
   echo "SMOKE_CLIENT_SECRET=$(s ilm-oidc-client clientSecret)"
   echo "SMOKE_USERNAME=admin"; echo "SMOKE_PASSWORD=$(s ilm-admin-password password)"
   echo "REG_STATE_DIR=$OUT/state"
+  echo "KUBECONFIG_PATH=$KUBECONFIG" # tests/ephemeral reach the cluster through it
   echo "TSA_AUTHORITY_NAME=ejbca.kind"; echo "TSA_VAULT_INSTANCE_NAME=vault"; echo "TSA_FAMILIES=rsa"
   echo "# the smoke variables the config validates for every block; discovery is not deployed here (placeholders)"
   echo "DISCOVERY_PROVIDER_NAME=not-deployed"; echo "DISCOVERY_PROVIDER_URL=http://not-deployed.invalid:8080"; echo "DISCOVERY_TARGET=192.0.2.1"

@@ -53,6 +53,13 @@ jobs:
           bash spike/165/env/atf-env.sh /tmp/atf165
           cd czertainly-e2e && npm ci --ignore-scripts --no-audit --no-fund >/dev/null
           REG_ENV_FILE=/tmp/atf165/atf.env DEV_BLOCK=timestamping npx playwright test -c playwright.devblock.config.ts --project timestamping-setup --reporter=line
+      - name: Developers' e2e tests (tests/ephemeral; each folder's env/ is applied first)
+        run: |
+          export KUBECONFIG=/tmp/atf165/kubeconfig
+          for d in czertainly-e2e/tests/ephemeral/*/env; do kubectl apply -f "$d"; done
+          sleep 15
+          for d in $(kubectl -n ilm get deploy -o name); do kubectl -n ilm rollout status "$d" --timeout=10m >/dev/null; done
+          cd czertainly-e2e && REG_ENV_FILE=/tmp/atf165/atf.env npx playwright test -c playwright.ephemeral.config.ts
       - name: Monitor gone by hand (timeQualityMonitor.enabled false, then true) - Core downtime through the edge
         if: always()
         run: |
@@ -85,13 +92,6 @@ jobs:
             containers
             diagnose
           done
-      - name: Connector off and on
-        run: |
-          export KUBECONFIG=/tmp/atf165/kubeconfig
-          t=$(date +%s); kubectl -n ilm patch connectors.otilm.com software-cryptography-provider --type merge -p '{"spec":{"replicas":0}}'
-          kubectl -n ilm wait --for=delete pod -l app.kubernetes.io/name=software-cryptography-provider --timeout=120s; echo "off: $(( $(date +%s)-t ))s"
-          t=$(date +%s); kubectl -n ilm patch connectors.otilm.com software-cryptography-provider --type merge -p '{"spec":{"replicas":1}}'
-          kubectl -n ilm rollout status deploy/software-cryptography-provider --timeout=5m; echo "on: $(( $(date +%s)-t ))s"
       - name: Timings
         if: always()
         run: cat /tmp/atf165/times.log || true
