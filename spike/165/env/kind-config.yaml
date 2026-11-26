@@ -7,3 +7,11 @@ nodes:
   - role: control-plane
     extraPortMappings:
       - { containerPort: 30443, hostPort: 30443, listenAddress: "127.0.0.1", protocol: TCP }
+    # up.sh deletes the private-image pull secret (regcred) once the images are on the node. Since Kubernetes 1.35 the
+    # kubelet re-checks the pull secret before a new pod may use an image that was pulled with one
+    # (KubeletEnsureSecretPulledImages, default policy NeverVerifyPreloadedImages), so a recreated Core pod would try
+    # to pull the monitor again and fail. This throw-away node trusts its own image cache instead.
+    kubeadmConfigPatches:
+      - |
+        kind: KubeletConfiguration
+        imagePullCredentialsVerificationPolicy: NeverVerify
