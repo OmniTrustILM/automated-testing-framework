@@ -47,12 +47,12 @@ jobs:
           for m, n in rows[:15]: print("%6.0f MiB %s" % (m / 2**20, n))'
       - name: Edge checks (client certificates, forged headers, EST route, kind network)
         run: CLUSTER=atf165 bash spike/165/env/edge/edge-check.sh /tmp/atf165
-      - name: ATF logs in and runs the timestamping block's setup
+      - name: ATF timestamping setup, then monitor gone with real TSP requests (spike spec), then teardown
         run: |
           echo "127.0.0.1 ilm.kind.local" | sudo tee -a /etc/hosts
           bash spike/165/env/atf-env.sh /tmp/atf165
           cd czertainly-e2e && npm ci --ignore-scripts --no-audit --no-fund >/dev/null
-          REG_ENV_FILE=/tmp/atf165/atf.env DEV_BLOCK=timestamping npx playwright test -c playwright.devblock.config.ts --project timestamping-setup --reporter=line
+          REG_ENV_FILE=/tmp/atf165/atf.env DEV_BLOCK=timestamping npx playwright test -c playwright.devblock.config.ts tests/timestamping/spike-165-monitor-gone.spec.ts --reporter=line
       - name: Developers' e2e tests (tests/ephemeral; each folder's env/ is applied first)
         run: |
           export KUBECONFIG=/tmp/atf165/kubeconfig
@@ -60,14 +60,10 @@ jobs:
           sleep 15
           for d in $(kubectl -n ilm get deploy -o name); do kubectl -n ilm rollout status "$d" --timeout=10m >/dev/null; done
           cd czertainly-e2e && REG_ENV_FILE=/tmp/atf165/atf.env npx playwright test -c playwright.ephemeral.config.ts
-      - name: Monitor gone by hand (timeQualityMonitor.enabled false, then true) - Core downtime through the edge
-        if: always()
+      - name: Diagnostics when a step failed (pod states, events, broker users; no private logs)
+        if: failure()
         run: |
           export KUBECONFIG=/tmp/atf165/kubeconfig
-          kubectl -n ilm get deploy -o name
-          probe() { while :; do echo "$(date +%s) $(curl -s -o /dev/null -w '%{http_code}' --max-time 3 --cacert /tmp/atf165/edge-ca.pem \
-            --resolve ilm.kind.local:30443:127.0.0.1 https://ilm.kind.local:30443/api/v1/info)"; sleep 1; done; }
-          containers() { kubectl -n ilm get pod -l app.kubernetes.io/name=core -o jsonpath='{range .items[*]}{.metadata.name}: {range .status.containerStatuses[*]}{.name}={.ready} {end}{"\n"}{end}'; }
           diagnose() {
             echo "--- Core pod containers: state, reason, last exit (no logs of the private container)"
             kubectl -n ilm get pod -l app.kubernetes.io/name=core -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{range .status.containerStatuses[*]}  {.name} ready={.ready} restarts={.restartCount} image={.imageID} waiting={.state.waiting.reason} running={.state.running.startedAt} last={.lastState.terminated.reason}/{.lastState.terminated.exitCode}@{.lastState.terminated.finishedAt}{"\n"}{end}{end}'
@@ -82,16 +78,7 @@ jobs:
             echo "--- Platform conditions"
             kubectl -n ilm get platform ilm -o jsonpath='{range .status.conditions[*]}{.type}={.status} {.reason}: {.message}{"\n"}{end}' | cut -c1-260
           }
-          for state in false true; do
-            probe > /tmp/probe-$state.log & P=$!
-            t=$(date +%s); kubectl -n ilm patch platform ilm --type merge -p "{\"spec\":{\"core\":{\"timeQualityMonitor\":{\"enabled\":$state}}}}"
-            sleep 10; kubectl -n ilm rollout status deploy/core --timeout=6m || true
-            for i in $(seq 1 60); do grep -q ' 200$' <(tail -1 /tmp/probe-$state.log) && break; sleep 2; done
-            sleep 5; kill $P
-            echo "enabled=$state: rollout + API back after $(( $(date +%s)-t ))s; seconds without 200: $(grep -vc ' 200$' /tmp/probe-$state.log)"
-            containers
-            diagnose
-          done
+          diagnose
       - name: Timings
         if: always()
         run: cat /tmp/atf165/times.log || true
