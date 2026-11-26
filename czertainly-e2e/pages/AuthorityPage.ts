@@ -7,6 +7,7 @@ import type { CreateAnswer } from './ui/createAnswer';
 import { submitCreate, waitForDetailRoute } from './ui/detailRoute';
 import { customAttributesDefined, fillRequiredCustomAttributes, fillText } from './ui/form';
 import { chooseOption } from './ui/select';
+import { widgetTitled } from './ui/widget';
 import { AUTHORITY_CREATE_MS } from '../utils/regression/timeouts';
 
 export interface ManualCaFields {
@@ -75,5 +76,23 @@ export class AuthorityPage {
 
     async assertDetailShows(name: string): Promise<void> {
         await expect(this.main).toContainText(name);
+    }
+
+    async openDetail(uuid: string): Promise<void> {
+        await this.page.goto(`/administrator/#/authorities/detail/${uuid}`);
+        await expect(this.main).toBeVisible();
+    }
+
+    /** The detail page's Metadata widget; absent when the authority has no metadata. */
+    metadataWidget(): Locator {
+        return widgetTitled(this.main, 'Metadata');
+    }
+
+    /** Opens the dialog listing a connector's metadata items: the connector's name in the Metadata widget is a button. */
+    async openConnectorMetadata(connectorName: string): Promise<Locator> {
+        await this.metadataWidget().getByRole('button', { name: connectorName, exact: true }).click();
+        const dialog = this.page.getByRole('dialog').filter({ hasText: connectorName }).last();
+        await expect(dialog).toBeVisible();
+        return dialog;
     }
 }
