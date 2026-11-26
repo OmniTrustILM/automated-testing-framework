@@ -52,6 +52,11 @@ spec:
         kind: Issuer
   core:
     clientCertHeader: X-Forwarded-Tls-Client-Cert
+    timeQualityMonitor: # private image (ilm-private), pulled with regcred; up.sh deletes regcred once the images are on the node
+      enabled: true
+      image:
+        pullSecrets:
+          - regcred
   # The edge is Traefik in front (edge/), as on the shared environment; the operator's own edge stays off.
   edge:
     enabled: false

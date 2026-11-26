@@ -26,3 +26,7 @@ spec:
       image: hub.omnitrustregistry.com/ilm/ejbca-ng-connector:develop-latest@sha256:58c9af0baca119a63c10490427434574d91c173d14ad1eb88f4ca8390aed41f3
     - name: software-cryptography-provider
       image: hub.omnitrustregistry.com/ilm/software-cryptography-provider:develop-latest@sha256:2e2d3f923bf0f4f69f9d4b7fdde79f61ea3aa4bd7e24797a74c953fa1fb0e5a3
+    - name: timestamp-formatting-connector
+      image: hub.omnitrustregistry.com/ilm-private/timestamp-formatting-connector:develop-latest@sha256:533029eae1debcd842685b8dbdc2cb4c58e275d095d75e1d38645db490f30677
+    - name: time-quality-monitor
+      image: hub.omnitrustregistry.com/ilm-private/time-quality-monitor:develop-latest@sha256:f571ccaf9cc038d14dd85be32b3b7ad804a22d472abcf6ac8a3cde663d607c99

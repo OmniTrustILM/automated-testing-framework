@@ -6,6 +6,8 @@ resources:
   - connector-common-credential-provider.yaml
   - connector-ejbca-ng-connector.yaml
   - connector-software-cryptography-provider.yaml
+  - connector-timestamp-formatting-connector.yaml
+  - ntp.yaml
 replacements:
   - source: { kind: Pod, name: ilm-image-refs, fieldPath: "spec.containers.[name=core].image", options: { delimiter: "@", index: 1 } }
     targets: [{ select: { kind: Platform, name: ilm }, fieldPaths: [spec.core.image.digest], options: { create: true } }]
@@ -25,3 +27,7 @@ replacements:
     targets: [{ select: { kind: Connector, name: ejbca-ng-connector }, fieldPaths: [spec.image.digest], options: { create: true } }]
   - source: { kind: Pod, name: ilm-image-refs, fieldPath: "spec.containers.[name=software-cryptography-provider].image", options: { delimiter: "@", index: 1 } }
     targets: [{ select: { kind: Connector, name: software-cryptography-provider }, fieldPaths: [spec.image.digest], options: { create: true } }]
+  - source: { kind: Pod, name: ilm-image-refs, fieldPath: "spec.containers.[name=timestamp-formatting-connector].image", options: { delimiter: "@", index: 1 } }
+    targets: [{ select: { kind: Connector, name: timestamp-formatting-connector }, fieldPaths: [spec.image.digest], options: { create: true } }]
+  - source: { kind: Pod, name: ilm-image-refs, fieldPath: "spec.containers.[name=time-quality-monitor].image", options: { delimiter: "@", index: 1 } }
+    targets: [{ select: { kind: Platform, name: ilm }, fieldPaths: [spec.core.timeQualityMonitor.image.digest], options: { create: true } }]

@@ -1,0 +1,35 @@
+# Own NTP server for the time-quality monitor, as the compose environment's `ntp` service: chrony built from
+# ntp/Dockerfile and loaded into kind (never pulled). The monitor asks "ntp" (TSA_NTP_SERVERS default), which
+# resolves to this Service in the ilm namespace. -x: chrony serves time without setting the node's clock.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ntp
+  namespace: ilm
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: ntp }
+  template:
+    metadata:
+      labels: { app: ntp }
+    spec:
+      containers:
+        - name: ntp
+          image: ilm-ntp:spike
+          imagePullPolicy: Never
+          ports:
+            - { containerPort: 123, protocol: UDP }
+          readinessProbe:
+            exec: { command: [chronyc, -n, tracking] }
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ntp
+  namespace: ilm
+spec:
+  selector: { app: ntp }
+  ports:
+    - { name: ntp, port: 123, targetPort: 123, protocol: UDP }

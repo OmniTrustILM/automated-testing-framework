@@ -43,7 +43,7 @@ def uuid_of(defs, name):
 
 # 1. connectors: the operator registers v2 and leaves it waiting for approval; the blocks also need v1 registrations
 for _ in range(60):
-    if len(v2()) >= 2:
+    if len(v2()) >= 3:  # credential provider, software cryptography, timestamp formatting
         break
     time.sleep(5)
 for name, url in V1.items():

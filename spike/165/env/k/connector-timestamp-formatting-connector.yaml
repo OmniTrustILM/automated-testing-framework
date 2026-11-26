@@ -1,0 +1,28 @@
+# Timestamp Formatting Connector (RFC 3161 signature formatting), as on the shared environment: private image
+# (ilm-private) pulled with regcred, digest from image-refs.yaml, v2 info and health (the operator's default probes).
+apiVersion: otilm.com/v1alpha1
+kind: Connector
+metadata:
+  name: timestamp-formatting-connector
+  namespace: ilm
+spec:
+  image:
+    repository: hub.omnitrustregistry.com/ilm-private/timestamp-formatting-connector
+    tag: develop-latest # required by the Connector; the digest from image-refs.yaml wins
+    pullSecrets:
+      - regcred
+  service:
+    port: 8080
+  volumes:
+    - name: tmp # the root filesystem is read-only; the JVM needs a writable /tmp
+      mountPath: /tmp
+      emptyDir:
+        medium: Memory
+        sizeLimit: 256Mi
+  env:
+    - name: PORT
+      value: "8080"
+  registration:
+    name: Timestamp Formatting Connector
+    platformUrl: http://core.ilm.svc:8080/api
+    authType: none

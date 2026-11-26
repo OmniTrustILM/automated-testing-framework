@@ -1,12 +1,17 @@
-# Rewrites every develop-latest digest in image-refs.yaml to the registry's current one (anonymous pull scope;
-# a repository that refuses anonymous pulls keeps its digest and is reported).
-import json, re, sys, urllib.request
+# Rewrites every develop-latest digest in image-refs.yaml to the registry's current one. Public repositories are asked
+# anonymously; ilm-private with the read-only pull login (ILM_PRIVATE_PULL_USERNAME / _PASSWORD). A repository the
+# token does not reach keeps its digest and is reported.
+import base64, json, os, re, sys, urllib.request
 R = "https://hub.omnitrustregistry.com"
 ACC = ("application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,"
        "application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json")
 path = sys.argv[1]; text = open(path).read()
 def current(repo, tag):
-    tok = json.load(urllib.request.urlopen(f"{R}/service/token?service=harbor-registry&scope=repository:{repo}:pull")).get("token", "")
+    treq = urllib.request.Request(f"{R}/service/token?service=harbor-registry&scope=repository:{repo}:pull")
+    user, pw = os.environ.get("ILM_PRIVATE_PULL_USERNAME"), os.environ.get("ILM_PRIVATE_PULL_PASSWORD")
+    if repo.startswith("ilm-private/") and user and pw:
+        treq.add_header("Authorization", "Basic " + base64.b64encode(f"{user}:{pw}".encode()).decode())
+    tok = json.load(urllib.request.urlopen(treq)).get("token", "")
     req = urllib.request.Request(f"{R}/v2/{repo}/manifests/{tag}", method="HEAD", headers={"Authorization": "Bearer " + tok, "Accept": ACC})
     try: return urllib.request.urlopen(req).headers["Docker-Content-Digest"]
     except urllib.error.HTTPError as e: return None

@@ -1,7 +1,10 @@
 name: Spike throw-away ILM (ATF#165)
 
-# Measures, on a standard GitHub runner, what the laptop run measured: time to a running ILM (operator + kind +
-# develop-latest images + connectors + own EJBCA) and the memory it takes. No secrets, no private images, no tests.
+# Measures, on a standard GitHub runner, time to a running ILM (operator + kind + develop-latest images + connectors,
+# with the private time-quality monitor and timestamp formatting connector + own NTP + own EJBCA) and its memory,
+# then runs ATF's timestamping setup against it and tries "monitor gone" by hand.
+# The only secret is the read-only ilm-private pull login, given to the step that pulls the images and to nothing else;
+# up.sh deletes it from the cluster once the images are on the node. No logs of the private containers are printed.
 on:
   push:
     branches: [spike/165-throwaway-ilm]
@@ -23,6 +26,9 @@ jobs:
       - name: Install kind when the image has none
         run: command -v kind || { curl -fsSLo kind https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64 && sudo install kind /usr/local/bin/kind; }
       - name: Bring the throw-away ILM up
+        env:
+          ILM_PRIVATE_PULL_USERNAME: ${{ secrets.ILM_PRIVATE_PULL_USERNAME }}
+          ILM_PRIVATE_PULL_PASSWORD: ${{ secrets.ILM_PRIVATE_PULL_PASSWORD }}
         run: OUT=/tmp/atf165 CLUSTER=atf165 bash spike/165/env/up.sh
       - name: Memory after 5 minutes of idle
         if: always()
@@ -41,12 +47,29 @@ jobs:
           for m, n in rows[:15]: print("%6.0f MiB %s" % (m / 2**20, n))'
       - name: Edge checks (client certificates, forged headers, EST route, kind network)
         run: CLUSTER=atf165 bash spike/165/env/edge/edge-check.sh /tmp/atf165
-      - name: ATF logs in and runs the timestamping block's setup (expected unavailable without the formatting connector)
+      - name: ATF logs in and runs the timestamping block's setup
         run: |
           echo "127.0.0.1 ilm.kind.local" | sudo tee -a /etc/hosts
           bash spike/165/env/atf-env.sh /tmp/atf165
-          cd czertainly-e2e && npm ci --no-audit --no-fund >/dev/null
+          cd czertainly-e2e && npm ci --ignore-scripts --no-audit --no-fund >/dev/null
           REG_ENV_FILE=/tmp/atf165/atf.env DEV_BLOCK=timestamping npx playwright test -c playwright.devblock.config.ts --project timestamping-setup --reporter=line
+      - name: Monitor gone by hand (timeQualityMonitor.enabled false, then true) - Core downtime through the edge
+        if: always()
+        run: |
+          export KUBECONFIG=/tmp/atf165/kubeconfig
+          kubectl -n ilm get deploy -o name
+          probe() { while :; do echo "$(date +%s) $(curl -s -o /dev/null -w '%{http_code}' --max-time 3 --cacert /tmp/atf165/edge-ca.pem \
+            --resolve ilm.kind.local:30443:127.0.0.1 https://ilm.kind.local:30443/api/v1/info)"; sleep 1; done; }
+          containers() { kubectl -n ilm get pod -l app.kubernetes.io/name=core -o jsonpath='{range .items[*]}{.metadata.name}: {range .status.containerStatuses[*]}{.name}={.ready} {end}{"\n"}{end}'; }
+          for state in false true; do
+            probe > /tmp/probe-$state.log & P=$!
+            t=$(date +%s); kubectl -n ilm patch platform ilm --type merge -p "{\"spec\":{\"core\":{\"timeQualityMonitor\":{\"enabled\":$state}}}}"
+            sleep 10; kubectl -n ilm rollout status deploy/core --timeout=10m || true
+            for i in $(seq 1 60); do grep -q ' 200$' <(tail -1 /tmp/probe-$state.log) && break; sleep 2; done
+            sleep 5; kill $P
+            echo "enabled=$state: rollout + API back after $(( $(date +%s)-t ))s; seconds without 200: $(grep -vc ' 200$' /tmp/probe-$state.log)"
+            containers
+          done
       - name: Connector off and on
         run: |
           export KUBECONFIG=/tmp/atf165/kubeconfig
