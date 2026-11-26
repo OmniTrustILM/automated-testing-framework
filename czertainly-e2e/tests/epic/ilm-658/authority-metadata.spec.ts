@@ -62,9 +62,9 @@ test.describe('@epic-658 authority metadata', () => {
         const api: APIRequestContext = await getAuthenticatedApiContext(request, env, { minLifetimeMs: TEST_TIMEOUT_MS });
         try {
             const connector = await findAcmeConnector(api, process.env.ACME_CONNECTOR_NAME || undefined);
-            test.skip(!connector, 'no connected acme-connector with a v3 authority interface');
+            expect(connector, 'a connected acme-connector with a v3 authority interface (ACME_CONNECTOR_NAME)').toBeDefined();
             const vault = await findVaultProfile(api, process.env.ACME_VAULT_PROFILE_NAME || undefined);
-            test.skip(!vault, 'no enabled vault profile for the account keys');
+            expect(vault, 'an enabled vault profile for the account keys (ACME_VAULT_PROFILE_NAME)').toBeDefined();
             const acme = connector as AcmeConnector;
             const customAttributes = await requiredCustomAttributes(api, 'authorities', 'qa');
             const read = async (): Promise<Json> => (await sendOk(api, 'GET', `/api/v1/authorities/${authorityUuid}`)).json as Json;
@@ -80,8 +80,9 @@ test.describe('@epic-658 authority metadata', () => {
                     name: run, connectorUuid: acme.uuid, interfaceUuid: acme.interfaceUuid,
                     attributes: acmeAuthorityAttributes(LE_STAGING_DIRECTORY, key1), customAttributes,
                 });
+                const createdUuid = (created.json as Json | undefined)?.uuid;
+                if (createdUuid) authorityUuid = String(createdUuid);
                 expect(created.status, `the create: ${created.text.slice(0, 300)}`).toBe(201);
-                authorityUuid = String((created.json as Json).uuid);
 
                 const detail = await read();
                 const values = metadataValues(detail, acme.uuid);
